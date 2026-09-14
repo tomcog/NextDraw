@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="60mm" height="30mm" viewBox="0 0 60 30">
+  <!-- Small pen test: square, circle, short strokes in four directions, and a zigzag -->
+  <rect x="5" y="5" width="20" height="20" fill="none" stroke="black" stroke-width="0.3"/>
+  <circle cx="15" cy="15" r="6" fill="none" stroke="black" stroke-width="0.3"/>
+  <path d="M30 5 H55 M30 9 H55 M30 13 L55 13" fill="none" stroke="black" stroke-width="0.3"/>
+  <path d="M30 18 L34 25 L38 18 L42 25 L46 18 L50 25 L54 18" fill="none" stroke="black" stroke-width="0.3"/>
+</svg>

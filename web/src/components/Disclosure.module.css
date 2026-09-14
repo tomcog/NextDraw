@@ -1,0 +1,23 @@
+.summary {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.2rem 0;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  cursor: pointer;
+  list-style: none;
+}
+
+.summary::-webkit-details-marker { display: none; }
+
+.chevron {
+  width: 0.875rem;
+  height: 0.875rem;
+  color: var(--ui-text-muted);
+  transition: transform var(--ui-motion-fast) ease;
+}
+
+.disclosure[open] .chevron { transform: rotate(90deg); }
+
+.body { padding: 0.25rem 0 0.5rem; }

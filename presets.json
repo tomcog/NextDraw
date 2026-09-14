@@ -1,0 +1,16 @@
+[
+  {
+    "name": "EnerGel",
+    "settings": {
+      "handling": 1,
+      "speed_pendown": 65,
+      "speed_penup": 75,
+      "accel": 75,
+      "pen_pos_down": 45,
+      "pen_pos_up": 70,
+      "pen_setup": 60,
+      "pen_rate_lower": 30,
+      "pen_rate_raise": 75
+    }
+  }
+]

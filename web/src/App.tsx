@@ -1,0 +1,566 @@
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Card } from "@tomcoggia/ui";
+import styles from "./App.module.css";
+import { api, postJSON } from "./lib/api";
+import { BUSY_STATES, DEFAULT_SETTINGS, PAPER_SIZES, PLOTTING_STATES, PRESET_FIELDS, STEPS, STORAGE } from "./lib/constants";
+import { cleanNote } from "./lib/format";
+import { fitsOnBed, fitsOnPaper, footprint } from "./lib/geometry";
+import { parsePreview, type Preview } from "./lib/preview";
+import { load, save } from "./lib/storage";
+import type { Estimate, Info, Message, Placement, Preset, Settings, Status } from "./lib/types";
+import { Header } from "./components/Header";
+import { Bed, type Zoom } from "./components/Bed";
+import { ZoomControl } from "./components/ZoomControl";
+import { MachinePanel } from "./components/MachinePanel";
+import { Disclosure } from "./components/Disclosure";
+import { DrawingNotes } from "./components/DrawingNotes";
+import { PlotSummary } from "./components/PlotSummary";
+import { PlotProgress } from "./components/PlotProgress";
+import { FileSection } from "./components/controls/FileSection";
+import { PositionSection } from "./components/controls/PositionSection";
+import { PresetSection } from "./components/controls/PresetSection";
+import { PaperSection } from "./components/controls/PaperSection";
+import { PenSection } from "./components/controls/PenSection";
+import { SpeedSection } from "./components/controls/SpeedSection";
+import { PlotOptionsSection } from "./components/controls/PlotOptionsSection";
+import { PlotterSection } from "./components/controls/PlotterSection";
+import { ActionBar } from "./components/controls/ActionBar";
+
+// Settings that change what the NextDraw software's dry run reports.
+const ESTIMATE_KEYS: (keyof Settings)[] = [
+  "model", "handling", "speed_pendown", "speed_penup", "accel", "pen_pos_down", "pen_pos_up",
+  "pen_rate_lower", "pen_rate_raise", "copies", "page_delay", "reordering", "auto_rotate", "hiding", "random_start",
+];
+
+// Pen and Speed settings belong to a future "Create new preset" mode; hidden until that's designed.
+// The active drawing-tool preset still supplies these values.
+const SHOW_PEN_AND_SPEED = false;
+
+// Only one plotter (a NextDraw 2234), so the model picker is hidden; DEFAULT_SETTINGS.model is set to it.
+const SHOW_PLOTTER_MODEL = false;
+
+const isBusy = (s: Status | null) => Boolean(s && BUSY_STATES.includes(s.state));
+
+function loadActivePreset(): string | null {
+  const parsed = load<string>(STORAGE.preset);
+  if (parsed) return parsed;
+  try {
+    return localStorage.getItem(STORAGE.preset); // older pages stored the bare name
+  } catch {
+    return null;
+  }
+}
+
+export default function App() {
+  const [info, setInfo] = useState<Info | null>(null);
+  const [settings, setSettings] = useState<Settings>(() => ({ ...DEFAULT_SETTINGS, ...(load<Partial<Settings>>(STORAGE.settings) ?? {}) }));
+  const [presets, setPresets] = useState<Preset[]>([]);
+  const [activePreset, setActivePreset] = useState<string | null>(loadActivePreset);
+  const [fileName, setFileName] = useState<string | null>(null);
+  const [estimate, setEstimate] = useState<Estimate | null>(null);
+  const [preview, setPreview] = useState<Preview | null>(null);
+  const [previewScale, setPreviewScale] = useState(100); // the scale the current preview was made at
+  const [placement, setPlacementState] = useState<Placement>({ x: 0, y: 0 });
+  const [scale, setScaleState] = useState(100); // percent; per drawing, 100 for every new file
+  const [status, setStatus] = useState<Status | null>(null);
+  const [lostContact, setLostContact] = useState(false);
+  const [localMessage, setLocalMessage] = useState<Message | null>(null);
+  const [machineError, setMachineError] = useState<string | null>(null);
+  const [lastAction, setLastAction] = useState<"plot" | "manual" | null>(null);
+  const [stepIndex, setStepIndex] = useState(1);
+  const [showPenUp, setShowPenUp] = useState(true);
+  const [zoomChoice, setZoomChoice] = useState<Zoom>(() => load<Zoom>(STORAGE.zoom) ?? "plotter");
+  useEffect(() => save(STORAGE.zoom, zoomChoice), [zoomChoice]);
+
+  // Refs let the polling loop see current values without restarting.
+  const refs = useRef({ fileName, status, lastAction, settings, scale, readRequested: false });
+  refs.current.fileName = fileName;
+  refs.current.status = status;
+  refs.current.lastAction = lastAction;
+  refs.current.settings = settings;
+  refs.current.scale = scale;
+  const estimateSeq = useRef(0);
+
+  const busy = isBusy(status);
+  const plotting = Boolean(status && PLOTTING_STATES.includes(status.state));
+  const model = info?.models.find((m) => m.id === settings.model) ?? info?.models[0];
+  const fp = footprint(preview, settings, placement);
+  const onBed = fitsOnBed(fp, model);
+  const onPaper = fitsOnPaper(fp, settings);
+  // Fall back to the whole plotter when there's no drawing (or paper) to zoom to.
+  const zoom: Zoom = zoomChoice === "drawing" && !fp ? "plotter" : zoomChoice === "paper" && !(settings.paper_w > 0 && settings.paper_h > 0) ? "plotter" : zoomChoice;
+
+  /* ---------- Settings ---------- */
+
+  const updateSettings = useCallback((patch: Partial<Settings>) => {
+    setSettings((prev) => ({ ...prev, ...patch }));
+  }, []);
+
+  useEffect(() => save(STORAGE.settings, settings), [settings]);
+  useEffect(() => save(STORAGE.preset, activePreset), [activePreset]);
+
+  const setPlacement = useCallback((p: Placement, persist = true) => {
+    const next = { x: Math.max(0, p.x), y: Math.max(0, p.y) };
+    setPlacementState(next);
+    if (persist) save(STORAGE.placement, { file: refs.current.fileName, ...next });
+  }, []);
+
+  const setScale = useCallback((percent: number) => {
+    const next = Math.min(1000, Math.max(1, percent));
+    setScaleState(next);
+    save(STORAGE.scale, { file: refs.current.fileName, scale: next });
+  }, []);
+
+  /* ---------- Loading ---------- */
+
+  useEffect(() => {
+    api<Info>("/api/info")
+      .then(setInfo)
+      .catch(() => setLocalMessage({ text: "Couldn’t reach NextDraw Studio. Start it with server.py and reload this page.", tone: "error" }));
+    api<{ presets: Preset[] }>("/api/presets").then((r) => setPresets(r.presets)).catch(() => setPresets([]));
+  }, []);
+
+  const clearDrawing = useCallback(() => {
+    estimateSeq.current++; // ignore any estimate still on its way
+    setFileName(null);
+    setEstimate(null);
+    setPreview(null);
+    setPlacementState({ x: 0, y: 0 });
+    setScaleState(100);
+    setLocalMessage(null);
+  }, []);
+
+  // Poll the server for plot progress, carriage state and plotter connection.
+  useEffect(() => {
+    let timer: number | undefined;
+    let cancelled = false;
+    const poll = async () => {
+      try {
+        const next = await api<Status>("/api/status");
+        if (cancelled) return;
+        const { fileName: currentFile, status: prev, lastAction: action } = refs.current;
+        setLostContact(false);
+        if (!next.file && currentFile) clearDrawing(); // cleared in another window
+        if (next.file && !currentFile) {
+          const saved = load<Placement & { file: string }>(STORAGE.placement);
+          setPlacementState(saved && saved.file === next.file ? { x: saved.x, y: saved.y } : { x: 0, y: 0 });
+          const savedScale = load<{ file: string; scale: number }>(STORAGE.scale);
+          setScaleState(savedScale && savedScale.file === next.file ? savedScale.scale : 100);
+          setFileName(next.file);
+        }
+        if (isBusy(prev) && !isBusy(next) && action === "plot") setLocalMessage(null);
+        setStatus(next);
+
+        // Once per page load, ask a connected plotter where its carriage is. This doesn't move anything.
+        if (!refs.current.readRequested && next.plotter_found && !isBusy(next) && !next.carriage?.known) {
+          refs.current.readRequested = true;
+          setLastAction("manual");
+          postJSON("/api/manual", { command: "read", settings: refs.current.settings }).catch(() => {});
+        }
+      } catch {
+        if (!cancelled) setLostContact(true);
+      }
+      if (!cancelled) timer = window.setTimeout(poll, isBusy(refs.current.status) ? 500 : 2000);
+    };
+    poll();
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [clearDrawing]);
+
+  /* ---------- Estimate ---------- */
+
+  const estimateKey = ESTIMATE_KEYS.map((k) => settings[k]).join("|");
+  useEffect(() => {
+    if (!fileName) return;
+    const seq = ++estimateSeq.current;
+    const timer = window.setTimeout(async () => {
+      try {
+        const sentScale = refs.current.scale;
+        const result = await postJSON<Estimate>("/api/estimate", { ...refs.current.settings, scale: sentScale });
+        if (seq !== estimateSeq.current) return; // a newer estimate is on its way
+        setEstimate(result);
+        setPreview(parsePreview(result.preview_svg));
+        setPreviewScale(sentScale);
+        setLocalMessage((m) => (m && (m.text === "Working out the plot…" || m.text.startsWith("Loading ")) ? null : m));
+      } catch (err) {
+        if (seq === estimateSeq.current) setLocalMessage({ text: (err as Error).message, tone: "error" });
+      }
+    }, estimate ? 450 : 0);
+    return () => window.clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fileName, estimateKey, scale]);
+
+  /* ---------- Actions ---------- */
+
+  const uploadFile = async (file: File | undefined) => {
+    if (!file || busy) return;
+    if (!/\.svg$/i.test(file.name)) {
+      setLocalMessage({ text: "Choose an SVG file. Other formats can’t be plotted directly.", tone: "error" });
+      return;
+    }
+    const form = new FormData();
+    form.append("file", file);
+    setLocalMessage({ text: `Loading ${file.name}…` });
+    try {
+      const res = await api<{ name: string }>("/api/upload", { method: "POST", body: form });
+      estimateSeq.current++;
+      setEstimate(null);
+      setPreview(null);
+      refs.current.fileName = res.name;
+      setPlacement({ x: 0, y: 0 }); // every new drawing starts at home, at full size
+      refs.current.scale = 100;
+      setScale(100);
+      setFileName(res.name);
+      setLocalMessage({ text: "Working out the plot…" });
+      // A re-upload of the same name doesn't change fileName, so run the estimate directly.
+      if (res.name === fileName) {
+        const result = await postJSON<Estimate>("/api/estimate", { ...settings, scale: 100 });
+        setEstimate(result);
+        setPreview(parsePreview(result.preview_svg));
+        setPreviewScale(100);
+        setLocalMessage(null);
+      }
+    } catch (err) {
+      setLocalMessage({ text: (err as Error).message, tone: "error" });
+    }
+  };
+
+  const clearFile = async () => {
+    if (busy) return;
+    try {
+      await api("/api/file", { method: "DELETE" });
+      clearDrawing();
+    } catch (err) {
+      setLocalMessage({ text: (err as Error).message, tone: "error" });
+    }
+  };
+
+  const startPlot = async () => {
+    if (!onBed) return;
+    if (!onPaper && !window.confirm("Part of this drawing runs off the paper. Plot anyway?")) return;
+    setLastAction("plot");
+    setLocalMessage(null);
+    try {
+      await postJSON("/api/plot", { ...settings, start_x: placement.x, start_y: placement.y, scale });
+      setStatus((s) => (s ? { ...s, state: "preparing", message: "", started: false } : s));
+    } catch (err) {
+      setLocalMessage({ text: (err as Error).message, tone: "error" });
+    }
+  };
+
+  const stopPlot = async () => {
+    try {
+      await postJSON("/api/stop");
+      setStatus((s) => (s ? { ...s, state: "stopping" } : s));
+    } catch (err) {
+      setLocalMessage({ text: (err as Error).message, tone: "error" });
+    }
+  };
+
+  const manual = async (command: string, extra: Record<string, unknown> = {}) => {
+    if (busy) return;
+    const action = "manual"; // every manual command reports in the Utilities panel
+    setLastAction(action);
+    setLocalMessage(null);
+    setMachineError(null);
+    try {
+      await postJSON("/api/manual", { command, settings, ...extra });
+      // Show the busy state right away rather than waiting for the next poll.
+      setStatus((s) => (s ? { ...s, state: command === "pen_test" ? "testing" : "moving", message: "" } : s));
+    } catch (err) {
+      if (action === "manual") setMachineError((err as Error).message);
+      else setLocalMessage({ text: (err as Error).message, tone: "error" });
+    }
+  };
+
+  const walk = (axis: "x" | "y", dir: 1 | -1) => {
+    const step = STEPS[settings.units][stepIndex];
+    manual("walk", { axis, distance_mm: (settings.units === "in" ? step * 25.4 : step) * dir });
+  };
+
+  /* ---------- Paper ---------- */
+
+  const pickPaperSize = (id: string) => {
+    const size = PAPER_SIZES.find((p) => p.id === id);
+    if (size?.w && size.h) {
+      const landscape = settings.paper_w >= settings.paper_h;
+      updateSettings({ paper_size: id, paper_w: landscape ? size.h : size.w, paper_h: landscape ? size.w : size.h });
+    } else {
+      updateSettings({ paper_size: id });
+    }
+  };
+
+  /* ---------- Presets ---------- */
+
+  const active = presets.find((p) => p.name === activePreset);
+  const presetChanged = Boolean(
+    active && !PRESET_FIELDS.every((k) => !(k in active.settings) || Math.abs(Number(active.settings[k]) - Number(settings[k])) < 0.05),
+  );
+
+  const applyPreset = (name: string) => {
+    const preset = presets.find((p) => p.name === name);
+    setActivePreset(preset ? preset.name : null);
+    if (preset) {
+      updateSettings(preset.settings);
+      setLocalMessage({ text: `Using “${preset.name}”.`, tone: "ok" });
+    }
+  };
+
+  const savePreset = async (name: string) => {
+    name = name.trim();
+    if (!name) return false;
+    if (presets.some((p) => p.name === name) && name !== activePreset && !window.confirm(`Replace the preset “${name}”?`)) return false;
+    try {
+      const payload = Object.fromEntries(PRESET_FIELDS.map((k) => [k, settings[k]]));
+      const res = await api<{ presets: Preset[] }>(`/api/presets/${encodeURIComponent(name)}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      setPresets(res.presets);
+      setActivePreset(name);
+      setLocalMessage({ text: `Saved preset “${name}”.`, tone: "ok" });
+      return true;
+    } catch (err) {
+      setLocalMessage({ text: (err as Error).message, tone: "error" });
+      return false;
+    }
+  };
+
+  const deletePreset = async () => {
+    const name = activePreset;
+    if (!name || !window.confirm(`Delete the preset “${name}”? Your current settings stay as they are.`)) return;
+    try {
+      const res = await api<{ presets: Preset[] }>(`/api/presets/${encodeURIComponent(name)}`, { method: "DELETE" });
+      setPresets(res.presets);
+      setActivePreset(null);
+      setLocalMessage({ text: `Deleted preset “${name}”.` });
+    } catch (err) {
+      setLocalMessage({ text: (err as Error).message, tone: "error" });
+    }
+  };
+
+  /* ---------- Messages ---------- */
+
+  // Everything advisory goes in the caution callout: placement notes, the NextDraw software's warnings
+  // about the drawing, and messages the plotter sent during the last plot or command.
+  const plotterLog = status?.log;
+  const notes = useMemo(() => {
+    const list: string[] = [];
+    if (estimate && fp) {
+      if (!onBed) list.push("At this size and position the drawing goes past the plotter’s reach, so it can’t be plotted. Scale it down or move it closer to home.");
+      if (!onPaper) list.push("Part of the drawing runs off the paper. Move the drawing, or check the paper size and where the paper sits.");
+      if (fp.rotated) list.push("This drawing is taller than it is wide, so it will be turned sideways to fit the plotter.");
+      list.push(...(estimate.warnings || []).map(cleanNote));
+    }
+    list.push(...(plotterLog || []).map(cleanNote));
+    return [...new Set(list)];
+  }, [estimate, fp, onBed, onPaper, plotterLog]);
+
+  let actionMessage: Message | null = localMessage;
+  if (!actionMessage && status) {
+    if (status.state === "testing") actionMessage = { text: "Lowering and raising the pen…" };
+    else if (status.message && lastAction !== "manual") {
+      actionMessage = { text: status.message, tone: status.state === "error" ? "error" : status.state === "finished" ? "ok" : undefined };
+    } else if (fileName && !onBed) {
+      actionMessage = { text: "At this position the drawing goes past the plotter’s reach. Move it closer to home to plot it.", tone: "error" };
+    } else if (fileName && !status.plotter_found) {
+      actionMessage = { text: "Connect the plotter by USB and turn it on to plot." };
+    }
+  }
+
+  let machineMessage: Message | null = machineError ? { text: machineError, tone: "error" } : null;
+  if (!machineMessage && status && lastAction === "manual") {
+    if (status.state === "moving") machineMessage = { text: status.message || "Moving…" };
+    else if (status.state === "testing") machineMessage = { text: "Lowering and raising the pen…" };
+    else if (status.message) machineMessage = { text: status.message, tone: status.state === "error" ? "error" : undefined };
+  }
+
+  // Drag a file anywhere onto the page.
+  const uploadRef = useRef(uploadFile);
+  uploadRef.current = uploadFile;
+  const [draggingFile, setDraggingFile] = useState(false);
+  useEffect(() => {
+    let depth = 0;
+    const enter = (e: DragEvent) => {
+      if (!e.dataTransfer?.types.includes("Files") || isBusy(refs.current.status)) return;
+      depth++;
+      setDraggingFile(true);
+    };
+    const leave = () => {
+      depth = Math.max(0, depth - 1);
+      if (!depth) setDraggingFile(false);
+    };
+    const over = (e: DragEvent) => e.preventDefault();
+    const drop = (e: DragEvent) => {
+      e.preventDefault();
+      depth = 0;
+      setDraggingFile(false);
+      uploadRef.current(e.dataTransfer?.files[0]);
+    };
+    window.addEventListener("dragenter", enter);
+    window.addEventListener("dragleave", leave);
+    window.addEventListener("dragover", over);
+    window.addEventListener("drop", drop);
+    return () => {
+      window.removeEventListener("dragenter", enter);
+      window.removeEventListener("dragleave", leave);
+      window.removeEventListener("dragover", over);
+      window.removeEventListener("drop", drop);
+    };
+  }, []);
+  return (
+    <div className={styles.app}>
+      <Header plotterFound={Boolean(status?.plotter_found)} lostContact={lostContact} />
+
+      <main className={styles.layout}>
+        <section className={styles.stage} aria-label="Drawing preview">
+          <div className={styles.bedArea}>
+            <Bed
+              zoom={zoom}
+              model={model}
+              settings={settings}
+              preview={preview}
+              footprint={fp}
+              fitsOnBed={onBed}
+              fitsOnPaper={onPaper}
+              placement={placement}
+              onPlacementChange={setPlacement}
+              carriage={status?.carriage}
+              showPenUp={showPenUp}
+              hasFile={Boolean(fileName)}
+              draggingFile={draggingFile}
+              canDrag={!busy}
+              onChooseFile={uploadFile}
+            />
+            <ZoomControl
+              zoom={zoom}
+              canPaper={settings.paper_w > 0 && settings.paper_h > 0}
+              canDrawing={Boolean(fp)}
+              onZoom={setZoomChoice}
+            />
+          </div>
+
+          <Disclosure title="Drawing position">
+            <PositionSection
+              placement={placement}
+              units={settings.units}
+              disabled={plotting}
+              onChange={(p) => setPlacement(p)}
+              paperX={settings.paper_x}
+              paperY={settings.paper_y}
+              onPaperChange={updateSettings}
+            />
+          </Disclosure>
+
+          <Disclosure title="Plot options">
+            <PlotOptionsSection settings={settings} disabled={plotting} onChange={updateSettings} />
+          </Disclosure>
+
+          <MachinePanel
+            model={model}
+            units={settings.units}
+            carriage={status?.carriage}
+            stepIndex={stepIndex}
+            onStepIndex={setStepIndex}
+            busy={busy}
+            walkSupported={info?.walk_supported ?? true}
+            message={machineMessage}
+            onWalk={walk}
+            onHome={() => manual("home")}
+            onRaise={() => manual("raise_pen")}
+            onLower={() => manual("lower_pen")}
+            onRelease={() => manual("release")}
+            onSetupHeight={() => manual("pen_setup")}
+            onTestPen={() => manual("pen_test")}
+          />
+
+          <PlotSummary
+            estimate={preview ? estimate : null}
+            preview={preview}
+            units={settings.units}
+            rotated={Boolean(fp?.rotated)}
+            showPenUp={showPenUp}
+            onShowPenUp={setShowPenUp}
+          />
+        </section>
+
+        <div className={styles.side}>
+          <PlotProgress status={status} />
+          <ActionBar
+            message={actionMessage}
+            plotting={plotting}
+            stopping={status?.state === "stopping" || status?.state === "returning"}
+            canPlot={!busy && Boolean(fileName) && Boolean(estimate) && onBed}
+            preparing={status?.state === "preparing"}
+            onPlot={startPlot}
+            onStop={stopPlot}
+          />
+          <Card variant="flat" className={`${styles.controls} ${styles.fileCard}`}>
+            <DrawingNotes notes={notes} className={styles.fileNotes} />
+            <div className={styles.cardBody}>
+              <FileSection
+                fileName={fileName}
+                busy={busy}
+                preview={preview}
+                previewScale={previewScale}
+                scale={scale}
+                units={settings.units}
+                onScale={setScale}
+                onChoose={uploadFile}
+                onClear={clearFile}
+              />
+            </div>
+          </Card>
+          <Card variant="flat" className={styles.controls}>
+            <div className={styles.cardBody}>
+              <PresetSection
+                presets={presets}
+                active={active}
+                changed={presetChanged}
+                disabled={plotting}
+                onApply={applyPreset}
+                onSave={savePreset}
+                onDelete={deletePreset}
+              />
+            </div>
+          </Card>
+          <Card variant="flat" className={styles.controls}>
+            <div className={styles.cardBody}>
+              <PaperSection
+                settings={settings}
+                disabled={plotting}
+                onPickSize={pickPaperSize}
+                onChange={(patch) => updateSettings(patch)}
+              />
+            </div>
+          </Card>
+          {(SHOW_PEN_AND_SPEED || SHOW_PLOTTER_MODEL) && (
+            <Card variant="flat" className={styles.controls}>
+              <form className={styles.controlsForm} onSubmit={(e) => e.preventDefault()} autoComplete="off">
+                {SHOW_PEN_AND_SPEED && (
+                  <>
+                    <PenSection
+                      settings={settings}
+                      disabled={plotting}
+                      busy={busy}
+                      onChange={updateSettings}
+                      onSetupHeight={() => manual("pen_setup")}
+                      onTest={() => manual("pen_test")}
+                    />
+                    <SpeedSection settings={settings} handling={info?.handling ?? []} disabled={plotting} onChange={updateSettings} />
+                  </>
+                )}
+                {SHOW_PLOTTER_MODEL && (
+                  <PlotterSection settings={settings} models={info?.models ?? []} disabled={plotting} onChange={updateSettings} />
+                )}
+              </form>
+            </Card>
+          )}
+        </div>
+      </main>
+    </div>
+  );
+}

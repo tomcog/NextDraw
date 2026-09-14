@@ -1,0 +1,64 @@
+.panel {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 1rem 1.5rem;
+}
+
+.jog {
+  display: grid;
+  grid-template-columns: repeat(3, auto);
+  grid-template-areas:
+    ".    up   ."
+    "left home right"
+    ".    down .";
+  gap: 0.25rem;
+  place-items: center;
+  flex: none;
+}
+
+.up { grid-area: up; }
+.left { grid-area: left; }
+.home { grid-area: home; }
+.right { grid-area: right; }
+.down { grid-area: down; }
+
+.side {
+  flex: 1;
+  min-width: 15rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+
+.stepRow {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+}
+
+.stepLabel,
+.readout {
+  font-size: 0.8125rem;
+  color: var(--ui-text-muted);
+}
+
+.readout {
+  margin: 0;
+  font-variant-numeric: tabular-nums;
+}
+
+.buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.status {
+  margin: 0;
+  min-height: 1.45em;
+  font-size: 0.8125rem;
+}
+
+.status[data-tone="error"] { color: var(--ui-danger); }

@@ -1,0 +1,4 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1.2in" height="1.2in" viewBox="0 0 1.2 1.2">
+  <!-- A 1 in circle with 0.1 in of space around it -->
+  <circle cx="0.6" cy="0.6" r="0.5" fill="none" stroke="black" stroke-width="0.01"/>
+</svg>

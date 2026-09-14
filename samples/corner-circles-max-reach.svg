@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="34.02in" height="23.39in" viewBox="0 0 34.02 23.39">
+  <!-- 1 in circles in the four corners of the full-reach border (border line at 0.35 in inside the
+       2234's reach), each with 0.1 in of space from the border. Order: top-left, top-right,
+       bottom-right, bottom-left, to keep the pen-up travel short. -->
+  <g fill="none" stroke="black" stroke-width="0.01">
+    <circle cx="0.95" cy="0.95" r="0.5"/>
+    <circle cx="33.07" cy="0.95" r="0.5"/>
+    <circle cx="33.07" cy="22.44" r="0.5"/>
+    <circle cx="0.95" cy="22.44" r="0.5"/>
+  </g>
+</svg>

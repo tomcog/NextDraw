@@ -1,0 +1,50 @@
+/* Layer order is fixed the first time a name is seen: base, then the library, then the app. */
+@layer base, ui, app;
+
+@layer base {
+  *, *::before, *::after { box-sizing: border-box; }
+  html, body { margin: 0; }
+  body {
+    background: var(--ui-surface-pale);
+    color: var(--ui-text-default);
+    font-size: 15px;
+    line-height: 1.45;
+    min-height: 100vh;
+  }
+  [hidden] { display: none !important; }
+  :focus-visible { outline: 2px solid var(--ui-primary); outline-offset: 2px; }
+  details > summary { cursor: pointer; }
+}
+
+@layer app {
+  /* Pen paths inside the NextDraw software's preview SVG (classes added in lib/preview.ts). */
+  .pv-down path {
+    stroke: var(--nd-ink) !important;
+    stroke-width: 1.4px !important;
+    vector-effect: non-scaling-stroke;
+  }
+  .pv-up path {
+    stroke: var(--nd-pen-up) !important;
+    stroke-width: 1px !important;
+    stroke-dasharray: 3 3;
+    vector-effect: non-scaling-stroke;
+  }
+  .hide-pen-up .pv-up { display: none; }
+}
+
+/* App-only colours for the plotter preview, built on the library's semantic tokens where one fits. */
+:root {
+  --nd-ink: #2143c6;
+  --nd-pen-up: #e3a3b3;
+  --nd-bed: #e4e7e6;
+  --nd-grid: #d6dbd9;
+  --nd-sheet: #ffffff;
+  --nd-caution: #edc421;
+}
+[data-theme="dark"] {
+  --nd-ink: #7e98ff;
+  --nd-pen-up: #b77585;
+  --nd-bed: #1b1f21;
+  --nd-grid: #252b2e;
+  --nd-sheet: #2a2f32;
+}

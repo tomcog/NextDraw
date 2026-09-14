@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>NextDraw Studio</title>
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M2 14 L11 5 L13 3 L14 4 L12 6 L3 15 Z' fill='%23d6322b'/%3E%3C/svg%3E" />
+    <script>
+      // Follow the system light/dark setting using the component library's data-theme switch.
+      (function () {
+        var q = window.matchMedia("(prefers-color-scheme: dark)");
+        var apply = function () { document.documentElement.dataset.theme = q.matches ? "dark" : "light"; };
+        apply();
+        q.addEventListener("change", apply);
+      })();
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

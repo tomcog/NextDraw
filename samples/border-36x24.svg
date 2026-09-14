@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="34in" height="23.2in" viewBox="0 0 34 23.2">
+  <!-- Border test for 36 x 24 in paper with its corner at home.
+       1 in margin on the left, top and bottom. The right side stops at 33.9 in, just inside the
+       NextDraw 2234's 34.02 in reach, so the right margin is 2.1 in.
+       The page is smaller than the paper so the whole file stays within the plotter's reach. -->
+  <rect x="1" y="1" width="32.9" height="22" fill="none" stroke="black" stroke-width="0.01"/>
+</svg>

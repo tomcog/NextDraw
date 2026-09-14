@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="18in" height="12in" viewBox="0 0 18 12">
+<!-- Border test for 18 x 12 in paper: one rectangle inset 0.35 in from every edge.
+     Checks pen contact across the whole sheet, where the arm is farthest from the plotter body. -->
+<rect x="0.35" y="0.35" width="17.3" height="11.3" fill="none" stroke="black" stroke-width="0.01"/>
+</svg>

@@ -1,0 +1,36 @@
+/* Placed by the parent (see App.module.css .fileNotes). */
+.root {
+  z-index: 5;
+}
+
+/* The library has no caution colour, so the app supplies one through ButtonRound's own override hooks. */
+.button {
+  --ui-button-round-ghost-icon: var(--nd-caution);
+  --ui-button-round-bg-hover: color-mix(in srgb, var(--nd-caution) 18%, transparent);
+  --ui-button-round-icon-hover: var(--nd-caution);
+  --ui-button-round-bg-active: color-mix(in srgb, var(--nd-caution) 30%, transparent);
+  --ui-button-round-icon-active: var(--nd-caution);
+}
+
+.callout {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 0.4rem);
+  width: min(26rem, calc(100vw - 2rem));
+  padding: 0.75rem 1rem;
+  background: var(--ui-surface-raised);
+  border: 1px solid var(--ui-border-default);
+  border-top: 3px solid var(--nd-caution);
+  border-radius: 6px;
+  box-shadow: var(--ui-shadow-float-2);
+}
+
+.list {
+  margin: 0;
+  padding-left: 1rem;
+  font-size: 0.8125rem;
+  line-height: 1.45;
+  color: var(--ui-text-default);
+}
+
+.list li + li { margin-top: 0.4rem; }

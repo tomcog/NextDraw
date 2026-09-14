@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="34.02in" height="23.39in" viewBox="0 0 34.02 23.39">
+  <!-- Same as corner-circles-max-reach.svg, but each circle moved 1/8 in further in from its
+       corner (across and down), so a retest doesn't draw on top of the first run.
+       Order: top-left, top-right, bottom-right, bottom-left. -->
+  <g fill="none" stroke="black" stroke-width="0.01">
+    <circle cx="1.075" cy="1.075" r="0.5"/>
+    <circle cx="32.945" cy="1.075" r="0.5"/>
+    <circle cx="32.945" cy="22.315" r="0.5"/>
+    <circle cx="1.075" cy="22.315" r="0.5"/>
+  </g>
+</svg>

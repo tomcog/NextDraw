@@ -1,0 +1,241 @@
+.section {
+  border: 0;
+  margin: 0;
+  padding: 0.5rem 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  min-width: 0;
+}
+
+.legend {
+  float: left;
+  width: 100%;
+  padding: 0;
+  margin-bottom: 0.125rem;
+  font-weight: 600;
+}
+
+.legend + * { clear: both; }
+
+.hint {
+  margin: 0;
+  font-size: 0.8125rem;
+  color: var(--ui-text-muted);
+}
+
+.stack {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.buttonRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.row2 {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 0.75rem;
+  align-items: end;
+}
+
+.position,
+.plotOptions {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  max-width: 26rem;
+}
+
+.offsetGroup {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+/* A field with a word inside it, after the value ("across", "down"). */
+.suffixed {
+  position: relative;
+}
+
+.suffix {
+  position: absolute;
+  top: 0;
+  right: 0.5rem;
+  height: var(--ui-input-text-height, 32px);
+  display: flex;
+  align-items: center;
+  font-size: 0.8125rem;
+  color: var(--ui-text-muted);
+  pointer-events: none;
+}
+
+.subheading {
+  margin: 0;
+  font-size: 0.8125rem;
+  font-weight: 400;
+  color: var(--ui-text-default);
+}
+
+/* Same columns in every group, so all the fields line up at one width. */
+.offsetRow {
+  display: grid;
+  grid-template-columns: 9.5rem 9.5rem auto;
+  gap: 0.75rem;
+  align-items: center;
+}
+
+.row3 {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto;
+  gap: 0.75rem;
+  align-items: end;
+}
+
+.fileRow {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.scaleRow {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.scaleField { width: 5.5rem; flex: none; }
+
+.dimensions p { margin: 0; }
+
+.dimensions {
+  margin: 0;
+  font-size: 0.75rem;
+  color: var(--ui-text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.fileName {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--ui-text-muted);
+}
+
+.fileName[data-has-file="true"] {
+  color: var(--ui-text-default);
+  font-weight: 500;
+}
+
+.paperHead {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 0.75rem;
+  align-items: center;
+}
+
+.unitsGroup {
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+}
+
+.more {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.more > summary {
+  font-size: 0.8125rem;
+  color: var(--ui-text-muted);
+}
+
+.more[open] > summary { margin-bottom: 0.25rem; }
+
+/* Slider: native range + library InputText */
+.slider {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 4.25rem;
+  column-gap: 0.75rem;
+  align-items: center;
+}
+
+.sliderLabel {
+  grid-column: 1 / -1;
+  font-size: 0.8125rem;
+  color: var(--ui-text-muted);
+}
+
+.sliderNumber input {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.slider input[type="range"] {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 100%;
+  height: 1.5rem;
+  margin: 0;
+  background: transparent;
+}
+
+.slider input[type="range"]::-webkit-slider-runnable-track {
+  height: 3px;
+  border-radius: 2px;
+  background: linear-gradient(to right, var(--ui-primary) var(--fill), var(--ui-surface-muted) var(--fill));
+}
+
+.slider input[type="range"]::-moz-range-track {
+  height: 3px;
+  border-radius: 2px;
+  background: linear-gradient(to right, var(--ui-primary) var(--fill), var(--ui-surface-muted) var(--fill));
+}
+
+.slider input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 0.9rem;
+  height: 0.9rem;
+  margin-top: calc(-0.45rem + 1.5px);
+  border-radius: 50%;
+  background: var(--ui-surface-raised);
+  border: 3px solid var(--ui-primary);
+}
+
+.slider input[type="range"]::-moz-range-thumb {
+  width: 0.55rem;
+  height: 0.55rem;
+  border-radius: 50%;
+  background: var(--ui-surface-raised);
+  border: 3px solid var(--ui-primary);
+}
+
+.slider input[type="range"]:disabled { opacity: 0.45; }
+
+/* Action bar */
+.actions {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.wide { width: 100%; }
+
+.status {
+  margin: 0;
+  min-height: 1.45em;
+  font-size: 0.8125rem;
+  color: var(--ui-text-muted);
+}
+
+.status[data-tone="error"] { color: var(--ui-danger); }
+.status[data-tone="ok"] { color: var(--ui-confirm); }
+
+
