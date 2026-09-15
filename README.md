@@ -105,6 +105,7 @@ alongside its `InputText`. The plotter preview and progress line are app-specifi
 - `samples/` – test drawings
 - `jobs/` – the most recently loaded SVG (created automatically)
 - `presets.json` – saved pen presets (created when you save one)
+- `devtools/` – a simulated plotter, to run the app where there's no NextDraw attached (see `devtools/README.md`)
 
 ## Deployment notes
 
