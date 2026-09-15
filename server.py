@@ -3,6 +3,8 @@ NextDraw Studio: a local web GUI for the Bantam Tools NextDraw Python API.
 
 Run:  .venv/bin/python server.py
 Then open http://127.0.0.1:5055
+
+Add --lan to also serve the page to phones, tablets and other computers on the same network.
 """
 
 import inspect
@@ -11,6 +13,7 @@ import logging
 import os
 import re
 import shutil
+import socket
 import subprocess
 import sys
 import tempfile
@@ -1758,10 +1761,31 @@ def delete_preset(name):
     return jsonify(presets=presets)
 
 
+def lan_addresses():
+    """How other devices on the network can reach this computer: its Bonjour name and its IP address."""
+    names = []
+    host = socket.gethostname()
+    if host:
+        names.append(host if host.endswith(".local") else f"{host}.local")
+    try:
+        # Connecting a UDP socket sends nothing; it only picks the interface that routes outward.
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as probe:
+            probe.connect(("192.0.2.1", 80))
+            names.append(probe.getsockname()[0])
+    except OSError:
+        pass
+    return names
+
+
 if __name__ == "__main__":
     logging.getLogger("werkzeug").setLevel(logging.WARNING)
+    lan = "--lan" in sys.argv
     url = f"http://{HOST}:{PORT}"
     print(f"NextDraw Studio running at {url}  (Ctrl+C to quit)")
+    if lan:
+        for name in lan_addresses():
+            print(f"  On this network: http://{name}:{PORT}")
+        print("  Anyone on this network can use the plotter and open drawings from the app's folders.")
     if "--no-browser" not in sys.argv:
         threading.Timer(1.0, lambda: webbrowser.open(url)).start()
-    app.run(host=HOST, port=PORT, threaded=True)
+    app.run(host="0.0.0.0" if lan else HOST, port=PORT, threaded=True)

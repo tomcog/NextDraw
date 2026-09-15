@@ -67,14 +67,18 @@ Progress is measured by pen-down distance, the same measure the software uses to
 
 ## Start
 
-Double-click `start.command`, or run:
+Double-click `start.command`. It opens http://127.0.0.1:5055 in your browser, and phones, tablets
+and other computers on the same Wi-Fi can open it too, at the addresses it prints (this Mac's
+`.local` name and its IP address). macOS may ask whether Python can accept incoming connections;
+allow it. There's no login, so anyone on the network can drive the plotter and open or save
+drawings in the app's folders. Use it on a network you trust.
+
+`start.command` runs `server.py --lan`. To keep the app on this computer only, run it without the
+flag:
 
 ```bash
 .venv/bin/python server.py
 ```
-
-It opens http://127.0.0.1:5055 in your browser. The app only listens on this
-computer.
 
 ## Set up from scratch
 

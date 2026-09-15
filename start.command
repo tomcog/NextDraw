@@ -49,5 +49,5 @@ if [ ! -f static/index.html ] || [ "$(cat static/.built-from 2>/dev/null)" != "$
   fi
 fi
 
-# 4. Start. The page opens in the default browser.
-exec .venv/bin/python server.py
+# 4. Start. The page opens in the default browser, and other devices on this network can open it too.
+exec .venv/bin/python server.py --lan
