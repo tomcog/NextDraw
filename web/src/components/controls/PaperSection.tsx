@@ -1,5 +1,6 @@
+import { useState } from "react";
 import { ButtonRound, InputSelect, Segment, SegmentedControl } from "@tomcoggia/ui";
-import { Pipette, Ratio } from "lucide-react";
+import { Palette, Pipette, Ratio } from "lucide-react";
 import styles from "./controls.module.css";
 import { LengthField } from "./LengthField";
 import { Section } from "./Section";
@@ -27,6 +28,8 @@ const PAPER_COLORS = [
 export function PaperSection({ settings: s, disabled, onPickSize, onChange }: Props) {
   const custom = s.paper_size === "custom";
   const landscape = s.paper_w >= s.paper_h;
+  // Paper color rarely changes, so its swatches stay tucked behind the Palette button.
+  const [colorsOpen, setColorsOpen] = useState(false);
 
   // Each size is named in the chosen unit and in the sheet's current orientation (width × height),
   // so the list reflects Rotate and in/mm. Custom shows the typed size.
@@ -36,7 +39,21 @@ export function PaperSection({ settings: s, disabled, onPickSize, onChange }: Pr
     return p.w ? dims : `Custom size (${dims})`;
   };
   return (
-    <Section title="Paper">
+    <Section
+      title="Paper"
+      action={
+        <ButtonRound
+          size="sm"
+          icon={<Palette />}
+          className={colorsOpen ? styles.roundActive : undefined}
+          aria-label="Paper color"
+          aria-expanded={colorsOpen}
+          aria-controls="paper-colors"
+          title={colorsOpen ? "Hide paper colors" : "Paper color"}
+          onClick={() => setColorsOpen((open) => !open)}
+        />
+      }
+    >
       <div className={styles.paperHead}>
         <InputSelect size="md" label="Paper size" hideLabel value={s.paper_size} disabled={disabled} onChange={(e) => onPickSize(e.target.value)}>
           {PAPER_SIZES.map((p) => <option key={p.id} value={p.id}>{sizeName(p)}</option>)}
@@ -57,7 +74,7 @@ export function PaperSection({ settings: s, disabled, onPickSize, onChange }: Pr
         </div>
       </div>
 
-      <div className={styles.paperColors} role="radiogroup" aria-label="Paper color">
+      {colorsOpen && <div id="paper-colors" className={styles.paperColors} role="radiogroup" aria-label="Paper color">
         {PAPER_COLORS.map((c) => (
           <button
             key={c.color}
@@ -94,7 +111,7 @@ export function PaperSection({ settings: s, disabled, onPickSize, onChange }: Pr
             </label>
           );
         })()}
-      </div>
+      </div>}
 
       {custom && (
         <div className={styles.row2}>

@@ -68,7 +68,8 @@ export interface Status {
   done_mm: number;
   total_mm: number;
   estimate_s: number;
-  speed_pct: number; // the running plot's speed, as a percentage of its tool's speeds
+  speed_pct: number;
+  plot_paths: number | null; // the plot in progress has saved paths (changes with each new plot) // the running plot's speed, as a percentage of its tool's speeds
   elapsed_s: number;
   started: boolean;
   log: string[];

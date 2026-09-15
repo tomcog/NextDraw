@@ -6,6 +6,7 @@ import { BUSY_STATES, DEFAULT_SETTINGS, DEFAULT_TOOL, PAPER_SIZES, PLOTTING_STAT
 import { cleanNote } from "./lib/format";
 import { lightness } from "./lib/color";
 import { fitsOnBed, fitsOnPaper, footprint } from "./lib/geometry";
+import { parsePlotPaths, type PlotPaths } from "./lib/progressPaths";
 import { parsePreview, type Preview } from "./lib/preview";
 import { load, save } from "./lib/storage";
 import type { Confirmation, Estimate, Info, Layer, LayerEdits, PenColor, LayerView, Message, Placement, Preset, Settings, Status, Studio } from "./lib/types";
@@ -677,6 +678,34 @@ export default function App() {
     }
   };
 
+  /* ---------- What's left of the plot in progress ---------- */
+
+  // Off unless asked for. The paths are fetched when it's turned on, and again for a new plot.
+  const [showLeft, setShowLeft] = useState(false);
+  const [plotPaths, setPlotPaths] = useState<{ version: number; paths: PlotPaths } | null>(null);
+  const pathsVersion = status?.plot_paths ?? null;
+  useEffect(() => {
+    if (!pathsVersion) {
+      setShowLeft(false);
+      setPlotPaths(null);
+      return;
+    }
+    if (!showLeft || plotPaths?.version === pathsVersion) return;
+    let cancelled = false;
+    fetch(`/api/plot-paths?v=${pathsVersion}`)
+      .then((res) => (res.ok ? res.text() : Promise.reject(new Error("No plot paths"))))
+      .then((text) => {
+        const paths = parsePlotPaths(text);
+        if (!cancelled && paths) setPlotPaths({ version: pathsVersion, paths });
+      })
+      .catch(() => { if (!cancelled) setShowLeft(false); });
+    return () => { cancelled = true; };
+  }, [showLeft, pathsVersion, plotPaths?.version]);
+  const shownPlotPaths = showLeft && plotPaths?.version === pathsVersion ? plotPaths.paths : null;
+  const liveProgress = status && ["preparing", "plotting", "stopping", "returning", "finished", "stopped", "error"].includes(status.state) && status.started;
+  const progressOf = liveProgress ? status : status?.resume;
+  const plotFraction = progressOf?.total_mm ? progressOf.done_mm / progressOf.total_mm : 0;
+
   /* ---------- Presets ---------- */
 
   const active = presets.find((p) => p.name === activePreset);
@@ -857,6 +886,8 @@ export default function App() {
               layerLooks={layerLooks}
               penWidthMm={active?.settings.pen_width ?? settings.pen_width}
               layerPenWidths={secondTool ? layerPenWidths : undefined}
+              plotPaths={shownPlotPaths}
+              plotFraction={plotFraction}
               toolbar={
                 <ZoomControl
                   zoom={zoom}
@@ -864,6 +895,8 @@ export default function App() {
                   canDrawing={Boolean(fp)}
                   onZoom={setZoomChoice}
                   updating={updating}
+                  showLeft={status?.plot_paths ? showLeft : null}
+                  onShowLeft={setShowLeft}
                 />
               }
             />

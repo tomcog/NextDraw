@@ -5,6 +5,7 @@ import { MM, UNITS } from "../lib/constants";
 import { fmtIn } from "../lib/format";
 import { maxPlacement, type Footprint } from "../lib/geometry";
 import type { Preview } from "../lib/preview";
+import { showProgress, type PlotPaths } from "../lib/progressPaths";
 import type { Carriage, Placement, PlotterModel, Settings } from "../lib/types";
 
 export type Zoom = "plotter" | "paper" | "drawing";
@@ -30,6 +31,8 @@ interface Props {
   toolbar?: ReactNode; // sits on the width dimension line, at its right end
   layerLooks: Record<string, { color: string | null; skipped: boolean; hidden: boolean }> | null;
   penWidthMm?: number; // draw lines at the pen's real width; undefined keeps a hairline
+  plotPaths?: PlotPaths | null; // show the plot in progress, drawn and left to draw, instead of the preview
+  plotFraction?: number; // how much of it is drawn, 0-1
   layerPenWidths?: Record<string, number | undefined>; // per layer id, when layers use different tools // by layer id; null draws the pen path
 }
 
@@ -47,6 +50,26 @@ export function Bed(props: Props) {
   const { model, settings: s, preview, footprint: fp, placement, carriage, showPenUp } = props;
   const svgRef = useRef<SVGSVGElement>(null);
   const artRef = useRef<SVGGElement>(null);
+  const progressRef = useRef<SVGGElement>(null);
+  const { plotPaths, plotFraction = 0 } = props;
+
+  useLayoutEffect(() => {
+    const host = progressRef.current;
+    if (!host) return;
+    host.replaceChildren();
+    if (!plotPaths) return;
+    const { node, widthIn, heightIn } = plotPaths.preview;
+    node.setAttribute("x", "0");
+    node.setAttribute("y", "0");
+    node.setAttribute("width", String(widthIn * UNITS));
+    node.setAttribute("height", String(heightIn * UNITS));
+    node.setAttribute("overflow", "visible");
+    host.appendChild(node);
+  }, [plotPaths]);
+
+  useLayoutEffect(() => {
+    if (plotPaths) showProgress(plotPaths, plotFraction);
+  }, [plotPaths, plotFraction]);
   const [drag, setDrag] = useState<Drag | null>(null);
 
   // The preview is a parsed SVG node from the NextDraw software; mount it imperatively.
@@ -260,7 +283,7 @@ export function Bed(props: Props) {
 
         <g className={styles.placed} data-drag="" data-dragging={Boolean(drag)} style={fp ? undefined : { display: "none" }}>
           {fp && <rect className={styles.dragTarget} x={fp.x * UNITS} y={fp.y * UNITS} width={fp.w * UNITS} height={fp.h * UNITS} />}
-          <g ref={artRef} transform={artTransform} className={showPenUp ? undefined : "hide-pen-up"} />
+          <g ref={artRef} transform={artTransform} className={showPenUp ? undefined : "hide-pen-up"} style={plotPaths ? { display: "none" } : undefined} />
           {fp && (
             <rect
               className={styles.sheetEdge}
@@ -272,6 +295,13 @@ export function Bed(props: Props) {
             />
           )}
         </g>
+
+        <g
+          ref={progressRef}
+          className="pv-progress"
+          transform={plotPaths ? `translate(${plotPaths.xMm * MM} ${plotPaths.yMm * MM})` : undefined}
+          style={plotPaths ? undefined : { display: "none" }}
+        />
 
         <circle className={styles.home} cx={0} cy={0} r={font * 0.28} />
 

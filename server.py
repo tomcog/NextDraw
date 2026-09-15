@@ -62,6 +62,8 @@ ALLOWED_FOLDERS = list(FOLDER_NAMES)
 # which is what its res_plot mode resumes from. The JSON keeps what this app needs to resume it.
 RESUME_SVG = JOBS / "resume.svg"
 RESUME_META = JOBS / "resume.json"
+# The pen-down paths of the plot in progress, in the order they're drawn, for showing what's left.
+PLOT_PATHS = JOBS / "plot-paths.svg"
 
 # Settings the GUI may change, with (min, max) limits from the NextDraw docs.
 NUMERIC_SETTINGS = {
@@ -699,7 +701,7 @@ def load_resume():
 
 
 def clear_resume():
-    for path in (RESUME_SVG, RESUME_META):
+    for path in (RESUME_SVG, RESUME_META, PLOT_PATHS):
         path.unlink(missing_ok=True)
 
 
@@ -769,6 +771,27 @@ def apply_live_speed(nd, settings, pct):
     nd.speed_penup = nd.options.speed_penup * params.speed_up / 100.0
 
 
+def save_plot_paths(preview_svg, placement):
+    """
+    Keep the simulated plot's pen-down movement: one path, drawn in plot order, starting a new
+    subpath at each pen lowering. The page measures along it to show what's been drawn. The
+    artwork and pen-up moves are left out; where the drawing sits is kept on the root.
+    """
+    from lxml import etree
+    root = etree.fromstring(preview_svg.encode("utf8"), etree.XMLParser(huge_tree=True))
+    label = f"{INKSCAPE_NS}label"
+    for child in list(root):
+        if child.get(label) != "% Preview":
+            root.remove(child)
+            continue
+        for group in list(child):
+            if group.get(label) != "Pen-down movement":
+                child.remove(group)
+    root.set("data-x-mm", str(placement["x"]))
+    root.set("data-y-mm", str(placement["y"]))
+    PLOT_PATHS.write_bytes(etree.tostring(root))
+
+
 def run_plot(settings, placement, resume=None):
     """Plot the loaded drawing, or resume a stopped plot (resume = its saved metadata)."""
     log = job.log
@@ -779,7 +802,13 @@ def run_plot(settings, placement, resume=None):
             clear_resume()  # a new plot replaces any stopped one
             source, mode = svg_input(placement["scale"], placement.get("layer"), placement.get("rotation", 0)), "plot"
 
-        estimate = dry_run(scaled_speeds(settings, job.speed_pct), render=False, source=source, mode=mode)
+        # A new plot's simulation also draws its paths; a resumed plot keeps the ones saved when it began.
+        estimate = dry_run(scaled_speeds(settings, job.speed_pct), render=not resume, source=source, mode=mode)
+        if not resume and estimate["preview_svg"]:
+            try:
+                save_plot_paths(estimate["preview_svg"], placement)
+            except Exception:  # noqa: BLE001 - only the "what's left" view goes without
+                PLOT_PATHS.unlink(missing_ok=True)
         problem = placement_problem(settings, placement, estimate)
         if problem:
             with job.lock:
@@ -1153,6 +1182,9 @@ def status():
         snap["carriage"] = dict(carriage)
     snap["plotter_found"] = bool(ebb_serial.listEBBports())
     resume = load_resume()
+    live = snap["state"] in ("preparing", "plotting", "stopping")
+    # Changes when a new plot saves its paths, so the page knows to fetch them again.
+    snap["plot_paths"] = PLOT_PATHS.stat().st_mtime_ns if (live or resume) and PLOT_PATHS.exists() else None
     snap["resume"] = {
         "done_mm": resume["done_mm"], "total_mm": resume["total_mm"],
         "speed_pct": resume.get("speed_pct", 100),
@@ -1744,6 +1776,13 @@ def discard_resume():
         job.thread = threading.Thread(target=run_manual, args=("home", settings, 0.0, None), daemon=True)
         job.thread.start()
     return jsonify(ok=True)
+
+
+@app.get("/api/plot-paths")
+def plot_paths():
+    if not PLOT_PATHS.exists():
+        return jsonify(error="There's no plot in progress."), 404
+    return send_from_directory(JOBS, PLOT_PATHS.name, mimetype="image/svg+xml", max_age=0)
 
 
 @app.post("/api/speed")

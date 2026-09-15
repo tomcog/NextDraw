@@ -1,5 +1,5 @@
-import { Segment, SegmentedControl, Spinner } from "@tomcoggia/ui";
-import { FileImage, Grid3x3, StickyNote } from "lucide-react";
+import { ButtonRound, Segment, SegmentedControl, Spinner } from "@tomcoggia/ui";
+import { FileImage, Grid3x3, Route, StickyNote } from "lucide-react";
 import styles from "./Bed.module.css";
 import type { Zoom } from "./Bed";
 
@@ -9,11 +9,13 @@ interface Props {
   canDrawing: boolean;
   onZoom: (zoom: Zoom) => void;
   updating: boolean; // the plot simulation is still working out pen paths and time
+  showLeft: boolean | null; // showing what's left of the plot in progress; null when there's no plot to show
+  onShowLeft: (on: boolean) => void;
 }
 
 // Preset zooms for the preview: the plotter's full area, the paper, or the drawing. Bed places it on
 // the width dimension line.
-export function ZoomControl({ zoom, canPaper, canDrawing, onZoom, updating }: Props) {
+export function ZoomControl({ zoom, canPaper, canDrawing, onZoom, updating, showLeft, onShowLeft }: Props) {
   return (
     <div className={styles.zoom}>
       {updating && canDrawing && (
@@ -21,6 +23,17 @@ export function ZoomControl({ zoom, canPaper, canDrawing, onZoom, updating }: Pr
           <Spinner size={14} label="Updating" />
           Updating plot time…
         </span>
+      )}
+      {showLeft !== null && (
+        <ButtonRound
+          size="sm"
+          variant={showLeft ? "filled" : "ghost"}
+          icon={<Route />}
+          aria-label="Show what's left to draw"
+          aria-pressed={showLeft}
+          title={showLeft ? "Back to the preview" : "Show what's left to draw: lines already drawn turn green"}
+          onClick={() => onShowLeft(!showLeft)}
+        />
       )}
       <SegmentedControl size="sm" aria-label="Zoom the preview">
         <Segment selected={zoom === "plotter"} onClick={() => onZoom("plotter")} icon={<Grid3x3 />} aria-label="Plotter" title="Zoom out to the plotter's full drawing area" />

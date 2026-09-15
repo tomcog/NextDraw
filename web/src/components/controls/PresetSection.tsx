@@ -1,8 +1,9 @@
-import { useEffect, useState } from "react";
+import { useRef, useState } from "react";
 import { Button, ButtonRound, Checkbox, InputSelect, InputText } from "@tomcoggia/ui";
-import { Plus, X } from "lucide-react";
+import { PenTool, X } from "lucide-react";
 import styles from "./controls.module.css";
 import { Section } from "./Section";
+import { Slider } from "./Slider";
 import type { Preset } from "../../lib/types";
 
 interface Props {
@@ -33,15 +34,9 @@ export function PresetSection({
   secondTool, secondLayers, layers, inUse, onAddSecond, onSecondTool, onRemoveSecond, onAssign,
   smallPaths, onSmallPaths,
 }: Props) {
-  const [slowDraft, setSlowDraft] = useState(String(smallPaths ?? 50));
-  useEffect(() => setSlowDraft(String(smallPaths ?? 50)), [smallPaths]);
-  const commitSlow = (text: string) => {
-    const n = Math.round(Number(text));
-    if (!text || Number.isNaN(n)) return setSlowDraft(String(smallPaths ?? 50));
-    const next = Math.max(10, Math.min(90, n));
-    setSlowDraft(String(next));
-    if (smallPaths !== null && next !== smallPaths) onSmallPaths(next);
-  };
+  // Turning Chill-out mode back on returns to the last amount chosen.
+  const lastSlow = useRef(smallPaths ?? 50);
+  if (smallPaths !== null) lastSlow.current = smallPaths;
   const mixed = secondTool !== null;
   // Layer number chips under each tool: a layer belongs to exactly one, so turning a chip on under one
   // tool takes it off the other.
@@ -78,7 +73,7 @@ export function PresetSection({
     <Section
       title="Drawing tool"
       action={!mixed ? (
-        <ButtonRound size="sm" icon={<Plus />} aria-label="Add a second drawing tool" title="Add another preset, for a drawing that mixes pens" disabled={disabled || !presets.length} onClick={onAddSecond} />
+        <ButtonRound size="sm" icon={<PenTool />} aria-label="Add a second drawing tool" title="Add another preset, for a drawing that mixes pens" disabled={disabled || !presets.length} onClick={onAddSecond} />
       ) : undefined}
     >
       <div className={styles.toolBlock} data-in-use={inUse === "first"}>
@@ -129,23 +124,19 @@ export function PresetSection({
           checked={smallPaths !== null}
           disabled={disabled}
           title="For drawings full of tiny marks: slows acceleration, travel and drawing speed, and pen lifts, so the plotter doesn't shake"
-          onChange={(e) => onSmallPaths(e.target.checked ? Number(slowDraft) || 50 : null)}
+          onChange={(e) => onSmallPaths(e.target.checked ? lastSlow.current : null)}
         />
         {smallPaths !== null && (
-          <InputText
-            size="md"
-            className={styles.slowField}
-            label="Slower by (%)"
-            type="number"
-            inputMode="numeric"
+          // Shown as the share of the tool's speed that's kept (right is faster); stored as how much slower.
+          <Slider
+            label="Speed"
+            value={100 - smallPaths}
             min={10}
             max={90}
             step={5}
-            value={slowDraft}
+            format={(v) => `${v}%`}
             disabled={disabled}
-            onChange={(e) => setSlowDraft(e.target.value)}
-            onBlur={(e) => commitSlow(e.target.value)}
-            onKeyDown={(e) => { if (e.key === "Enter") commitSlow((e.target as HTMLInputElement).value); }}
+            onChange={(v) => onSmallPaths(100 - v)}
           />
         )}
       </div>

@@ -289,15 +289,14 @@
 }
 
 /* Small paths: the switch, and how much slower when it's on. */
+/* The checkbox stays put when the slider appears under it: the rows stack from the top. */
 .smallPaths {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 0.75rem;
+  flex-direction: column;
+  justify-content: flex-start;
+  gap: 0.25rem;
   min-height: 2.875rem;
 }
-
-.slowField { width: 5.5rem; flex: none; }
 
 .unitsGroup {
   display: flex;
@@ -324,6 +323,20 @@
   grid-template-columns: minmax(0, 1fr) 4.25rem;
   column-gap: 0.75rem;
   align-items: center;
+}
+
+.slider[data-readout="true"] { grid-template-columns: minmax(0, 1fr); }
+
+.sliderReadout {
+  float: right;
+  color: var(--ui-text-default);
+  font-variant-numeric: tabular-nums;
+}
+
+/* The label and its value, one row: 2px below the usual 13px label, in the default text color. */
+.slider[data-readout="true"] .sliderLabel {
+  font-size: 11px;
+  color: var(--ui-text-default);
 }
 
 .sliderLabel {

@@ -29,7 +29,7 @@ export const DEFAULT_SETTINGS: Settings = {
   paper_x: 0,
   paper_y: 0,
   paper_color: "#ffffff",
-  units: "mm",
+  units: "in",
 };
 
 // Settings saved in a pen preset (must match PRESET_NUMERIC in server.py). Paper isn't included.

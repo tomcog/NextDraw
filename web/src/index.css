@@ -31,6 +31,16 @@
   }
   .hide-pen-up .pv-up { display: none; }
 
+  /* The plot in progress (Show what's left to draw): lines still to draw in ink, drawn ones in green. */
+  .pv-progress .pv-down path {
+    fill: none !important;
+    stroke-width: 1.4px !important;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+    vector-effect: non-scaling-stroke;
+  }
+  .pv-progress .pv-down path.pv-drawn { stroke: var(--ui-confirm) !important; }
+
   /* The drawing on its own, shown at once while the plot simulation runs: its lines in ink. */
   .pv-artwork:not(.pv-colored) :is(path, rect, circle, ellipse, line, polyline, polygon) {
     fill: none !important;
