@@ -1301,6 +1301,12 @@ def clean_studio(raw):
         out["rotation"] = clean_rotation(raw)
     if isinstance(raw.get("tool"), str):
         out["tool"] = raw["tool"][:40]
+    # A second drawing tool for mixed-media drawings, and which layers use it (by layer id).
+    if isinstance(raw.get("second_tool"), str) and raw["second_tool"]:
+        out["second_tool"] = raw["second_tool"][:40]
+        layers = raw.get("second_tool_layers")
+        if isinstance(layers, list):
+            out["second_tool_layers"] = [str(x)[:200] for x in layers if isinstance(x, str)][:500]
     paper = raw.get("paper")
     if isinstance(paper, dict):
         cleaned = {}

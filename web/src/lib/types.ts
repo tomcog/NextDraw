@@ -126,6 +126,8 @@ export interface Studio {
   scale?: number;
   rotation?: number; // quarter turns clockwise, in degrees
   tool?: string;
+  second_tool?: string; // a second drawing tool, for drawings that mix pens
+  second_tool_layers?: string[]; // ids of the layers that use it; every other layer uses `tool`
   paper?: Partial<Pick<Settings, "paper_size" | "paper_w" | "paper_h" | "paper_x" | "paper_y" | "paper_color">>;
 }
 
@@ -153,6 +155,8 @@ export interface Confirmation {
   confirmLabel: string;
   danger?: boolean;
   onConfirm: () => void;
+  extraLabel?: string; // a third button, e.g. "Move to setup height"; it doesn't close the confirmation
+  onExtra?: () => void;
 }
 
 export interface Message {

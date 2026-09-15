@@ -1,5 +1,6 @@
 import { useState } from "react";
-import { Button, InputSelect, InputText } from "@tomcoggia/ui";
+import { Button, ButtonRound, InputSelect, InputText } from "@tomcoggia/ui";
+import { Plus, X } from "lucide-react";
 import styles from "./controls.module.css";
 import { Section } from "./Section";
 import type { Preset } from "../../lib/types";
@@ -12,12 +13,48 @@ interface Props {
   onApply: (name: string) => void;
   onSave: (name: string) => Promise<boolean>;
   onDelete: () => void;
+  secondTool: string | null; // null: one tool for the whole drawing; "" added but not chosen
+  secondLayers: string[]; // ids of the layers that use the second tool
+  layers: { id: string; number: number; color: string | null }[];
+  inUse: "first" | "second" | null; // in Plot mode, the tool of the layer chosen to print
+  onAddSecond: () => void;
+  onSecondTool: (name: string) => void;
+  onRemoveSecond: () => void;
+  onAssign: (id: string, second: boolean) => void;
 }
 
 // Save / Update / Delete are hidden for now; presets can still be chosen.
 const SHOW_PRESET_ACTIONS = false;
 
-export function PresetSection({ presets, active, changed, disabled, onApply, onSave, onDelete }: Props) {
+export function PresetSection({
+  presets, active, changed, disabled, onApply, onSave, onDelete,
+  secondTool, secondLayers, layers, inUse, onAddSecond, onSecondTool, onRemoveSecond, onAssign,
+}: Props) {
+  const mixed = secondTool !== null;
+  // Layer number chips under each tool: a layer belongs to exactly one, so turning a chip on under one
+  // tool takes it off the other.
+  const chips = (second: boolean) => (
+    <div className={styles.layerChips} role="group" aria-label={second ? "Layers using the second tool" : "Layers using the first tool"}>
+      {[...layers].sort((a, b) => a.number - b.number).map((l) => {
+        const on = secondLayers.includes(l.id) === second;
+        return (
+          <button
+            key={l.id}
+            type="button"
+            className={styles.layerChip}
+            aria-pressed={on}
+            title={`Layer ${l.number}`}
+            disabled={disabled || (second && !secondTool)}
+            onClick={() => { if (!on) onAssign(l.id, second); }}
+          >
+            {l.color && <span className={styles.layerChipDot} style={{ background: l.color }} aria-hidden />}
+            {l.number}
+          </button>
+        );
+      })}
+    </div>
+  );
+
   const [naming, setNaming] = useState(false);
   const [name, setName] = useState("");
 
@@ -26,7 +63,13 @@ export function PresetSection({ presets, active, changed, disabled, onApply, onS
   };
 
   return (
-    <Section title="Drawing tool">
+    <Section
+      title="Drawing tool"
+      action={!mixed ? (
+        <ButtonRound size="sm" icon={<Plus />} aria-label="Add a second drawing tool" title="Add another preset, for a drawing that mixes pens" disabled={disabled || !presets.length} onClick={onAddSecond} />
+      ) : undefined}
+    >
+      <div className={styles.toolBlock} data-in-use={inUse === "first"}>
       <InputSelect
         label="Drawing tool"
         hideLabel
@@ -41,6 +84,30 @@ export function PresetSection({ presets, active, changed, disabled, onApply, onS
           </option>
         ))}
       </InputSelect>
+      {mixed && layers.length > 0 && chips(false)}
+      </div>
+
+      {mixed && (
+        <div className={styles.toolBlock} data-in-use={inUse === "second"}>
+          <div className={styles.toolRow}>
+            <InputSelect
+              label="Second drawing tool"
+              hideLabel
+              value={secondTool ?? ""}
+              disabled={disabled}
+              onChange={(e) => onSecondTool(e.target.value)}
+            >
+              <option value="">Choose a preset</option>
+              {presets.filter((p) => p.name !== active?.name).map((p) => (
+                <option key={p.name} value={p.name}>{p.name}</option>
+              ))}
+              {secondTool && !presets.some((p) => p.name === secondTool) && <option value={secondTool}>{`${secondTool} (not on this Mac)`}</option>}
+            </InputSelect>
+            <ButtonRound size="sm" variant="ghost" icon={<X />} aria-label="Remove the second drawing tool" title="Remove the second tool; its layers go back to the first" disabled={disabled} onClick={onRemoveSecond} />
+          </div>
+          {layers.length > 0 && chips(true)}
+        </div>
+      )}
       {!presets.length && (
         <p className={styles.hint}>Save the heights and speeds that work for a pen, then switch back to them in one click.</p>
       )}

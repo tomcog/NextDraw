@@ -15,7 +15,7 @@ interface Props {
   printed: string[]; // ids of layers plotted to the end this session
   disabled: boolean;
   onTarget: (id: string) => void;
-  palette: PenColor[]; // the drawing tool's colors; empty means the dots don't open a menu
+  paletteFor: (id: string) => PenColor[]; // the colors of the layer's drawing tool; empty: the dot opens nothing
   onColor: (id: string, pen: PenColor) => void;
   onSort: () => void; // reorder lightest (layer 1) to darkest
   onVisible: (id: string, visible: boolean) => void;
@@ -35,7 +35,7 @@ const reducedMotion = () => window.matchMedia?.("(prefers-reduced-motion: reduce
 // The drawing's layers, listed like Illustrator's Layers panel: the top layer at the top and
 // layer 1, the bottom layer, last. The box picks the one layer to print; names are edited in
 // place; rows are dragged by their grip (or moved with the arrow keys on it) to reorder.
-export function LayersSection({ mode, onMode, layers, target, printed, disabled, onTarget, palette, onColor, onSort, onVisible, onRename, onMove }: Props) {
+export function LayersSection({ mode, onMode, layers, target, printed, disabled, onTarget, paletteFor, onColor, onSort, onVisible, onRename, onMove }: Props) {
   // In Plot mode the layers hidden in Preview mode leave the list, and the eye goes. Numbers stay the
   // plot-order numbers from the full list.
   const numberOf = new Map(layers.map((l, i) => [l.id, i + 1]));
@@ -201,8 +201,8 @@ export function LayersSection({ mode, onMode, layers, target, printed, disabled,
               <LayerController
                 name="print-layer"
                 number={i + 1}
-                color={layer.color ?? (palette.length ? "transparent" : undefined)}
-                swatchProps={palette.length ? {
+                color={layer.color ?? (paletteFor(layer.id).length ? "transparent" : undefined)}
+                swatchProps={paletteFor(layer.id).length ? {
                   "aria-label": `Pen color for ${layer.name}`,
                   "aria-haspopup": "menu",
                   "aria-expanded": colorMenu?.id === layer.id,
@@ -242,7 +242,7 @@ export function LayersSection({ mode, onMode, layers, target, printed, disabled,
       {colorMenu && menuLayer && (
         <PaletteMenu
           anchor={colorMenu.anchor}
-          palette={palette}
+          palette={paletteFor(menuLayer.id)}
           current={menuLayer.color}
           onPick={(pen) => onColor(menuLayer.id, pen)}
           onClose={() => setColorMenu(null)}

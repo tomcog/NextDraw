@@ -28,7 +28,8 @@ interface Props {
   canDrag: boolean;
   onOpenBrowser: () => void;
   layerLooks: Record<string, { color: string | null; skipped: boolean; hidden: boolean }> | null;
-  penWidthMm?: number; // draw lines at the pen's real width; undefined keeps a hairline // by layer id; null draws the pen path
+  penWidthMm?: number; // draw lines at the pen's real width; undefined keeps a hairline
+  layerPenWidths?: Record<string, number | undefined>; // per layer id, when layers use different tools // by layer id; null draws the pen path
 }
 
 interface Drag {
@@ -64,19 +65,26 @@ export function Bed(props: Props) {
   }, [preview]);
 
   // True line width: the pen's width converted to the preview drawing's own units.
-  const { penWidthMm } = props;
+  const { penWidthMm, layerPenWidths } = props;
   useLayoutEffect(() => {
     if (!preview) return;
     const node = preview.node;
-    const on = Boolean(penWidthMm && penWidthMm > 0);
+    const layerWidths = Object.values(layerPenWidths ?? {}).filter((w): w is number => Boolean(w && w > 0));
+    const on = Boolean(penWidthMm && penWidthMm > 0) || layerWidths.length > 0;
     node.classList.toggle("pv-true-width", on);
     if (!on) return;
-    const inches = penWidthMm! / 25.4;
     const box = node.viewBox?.baseVal;
     const unitsPerInch = box && box.width > 0 ? box.width / preview.widthIn : UNITS;
-    node.style.setProperty("--pen-art", String(inches * unitsPerInch));
-    node.style.setProperty("--pen-in", String(inches));
-  }, [preview, penWidthMm]);
+    const width = penWidthMm && penWidthMm > 0 ? penWidthMm : layerWidths[0];
+    node.style.setProperty("--pen-art", String((width / 25.4) * unitsPerInch));
+    node.style.setProperty("--pen-in", String(width / 25.4));
+    // Layers drawn with a different tool get their own width.
+    node.querySelectorAll<SVGGElement>(".pv-layer").forEach((g) => {
+      const w = layerPenWidths?.[g.id];
+      if (w && w > 0) g.style.setProperty("--pen-art", String((w / 25.4) * unitsPerInch));
+      else g.style.removeProperty("--pen-art");
+    });
+  }, [preview, penWidthMm, layerPenWidths]);
 
   // Color each artwork layer. Runs after the preview is mounted, and again when colors change.
   const { layerLooks } = props;

@@ -32,6 +32,9 @@ export function ActionBar({ message, plotting, stopping, preparing, canPlot, plo
           <p className={styles.confirmText}>{confirmation.message}</p>
           <div className={styles.resumeRow}>
             <Button size="lg" variant="ghost" onClick={onCancelConfirmation}>Cancel</Button>
+            {confirmation.extraLabel && (
+              <Button size="lg" variant="secondary" onClick={confirmation.onExtra}>{confirmation.extraLabel}</Button>
+            )}
             <Button size="lg" variant="primary" tone={confirmation.danger ? "danger" : "primary"} autoFocus onClick={confirmation.onConfirm}>
               {confirmation.confirmLabel}
             </Button>

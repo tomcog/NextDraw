@@ -69,6 +69,11 @@ export default function App() {
   const [drawingLayers, setDrawingLayers] = useState<Layer[] | null>(null);
   const fileLayers = drawingLayers;
   const [layerEdits, setLayerEdits] = useState<LayerEdits | null>(null);
+  // A second drawing tool (mixed media): null normally; "" once added but not yet chosen.
+  const [secondTool, setSecondTool] = useState<string | null>(null);
+  const [secondToolLayers, setSecondToolLayers] = useState<string[]>([]);
+  const [lastPlottedTool, setLastPlottedTool] = useState<string | null>(null); // for the pen-change prompt
+  const [penChangeSeen, setPenChangeSeen] = useState<string | null>(null);
   // The one layer chosen to print (the green printer in the Layers card). None until the operator picks one.
   const [printLayer, setPrintLayer] = useState<string | null>(null);
   const layerViews: LayerView[] = useMemo(() => {
@@ -176,7 +181,7 @@ export default function App() {
   useEffect(() => save(STORAGE.zoom, zoomChoice), [zoomChoice]);
 
   // Refs let the polling loop see current values without restarting.
-  const refs = useRef({ fileName, status, lastAction, settings, scale, presets, plotLayerId, rotation, readRequested: false });
+  const refs = useRef({ fileName, status, lastAction, settings, scale, presets, plotLayerId, rotation, readRequested: false, plotSettings: settings });
   refs.current.rotation = rotation;
   refs.current.plotLayerId = plotLayerId;
   refs.current.presets = presets;
@@ -231,6 +236,8 @@ export default function App() {
     setLayerEdits(null);
     setPrintLayer(null);
     setLayerMode("preview");
+    setSecondTool(studio?.second_tool ?? null);
+    setSecondToolLayers(studio?.second_tool_layers ?? []);
     const tool = studio?.tool ? refs.current.presets.find((p) => p.name === studio.tool) : undefined;
     if (tool) setActivePreset(tool.name);
     const patch = { ...(tool?.settings ?? {}), ...(studio?.paper ?? {}) };
@@ -255,6 +262,7 @@ export default function App() {
     scale,
     rotation,
     tool: activePreset ?? undefined,
+    ...(secondTool ? { second_tool: secondTool, second_tool_layers: secondToolLayers } : {}),
     paper: { paper_size: settings.paper_size, paper_w: settings.paper_w, paper_h: settings.paper_h, paper_x: settings.paper_x, paper_y: settings.paper_y, paper_color: settings.paper_color },
   };
   const layersNow = layerEdits
@@ -405,7 +413,7 @@ export default function App() {
     const timer = window.setTimeout(async () => {
       try {
         const result = await postJSON<Estimate>("/api/estimate", {
-          ...refs.current.settings, scale: sentScale, layer: refs.current.plotLayerId, rotation: sentRotation,
+          ...refs.current.plotSettings, scale: sentScale, layer: refs.current.plotLayerId, rotation: sentRotation,
         });
         if (seq !== estimateSeq.current || result.superseded) return; // a newer estimate is on its way
         estimatedSeq.current = seq;
@@ -510,15 +518,36 @@ export default function App() {
 
   const startPlot = () => {
     if (!onBed) return;
-    if (!onPaper) {
+    const checkPaper = () => {
+      if (!onPaper) {
+        setConfirmation({
+          message: "Part of this drawing runs off the paper.",
+          confirmLabel: "Plot anyway",
+          onConfirm: plotNow,
+        });
+        return;
+      }
+      plotNow();
+    };
+    // Changing pens: only when this layer's tool isn't the one the last plotted layer used.
+    const tool = toolNameFor(plotLayerId);
+    if (tool && lastPlottedTool && tool !== lastPlottedTool && penChangeSeen !== tool) {
       setConfirmation({
-        message: "Part of this drawing runs off the paper.",
-        confirmLabel: "Plot anyway",
-        onConfirm: plotNow,
+        message: `Change pens: ${printTarget ? `“${printTarget.name}” uses` : "this drawing uses"} ${tool}. Mount it before plotting.`,
+        confirmLabel: "Pen changed, plot",
+        extraLabel: "Move to setup height",
+        onExtra: () => {
+          setPenChangeSeen(tool); // don't ask again for this pen after moving the holder
+          manual("pen_setup", { settings: settingsFor(plotLayerId) });
+        },
+        onConfirm: () => {
+          setPenChangeSeen(tool);
+          checkPaper();
+        },
       });
       return;
     }
-    plotNow();
+    checkPaper();
   };
 
   const plotNow = async () => {
@@ -526,7 +555,9 @@ export default function App() {
     setLastAction("plot");
     setLocalMessage(null);
     try {
-      await postJSON("/api/plot", { ...settings, start_x: placement.x, start_y: placement.y, scale, layer: plotLayerId, rotation });
+      await postJSON("/api/plot", { ...settingsFor(plotLayerId), start_x: placement.x, start_y: placement.y, scale, layer: plotLayerId, rotation });
+      setLastPlottedTool(toolNameFor(plotLayerId));
+      setPenChangeSeen(null);
       setStatus((s) => (s ? { ...s, state: "preparing", message: "", started: false } : s));
     } catch (err) {
       setLocalMessage({ text: (err as Error).message, tone: "error" });
@@ -614,8 +645,27 @@ export default function App() {
 
   const active = presets.find((p) => p.name === activePreset);
   const presetChanged = Boolean(
-    active && !PRESET_FIELDS.every((k) => !(k in active.settings) || Math.abs(Number(active.settings[k]) - Number(settings[k])) < 0.05),
+    active && !PRESET_FIELDS.every((k) => !(k in active.settings) || Math.abs(Number(active.settings[k]) - Number(settings[k] ?? active.settings[k])) < 0.05),
   );
+
+  /* ---------- A second drawing tool ---------- */
+
+  // Normally one drawing tool covers every layer. The Plus button on the Drawing tool card adds a
+  // second, and each layer is then assigned to one of the two by its number. Plotting, the preview's
+  // line width and the layer's color menu follow the layer's tool; unassigned layers use the first.
+  const secondPreset = secondTool ? presets.find((p) => p.name === secondTool) : undefined;
+  const usesSecond = (id: string | null) => Boolean(secondTool && id && secondToolLayers.includes(id));
+  const toolNameFor = (id: string | null) => (usesSecond(id) ? secondTool : activePreset);
+  const settingsFor = (id: string | null): Settings => (usesSecond(id) && secondPreset ? { ...settings, ...secondPreset.settings } : settings);
+  refs.current.plotSettings = settingsFor(plotLayerId);
+  const layerPenWidths = useMemo(
+    () => Object.fromEntries(layerViews.map((l) => [l.id, (usesSecond(l.id) ? secondPreset : active)?.settings.pen_width])),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [layerViews, secondTool, secondToolLayers, secondPreset, active],
+  );
+  const assignLayerTool = (id: string, second: boolean) => {
+    setSecondToolLayers((list) => (second ? [...list.filter((x) => x !== id), id] : list.filter((x) => x !== id)));
+  };
 
   const applyPreset = (name: string) => {
     const preset = presets.find((p) => p.name === name);
@@ -754,6 +804,7 @@ export default function App() {
               onOpenBrowser={openBrowser}
               layerLooks={layerLooks}
               penWidthMm={active?.settings.pen_width ?? settings.pen_width}
+              layerPenWidths={secondTool ? layerPenWidths : undefined}
             />
             <ZoomControl
               zoom={zoom}
@@ -858,7 +909,7 @@ export default function App() {
                   target={printLayer}
                   printed={status?.printed_layers ?? []}
                   onTarget={setPrintLayer}
-                  palette={active?.palette ?? []}
+                  paletteFor={(id) => (usesSecond(id) ? secondPreset : active)?.palette ?? []}
                   onColor={colorLayer}
                   onSort={sortLayersByLightness}
                   onVisible={setLayerVisible}
@@ -874,6 +925,17 @@ export default function App() {
               <PresetSection
                 presets={presets}
                 active={active}
+                secondTool={secondTool}
+                secondLayers={secondToolLayers}
+                layers={layerViews.map((l, i) => ({ id: l.id, number: i + 1, color: l.color }))}
+                inUse={layerMode === "work" && printTarget ? (usesSecond(printTarget.id) ? "second" : "first") : null}
+                onAddSecond={() => setSecondTool("")}
+                onSecondTool={(name) => setSecondTool(name)}
+                onRemoveSecond={() => {
+                  setSecondTool(null);
+                  setSecondToolLayers([]);
+                }}
+                onAssign={assignLayerTool}
                 changed={presetChanged}
                 disabled={plotting}
                 onApply={applyPreset}
