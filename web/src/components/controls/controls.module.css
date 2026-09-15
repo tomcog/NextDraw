@@ -236,11 +236,6 @@
   border-radius: 6px;
 }
 
-.toolBlock[data-in-use="true"] {
-  outline: 2px solid var(--ui-confirm);
-  outline-offset: 4px;
-}
-
 .toolBlock + .toolBlock { margin-top: 0.5rem; }
 
 

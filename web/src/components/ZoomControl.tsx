@@ -1,6 +1,7 @@
 import { ButtonRound, Segment, SegmentedControl, Spinner } from "@tomcoggia/ui";
 import { FileImage, Grid3x3, Route, StickyNote } from "lucide-react";
 import styles from "./Bed.module.css";
+import controls from "./controls/controls.module.css";
 import type { Zoom } from "./Bed";
 
 interface Props {
@@ -27,7 +28,7 @@ export function ZoomControl({ zoom, canPaper, canDrawing, onZoom, updating, show
       {showLeft !== null && (
         <ButtonRound
           size="sm"
-          variant={showLeft ? "filled" : "ghost"}
+          className={showLeft ? controls.roundActive : undefined}
           icon={<Route />}
           aria-label="Show what's left to draw"
           aria-pressed={showLeft}
