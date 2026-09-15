@@ -255,7 +255,7 @@ export default function App() {
     scale,
     rotation,
     tool: activePreset ?? undefined,
-    paper: { paper_size: settings.paper_size, paper_w: settings.paper_w, paper_h: settings.paper_h, paper_x: settings.paper_x, paper_y: settings.paper_y },
+    paper: { paper_size: settings.paper_size, paper_w: settings.paper_w, paper_h: settings.paper_h, paper_x: settings.paper_x, paper_y: settings.paper_y, paper_color: settings.paper_color },
   };
   const layersNow = layerEdits
     ? layerViews.map((l) => ({ id: l.id, name: l.name, hidden: l.hidden, ...(layerEdits.colors[l.id] ? { color: l.color } : {}) }))
@@ -753,6 +753,7 @@ export default function App() {
               canDrag={!busy}
               onOpenBrowser={openBrowser}
               layerLooks={layerLooks}
+              penWidthMm={active?.settings.pen_width ?? settings.pen_width}
             />
             <ZoomControl
               zoom={zoom}

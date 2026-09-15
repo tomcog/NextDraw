@@ -9,6 +9,7 @@ export interface Settings {
   pen_pos_down: number;
   pen_pos_up: number;
   pen_setup: number;
+  pen_width?: number; // mm; the drawing tool's line width, for the preview (app-only)
   pen_rate_lower: number;
   pen_rate_raise: number;
   copies: number;
@@ -23,6 +24,7 @@ export interface Settings {
   paper_h: number; // mm
   paper_x: number; // mm from home
   paper_y: number; // mm from home
+  paper_color: string; // #rrggbb, how the paper is drawn on the preview
   units: Units;
 }
 
@@ -124,7 +126,7 @@ export interface Studio {
   scale?: number;
   rotation?: number; // quarter turns clockwise, in degrees
   tool?: string;
-  paper?: Partial<Pick<Settings, "paper_size" | "paper_w" | "paper_h" | "paper_x" | "paper_y">>;
+  paper?: Partial<Pick<Settings, "paper_size" | "paper_w" | "paper_h" | "paper_x" | "paper_y" | "paper_color">>;
 }
 
 export interface Preset {

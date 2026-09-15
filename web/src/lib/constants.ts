@@ -26,12 +26,13 @@ export const DEFAULT_SETTINGS: Settings = {
   paper_h: 215.9,
   paper_x: 0,
   paper_y: 0,
+  paper_color: "#ffffff",
   units: "mm",
 };
 
 // Settings saved in a pen preset (must match PRESET_NUMERIC in server.py). Paper isn't included.
 export const PRESET_FIELDS = [
-  "pen_pos_down", "pen_pos_up", "pen_setup", "pen_rate_lower", "pen_rate_raise",
+  "pen_pos_down", "pen_pos_up", "pen_setup", "pen_width", "pen_rate_lower", "pen_rate_raise",
   "speed_pendown", "speed_penup", "accel", "handling",
 ] as const satisfies readonly (keyof Settings)[];
 

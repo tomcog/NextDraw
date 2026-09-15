@@ -1,5 +1,5 @@
 import { ButtonRound, InputSelect, Segment, SegmentedControl } from "@tomcoggia/ui";
-import { Ratio } from "lucide-react";
+import { Pipette, Ratio } from "lucide-react";
 import styles from "./controls.module.css";
 import { LengthField } from "./LengthField";
 import { Section } from "./Section";
@@ -13,6 +13,16 @@ interface Props {
   onPickSize: (id: string) => void;
   onChange: (patch: Partial<Settings>) => void;
 }
+
+// Common paper colors, plus any color from the picker. The paper is drawn in this color on the
+// preview whatever the app's theme, so light or dark mode never changes how a print looks.
+const PAPER_COLORS = [
+  { name: "White", color: "#ffffff" },
+  { name: "Cream", color: "#f4ecd8" },
+  { name: "Kraft", color: "#c6a57a" },
+  { name: "Gray", color: "#8e9196" },
+  { name: "Black", color: "#1d1d1f" },
+];
 
 export function PaperSection({ settings: s, disabled, onPickSize, onChange }: Props) {
   const custom = s.paper_size === "custom";
@@ -45,6 +55,45 @@ export function PaperSection({ settings: s, disabled, onPickSize, onChange }: Pr
             onClick={() => onChange({ paper_w: s.paper_h, paper_h: s.paper_w })}
           />
         </div>
+      </div>
+
+      <div className={styles.paperColors} role="radiogroup" aria-label="Paper color">
+        {PAPER_COLORS.map((c) => (
+          <button
+            key={c.color}
+            type="button"
+            role="radio"
+            aria-checked={s.paper_color === c.color}
+            aria-label={`${c.name} paper`}
+            title={`${c.name} paper`}
+            className={styles.paperSwatch}
+            style={{ background: c.color }}
+            disabled={disabled}
+            onClick={() => onChange({ paper_color: c.color })}
+          />
+        ))}
+        {(() => {
+          const customColor = !PAPER_COLORS.some((c) => c.color === s.paper_color);
+          return (
+            <label
+              className={styles.paperSwatch}
+              data-custom
+              role="radio"
+              aria-checked={customColor}
+              title="Pick any paper color"
+              style={customColor ? { background: s.paper_color } : undefined}
+            >
+              {!customColor && <Pipette aria-hidden />}
+              <input
+                type="color"
+                aria-label="Custom paper color"
+                value={s.paper_color}
+                disabled={disabled}
+                onChange={(e) => onChange({ paper_color: e.target.value })}
+              />
+            </label>
+          );
+        })()}
       </div>
 
       {custom && (

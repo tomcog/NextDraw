@@ -27,7 +27,8 @@ interface Props {
   draggingFile: boolean;
   canDrag: boolean;
   onOpenBrowser: () => void;
-  layerLooks: Record<string, { color: string | null; skipped: boolean; hidden: boolean }> | null; // by layer id; null draws the pen path
+  layerLooks: Record<string, { color: string | null; skipped: boolean; hidden: boolean }> | null;
+  penWidthMm?: number; // draw lines at the pen's real width; undefined keeps a hairline // by layer id; null draws the pen path
 }
 
 interface Drag {
@@ -61,6 +62,21 @@ export function Bed(props: Props) {
       host.appendChild(node);
     }
   }, [preview]);
+
+  // True line width: the pen's width converted to the preview drawing's own units.
+  const { penWidthMm } = props;
+  useLayoutEffect(() => {
+    if (!preview) return;
+    const node = preview.node;
+    const on = Boolean(penWidthMm && penWidthMm > 0);
+    node.classList.toggle("pv-true-width", on);
+    if (!on) return;
+    const inches = penWidthMm! / 25.4;
+    const box = node.viewBox?.baseVal;
+    const unitsPerInch = box && box.width > 0 ? box.width / preview.widthIn : UNITS;
+    node.style.setProperty("--pen-art", String(inches * unitsPerInch));
+    node.style.setProperty("--pen-in", String(inches));
+  }, [preview, penWidthMm]);
 
   // Color each artwork layer. Runs after the preview is mounted, and again when colors change.
   const { layerLooks } = props;
@@ -195,7 +211,7 @@ export function Bed(props: Props) {
         {hasPaper && (
           <>
             <rect className={styles.paperShadow} x={s.paper_x * MM + font * 0.18} y={s.paper_y * MM + font * 0.18} width={s.paper_w * MM} height={s.paper_h * MM} />
-            <rect className={styles.paper} x={s.paper_x * MM} y={s.paper_y * MM} width={s.paper_w * MM} height={s.paper_h * MM} />
+            <rect className={styles.paper} style={{ fill: s.paper_color || "#ffffff" }} x={s.paper_x * MM} y={s.paper_y * MM} width={s.paper_w * MM} height={s.paper_h * MM} />
           </>
         )}
 

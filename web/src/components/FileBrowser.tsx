@@ -1,6 +1,6 @@
 import type { Studio } from "../lib/types";
 import { useEffect, useRef, useState } from "react";
-import { Button, ButtonRound, Spinner } from "@tomcoggia/ui";
+import { Button, ButtonRound, Segment, SegmentedControl, Spinner } from "@tomcoggia/ui";
 import { ArrowUp, FileImage, Folder, PenTool } from "lucide-react";
 import styles from "./FileBrowser.module.css";
 import { api, postJSON } from "../lib/api";
@@ -19,6 +19,7 @@ interface Listing {
   path: string;
   display: string;
   parent: string | null;
+  roots: { name: string; path: string }[]; // the top-level folders drawings can come from
   folders: Entry[];
   files: Entry[];
 }
@@ -103,6 +104,20 @@ export function FileBrowser({ open, onClose, onOpened }: Props) {
     <dialog ref={dialog} className={styles.dialog} onClose={onClose} onCancel={(e) => { if (working) e.preventDefault(); }}>
       <div className={styles.header}>
         <h2 className={styles.title}>Open drawing</h2>
+        {listing && listing.roots.length > 1 && (
+          <SegmentedControl size="sm" aria-label="Folder">
+            {listing.roots.map((root) => (
+              <Segment
+                key={root.path}
+                selected={listing.path === root.path || listing.path.startsWith(root.path + "/")}
+                disabled={Boolean(working)}
+                onClick={() => browse(root.path)}
+              >
+                {root.name}
+              </Segment>
+            ))}
+          </SegmentedControl>
+        )}
         <div className={styles.location}>
           <ButtonRound
             size="sm"

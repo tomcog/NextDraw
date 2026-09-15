@@ -37,8 +37,6 @@ CURRENT_SVG = JOBS / "current.svg"
 CURRENT_MTIME = JOBS / "current.mtime"  # the file's modified time when opened or last saved, to catch outside edits
 CURRENT_PATH = JOBS / "current.path"  # where the loaded drawing lives on disk; absent for uploaded copies
 
-# Folders the file browser may open and save drawings in. Nothing outside these is listed or written.
-ALLOWED_FOLDERS = [Path.home() / "Desktop"]
 
 ILLUSTRATOR_POINTS_PER_INCH = 72.0
 # Presets (pen settings and palettes) live in iCloud Drive when it's available, so every Mac signed in
@@ -47,6 +45,16 @@ ILLUSTRATOR_POINTS_PER_INCH = 72.0
 BUNDLED_PRESETS = ROOT / "presets.json"
 ICLOUD_DRIVE = Path.home() / "Library" / "Mobile Documents" / "com~apple~CloudDocs"
 PRESETS_FILE = ICLOUD_DRIVE / "NextDraw Studio" / "presets.json" if ICLOUD_DRIVE.is_dir() else BUNDLED_PRESETS
+
+# Folders the file browser may open and save drawings in, with the names it shows. Nothing outside
+# these is listed or written. The iCloud Drive one syncs drawings between Macs, like the presets.
+ICLOUD_DRAWINGS = ICLOUD_DRIVE / "NextDraw Studio" / "Drawings"
+if ICLOUD_DRIVE.is_dir():
+    ICLOUD_DRAWINGS.mkdir(parents=True, exist_ok=True)
+FOLDER_NAMES = {Path.home() / "Desktop": "Desktop"}
+if ICLOUD_DRAWINGS.is_dir():
+    FOLDER_NAMES[ICLOUD_DRAWINGS] = "iCloud Drawings"
+ALLOWED_FOLDERS = list(FOLDER_NAMES)
 # A stopped plot's progress: the NextDraw software writes where it stopped into its output SVG,
 # which is what its res_plot mode resumes from. The JSON keeps what this app needs to resume it.
 RESUME_SVG = JOBS / "resume.svg"
@@ -69,11 +77,14 @@ NUMERIC_SETTINGS = {
     "reordering": (0, 4),
 }
 BOOL_SETTINGS = {"auto_rotate", "random_start", "hiding"}
+# App-only settings with fractional values: the pen's line width in mm, for drawing the preview.
+FLOAT_SETTINGS = {"pen_width": (0.05, 10.0)}
+APP_ONLY_SETTINGS = {"pen_setup", "pen_width"}  # not NextDraw options
 
 # What a pen preset remembers. Paper size is chosen separately and isn't part of a preset.
 PRESET_NUMERIC = {
     "pen_pos_down", "pen_pos_up", "pen_setup", "pen_rate_lower", "pen_rate_raise",
-    "speed_pendown", "speed_penup", "accel", "handling",
+    "speed_pendown", "speed_penup", "accel", "handling", "pen_width",
 }
 
 # Walk commands in the NextDraw software don't check the carriage's range of motion.
@@ -184,6 +195,12 @@ def clean_settings(raw):
         if key in raw:
             try:
                 settings[key] = max(low, min(high, int(float(raw[key]))))
+            except (TypeError, ValueError):
+                pass
+    for key, (low, high) in FLOAT_SETTINGS.items():
+        if key in raw:
+            try:
+                settings[key] = round(max(low, min(high, float(raw[key]))), 3)
             except (TypeError, ValueError):
                 pass
     for key in BOOL_SETTINGS:
@@ -581,7 +598,7 @@ def make_nextdraw(log):
 
 def apply_settings(nd, settings):
     for key, value in settings.items():
-        if key != "pen_setup":  # not a NextDraw option
+        if key not in APP_ONLY_SETTINGS:
             setattr(nd.options, key, value)
 
 
@@ -1072,7 +1089,7 @@ def info():
     ]
     handling = [{"id": i, "name": models.handlers[i].name} for i in range(1, 5)]
     return jsonify(models=model_list, handling=handling, walk_supported=WALK_CLAMP_SUPPORTED,
-                   presets_file=display_path(PRESETS_FILE) if PRESETS_FILE == BUNDLED_PRESETS else "iCloud Drive/NextDraw Studio/presets.json")
+                   presets_file=display_path(PRESETS_FILE))
 
 
 @app.get("/api/status")
@@ -1113,8 +1130,11 @@ def allowed_path(raw):
 
 
 def display_path(path):
-    home = str(Path.home())
     text = str(path)
+    icloud = str(ICLOUD_DRIVE)
+    if text == icloud or text.startswith(icloud + "/"):
+        return "iCloud Drive" + text[len(icloud):]
+    home = str(Path.home())
     return "~" + text[len(home):] if text.startswith(home) else text
 
 
@@ -1153,7 +1173,7 @@ def browse():
         path=str(folder),
         display=display_path(folder),
         parent=str(parent) if parent else None,
-        roots=[{"name": r.name, "path": str(r)} for r in roots],
+        roots=[{"name": FOLDER_NAMES.get(root, root.name), "path": str(r)} for root, r in zip(ALLOWED_FOLDERS, roots)],
         folders=folders,
         files=files,
     )
@@ -1291,6 +1311,8 @@ def clean_studio(raw):
                 pass
         if isinstance(paper.get("paper_size"), str):
             cleaned["paper_size"] = paper["paper_size"][:40]
+        if isinstance(paper.get("paper_color"), str) and HEX_COLOR.match(paper["paper_color"]):
+            cleaned["paper_color"] = paper["paper_color"].lower()
         out["paper"] = cleaned
     return out
 

@@ -50,6 +50,12 @@ export function FileSection({
   const original = originalIn ? size(originalIn[0], originalIn[1]) : null;
   const resized = originalIn && scale !== 100 ? size(originalIn[0] * scale / 100, originalIn[1] * scale / 100) : null;
 
+  const whereText = saveState === "error"
+    ? saveError ?? ""
+    : !folder
+      ? "Uploaded copy. Use Open… to save changes to a file."
+      : saveState === "saving" ? `Saving to ${folder}…` : saveState === "saved" ? `Saved to ${folder}` : `In ${folder}`;
+
   return (
     <Section title="File">
       <div className={styles.fileRow}>
@@ -71,12 +77,8 @@ export function FileSection({
         <Button size="sm" variant="secondary" disabled={busy} onClick={onOpen}>Open…</Button>
       </div>
       {fileName && (
-        <p className={styles.fileWhere} role="status" data-tone={saveState === "error" ? "error" : undefined}>
-          {saveState === "error"
-            ? saveError
-            : !folder
-              ? "Uploaded copy. Use Open… to save changes to a file."
-              : saveState === "saving" ? `Saving to ${folder}…` : saveState === "saved" ? `Saved to ${folder}` : `In ${folder}`}
+        <p className={styles.fileWhere} role="status" data-tone={saveState === "error" ? "error" : undefined} title={whereText}>
+          {whereText}
         </p>
       )}
 

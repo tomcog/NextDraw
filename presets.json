@@ -10,7 +10,8 @@
       "pen_pos_up": 70,
       "pen_setup": 60,
       "pen_rate_lower": 30,
-      "pen_rate_raise": 75
+      "pen_rate_raise": 75,
+      "pen_width": 0.7
     },
     "palette": [
       {

@@ -56,6 +56,20 @@
   }
   .pv-colored .pv-layer :is(text, image) { display: none; }
   .pv-colored .pv-layer[data-skipped="true"] { display: none !important; }
+
+  /* With a pen width set on the drawing tool, lines are drawn at the pen's real width, with round
+     ends like a pen tip, so they get thinner or thicker as you zoom. Bed.tsx sets the two widths in
+     the drawing's own units: --pen-art for the artwork, --pen-in for the simulation's path, which is
+     drawn in inches. Pen-up travel stays a hairline: it isn't ink. */
+  .pv-true-width .pv-down path,
+  .pv-true-width.pv-artwork:not(.pv-colored) :is(path, rect, circle, ellipse, line, polyline, polygon),
+  .pv-true-width.pv-colored .pv-layer :is(path, rect, circle, ellipse, line, polyline, polygon) {
+    stroke-width: var(--pen-art) !important;
+    stroke-linecap: round !important;
+    stroke-linejoin: round !important;
+    vector-effect: none;
+  }
+  .pv-true-width .pv-down path { stroke-width: var(--pen-in) !important; }
 }
 
 /* App-only colours for the plotter preview, built on the library's semantic tokens where one fits. */
@@ -72,5 +86,4 @@
   --nd-pen-up: #b77585;
   --nd-bed: #1b1f21;
   --nd-grid: #252b2e;
-  --nd-sheet: #2a2f32;
 }
