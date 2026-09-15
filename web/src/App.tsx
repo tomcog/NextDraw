@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Card } from "@tomcoggia/ui";
 import styles from "./App.module.css";
 import { api, postJSON } from "./lib/api";
-import { BUSY_STATES, DEFAULT_SETTINGS, PAPER_SIZES, PLOTTING_STATES, PRESET_FIELDS, STEPS, STORAGE } from "./lib/constants";
+import { BUSY_STATES, DEFAULT_SETTINGS, DEFAULT_TOOL, PAPER_SIZES, PLOTTING_STATES, PRESET_FIELDS, STEPS, STORAGE } from "./lib/constants";
 import { cleanNote } from "./lib/format";
 import { lightness } from "./lib/color";
 import { fitsOnBed, fitsOnPaper, footprint } from "./lib/geometry";
@@ -313,8 +313,13 @@ export default function App() {
         setPresets(r.presets);
         // Presets are shared (iCloud Drive) and can be edited elsewhere: use the chosen tool's current
         // values rather than the ones remembered from the last time it was picked.
-        const chosen = r.presets.find((p) => p.name === refs.current.activePreset);
-        if (chosen) setSettings((prev) => ({ ...prev, ...chosen.settings }));
+        // With no tool chosen (or the chosen one gone), start with the usual pen.
+        const chosen = r.presets.find((p) => p.name === refs.current.activePreset)
+          ?? r.presets.find((p) => p.name === DEFAULT_TOOL);
+        if (chosen) {
+          setActivePreset(chosen.name);
+          setSettings((prev) => ({ ...prev, ...chosen.settings }));
+        }
       })
       .catch(() => setPresets([]));
   }, []);

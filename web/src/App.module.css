@@ -8,7 +8,7 @@
   flex: 1;
   display: grid;
   grid-template-columns: minmax(0, 1fr) 16.25rem;
-  gap: 1.5rem;
+  gap: 1.5rem 0; /* no column gap: the preview's own right margin separates it from the panel */
   padding: 0 1.5rem 1.5rem 0.75rem;
   align-items: start;
 }

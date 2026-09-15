@@ -3,6 +3,8 @@ import type { Settings } from "./types";
 export const UNITS = 100; // preview drawing units per inch
 export const MM = UNITS / 25.4; // preview drawing units per mm
 
+export const DEFAULT_TOOL = "EnerGel"; // drawing tool preset used when none is chosen
+
 export const DEFAULT_SETTINGS: Settings = {
   model: 10, // Bantam Tools NextDraw 2234
   handling: 1,

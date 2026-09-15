@@ -22,8 +22,8 @@ export function ZoomControl({ zoom, canPaper, canDrawing, onZoom, updating }: Pr
         </span>
       )}
       <SegmentedControl size="sm" aria-label="Zoom the preview">
-        <Segment selected={zoom === "plotter"} onClick={() => onZoom("plotter")} title="Zoom out to the printer's full drawing area">
-          Printer
+        <Segment selected={zoom === "plotter"} onClick={() => onZoom("plotter")} title="Zoom out to the plotter's full drawing area">
+          Plotter
         </Segment>
         <Segment selected={zoom === "paper"} disabled={!canPaper} onClick={() => onZoom("paper")} title="Zoom to the paper">
           Paper
