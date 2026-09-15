@@ -3,6 +3,13 @@
   width: 100%;
 }
 
+/* Beside the panel, the preview fits the window's height too: on a wide screen it's only as wide as
+   lets the whole plotter show without scrolling (4.5rem: the header above it and a little room below).
+   Bed.tsx sets --bed-aspect to the preview's width over its height. */
+@media (min-width: 861px) {
+  .wrap { max-width: calc((100dvh - 4.5rem) * var(--bed-aspect, 1.4)); }
+}
+
 .bed {
   display: block;
   width: 100%;

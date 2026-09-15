@@ -237,7 +237,7 @@ export function Bed(props: Props) {
     : undefined;
 
   return (
-    <div className={styles.wrap} data-loaded={props.hasFile} data-dragging-file={props.draggingFile}>
+    <div className={styles.wrap} style={{ "--bed-aspect": aspect } as CSSProperties} data-loaded={props.hasFile} data-dragging-file={props.draggingFile}>
       <svg
         ref={svgRef}
         className={styles.bed}
