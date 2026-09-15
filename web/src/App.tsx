@@ -75,8 +75,6 @@ export default function App() {
   const [secondToolLayers, setSecondToolLayers] = useState<string[]>([]);
   // Small paths: slow the plotter by this percent for drawings full of tiny marks; null when off.
   const [smallPaths, setSmallPaths] = useState<number | null>(null);
-  const [lastPlottedTool, setLastPlottedTool] = useState<string | null>(null); // for the pen-change prompt
-  const [penChangeSeen, setPenChangeSeen] = useState<string | null>(null);
   // The one layer chosen to print (the green printer in the Layers card). None until the operator picks one.
   const [printLayer, setPrintLayer] = useState<string | null>(null);
   const layerViews: LayerView[] = useMemo(() => {
@@ -536,36 +534,15 @@ export default function App() {
 
   const startPlot = () => {
     if (!onBed) return;
-    const checkPaper = () => {
-      if (!onPaper) {
-        setConfirmation({
-          message: "Part of this drawing runs off the paper.",
-          confirmLabel: "Plot anyway",
-          onConfirm: plotNow,
-        });
-        return;
-      }
-      plotNow();
-    };
-    // Changing pens: only when this layer's tool isn't the one the last plotted layer used.
-    const tool = toolNameFor(plotLayerId);
-    if (tool && lastPlottedTool && tool !== lastPlottedTool && penChangeSeen !== tool) {
+    if (!onPaper) {
       setConfirmation({
-        message: `Change pens: ${printTarget ? `“${printTarget.name}” uses` : "this drawing uses"} ${tool}. Mount it before plotting.`,
-        confirmLabel: "Pen changed, plot",
-        extraLabel: "Move to setup height",
-        onExtra: () => {
-          setPenChangeSeen(tool); // don't ask again for this pen after moving the holder
-          manual("pen_setup", { settings: settingsFor(plotLayerId) });
-        },
-        onConfirm: () => {
-          setPenChangeSeen(tool);
-          checkPaper();
-        },
+        message: "Part of this drawing runs off the paper.",
+        confirmLabel: "Plot anyway",
+        onConfirm: plotNow,
       });
       return;
     }
-    checkPaper();
+    plotNow();
   };
 
   const plotNow = async () => {
@@ -574,8 +551,6 @@ export default function App() {
     setLocalMessage(null);
     try {
       await postJSON("/api/plot", { ...settingsFor(plotLayerId), start_x: placement.x, start_y: placement.y, tip_offset_x: tipOffsetFor(plotLayerId), scale, layer: plotLayerId, rotation });
-      setLastPlottedTool(toolNameFor(plotLayerId));
-      setPenChangeSeen(null);
       setStatus((s) => (s ? { ...s, state: "preparing", message: "", started: false } : s));
     } catch (err) {
       setLocalMessage({ text: (err as Error).message, tone: "error" });
@@ -720,7 +695,6 @@ export default function App() {
   // line width and the layer's color menu follow the layer's tool; unassigned layers use the first.
   const secondPreset = secondTool ? presets.find((p) => p.name === secondTool) : undefined;
   const usesSecond = (id: string | null) => Boolean(secondTool && id && secondToolLayers.includes(id));
-  const toolNameFor = (id: string | null) => (usesSecond(id) ? secondTool : activePreset);
   // Angle compensation: on or off per tool, starting from its preset. Only tools set up tilted have it.
   const [tiltChoice, setTiltChoice] = useState<Record<string, boolean>>({});
   const tiltOn = (tool: Preset | undefined) => Boolean(tool?.tilt && (tiltChoice[tool.name] ?? tool.tilt.on));
