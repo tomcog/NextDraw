@@ -1,5 +1,5 @@
 import { useLayoutEffect, useRef, useState } from "react";
-import type { PointerEvent as ReactPointerEvent } from "react";
+import type { CSSProperties, PointerEvent as ReactPointerEvent, ReactNode } from "react";
 import styles from "./Bed.module.css";
 import { MM, UNITS } from "../lib/constants";
 import { fmtIn } from "../lib/format";
@@ -27,6 +27,7 @@ interface Props {
   draggingFile: boolean;
   canDrag: boolean;
   onOpenBrowser: () => void;
+  toolbar?: ReactNode; // sits on the width dimension line, at its right end
   layerLooks: Record<string, { color: string | null; skipped: boolean; hidden: boolean }> | null;
   penWidthMm?: number; // draw lines at the pen's real width; undefined keeps a hairline
   layerPenWidths?: Record<string, number | undefined>; // per layer id, when layers use different tools // by layer id; null draws the pen path
@@ -125,17 +126,24 @@ export function Bed(props: Props) {
   const frameW = frame[2] - frame[0];
   const frameH = frame[3] - frame[1];
   const span = Math.max(frameW, frameH);
-  const pad = span * 0.075;
   const font = span * 0.024; // sizes the home dot, carriage marker and paper shadow
-  // Axis labels: about 15px on screen at a typical preview width (the preview scales with the window).
-  const labelFont = span * 0.0156;
 
-  // Keep the plotter's proportions whatever is framed, so the preview never changes height.
-  const travelPad = Math.max(W, H) * 0.075;
-  // A slim left margin (just room for the side dimension line) gives the preview more width.
-  const leftPad = pad * 0.8;
-  const aspect = (W + travelPad * 1.1) / (H + travelPad * 1.1);
-  const vb = [frame[0] - leftPad, frame[1] - pad, frameW + leftPad + pad * 0.4, frameH + pad * 1.1];
+  // Margins around what's framed, in pads (7.5% of its longer side): a slim left one with just room
+  // for the side dimension line, and a top one with just room for the width line and its label.
+  const LEFT = 0.8;
+  const TOP = 0.7;
+  const fit = (box: Box) => {
+    const pad = Math.max(box[2] - box[0], box[3] - box[1]) * 0.075;
+    return {
+      pad,
+      vb: [box[0] - pad * LEFT, box[1] - pad * TOP, box[2] - box[0] + pad * (LEFT + 0.4), box[3] - box[1] + pad * (TOP + 0.1)],
+    };
+  };
+  // The plotter view. Every zoom keeps its proportions, so the preview never changes height, and the
+  // dimension lines, their labels and the toolbar keep its positions on screen, so nothing shifts.
+  const base = fit(travelBox);
+  const aspect = base.vb[2] / base.vb[3];
+  const { vb } = fit(frame);
   if (vb[2] / vb[3] < aspect) {
     vb[2] = vb[3] * aspect; // widen to the right, keeping the left edge where it is
   } else {
@@ -145,12 +153,24 @@ export function Bed(props: Props) {
   }
   const viewBox = drag?.viewBox ?? vb.join(" ");
 
-  const dy = frame[1] - pad * 0.45;
-  const dx = frame[0] - pad * 0.35;
-  const tick = pad * 0.14;
+  // Where the dimension lines sit in the plotter view, carried into this view at the same screen spot.
+  const [vx, vy, vw] = viewBox.split(" ").map(Number);
+  const k = vw / base.vb[2]; // this view's units per plotter-view unit
+  const baseDy = -base.pad * 0.3;
+  const baseDx = -base.pad * 0.35;
+  const dy = vy + (baseDy - base.vb[1]) * k;
+  const dx = vx + (baseDx - base.vb[0]) * k;
+  const tick = base.pad * 0.14 * k;
+  // Axis labels: about 15px on screen at a typical preview width (the preview scales with the window).
+  const labelFont = Math.max(W, H) * 0.0156 * k;
   const [dimX0, dimY0, dimX1, dimY1] = dimBox;
   const dimMidX = (dimX0 + dimX1) / 2;
   const dimMidY = (dimY0 + dimY1) / 2;
+  // The toolbar is HTML over the SVG, placed in percentages of the plotter view so it never moves.
+  const toolbarStyle = {
+    "--toolbar-top": `${((baseDy - base.vb[1]) / base.vb[3]) * 100}%`,
+    "--toolbar-right": `${((base.vb[0] + base.vb[2] - W) / base.vb[2]) * 100}%`,
+  } as CSSProperties;
 
   const snap = (mm: number) => {
     const step = s.units === "in" ? 25.4 / 20 : 1; // 0.05 in or 1 mm
@@ -268,6 +288,12 @@ export function Bed(props: Props) {
         <strong>Drop an SVG here</strong>
         <span>or click to open a drawing</span>
       </button>
+
+      {props.toolbar && (
+        <div className={styles.toolbar} style={toolbarStyle}>
+          {props.toolbar}
+        </div>
+      )}
     </div>
   );
 }

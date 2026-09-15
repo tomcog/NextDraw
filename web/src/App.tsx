@@ -840,13 +840,15 @@ export default function App() {
               layerLooks={layerLooks}
               penWidthMm={active?.settings.pen_width ?? settings.pen_width}
               layerPenWidths={secondTool ? layerPenWidths : undefined}
-            />
-            <ZoomControl
-              zoom={zoom}
-              canPaper={settings.paper_w > 0 && settings.paper_h > 0}
-              canDrawing={Boolean(fp)}
-              onZoom={setZoomChoice}
-              updating={updating}
+              toolbar={
+                <ZoomControl
+                  zoom={zoom}
+                  canPaper={settings.paper_w > 0 && settings.paper_h > 0}
+                  canDrawing={Boolean(fp)}
+                  onZoom={setZoomChoice}
+                  updating={updating}
+                />
+              }
             />
           </div>
 
