@@ -41,7 +41,12 @@ CURRENT_PATH = JOBS / "current.path"  # where the loaded drawing lives on disk; 
 ALLOWED_FOLDERS = [Path.home() / "Desktop"]
 
 ILLUSTRATOR_POINTS_PER_INCH = 72.0
-PRESETS_FILE = ROOT / "presets.json"
+# Presets (pen settings and palettes) live in iCloud Drive when it's available, so every Mac signed in
+# to the same account shares them. The copy in the app folder seeds it the first time, and is used
+# as-is on a Mac without iCloud Drive.
+BUNDLED_PRESETS = ROOT / "presets.json"
+ICLOUD_DRIVE = Path.home() / "Library" / "Mobile Documents" / "com~apple~CloudDocs"
+PRESETS_FILE = ICLOUD_DRIVE / "NextDraw Studio" / "presets.json" if ICLOUD_DRIVE.is_dir() else BUNDLED_PRESETS
 # A stopped plot's progress: the NextDraw software writes where it stopped into its output SVG,
 # which is what its res_plot mode resumes from. The JSON keeps what this app needs to resume it.
 RESUME_SVG = JOBS / "resume.svg"
@@ -1008,8 +1013,27 @@ def run_manual(command, settings, distance_mm, axis):
                 pass
 
 
+def ensure_presets_file():
+    """Make sure the shared presets file is there and downloaded. iCloud can leave only a placeholder
+    (".presets.json.icloud") until a file is asked for; brctl asks for it."""
+    if PRESETS_FILE == BUNDLED_PRESETS or PRESETS_FILE.exists():
+        return
+    placeholder = PRESETS_FILE.with_name(f".{PRESETS_FILE.name}.icloud")
+    if placeholder.exists():
+        subprocess.run(["brctl", "download", str(PRESETS_FILE)], capture_output=True, timeout=10)
+        for _ in range(40):  # up to 10 s for the download
+            if PRESETS_FILE.exists():
+                return
+            time.sleep(0.25)
+        return
+    PRESETS_FILE.parent.mkdir(parents=True, exist_ok=True)
+    if BUNDLED_PRESETS.exists():
+        shutil.copyfile(BUNDLED_PRESETS, PRESETS_FILE)
+
+
 def load_presets():
     try:
+        ensure_presets_file()
         data = json.loads(PRESETS_FILE.read_text())
         return data if isinstance(data, list) else []
     except (OSError, ValueError):
@@ -1017,6 +1041,7 @@ def load_presets():
 
 
 def save_presets(presets):
+    ensure_presets_file()
     tmp = PRESETS_FILE.with_suffix(".tmp")
     tmp.write_text(json.dumps(presets, indent=2))
     tmp.replace(PRESETS_FILE)
@@ -1046,7 +1071,8 @@ def info():
         for i in (8, 9, 10, 1, 2, 3, 4, 5, 6, 7)
     ]
     handling = [{"id": i, "name": models.handlers[i].name} for i in range(1, 5)]
-    return jsonify(models=model_list, handling=handling, walk_supported=WALK_CLAMP_SUPPORTED)
+    return jsonify(models=model_list, handling=handling, walk_supported=WALK_CLAMP_SUPPORTED,
+                   presets_file=display_path(PRESETS_FILE) if PRESETS_FILE == BUNDLED_PRESETS else "iCloud Drive/NextDraw Studio/presets.json")
 
 
 @app.get("/api/status")

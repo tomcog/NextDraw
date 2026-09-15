@@ -11,6 +11,17 @@ Bantam Tools' own [NextDraw Python API](https://bantam.tools/nd_py/).
   stopped, and return home when it finishes
 - Raise and lower the pen, move the carriage, send it home, and move the holder to the pen setup height
 
+## Presets on more than one Mac
+
+Drawing-tool presets (pen heights, speeds and color palettes) are kept in iCloud Drive, in
+`iCloud Drive/NextDraw Studio/presets.json`, so every Mac signed in to the same iCloud account
+shares them. The first time the app starts on a Mac with iCloud Drive, it copies `presets.json`
+from the app folder there if the shared file doesn't exist yet. Later changes go only to the
+iCloud copy; reload the page on the other Mac to pick them up. A Mac without iCloud Drive uses
+`presets.json` in the app folder.
+
+To add a palette, edit the preset in that file: a `palette` list of `{"name": ..., "color": "#rrggbb"}`.
+
 ## Pen heights
 
 - **Height when drawing**: where the tip meets the paper.
