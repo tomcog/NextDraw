@@ -126,6 +126,7 @@ export interface Studio {
   scale?: number;
   rotation?: number; // quarter turns clockwise, in degrees
   tool?: string;
+  small_paths?: number; // percent to slow the plotter by, for drawings full of tiny marks
   second_tool?: string; // a second drawing tool, for drawings that mix pens
   second_tool_layers?: string[]; // ids of the layers that use it; every other layer uses `tool`
   paper?: Partial<Pick<Settings, "paper_size" | "paper_w" | "paper_h" | "paper_x" | "paper_y" | "paper_color">>;

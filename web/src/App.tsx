@@ -72,6 +72,8 @@ export default function App() {
   // A second drawing tool (mixed media): null normally; "" once added but not yet chosen.
   const [secondTool, setSecondTool] = useState<string | null>(null);
   const [secondToolLayers, setSecondToolLayers] = useState<string[]>([]);
+  // Small paths: slow the plotter by this percent for drawings full of tiny marks; null when off.
+  const [smallPaths, setSmallPaths] = useState<number | null>(null);
   const [lastPlottedTool, setLastPlottedTool] = useState<string | null>(null); // for the pen-change prompt
   const [penChangeSeen, setPenChangeSeen] = useState<string | null>(null);
   // The one layer chosen to print (the green printer in the Layers card). None until the operator picks one.
@@ -181,7 +183,7 @@ export default function App() {
   useEffect(() => save(STORAGE.zoom, zoomChoice), [zoomChoice]);
 
   // Refs let the polling loop see current values without restarting.
-  const refs = useRef({ fileName, status, lastAction, settings, scale, presets, plotLayerId, rotation, readRequested: false, plotSettings: settings });
+  const refs = useRef({ fileName, status, lastAction, settings, scale, presets, plotLayerId, rotation, readRequested: false, plotSettings: settings, activePreset });
   refs.current.rotation = rotation;
   refs.current.plotLayerId = plotLayerId;
   refs.current.presets = presets;
@@ -236,6 +238,7 @@ export default function App() {
     setLayerEdits(null);
     setPrintLayer(null);
     setLayerMode("preview");
+    setSmallPaths(studio?.small_paths ?? null);
     setSecondTool(studio?.second_tool ?? null);
     setSecondToolLayers(studio?.second_tool_layers ?? []);
     const tool = studio?.tool ? refs.current.presets.find((p) => p.name === studio.tool) : undefined;
@@ -262,6 +265,7 @@ export default function App() {
     scale,
     rotation,
     tool: activePreset ?? undefined,
+    ...(smallPaths ? { small_paths: smallPaths } : {}),
     ...(secondTool ? { second_tool: secondTool, second_tool_layers: secondToolLayers } : {}),
     paper: { paper_size: settings.paper_size, paper_w: settings.paper_w, paper_h: settings.paper_h, paper_x: settings.paper_x, paper_y: settings.paper_y, paper_color: settings.paper_color },
   };
@@ -304,7 +308,15 @@ export default function App() {
     api<Info>("/api/info")
       .then(setInfo)
       .catch(() => setLocalMessage({ text: "Couldn’t reach NextDraw Studio. Start it with server.py and reload this page.", tone: "error" }));
-    api<{ presets: Preset[] }>("/api/presets").then((r) => setPresets(r.presets)).catch(() => setPresets([]));
+    api<{ presets: Preset[] }>("/api/presets")
+      .then((r) => {
+        setPresets(r.presets);
+        // Presets are shared (iCloud Drive) and can be edited elsewhere: use the chosen tool's current
+        // values rather than the ones remembered from the last time it was picked.
+        const chosen = r.presets.find((p) => p.name === refs.current.activePreset);
+        if (chosen) setSettings((prev) => ({ ...prev, ...chosen.settings }));
+      })
+      .catch(() => setPresets([]));
   }, []);
 
   const clearDrawing = useCallback(() => {
@@ -656,7 +668,23 @@ export default function App() {
   const secondPreset = secondTool ? presets.find((p) => p.name === secondTool) : undefined;
   const usesSecond = (id: string | null) => Boolean(secondTool && id && secondToolLayers.includes(id));
   const toolNameFor = (id: string | null) => (usesSecond(id) ? secondTool : activePreset);
-  const settingsFor = (id: string | null): Settings => (usesSecond(id) && secondPreset ? { ...settings, ...secondPreset.settings } : settings);
+  // Small paths slows everything that makes tiny marks violent: how hard the carriage starts and stops,
+  // how fast it travels and draws, and how hard the pen is raised and lowered. Pen heights don't change.
+  const slowForSmallPaths = (s: Settings): Settings => {
+    if (!smallPaths) return s;
+    const f = 1 - smallPaths / 100;
+    const slow = (v: number) => Math.max(1, Math.round(v * f));
+    return {
+      ...s,
+      accel: slow(s.accel),
+      speed_pendown: slow(s.speed_pendown),
+      speed_penup: slow(s.speed_penup),
+      pen_rate_raise: slow(s.pen_rate_raise),
+      pen_rate_lower: slow(s.pen_rate_lower),
+    };
+  };
+  const settingsFor = (id: string | null): Settings =>
+    slowForSmallPaths(usesSecond(id) && secondPreset ? { ...settings, ...secondPreset.settings } : settings);
   refs.current.plotSettings = settingsFor(plotLayerId);
   const layerPenWidths = useMemo(
     () => Object.fromEntries(layerViews.map((l) => [l.id, (usesSecond(l.id) ? secondPreset : active)?.settings.pen_width])),
@@ -936,6 +964,8 @@ export default function App() {
                   setSecondToolLayers([]);
                 }}
                 onAssign={assignLayerTool}
+                smallPaths={smallPaths}
+                onSmallPaths={setSmallPaths}
                 changed={presetChanged}
                 disabled={plotting}
                 onApply={applyPreset}

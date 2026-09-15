@@ -1301,6 +1301,12 @@ def clean_studio(raw):
         out["rotation"] = clean_rotation(raw)
     if isinstance(raw.get("tool"), str):
         out["tool"] = raw["tool"][:40]
+    # Small paths: how much to slow the plotter for drawings full of tiny marks (percent), or absent.
+    try:
+        if raw.get("small_paths") is not None:
+            out["small_paths"] = int(max(10, min(90, float(raw["small_paths"]))))
+    except (TypeError, ValueError):
+        pass
     # A second drawing tool for mixed-media drawings, and which layers use it (by layer id).
     if isinstance(raw.get("second_tool"), str) and raw["second_tool"]:
         out["second_tool"] = raw["second_tool"][:40]

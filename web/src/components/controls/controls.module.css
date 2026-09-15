@@ -283,6 +283,17 @@
   box-shadow: inset 0 0 0 1px rgb(0 0 0 / 0.15);
 }
 
+/* Small paths: the switch, and how much slower when it's on. */
+.smallPaths {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  min-height: 2.875rem;
+}
+
+.slowField { width: 5.5rem; flex: none; }
+
 .unitsGroup {
   display: flex;
   align-items: center;

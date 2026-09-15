@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { Button, ButtonRound, InputSelect, InputText } from "@tomcoggia/ui";
+import { useEffect, useState } from "react";
+import { Button, ButtonRound, Checkbox, InputSelect, InputText } from "@tomcoggia/ui";
 import { Plus, X } from "lucide-react";
 import styles from "./controls.module.css";
 import { Section } from "./Section";
@@ -21,6 +21,8 @@ interface Props {
   onSecondTool: (name: string) => void;
   onRemoveSecond: () => void;
   onAssign: (id: string, second: boolean) => void;
+  smallPaths: number | null; // percent slower, or null when off
+  onSmallPaths: (percent: number | null) => void;
 }
 
 // Save / Update / Delete are hidden for now; presets can still be chosen.
@@ -29,7 +31,17 @@ const SHOW_PRESET_ACTIONS = false;
 export function PresetSection({
   presets, active, changed, disabled, onApply, onSave, onDelete,
   secondTool, secondLayers, layers, inUse, onAddSecond, onSecondTool, onRemoveSecond, onAssign,
+  smallPaths, onSmallPaths,
 }: Props) {
+  const [slowDraft, setSlowDraft] = useState(String(smallPaths ?? 50));
+  useEffect(() => setSlowDraft(String(smallPaths ?? 50)), [smallPaths]);
+  const commitSlow = (text: string) => {
+    const n = Math.round(Number(text));
+    if (!text || Number.isNaN(n)) return setSlowDraft(String(smallPaths ?? 50));
+    const next = Math.max(10, Math.min(90, n));
+    setSlowDraft(String(next));
+    if (smallPaths !== null && next !== smallPaths) onSmallPaths(next);
+  };
   const mixed = secondTool !== null;
   // Layer number chips under each tool: a layer belongs to exactly one, so turning a chip on under one
   // tool takes it off the other.
@@ -108,6 +120,33 @@ export function PresetSection({
           {layers.length > 0 && chips(true)}
         </div>
       )}
+      <div className={styles.smallPaths}>
+        <Checkbox
+          size="md"
+          label="Small paths"
+          checked={smallPaths !== null}
+          disabled={disabled}
+          title="For drawings full of tiny marks: slows acceleration, travel and drawing speed, and pen lifts, so the plotter doesn't shake"
+          onChange={(e) => onSmallPaths(e.target.checked ? Number(slowDraft) || 50 : null)}
+        />
+        {smallPaths !== null && (
+          <InputText
+            className={styles.slowField}
+            label="Slower by (%)"
+            type="number"
+            inputMode="numeric"
+            min={10}
+            max={90}
+            step={5}
+            value={slowDraft}
+            disabled={disabled}
+            onChange={(e) => setSlowDraft(e.target.value)}
+            onBlur={(e) => commitSlow(e.target.value)}
+            onKeyDown={(e) => { if (e.key === "Enter") commitSlow((e.target as HTMLInputElement).value); }}
+          />
+        )}
+      </div>
+
       {!presets.length && (
         <p className={styles.hint}>Save the heights and speeds that work for a pen, then switch back to them in one click.</p>
       )}
