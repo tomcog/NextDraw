@@ -5,6 +5,7 @@ export interface Preview {
   node: SVGSVGElement;
   widthIn: number;
   heightIn: number;
+  layers: number; // artwork layers tagged .pv-layer (same rule as the server); colored by their id
 }
 
 function lengthToInches(value: string | null) {
@@ -50,8 +51,15 @@ export function parsePreview(svgText: string | null): Preview | null {
     }
   }
 
+  // The drawing's own layers: Inkscape layers if there are any, otherwise the top-level groups
+  // (Illustrator). Matches read_layers in server.py so data-layer lines up with the Layers card.
+  const art = [...root.children].filter((c) => c.localName === "g" && c.getAttributeNS(INKSCAPE_NS, "label") !== "% Preview");
+  const inkscapeLayers = art.filter((g) => g.getAttributeNS(INKSCAPE_NS, "groupmode") === "layer");
+  const layerGroups = inkscapeLayers.length ? inkscapeLayers : art;
+  layerGroups.forEach((g) => g.classList.add("pv-layer"));
+
   const node = document.importNode(root, true) as unknown as SVGSVGElement;
   node.removeAttribute("width");
   node.removeAttribute("height");
-  return { node, widthIn, heightIn };
+  return { node, widthIn, heightIn, layers: layerGroups.length };
 }

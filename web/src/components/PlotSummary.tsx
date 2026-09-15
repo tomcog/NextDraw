@@ -1,4 +1,3 @@
-import { Checkbox } from "@tomcoggia/ui";
 import styles from "./PlotSummary.module.css";
 import { Disclosure } from "./Disclosure";
 import { fmtDistance, fmtDuration, fmtLen } from "../lib/format";
@@ -10,21 +9,18 @@ interface Props {
   preview: Preview | null;
   units: Units;
   rotated: boolean;
-  showPenUp: boolean;
-  onShowPenUp: (show: boolean) => void;
 }
 
 // The "Show pen-up moves" toggle and line key are hidden for now; pen-up moves stay visible.
 const SHOW_LEGEND = false;
 
 // Legend and plot facts. Notes about the drawing are in DrawingNotes.
-export function PlotSummary({ estimate, preview, units, rotated, showPenUp, onShowPenUp }: Props) {
+export function PlotSummary({ estimate, preview, units, rotated }: Props) {
   return (
     <>
       {estimate && preview && (
         <>
           {SHOW_LEGEND && <div className={styles.legend}>
-            <Checkbox size="md" label="Show pen-up moves" checked={showPenUp} onChange={(e) => onShowPenUp(e.target.checked)} />
             <span className={styles.key} data-kind="down">Drawing</span>
             <span className={styles.key} data-kind="up">Pen up</span>
           </div>}

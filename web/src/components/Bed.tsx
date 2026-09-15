@@ -26,7 +26,8 @@ interface Props {
   hasFile: boolean;
   draggingFile: boolean;
   canDrag: boolean;
-  onChooseFile: (file: File | undefined) => void;
+  onOpenBrowser: () => void;
+  layerLooks: Record<string, { color: string | null; skipped: boolean }> | null; // by layer id; null draws the pen path
 }
 
 interface Drag {
@@ -61,6 +62,20 @@ export function Bed(props: Props) {
     }
   }, [preview]);
 
+  // Color each artwork layer. Runs after the preview is mounted, and again when colors change.
+  const { layerLooks } = props;
+  useLayoutEffect(() => {
+    if (!preview) return;
+    const colored = Boolean(layerLooks && preview.layers > 0);
+    preview.node.classList.toggle("pv-colored", colored);
+    preview.node.querySelectorAll<SVGGElement>(".pv-layer").forEach((g) => {
+      const look = colored ? layerLooks![g.id] : undefined;
+      if (look?.color) g.style.setProperty("--layer-color", look.color);
+      else g.style.removeProperty("--layer-color");
+      g.dataset.skipped = String(Boolean(look?.skipped));
+    });
+  }, [preview, layerLooks]);
+
   if (!model) return <div className={styles.wrap} />;
 
   const [tx, ty] = model.travel_in;
@@ -92,12 +107,12 @@ export function Bed(props: Props) {
 
   // Keep the plotter's proportions whatever is framed, so the preview never changes height.
   const travelPad = Math.max(W, H) * 0.075;
-  const aspect = (W + travelPad * 1.4) / (H + travelPad * 1.1);
-  const vb = [frame[0] - pad, frame[1] - pad, frameW + pad * 1.4, frameH + pad * 1.1];
+  // A slim left margin (just room for the side dimension line) gives the preview more width.
+  const leftPad = pad * 0.8;
+  const aspect = (W + travelPad * 1.1) / (H + travelPad * 1.1);
+  const vb = [frame[0] - leftPad, frame[1] - pad, frameW + leftPad + pad * 0.4, frameH + pad * 1.1];
   if (vb[2] / vb[3] < aspect) {
-    const width = vb[3] * aspect;
-    vb[0] -= (width - vb[2]) / 2;
-    vb[2] = width;
+    vb[2] = vb[3] * aspect; // widen to the right, keeping the left edge where it is
   } else {
     const height = vb[2] / aspect;
     vb[1] -= (height - vb[3]) / 2;
@@ -106,7 +121,7 @@ export function Bed(props: Props) {
   const viewBox = drag?.viewBox ?? vb.join(" ");
 
   const dy = frame[1] - pad * 0.45;
-  const dx = frame[0] - pad * 0.45;
+  const dx = frame[0] - pad * 0.35;
   const tick = pad * 0.14;
   const [dimX0, dimY0, dimX1, dimY1] = dimBox;
   const dimMidX = (dimX0 + dimX1) / 2;
@@ -224,19 +239,10 @@ export function Bed(props: Props) {
         )}
       </svg>
 
-      <label className={styles.dropzone}>
+      <button type="button" className={styles.dropzone} onClick={props.onOpenBrowser}>
         <strong>Drop an SVG here</strong>
-        <span>or click to choose a file</span>
-        <input
-          type="file"
-          accept=".svg,image/svg+xml"
-          hidden
-          onChange={(e) => {
-            props.onChooseFile(e.target.files?.[0]);
-            e.target.value = "";
-          }}
-        />
-      </label>
+        <span>or click to open a drawing</span>
+      </button>
     </div>
   );
 }

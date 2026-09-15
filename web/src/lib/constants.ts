@@ -59,4 +59,6 @@ export const STORAGE = {
   placement: "nextdraw-studio-placement",
   scale: "nextdraw-studio-scale",
   zoom: "nextdraw-studio-zoom",
+  layers: "nextdraw-studio-layers",
+  penUpMoves: "nextdraw-studio-pen-up-moves",
 };

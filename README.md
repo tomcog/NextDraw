@@ -7,7 +7,8 @@ Bantam Tools' own [NextDraw Python API](https://bantam.tools/nd_py/).
 - Position a drawing by dragging it or by typing its start, and scale it by percentage
 - Pick a drawing-tool preset (pen heights, lift and drop speeds, drawing speeds) from `presets.json`
 - See plot time, line length and pen lifts, plus warnings about the drawing, before you start
-- Watch progress while it plots, stop safely (the pen lifts), and return home when it finishes
+- Watch progress while it plots, stop safely (the pen lifts), resume a stopped plot from where it
+  stopped, and return home when it finishes
 - Raise and lower the pen, move the carriage, send it home, and move the holder to the pen setup height
 
 ## Pen heights
@@ -39,6 +40,19 @@ before plotting, and checks that the placed drawing stays within the plotter's r
 NextDraw software only limits motion relative to the plot's start. After a finished plot the
 carriage returns home (unless "Return home when finished" is off); a stopped plot leaves it
 where it stopped.
+
+## Stopping and resuming
+
+When a plot is stopped (the Stop button, or the pause button on the plotter), the NextDraw software
+records how far it got in a copy of the SVG. NextDraw Studio saves that copy to `jobs/resume.svg`,
+with the settings, placement and scale in `jobs/resume.json`, so a stopped plot can be resumed even
+after the app restarts. **Resume** puts the plot start back where it was (so the carriage can be
+sent home in between) and continues from the stopping point, using the original settings.
+**Discard stopped plot** forgets it and sends the carriage home; after that, Plot starts the drawing
+from the beginning. Loading or clearing a drawing also discards a stopped plot (without moving
+the carriage). A plot stopped before anything was drawn saves nothing.
+
+Progress is measured by pen-down distance, the same measure the software uses to resume.
 
 ## Start
 

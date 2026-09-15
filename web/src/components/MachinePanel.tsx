@@ -1,5 +1,5 @@
 import type { KeyboardEvent } from "react";
-import { Button, ButtonRound, Segment, SegmentedControl } from "@tomcoggia/ui";
+import { Button, ButtonRound, Checkbox, Segment, SegmentedControl } from "@tomcoggia/ui";
 import { ArrowDown, ArrowLeft, ArrowRight, ArrowUp, House } from "lucide-react";
 import { Disclosure } from "./Disclosure";
 import styles from "./MachinePanel.module.css";
@@ -23,6 +23,8 @@ interface Props {
   onRelease: () => void;
   onSetupHeight: () => void;
   onTestPen: () => void;
+  showPenUp: boolean;
+  onShowPenUp: (show: boolean) => void;
 }
 
 function carriageText(c: Carriage | undefined, model: PlotterModel | undefined, units: Units) {
@@ -101,6 +103,12 @@ export function MachinePanel(props: Props) {
               Release carriage
             </Button>
           </div>
+          <Checkbox
+            size="md"
+            label="Show pen-up movement on the preview"
+            checked={props.showPenUp}
+            onChange={(e) => props.onShowPenUp(e.target.checked)}
+          />
           <p className={styles.status} role="status" aria-live="polite" data-tone={props.message?.tone}>
             {props.message?.text}
           </p>

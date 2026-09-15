@@ -22,14 +22,20 @@ function progressDetail(s: Status, pct: number) {
 export function PlotProgress({ status: s }: { status: Status | null }) {
   const hasData = Boolean(s && (["preparing", "plotting", "stopping", "returning"].includes(s.state)
     || (["finished", "stopped", "error"].includes(s.state) && s.started)));
-  const pct = hasData && s?.total_mm ? Math.min(100, (s.done_mm / s.total_mm) * 100) : 0;
+  // After a reload or restart the live status is gone, but a saved stopped plot still has a point.
+  const savedStop = !hasData && s?.resume ? s.resume : null;
+  const pct = hasData && s?.total_mm
+    ? Math.min(100, (s.done_mm / s.total_mm) * 100)
+    : savedStop?.total_mm ? Math.min(100, (savedStop.done_mm / savedStop.total_mm) * 100) : 0;
   const shown = hasData && s?.state === "finished" ? 100 : Math.floor(pct);
+  const state = hasData ? s!.state : savedStop ? "stopped" : "empty";
+  const detail = hasData ? progressDetail(s!, pct) : savedStop ? "Stopped. Resume to continue." : "\u00a0";
 
   return (
-    <div className={styles.progress} data-state={hasData ? s!.state : "empty"}>
+    <div className={styles.progress} data-state={state}>
       <p className={styles.line}>
-        <span className={styles.pct}>{shown}%</span>
-        <span>{hasData ? progressDetail(s!, pct) : "\u00a0"}</span>
+        <span className={styles.pct}>{pct > 0 && shown < 1 ? "<1%" : `${shown}%`}</span>
+        <span>{detail}</span>
       </p>
       <div className={styles.rail} role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={shown}>
         <div className={styles.fill} style={{ width: `${shown === 100 ? 100 : pct}%` }} />

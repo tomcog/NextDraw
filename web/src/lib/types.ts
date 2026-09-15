@@ -72,6 +72,10 @@ export interface Status {
   carriage: Carriage;
   plotter_found: boolean;
   file: string | null;
+  file_path: string | null; // where the loaded drawing lives; null for an uploaded copy
+  file_folder: string | null; // that folder, for display (e.g. "~/Desktop")
+  sibling_ai: string | null; // an Illustrator file with the same name next to it
+  resume: { done_mm: number; total_mm: number } | null; // a stopped plot that can be resumed
 }
 
 export interface Estimate {
@@ -83,6 +87,38 @@ export interface Estimate {
   rotated: boolean;
   warnings: string[];
   preview_svg: string | null;
+  layers: Layer[];
+}
+
+// A layer as found in the drawing file, in file order.
+export interface Layer {
+  index: number;
+  id: string;
+  name: string;
+  color: string | null; // the most common stroke color on the layer
+  colors: string[];
+  shapes: number;
+  skipped: boolean; // name starts with %, so NextDraw won't plot it
+}
+
+// A layer as shown in the Layers card, after the operator's renames.
+export interface LayerView extends Layer {
+  originalName: string;
+  renamed: boolean;
+}
+
+// The operator's changes to a drawing's layers, kept until they're saved into the file.
+export interface LayerEdits {
+  order: string[]; // layer ids, bottom layer first
+  names: Record<string, string>;
+}
+
+// The page's choices saved inside a drawing file, restored when it's opened again.
+export interface Studio {
+  placement?: Placement;
+  scale?: number;
+  tool?: string;
+  paper?: Partial<Pick<Settings, "paper_size" | "paper_w" | "paper_h" | "paper_x" | "paper_y">>;
 }
 
 export interface Preset {
@@ -96,6 +132,14 @@ export interface Placement {
 }
 
 export type Tone = "error" | "ok" | undefined;
+
+// A question shown in the page before a consequential action.
+export interface Confirmation {
+  message: string;
+  confirmLabel: string;
+  danger?: boolean;
+  onConfirm: () => void;
+}
 
 export interface Message {
   text: string;

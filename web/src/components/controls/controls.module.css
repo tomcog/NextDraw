@@ -119,6 +119,14 @@
   font-variant-numeric: tabular-nums;
 }
 
+.fileWhere {
+  margin: -0.25rem 0 0;
+  font-size: 0.75rem;
+  color: var(--ui-text-muted);
+}
+
+.fileWhere[data-tone="error"] { color: var(--ui-danger); }
+
 .fileName {
   flex: 1;
   min-width: 0;
@@ -227,6 +235,25 @@
 }
 
 .wide { width: 100%; }
+
+.confirm {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.confirmText {
+  margin: 0;
+  font-size: 0.8125rem;
+  color: var(--ui-text-default);
+}
+
+/* Discard and Resume, side by side in place of Plot. */
+.resumeRow {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.5rem;
+}
 
 .status {
   margin: 0;

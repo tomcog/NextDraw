@@ -8,8 +8,12 @@ Then open http://127.0.0.1:5055
 import inspect
 import json
 import logging
+import os
 import re
+import shutil
+import subprocess
 import sys
+import tempfile
 import threading
 import time
 import warnings
@@ -30,7 +34,18 @@ ROOT = Path(__file__).parent
 JOBS = ROOT / "jobs"
 JOBS.mkdir(exist_ok=True)
 CURRENT_SVG = JOBS / "current.svg"
+CURRENT_MTIME = JOBS / "current.mtime"  # the file's modified time when opened or last saved, to catch outside edits
+CURRENT_PATH = JOBS / "current.path"  # where the loaded drawing lives on disk; absent for uploaded copies
+
+# Folders the file browser may open and save drawings in. Nothing outside these is listed or written.
+ALLOWED_FOLDERS = [Path.home() / "Desktop"]
+
+ILLUSTRATOR_POINTS_PER_INCH = 72.0
 PRESETS_FILE = ROOT / "presets.json"
+# A stopped plot's progress: the NextDraw software writes where it stopped into its output SVG,
+# which is what its res_plot mode resumes from. The JSON keeps what this app needs to resume it.
+RESUME_SVG = JOBS / "resume.svg"
+RESUME_META = JOBS / "resume.json"
 
 # Settings the GUI may change, with (min, max) limits from the NextDraw docs.
 NUMERIC_SETTINGS = {
@@ -100,9 +115,13 @@ class Job:
     def snapshot(self):
         done = self.done_mm
         if self.nd is not None and self.state in ("plotting", "stopping"):  # live progress
+            # Pen-down distance: it's what the NextDraw software records as a plot's progress, and a
+            # resumed plot starts counting from where the stopped one left off.
             stats = self.nd.plot_status.stats
-            inches = stats.up_travel_tot + stats.down_travel_tot + stats.up_travel_inch + stats.down_travel_inch
-            done = min(inches * 25.4, self.total_mm) if self.total_mm else inches * 25.4
+            inches = stats.down_travel_tot + stats.down_travel_inch
+            # max(): a resumed plot's counter only picks up its starting point once plotting begins.
+            done = max(self.done_mm, inches * 25.4)
+            done = min(done, self.total_mm) if self.total_mm else done
             self.done_mm = done
         end = self.ended or time.time()
         return {
@@ -158,16 +177,218 @@ def clean_scale(raw):
 PX_PER_UNIT = {"": 1.0, "px": 1.0, "in": 96.0, "mm": 96 / 25.4, "cm": 96 / 2.54, "pt": 96 / 72, "pc": 16.0}
 
 
+def is_illustrator_svg(root):
+    """Illustrator marks its SVG exports with a 'Generator: Adobe Illustrator' comment."""
+    from lxml import etree
+    for node in root.iter(etree.Comment):
+        if "Adobe Illustrator" in (node.text or ""):
+            return True
+    parent = root.getprevious()
+    while parent is not None:  # comments before <svg>
+        if isinstance(parent, etree._Comment) and "Adobe Illustrator" in (parent.text or ""):
+            return True
+        parent = parent.getprevious()
+    return False
+
+
+SVG_NS = "{http://www.w3.org/2000/svg}"
+INKSCAPE_NS = "{http://www.inkscape.org/namespaces/inkscape}"
+ILLUSTRATOR_ID_TAIL = re.compile(r"_\d{8,}_$")  # Illustrator's suffix when a name is used twice
+ILLUSTRATOR_ID_ESCAPE = re.compile(r"_x([0-9A-Fa-f]{2,4})_")  # Illustrator's escape for characters ids can't hold
+
+
+def layer_name(group, illustrator):
+    label = group.get(INKSCAPE_NS + "label") or group.get("data-name")
+    if label:
+        return label
+    name = group.get("id") or ""
+    if name.startswith("nds-layer-"):
+        return ""
+    if illustrator:
+        name = ILLUSTRATOR_ID_TAIL.sub("", name)
+        name = ILLUSTRATOR_ID_ESCAPE.sub(lambda m: chr(int(m.group(1), 16)), name)
+        name = name.replace("_", " ")
+    return name.strip()
+
+
+def class_strokes(root):
+    """Stroke colors set by class in <style> blocks, e.g. .st0{stroke:#912474}."""
+    strokes = {}
+    for style in root.iter(SVG_NS + "style"):
+        for selectors, body in re.findall(r"([^{}]+)\{([^}]*)\}", style.text or ""):
+            match = re.search(r"(?:^|;)\s*stroke\s*:\s*([^;]+)", body)
+            if not match:
+                continue
+            for selector in selectors.split(","):
+                selector = selector.strip()
+                if selector.startswith("."):
+                    strokes[selector[1:]] = match.group(1).strip()
+    return strokes
+
+
+def stroke_of(node, by_class):
+    match = re.search(r"(?:^|;)\s*stroke\s*:\s*([^;]+)", node.get("style") or "")
+    if match:
+        return match.group(1).strip()
+    if node.get("stroke"):
+        return node.get("stroke").strip()
+    for cls in (node.get("class") or "").split():
+        if cls in by_class:
+            return by_class[cls]
+    return None
+
+
+SHAPE_TAGS = {SVG_NS + t for t in ("path", "rect", "circle", "ellipse", "line", "polyline", "polygon")}
+
+
+def read_layers(root):
+    """The drawing's layers, top to bottom as they appear in the file: Inkscape layers if the file has them,
+    otherwise the top-level groups (which is how Illustrator writes its layers)."""
+    illustrator = is_illustrator_svg(root)
+    groups = layer_groups(root)
+    by_class = class_strokes(root)
+    layers = []
+    for index, group in enumerate(groups):
+        counts = {}
+        shapes = 0
+        for node in group.iter():
+            if node.tag not in SHAPE_TAGS:
+                continue
+            shapes += 1
+            color = None
+            walk = node
+            while walk is not None and color is None:  # stroke can be inherited from a parent group
+                color = stroke_of(walk, by_class)
+                walk = walk.getparent() if walk is not group else None
+            if color and color.lower() != "none":
+                counts[color.lower()] = counts.get(color.lower(), 0) + 1
+        colors = sorted(counts, key=counts.get, reverse=True)
+        name = layer_name(group, illustrator)
+        layers.append({
+            "index": index,
+            "id": group.get("id"),
+            "name": name or f"Layer {index + 1}",
+            "color": colors[0] if colors else None,
+            "colors": colors,
+            "shapes": shapes,
+            "skipped": name.startswith("%"),  # NextDraw doesn't plot layers whose names start with %
+        })
+    return layers
+
+
+def layer_groups(root):
+    """The elements read_layers reports, in file order."""
+    groups = [g for g in root if g.tag == SVG_NS + "g" and g.get(INKSCAPE_NS + "groupmode") == "layer"]
+    return groups or [g for g in root if g.tag == SVG_NS + "g"]
+
+
+AUTO_LAYER_ID = "nds-layer-"  # ids the app gives unnamed layers; never shown as a name
+STUDIO_NS = "https://github.com/tomcog/NextDraw"
+STUDIO_TAG = "{%s}studio" % STUDIO_NS
+
+
+def parse_svg(path):
+    from lxml import etree
+    return etree.parse(str(path), etree.XMLParser(huge_tree=True, remove_blank_text=False))
+
+
+def svg_bytes(tree):
+    from lxml import etree
+    return etree.tostring(tree, xml_declaration=True, encoding=tree.docinfo.encoding or "utf-8")
+
+
+def ensure_layer_ids(path):
+    """Give every layer an id, so the page can refer to layers while they're renamed and reordered."""
+    tree = parse_svg(path)
+    root = tree.getroot()
+    used = {el.get("id") for el in root.iter() if el.get("id")}
+    changed = False
+    for n, group in enumerate(layer_groups(root), start=1):
+        if group.get("id"):
+            continue
+        candidate = f"{AUTO_LAYER_ID}{n}"
+        while candidate in used:
+            candidate += "_"
+        group.set("id", candidate)
+        used.add(candidate)
+        changed = True
+    if changed:
+        path.write_bytes(svg_bytes(tree))
+
+
+def read_studio(root):
+    """The page's saved choices for this drawing (placement, scale, tool, paper), or None."""
+    for node in root.iter(STUDIO_TAG):
+        try:
+            data = json.loads(node.text or "{}")
+            return data if isinstance(data, dict) else None
+        except ValueError:
+            return None
+    return None
+
+
+def write_studio(root, data):
+    from lxml import etree
+    for node in list(root.iter(STUDIO_TAG)):
+        parent = node.getparent()
+        parent.remove(node)
+        if parent.tag == SVG_NS + "metadata" and len(parent) == 0 and not (parent.text or "").strip():
+            parent.getparent().remove(parent)
+    metadata = etree.Element(SVG_NS + "metadata")
+    metadata.set("id", "nextdraw-studio")
+    node = etree.SubElement(metadata, STUDIO_TAG, nsmap={"nds": STUDIO_NS})
+    node.text = json.dumps(data, separators=(",", ":"))
+    metadata.tail = "\n"
+    root.insert(0, metadata)
+
+
+def normalize_size(root):
+    """
+    Give the document a width and height the NextDraw software can size, in inches, when it lacks
+    one it understands. Illustrator writes coordinates in points (72 per inch) and, with its default
+    "Responsive" export, no width/height at all; the SVG standard assumes 96 per inch.
+    Returns a note for the user, or None.
+    """
+    def length(value):
+        m = re.match(r"^\s*([0-9]*\.?[0-9]+(?:e[-+]?\d+)?)\s*([a-z%]*)\s*$", value or "", re.I)
+        return (float(m.group(1)), m.group(2).lower()) if m else None
+
+    illustrator = is_illustrator_svg(root)
+    per_inch = ILLUSTRATOR_POINTS_PER_INCH if illustrator else 96.0
+    width, height = length(root.get("width")), length(root.get("height"))
+    vb = root.get("viewBox")
+    vb = [float(v) for v in re.split(r"[\s,]+", vb.strip())] if vb else None
+
+    note = None
+    if not (width and height) or width[1] == "%" or height[1] == "%":
+        if not vb:
+            return None  # nothing to size from; the software reports it
+        root.set("width", f"{vb[2] / per_inch:g}in")
+        root.set("height", f"{vb[3] / per_inch:g}in")
+        if illustrator:
+            note = ("This Illustrator SVG was saved without a page size (Responsive on), so the page is "
+                    "sized from its coordinates. If the artboard wasn't included, the page is just the "
+                    "artwork's outline.")
+    elif illustrator and width[1] in ("", "px") and height[1] in ("", "px"):
+        # Illustrator's "px" are points.
+        if not vb:
+            root.set("viewBox", f"0 0 {width[0]:g} {height[0]:g}")
+        root.set("width", f"{width[0] / per_inch:g}in")
+        root.set("height", f"{height[0] / per_inch:g}in")
+    return note
+
+
 def svg_input(scale):
     """
-    The loaded SVG for the NextDraw software, scaled if needed. The software plots a document at its
-    width/height, so scaling multiplies those while a viewBox keeps the artwork filling the page.
-    Returns a file path (unscaled) or an SVG string (plot_setup accepts either).
+    The loaded SVG for the NextDraw software: sized (see normalize_size) and scaled if needed. The
+    software plots a document at its width/height, so scaling multiplies those while a viewBox keeps
+    the artwork filling the page. Returns an SVG string (plot_setup accepts a path or a string).
     """
-    if abs(scale - 100) < 1e-9:
-        return str(CURRENT_SVG)
     from lxml import etree
     root = etree.parse(str(CURRENT_SVG), etree.XMLParser(huge_tree=True)).getroot()
+    normalize_size(root)
+    if abs(scale - 100) < 1e-9:
+        return etree.tostring(root, encoding="unicode")
     factor = scale / 100
 
     def length(value):
@@ -217,12 +438,17 @@ def apply_settings(nd, settings):
             setattr(nd.options, key, value)
 
 
-def dry_run(settings, render, scale=100.0):
+def dry_run(settings, render, scale=100.0, source=None, mode="plot"):
     """Simulate the plot without the machine. Returns stats and (optionally) the path preview SVG."""
     log = []
     nd = make_nextdraw(log)
-    nd.plot_setup(svg_input(scale))
+    nd.plot_setup(source if source is not None else svg_input(scale))
+    size_note = None
+    if source is None and CURRENT_SVG.exists():
+        from lxml import etree
+        size_note = normalize_size(etree.parse(str(CURRENT_SVG), etree.XMLParser(huge_tree=True)).getroot())
     apply_settings(nd, settings)
+    nd.options.mode = mode
     nd.options.preview = True
     nd.options.rendering = render
     output = nd.plot_run(output=render)
@@ -233,7 +459,7 @@ def dry_run(settings, render, scale=100.0):
         "pen_lifts": nd.pen_lifts,
         "doc_in": [nd.svg_width, nd.svg_height],
         "rotated": bool(nd.rotate_page),
-        "warnings": log,
+        "warnings": ([size_note] if size_note else []) + log,
         "preview_svg": output if render else None,
     }
 
@@ -291,18 +517,62 @@ def set_plot_start(settings, log, placement):
     return code
 
 
-def run_plot(settings, placement):
+def load_resume():
+    """The stopped plot that can be resumed, or None."""
+    try:
+        meta = json.loads(RESUME_META.read_text())
+    except (OSError, ValueError):
+        return None
+    if not RESUME_SVG.exists():
+        return None
+    return meta
+
+
+def clear_resume():
+    for path in (RESUME_SVG, RESUME_META):
+        path.unlink(missing_ok=True)
+
+
+def save_resume(svg_text, settings, placement, total_mm):
+    """Keep a stopped plot's progress so it can be resumed. Returns the stopping point in mm."""
+    m = re.search(r'pause_dist="(-?\d+)"', svg_text or "")
+    pause_mm = int(m.group(1)) / 1000 if m else -1  # stored in µm
+    if pause_mm <= 0:
+        clear_resume()  # nothing drawn yet: starting over is the same as resuming
+        return 0
+    RESUME_SVG.write_text(svg_text)
+    name_file = JOBS / "current.name"
+    RESUME_META.write_text(json.dumps({
+        "file": name_file.read_text() if name_file.exists() else None,
+        "settings": settings,
+        "placement": placement,
+        "done_mm": round(pause_mm, 1),
+        "total_mm": round(total_mm, 1),
+        "saved_at": time.time(),
+    }))
+    return pause_mm
+
+
+def run_plot(settings, placement, resume=None):
+    """Plot the loaded drawing, or resume a stopped plot (resume = its saved metadata)."""
     log = job.log
     try:
-        estimate = dry_run(settings, render=False, scale=placement["scale"])
+        if resume:
+            source, mode = RESUME_SVG.read_text(), "res_plot"
+        else:
+            clear_resume()  # a new plot replaces any stopped one
+            source, mode = svg_input(placement["scale"]), "plot"
+
+        estimate = dry_run(settings, render=False, source=source, mode=mode)
         problem = placement_problem(settings, placement, estimate)
         if problem:
             with job.lock:
                 job.state, job.message = "error", problem
             return
         with job.lock:
-            job.total_mm = estimate["total_m"] * 1000
+            job.total_mm = estimate["pendown_m"] * 1000
             job.estimate_s = estimate["estimate_s"]
+            job.done_mm = resume["done_mm"] if resume else 0.0
         code = set_plot_start(settings, log, placement)
         if code:
             with job.lock:
@@ -314,8 +584,9 @@ def run_plot(settings, placement):
             job.message = ""
 
         nd = make_nextdraw(log)
-        nd.plot_setup(svg_input(placement["scale"]))
+        nd.plot_setup(source)
         apply_settings(nd, settings)
+        nd.options.mode = mode
         with job.lock:
             job.nd = nd
             if job.state == "stopping":  # Stop was pressed while preparing
@@ -325,8 +596,15 @@ def run_plot(settings, placement):
             job.state = "plotting"
             job.started = time.time()
         threading.Thread(target=relay_stop, args=(nd,), daemon=True).start()
-        nd.plot_run()
+        output = nd.plot_run(output=True)
         code = abs(nd.errors.code or 0)
+
+        resumable = 0
+        if code in (102, 103):
+            resumable = save_resume(output, settings, placement, job.total_mm)
+        elif code == 0:
+            clear_resume()
+
         with job.lock:
             job.nd = None
             carriage["known"] = False
@@ -337,10 +615,11 @@ def run_plot(settings, placement):
                 job.done_mm = job.total_mm
                 job.state = "returning" if placement["return_home"] else "finished"
                 job.message = "Plot finished." if not placement["return_home"] else "Returning home…"
-            elif code == 103:
-                job.state, job.message = "stopped", ERRORS[103]
+            elif code in (102, 103):
+                job.state = "stopped"
+                job.message = ERRORS[code] + (" You can resume from where it stopped." if resumable else "")
             else:
-                job.state = "stopped" if code == 102 else "error"
+                job.state = "error"
                 job.message = ERRORS.get(code, f"The plot ended with error code {code}.")
 
         if code == 0:
@@ -633,9 +912,278 @@ def status():
         snap = job.snapshot()
         snap["carriage"] = dict(carriage)
     snap["plotter_found"] = bool(ebb_serial.listEBBports())
+    resume = load_resume()
+    snap["resume"] = {"done_mm": resume["done_mm"], "total_mm": resume["total_mm"]} if resume else None
     name_file = JOBS / "current.name"
     snap["file"] = name_file.read_text() if CURRENT_SVG.exists() and name_file.exists() else None
+    snap["file_path"] = None
+    snap["file_folder"] = None
+    snap["sibling_ai"] = None
+    if snap["file"] and CURRENT_PATH.exists():
+        disk_path = Path(CURRENT_PATH.read_text())
+        snap["file_path"] = str(disk_path)
+        snap["file_folder"] = display_path(disk_path.parent)
+        if disk_path.with_suffix(".ai").exists():
+            snap["sibling_ai"] = str(disk_path.with_suffix(".ai"))
     return jsonify(snap)
+
+
+def allowed_path(raw):
+    """Resolve a path the page sent and make sure it's inside an allowed folder. Returns a Path or None."""
+    try:
+        path = Path(os.path.expanduser(str(raw))).resolve()
+    except (OSError, RuntimeError, ValueError):
+        return None
+    for folder in ALLOWED_FOLDERS:
+        root = folder.resolve()
+        if path == root or root in path.parents:
+            return path
+    return None
+
+
+def display_path(path):
+    home = str(Path.home())
+    text = str(path)
+    return "~" + text[len(home):] if text.startswith(home) else text
+
+
+@app.get("/api/browse")
+def browse():
+    """List the folders, SVG files and Illustrator files in an allowed folder."""
+    folder = allowed_path(request.args.get("path") or ALLOWED_FOLDERS[0])
+    if folder is None or not folder.is_dir():
+        return jsonify(error="That folder isn't one the app can open drawings from."), 403
+    folders, files = [], []
+    try:
+        entries = sorted(folder.iterdir(), key=lambda p: p.name.lower())
+    except OSError as exc:
+        return jsonify(error=f"Couldn't read that folder: {exc.strerror or exc}"), 400
+    for entry in entries:
+        if entry.name.startswith("."):
+            continue
+        try:
+            if entry.is_dir():
+                folders.append({"name": entry.name, "path": str(entry)})
+            elif entry.suffix.lower() in (".svg", ".ai"):
+                info = entry.stat()
+                files.append({
+                    "name": entry.name,
+                    "path": str(entry),
+                    "kind": entry.suffix.lower()[1:],
+                    "size": info.st_size,
+                    "modified": info.st_mtime,
+                    "has_svg": entry.suffix.lower() == ".ai" and entry.with_suffix(".svg").exists(),
+                })
+        except OSError:
+            continue
+    roots = [folder_root.resolve() for folder_root in ALLOWED_FOLDERS]
+    parent = folder.parent if folder not in roots else None
+    return jsonify(
+        path=str(folder),
+        display=display_path(folder),
+        parent=str(parent) if parent else None,
+        roots=[{"name": r.name, "path": str(r)} for r in roots],
+        folders=folders,
+        files=files,
+    )
+
+
+def load_drawing(svg_path):
+    """Make an SVG on disk the loaded drawing, remembering where it lives."""
+    data = svg_path.read_bytes()
+    if b"<svg" not in data:
+        raise ValueError("That file doesn't look like an SVG.")
+    clear_resume()  # a stopped plot of the previous drawing can't be resumed on this one
+    CURRENT_SVG.write_bytes(data)
+    ensure_layer_ids(CURRENT_SVG)
+    (JOBS / "current.name").write_text(svg_path.name)
+    CURRENT_PATH.write_text(str(svg_path))
+    CURRENT_MTIME.write_text(str(svg_path.stat().st_mtime_ns))
+    with job.lock:
+        if not job.busy():
+            job.reset("idle")
+    return read_studio(parse_svg(CURRENT_SVG).getroot())
+
+
+ILLUSTRATOR_EXPORT_JSX = """
+(function () {
+    var src = new File(%(src)s);
+    var dst = new File(%(dst)s);
+    app.userInteractionLevel = UserInteractionLevel.DONTDISPLAYALERTS;
+    var doc = null, opened = false;
+    for (var i = 0; i < app.documents.length; i++) {
+        if (app.documents[i].fullName.fsName == src.fsName) { doc = app.documents[i]; }
+    }
+    if (!doc) { doc = app.open(src); opened = true; }
+    var options = new ExportOptionsSVG();
+    options.artBoardClipping = true;              // the page is the artboard, not the artwork's outline
+    options.fontType = SVGFontType.OUTLINEFONT;   // text becomes paths the plotter can draw
+    options.cssProperties = SVGCSSPropertyLocation.STYLEATTRIBUTES;
+    options.embedRasterImages = false;
+    options.includeFileInfo = false;
+    options.preserveEditability = false;
+    options.coordinatePrecision = 3;
+    doc.exportFile(dst, ExportType.SVG, options);
+    if (opened) { doc.close(SaveOptions.DONOTSAVECHANGES); }
+    return "ok";
+})();
+"""
+
+
+def import_from_illustrator(ai_path):
+    """Have Illustrator export the .ai file's artboard as an SVG next to it. Returns the SVG path."""
+    svg_path = ai_path.with_suffix(".svg")
+    with tempfile.TemporaryDirectory(dir=JOBS) as tmp:
+        tmp_svg = Path(tmp) / "export.svg"
+        script = ILLUSTRATOR_EXPORT_JSX % {"src": json.dumps(str(ai_path)), "dst": json.dumps(str(tmp_svg))}
+        applescript = f'tell application id "com.adobe.illustrator" to do javascript {json.dumps(script)}'
+        try:
+            result = subprocess.run(["osascript", "-e", applescript], capture_output=True, text=True, timeout=240)
+        except subprocess.TimeoutExpired:
+            raise RuntimeError("Illustrator took too long to export the drawing.")
+        if result.returncode != 0 or not tmp_svg.exists():
+            detail = (result.stderr or result.stdout).strip()
+            if "-1743" in detail:
+                raise RuntimeError("macOS didn't allow this app to control Illustrator. Allow it in System "
+                                   "Settings > Privacy & Security > Automation, then try again.")
+            if "-1728" in detail or "Can’t get application" in detail or "Can't get application" in detail:
+                raise RuntimeError("Illustrator isn't available on this Mac, so .ai files can't be imported.")
+            raise RuntimeError(f"Illustrator couldn't export the drawing. {detail}")
+        os.replace(tmp_svg, svg_path)  # swap in the finished file
+    return svg_path
+
+
+@app.post("/api/open")
+def open_file():
+    """
+    Open a drawing by its location. SVGs open directly. An .ai file is imported: Illustrator exports
+    an SVG next to it, which becomes the working file. If that SVG already exists, the page is asked
+    whether to open it or import again (mode: "existing" or "import").
+    """
+    if job.busy():
+        return jsonify(error="Wait for the plotter to finish before opening a drawing."), 409
+    body = request.json or {}
+    path = allowed_path(body.get("path", ""))
+    if path is None or not path.is_file():
+        return jsonify(error="That file isn't in a folder the app can open drawings from."), 403
+    suffix = path.suffix.lower()
+    try:
+        if suffix == ".svg":
+            svg_path = path
+        elif suffix == ".ai":
+            existing = path.with_suffix(".svg")
+            mode = body.get("mode")
+            if existing.exists() and mode not in ("existing", "import"):
+                return jsonify(choice=True, svg_name=existing.name)
+            svg_path = existing if (existing.exists() and mode == "existing") else import_from_illustrator(path)
+        else:
+            return jsonify(error="Choose an SVG or Illustrator (.ai) file."), 400
+        studio = load_drawing(svg_path)
+    except (OSError, ValueError, RuntimeError) as exc:
+        return jsonify(error=str(exc)), 400
+    return jsonify(name=svg_path.name, path=str(svg_path), folder=display_path(svg_path.parent), studio=studio)
+
+
+@app.get("/api/drawing")
+def get_drawing():
+    if not CURRENT_SVG.exists():
+        return jsonify(error="Load an SVG first."), 400
+    try:
+        return jsonify(studio=read_studio(parse_svg(CURRENT_SVG).getroot()))
+    except Exception as exc:  # noqa: BLE001
+        return jsonify(error=f"Couldn't read that SVG: {exc}"), 400
+
+
+def clean_studio(raw):
+    """Only the choices the page saves into a drawing, with sane values."""
+    out = {}
+    placement = raw.get("placement")
+    if isinstance(placement, dict):
+        try:
+            out["placement"] = {k: round(max(0.0, min(2000.0, float(placement[k]))), 3) for k in ("x", "y")}
+        except (KeyError, TypeError, ValueError):
+            pass
+    if "scale" in raw:
+        out["scale"] = clean_scale(raw)
+    if isinstance(raw.get("tool"), str):
+        out["tool"] = raw["tool"][:40]
+    paper = raw.get("paper")
+    if isinstance(paper, dict):
+        cleaned = {}
+        for key in ("paper_w", "paper_h", "paper_x", "paper_y"):
+            try:
+                cleaned[key] = max(0.0, min(2000.0, float(paper[key])))
+            except (KeyError, TypeError, ValueError):
+                pass
+        if isinstance(paper.get("paper_size"), str):
+            cleaned["paper_size"] = paper["paper_size"][:40]
+        out["paper"] = cleaned
+    return out
+
+
+@app.post("/api/drawing")
+def save_drawing():
+    """
+    Save the page's changes into the drawing: layer names and order (bottom layer first), plus the
+    placement, scale, drawing tool and paper in a metadata block. The loaded copy is always updated;
+    a drawing opened from a folder is also written back to its file.
+    """
+    if job.busy():
+        return jsonify(error="Changes are saved once the plotter is done."), 409
+    if not CURRENT_SVG.exists():
+        return jsonify(error="Load an SVG first."), 400
+    body = request.json or {}
+    name_file = JOBS / "current.name"
+    if body.get("file") != (name_file.read_text() if name_file.exists() else None):
+        # Another window (or this one, before it caught up) loaded a different drawing since.
+        return jsonify(error="A different drawing was opened in another window. Reload this page."), 409
+    disk_path = Path(CURRENT_PATH.read_text()) if CURRENT_PATH.exists() else None
+    if disk_path is not None:
+        if allowed_path(str(disk_path)) is None or not disk_path.exists():
+            return jsonify(error=f"{disk_path.name} is no longer in {display_path(disk_path.parent)}. Open it again to keep saving."), 409
+        opened = CURRENT_MTIME.read_text().strip() if CURRENT_MTIME.exists() else ""
+        if opened and str(disk_path.stat().st_mtime_ns) != opened:
+            return jsonify(error=f"{disk_path.name} was changed by another app. Open it again to keep saving."), 409
+    try:
+        tree = parse_svg(CURRENT_SVG)
+        root = tree.getroot()
+        wanted = body.get("layers")
+        if isinstance(wanted, list):
+            groups = layer_groups(root)
+            by_id = {g.get("id"): g for g in groups}
+            ids = [str(item.get("id")) for item in wanted if isinstance(item, dict)]
+            if sorted(ids) != sorted(by_id):
+                return jsonify(error="The drawing's layers changed. Open it again."), 409
+            slots = [root.index(g) for g in groups]
+            for g in groups:
+                root.remove(g)
+            for slot, item in sorted(zip(slots, wanted), key=lambda pair: pair[0]):
+                group = by_id[str(item["id"])]
+                name = str(item.get("name") or "").strip()[:200] or layer_name(group, is_illustrator_svg(root))
+                group.set(INKSCAPE_NS + "groupmode", "layer")
+                group.set(INKSCAPE_NS + "label", name)
+                group.attrib.pop("data-name", None)
+                root.insert(slot, group)
+        if isinstance(body.get("studio"), dict):
+            write_studio(root, clean_studio(body["studio"]))
+        from lxml import etree
+        etree.cleanup_namespaces(tree, top_nsmap={"inkscape": INKSCAPE_NS[1:-1]})
+        data = svg_bytes(tree)
+    except Exception as exc:  # noqa: BLE001
+        return jsonify(error=f"Couldn't save the drawing: {exc}"), 400
+    tmp = CURRENT_SVG.with_suffix(".tmp")
+    tmp.write_bytes(data)
+    os.replace(tmp, CURRENT_SVG)
+    if disk_path is not None:
+        try:
+            tmp = disk_path.with_name(f".{disk_path.name}.nextdraw-saving")
+            tmp.write_bytes(data)
+            shutil.copymode(disk_path, tmp)
+            os.replace(tmp, disk_path)
+            CURRENT_MTIME.write_text(str(disk_path.stat().st_mtime_ns))
+        except OSError as exc:
+            return jsonify(error=f"Couldn't save {disk_path.name}: {exc.strerror or exc}"), 500
+    return jsonify(saved_to=display_path(disk_path.parent) if disk_path else None)
 
 
 @app.post("/api/upload")
@@ -648,20 +1196,29 @@ def upload():
     data = file.read()
     if b"<svg" not in data[:4096] and b"<svg" not in data:
         return jsonify(error="That file doesn't look like an SVG."), 400
+    clear_resume()  # a stopped plot of the previous drawing can't be resumed on this one
     CURRENT_SVG.write_bytes(data)
+    try:
+        ensure_layer_ids(CURRENT_SVG)
+        studio = read_studio(parse_svg(CURRENT_SVG).getroot())
+    except Exception:  # noqa: BLE001 - an unreadable SVG is reported by the estimate
+        studio = None
     (JOBS / "current.name").write_text(file.filename)
+    CURRENT_PATH.unlink(missing_ok=True)  # an uploaded copy isn't linked to a file on disk
+    CURRENT_MTIME.unlink(missing_ok=True)
     with job.lock:
         if not job.busy():
             job.reset("idle")
-    return jsonify(name=file.filename)
+    return jsonify(name=file.filename, studio=studio)
 
 
 @app.delete("/api/file")
 def clear_file():
     if job.busy():
         return jsonify(error="Wait for the plotter to finish before clearing the drawing."), 409
-    for path in (CURRENT_SVG, JOBS / "current.name"):
+    for path in (CURRENT_SVG, JOBS / "current.name", CURRENT_PATH, CURRENT_MTIME):
         path.unlink(missing_ok=True)
+    clear_resume()
     with job.lock:
         if not job.busy():
             job.reset("idle")
@@ -674,7 +1231,10 @@ def estimate():
         return jsonify(error="Load an SVG first."), 400
     try:
         body = request.json or {}
-        return jsonify(dry_run(clean_settings(body), render=True, scale=clean_scale(body)))
+        result = dry_run(clean_settings(body), render=True, scale=clean_scale(body))
+        from lxml import etree
+        result["layers"] = read_layers(etree.parse(str(CURRENT_SVG), etree.XMLParser(huge_tree=True)).getroot())
+        return jsonify(result)
     except Exception as exc:
         return jsonify(error=f"Couldn't read that SVG: {exc}"), 400
 
@@ -691,6 +1251,36 @@ def plot():
             return jsonify(error="A plot is already running."), 409
         job.reset("preparing")
         job.thread = threading.Thread(target=run_plot, args=(settings, placement), daemon=True)
+        job.thread.start()
+    return jsonify(ok=True)
+
+
+@app.post("/api/resume")
+def resume_plot():
+    resume = load_resume()
+    if not resume:
+        return jsonify(error="There's no stopped plot to resume."), 400
+    with job.lock:
+        if job.busy():
+            return jsonify(error="A plot is already running."), 409
+        job.reset("preparing")
+        job.thread = threading.Thread(
+            target=run_plot, args=(resume["settings"], resume["placement"], resume), daemon=True)
+        job.thread.start()
+    return jsonify(ok=True)
+
+
+@app.delete("/api/resume")
+def discard_resume():
+    """Forget the stopped plot and send the carriage home."""
+    resume = load_resume()
+    with job.lock:
+        if job.busy():
+            return jsonify(error="Wait for the plotter to finish first."), 409
+        clear_resume()
+        settings = clean_settings((resume or {}).get("settings") or request.json or {})
+        job.reset("moving")
+        job.thread = threading.Thread(target=run_manual, args=("home", settings, 0.0, None), daemon=True)
         job.thread.start()
     return jsonify(ok=True)
 
@@ -744,8 +1334,13 @@ def put_preset(name):
     if not name:
         return jsonify(error="Give the preset a name."), 400
     settings = clean_preset_settings(request.json or {})
-    presets = [p for p in load_presets() if p.get("name") != name]
-    presets.append({"name": name, "settings": settings})
+    existing = load_presets()
+    previous = next((p for p in existing if p.get("name") == name), {})
+    presets = [p for p in existing if p.get("name") != name]
+    entry = {"name": name, "settings": settings}
+    if previous.get("palette"):
+        entry["palette"] = previous["palette"]  # the tool's colors, set up by hand in presets.json
+    presets.append(entry)
     presets.sort(key=lambda p: p["name"].lower())
     save_presets(presets)
     return jsonify(presets=presets)

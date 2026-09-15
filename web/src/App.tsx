@@ -7,16 +7,18 @@ import { cleanNote } from "./lib/format";
 import { fitsOnBed, fitsOnPaper, footprint } from "./lib/geometry";
 import { parsePreview, type Preview } from "./lib/preview";
 import { load, save } from "./lib/storage";
-import type { Estimate, Info, Message, Placement, Preset, Settings, Status } from "./lib/types";
+import type { Confirmation, Estimate, Info, LayerEdits, LayerView, Message, Placement, Preset, Settings, Status, Studio } from "./lib/types";
 import { Header } from "./components/Header";
 import { Bed, type Zoom } from "./components/Bed";
 import { ZoomControl } from "./components/ZoomControl";
+import { FileBrowser, type OpenResult } from "./components/FileBrowser";
 import { MachinePanel } from "./components/MachinePanel";
 import { Disclosure } from "./components/Disclosure";
 import { DrawingNotes } from "./components/DrawingNotes";
 import { PlotSummary } from "./components/PlotSummary";
 import { PlotProgress } from "./components/PlotProgress";
 import { FileSection } from "./components/controls/FileSection";
+import { LayersSection } from "./components/controls/LayersSection";
 import { PositionSection } from "./components/controls/PositionSection";
 import { PresetSection } from "./components/controls/PresetSection";
 import { PaperSection } from "./components/controls/PaperSection";
@@ -58,6 +60,36 @@ export default function App() {
   const [activePreset, setActivePreset] = useState<string | null>(loadActivePreset);
   const [fileName, setFileName] = useState<string | null>(null);
   const [estimate, setEstimate] = useState<Estimate | null>(null);
+
+  /* ---------- Layers ---------- */
+
+  // Renames and order, by layer id. They're saved into the file automatically (see Auto-save).
+  const fileLayers = estimate?.layers ?? null;
+  const [layerEdits, setLayerEdits] = useState<LayerEdits | null>(null);
+  const layerViews: LayerView[] = useMemo(() => {
+    if (!fileLayers) return [];
+    const byId = new Map(fileLayers.map((l) => [l.id, l]));
+    const editsFit = layerEdits && layerEdits.order.length === fileLayers.length && layerEdits.order.every((id) => byId.has(id));
+    const order = editsFit ? layerEdits!.order : fileLayers.map((l) => l.id);
+    return order.map((id) => {
+      const layer = byId.get(id)!;
+      const name = (editsFit && layerEdits!.names[id]) || layer.name;
+      return { ...layer, name, originalName: layer.name, renamed: name !== layer.name, skipped: name.startsWith("%") };
+    });
+  }, [fileLayers, layerEdits]);
+  const layerNames = () => Object.fromEntries(layerViews.map((l) => [l.id, l.name]));
+  const renameLayer = (id: string, name: string) => {
+    setLayerEdits({ order: layerViews.map((l) => l.id), names: { ...layerNames(), [id]: name } });
+  };
+  const moveLayer = (id: string, to: number) => {
+    const order = layerViews.map((l) => l.id).filter((i) => i !== id);
+    order.splice(to, 0, id);
+    setLayerEdits({ order, names: layerNames() });
+  };
+  const layerLooks = useMemo(
+    () => (layerViews.length ? Object.fromEntries(layerViews.map((l) => [l.id, { color: l.color, skipped: l.skipped }])) : null),
+    [layerViews],
+  );
   const [preview, setPreview] = useState<Preview | null>(null);
   const [previewScale, setPreviewScale] = useState(100); // the scale the current preview was made at
   const [placement, setPlacementState] = useState<Placement>({ x: 0, y: 0 });
@@ -68,12 +100,15 @@ export default function App() {
   const [machineError, setMachineError] = useState<string | null>(null);
   const [lastAction, setLastAction] = useState<"plot" | "manual" | null>(null);
   const [stepIndex, setStepIndex] = useState(1);
-  const [showPenUp, setShowPenUp] = useState(true);
+  // The dashed pen-up travel lines on the preview are off unless turned on under Utilities.
+  const [showPenUp, setShowPenUp] = useState(() => load<boolean>(STORAGE.penUpMoves) ?? false);
+  useEffect(() => save(STORAGE.penUpMoves, showPenUp), [showPenUp]);
   const [zoomChoice, setZoomChoice] = useState<Zoom>(() => load<Zoom>(STORAGE.zoom) ?? "plotter");
   useEffect(() => save(STORAGE.zoom, zoomChoice), [zoomChoice]);
 
   // Refs let the polling loop see current values without restarting.
-  const refs = useRef({ fileName, status, lastAction, settings, scale, readRequested: false });
+  const refs = useRef({ fileName, status, lastAction, settings, scale, presets, readRequested: false });
+  refs.current.presets = presets;
   refs.current.fileName = fileName;
   refs.current.status = status;
   refs.current.lastAction = lastAction;
@@ -83,6 +118,7 @@ export default function App() {
 
   const busy = isBusy(status);
   const plotting = Boolean(status && PLOTTING_STATES.includes(status.state));
+
   const model = info?.models.find((m) => m.id === settings.model) ?? info?.models[0];
   const fp = footprint(preview, settings, placement);
   const onBed = fitsOnBed(fp, model);
@@ -99,17 +135,81 @@ export default function App() {
   useEffect(() => save(STORAGE.settings, settings), [settings]);
   useEffect(() => save(STORAGE.preset, activePreset), [activePreset]);
 
-  const setPlacement = useCallback((p: Placement, persist = true) => {
+  const setPlacement = useCallback((p: Placement, _persist = true) => {
     const next = { x: Math.max(0, p.x), y: Math.max(0, p.y) };
     setPlacementState(next);
-    if (persist) save(STORAGE.placement, { file: refs.current.fileName, ...next });
   }, []);
 
   const setScale = useCallback((percent: number) => {
     const next = Math.min(1000, Math.max(1, percent));
     setScaleState(next);
-    save(STORAGE.scale, { file: refs.current.fileName, scale: next });
   }, []);
+
+  // A drawing was loaded: use the choices saved in it (or start at home, full size), then let auto-save
+  // watch for changes from there. Returns the scale to estimate at.
+  const [loadedFile, setLoadedFile] = useState<string | null>(null);
+  const savedKey = useRef<string | null>(null);
+  const applyStudio = useCallback((name: string, studio: Studio | null) => {
+    setPlacementState(studio?.placement ?? { x: 0, y: 0 });
+    const nextScale = studio?.scale ?? 100;
+    refs.current.scale = nextScale;
+    setScaleState(nextScale);
+    setLayerEdits(null);
+    const tool = studio?.tool ? refs.current.presets.find((p) => p.name === studio.tool) : undefined;
+    if (tool) setActivePreset(tool.name);
+    const patch = { ...(tool?.settings ?? {}), ...(studio?.paper ?? {}) };
+    if (Object.keys(patch).length) {
+      refs.current.settings = { ...refs.current.settings, ...patch };
+      setSettings((prev) => ({ ...prev, ...patch }));
+    }
+    savedKey.current = null; // the next state seen is what the file holds
+    setSaveState(null);
+    setLoadedFile(name);
+    return nextScale;
+  }, []);
+  const [saveState, setSaveState] = useState<"saving" | "saved" | "error" | null>(null);
+  const [saveError, setSaveError] = useState<string | null>(null);
+
+  /* ---------- Auto-save ---------- */
+
+  // Changes to the drawing (layer names and order, placement, scale, drawing tool, paper) are written
+  // into the SVG shortly after they're made. Saves run one at a time, and wait while the plotter is busy.
+  const studioNow: Studio = {
+    placement,
+    scale,
+    tool: activePreset ?? undefined,
+    paper: { paper_size: settings.paper_size, paper_w: settings.paper_w, paper_h: settings.paper_h, paper_x: settings.paper_x, paper_y: settings.paper_y },
+  };
+  const layersNow = layerEdits ? layerViews.map((l) => ({ id: l.id, name: l.name })) : null;
+  const saveKey = JSON.stringify([studioNow, layersNow]);
+  const saveChain = useRef(Promise.resolve());
+  useEffect(() => {
+    if (!fileName || loadedFile !== fileName) return;
+    if (savedKey.current === null) {
+      savedKey.current = saveKey;
+      return;
+    }
+    if (saveKey === savedKey.current || busy) return;
+    const key = saveKey;
+    const body = { file: fileName, studio: studioNow, ...(layersNow ? { layers: layersNow } : {}) };
+    const timer = window.setTimeout(() => {
+      saveChain.current = saveChain.current.then(async () => {
+        if (refs.current.fileName !== fileName) return;
+        setSaveState("saving");
+        try {
+          await postJSON("/api/drawing", body);
+          savedKey.current = key;
+          setSaveState("saved");
+        } catch (err) {
+          savedKey.current = key; // don't retry the same change; the next change tries again
+          setSaveError((err as Error).message);
+          setSaveState("error");
+        }
+      });
+    }, 700);
+    return () => window.clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fileName, loadedFile, saveKey, busy]);
 
   /* ---------- Loading ---------- */
 
@@ -127,6 +227,9 @@ export default function App() {
     setPreview(null);
     setPlacementState({ x: 0, y: 0 });
     setScaleState(100);
+    setLayerEdits(null);
+    setLoadedFile(null);
+    setSaveState(null);
     setLocalMessage(null);
   }, []);
 
@@ -142,10 +245,11 @@ export default function App() {
         setLostContact(false);
         if (!next.file && currentFile) clearDrawing(); // cleared in another window
         if (next.file && !currentFile) {
-          const saved = load<Placement & { file: string }>(STORAGE.placement);
-          setPlacementState(saved && saved.file === next.file ? { x: saved.x, y: saved.y } : { x: 0, y: 0 });
-          const savedScale = load<{ file: string; scale: number }>(STORAGE.scale);
-          setScaleState(savedScale && savedScale.file === next.file ? savedScale.scale : 100);
+          // The page was reloaded with a drawing loaded: pick up the choices saved in it.
+          refs.current.fileName = next.file;
+          const drawing = await api<{ studio: Studio | null }>("/api/drawing").catch(() => ({ studio: null }));
+          if (cancelled) return;
+          applyStudio(next.file, drawing.studio);
           setFileName(next.file);
         }
         if (isBusy(prev) && !isBusy(next) && action === "plot") setLocalMessage(null);
@@ -194,38 +298,56 @@ export default function App() {
 
   /* ---------- Actions ---------- */
 
+  // A drawing was just loaded (opened, imported or uploaded): start it at home, at full size.
+  const startNewDrawing = async (name: string, studio: Studio | null) => {
+    estimateSeq.current++;
+    setEstimate(null);
+    setPreview(null);
+    refs.current.fileName = name;
+    const startScale = applyStudio(name, studio);
+    setStatus((s) => (s ? { ...s, resume: null } : s));
+    setFileName(name);
+    setLocalMessage({ text: "Working out the plot…" });
+    // Reloading the same name doesn't change fileName, so run the estimate directly.
+    if (name === fileName) {
+      try {
+        const result = await postJSON<Estimate>("/api/estimate", { ...refs.current.settings, scale: startScale });
+        setEstimate(result);
+        setPreview(parsePreview(result.preview_svg));
+        setPreviewScale(startScale);
+        setLocalMessage(null);
+      } catch (err) {
+        setLocalMessage({ text: (err as Error).message, tone: "error" });
+      }
+    }
+  };
+
+  // Drag and drop from Finder: the browser only hands over a copy, not the file's location.
   const uploadFile = async (file: File | undefined) => {
     if (!file || busy) return;
     if (!/\.svg$/i.test(file.name)) {
-      setLocalMessage({ text: "Choose an SVG file. Other formats can’t be plotted directly.", tone: "error" });
+      setLocalMessage({ text: "Drop an SVG file. Open Illustrator files with Open… so they can be imported.", tone: "error" });
       return;
     }
     const form = new FormData();
     form.append("file", file);
     setLocalMessage({ text: `Loading ${file.name}…` });
     try {
-      const res = await api<{ name: string }>("/api/upload", { method: "POST", body: form });
-      estimateSeq.current++;
-      setEstimate(null);
-      setPreview(null);
-      refs.current.fileName = res.name;
-      setPlacement({ x: 0, y: 0 }); // every new drawing starts at home, at full size
-      refs.current.scale = 100;
-      setScale(100);
-      setFileName(res.name);
-      setLocalMessage({ text: "Working out the plot…" });
-      // A re-upload of the same name doesn't change fileName, so run the estimate directly.
-      if (res.name === fileName) {
-        const result = await postJSON<Estimate>("/api/estimate", { ...settings, scale: 100 });
-        setEstimate(result);
-        setPreview(parsePreview(result.preview_svg));
-        setPreviewScale(100);
-        setLocalMessage(null);
-      }
+      const res = await api<{ name: string; studio: Studio | null }>("/api/upload", { method: "POST", body: form });
+      await startNewDrawing(res.name, res.studio);
     } catch (err) {
       setLocalMessage({ text: (err as Error).message, tone: "error" });
     }
   };
+
+  const [browserOpen, setBrowserOpen] = useState(false);
+  const openBrowser = () => {
+    if (!busy) setBrowserOpen(true);
+  };
+  const onOpened = (res: OpenResult) => {
+    startNewDrawing(res.name, res.studio);
+  };
+
 
   const clearFile = async () => {
     if (busy) return;
@@ -237,14 +359,70 @@ export default function App() {
     }
   };
 
-  const startPlot = async () => {
+  const resume = !busy ? status?.resume ?? null : null;
+
+  // Confirmations are shown in the page (above the panel), not with window.confirm: embedded
+  // browsers, including the in-app Browser pane, block those pop-ups and they answer "no".
+  const [confirmation, setConfirmation] = useState<Confirmation | null>(null);
+  useEffect(() => {
+    if (busy) setConfirmation(null);
+  }, [busy]);
+
+  const startPlot = () => {
     if (!onBed) return;
-    if (!onPaper && !window.confirm("Part of this drawing runs off the paper. Plot anyway?")) return;
+    if (!onPaper) {
+      setConfirmation({
+        message: "Part of this drawing runs off the paper.",
+        confirmLabel: "Plot anyway",
+        onConfirm: plotNow,
+      });
+      return;
+    }
+    plotNow();
+  };
+
+  const plotNow = async () => {
+    setConfirmation(null);
     setLastAction("plot");
     setLocalMessage(null);
     try {
       await postJSON("/api/plot", { ...settings, start_x: placement.x, start_y: placement.y, scale });
       setStatus((s) => (s ? { ...s, state: "preparing", message: "", started: false } : s));
+    } catch (err) {
+      setLocalMessage({ text: (err as Error).message, tone: "error" });
+    }
+  };
+
+  const resumePlot = async () => {
+    setLastAction("plot");
+    setLocalMessage(null);
+    try {
+      await postJSON("/api/resume");
+      setStatus((s) => (s ? { ...s, state: "preparing", message: "", started: false } : s));
+    } catch (err) {
+      setLocalMessage({ text: (err as Error).message, tone: "error" });
+    }
+  };
+
+  const discardResume = () => {
+    setConfirmation({
+      message: "Discard the stopped plot and send the carriage home? It can’t be resumed afterward.",
+      confirmLabel: "Discard",
+      danger: true,
+      onConfirm: discardNow,
+    });
+  };
+
+  const discardNow = async () => {
+    setConfirmation(null);
+    setLastAction("manual"); // the move home reports in Utilities
+    try {
+      await api("/api/resume", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(settings),
+      });
+      setStatus((s) => (s ? { ...s, resume: null, state: "moving", message: "" } : s));
     } catch (err) {
       setLocalMessage({ text: (err as Error).message, tone: "error" });
     }
@@ -413,6 +591,7 @@ export default function App() {
   }, []);
   return (
     <div className={styles.app}>
+      <FileBrowser open={browserOpen} onClose={() => setBrowserOpen(false)} onOpened={onOpened} />
       <Header plotterFound={Boolean(status?.plotter_found)} lostContact={lostContact} />
 
       <main className={styles.layout}>
@@ -433,7 +612,8 @@ export default function App() {
               hasFile={Boolean(fileName)}
               draggingFile={draggingFile}
               canDrag={!busy}
-              onChooseFile={uploadFile}
+              onOpenBrowser={openBrowser}
+              layerLooks={layerLooks}
             />
             <ZoomControl
               zoom={zoom}
@@ -475,6 +655,8 @@ export default function App() {
             onRelease={() => manual("release")}
             onSetupHeight={() => manual("pen_setup")}
             onTestPen={() => manual("pen_test")}
+            showPenUp={showPenUp}
+            onShowPenUp={setShowPenUp}
           />
 
           <PlotSummary
@@ -482,8 +664,6 @@ export default function App() {
             preview={preview}
             units={settings.units}
             rotated={Boolean(fp?.rotated)}
-            showPenUp={showPenUp}
-            onShowPenUp={setShowPenUp}
           />
         </section>
 
@@ -495,7 +675,12 @@ export default function App() {
             stopping={status?.state === "stopping" || status?.state === "returning"}
             canPlot={!busy && Boolean(fileName) && Boolean(estimate) && onBed}
             preparing={status?.state === "preparing"}
+            resume={resume}
+            confirmation={confirmation}
+            onCancelConfirmation={() => setConfirmation(null)}
             onPlot={startPlot}
+            onResume={resumePlot}
+            onDiscard={discardResume}
             onStop={stopPlot}
           />
           <Card variant="flat" className={`${styles.controls} ${styles.fileCard}`}>
@@ -509,11 +694,26 @@ export default function App() {
                 scale={scale}
                 units={settings.units}
                 onScale={setScale}
-                onChoose={uploadFile}
+                folder={status?.file_folder ?? null}
+                saveState={saveState}
+                saveError={saveError}
+                onOpen={openBrowser}
                 onClear={clearFile}
               />
             </div>
           </Card>
+          {fileName && estimate && estimate.layers.length > 0 && (
+            <Card variant="flat" className={styles.controls}>
+              <div className={styles.cardBody}>
+                <LayersSection
+                  layers={layerViews}
+                  disabled={plotting}
+                  onRename={renameLayer}
+                  onMove={moveLayer}
+                />
+              </div>
+            </Card>
+          )}
           <Card variant="flat" className={styles.controls}>
             <div className={styles.cardBody}>
               <PresetSection

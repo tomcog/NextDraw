@@ -11,6 +11,88 @@
       "pen_setup": 60,
       "pen_rate_lower": 30,
       "pen_rate_raise": 75
-    }
+    },
+    "palette": [
+      {
+        "name": "Yellow",
+        "color": "#fee338"
+      },
+      {
+        "name": "Orange",
+        "color": "#ed681f"
+      },
+      {
+        "name": "Red",
+        "color": "#ed3221"
+      },
+      {
+        "name": "Coral pink",
+        "color": "#ff6b63"
+      },
+      {
+        "name": "Pink",
+        "color": "#ee3f89"
+      },
+      {
+        "name": "Lilac",
+        "color": "#6a56b0"
+      },
+      {
+        "name": "Magenta",
+        "color": "#912474"
+      },
+      {
+        "name": "Violet",
+        "color": "#732594"
+      },
+      {
+        "name": "Lime Green",
+        "color": "#3cb227"
+      },
+      {
+        "name": "Green",
+        "color": "#008252"
+      },
+      {
+        "name": "Forest Green",
+        "color": "#1f4736"
+      },
+      {
+        "name": "Sky Blue",
+        "color": "#0086b2"
+      },
+      {
+        "name": "Turquoise",
+        "color": "#00838a"
+      },
+      {
+        "name": "Blue",
+        "color": "#391e9c"
+      },
+      {
+        "name": "Navy Blue",
+        "color": "#211f45"
+      },
+      {
+        "name": "Burgundy",
+        "color": "#7d2828"
+      },
+      {
+        "name": "Brown",
+        "color": "#663b28"
+      },
+      {
+        "name": "Sepia",
+        "color": "#4f3737"
+      },
+      {
+        "name": "Gray",
+        "color": "#5b5e66"
+      },
+      {
+        "name": "Black",
+        "color": "#231f20"
+      }
+    ]
   }
 ]

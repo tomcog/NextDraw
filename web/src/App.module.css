@@ -9,7 +9,7 @@
   display: grid;
   grid-template-columns: minmax(0, 1fr) 22.5rem;
   gap: 1.5rem;
-  padding: 0 1.5rem 1.5rem;
+  padding: 0 1.5rem 1.5rem 0.75rem;
   align-items: start;
 }
 

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { Button, ButtonRound, InputText } from "@tomcoggia/ui";
 import { RotateCcw } from "lucide-react";
 import styles from "./controls.module.css";
@@ -14,13 +14,17 @@ interface Props {
   previewScale: number; // percent the preview was made at
   scale: number; // percent chosen now (the preview may still be catching up)
   units: Units;
+  folder: string | null; // where the file lives, e.g. "~/Desktop"; null for an uploaded copy
+  saveState: "saving" | "saved" | "error" | null;
+  saveError: string | null;
   onScale: (percent: number) => void;
-  onChoose: (file: File | undefined) => void;
+  onOpen: () => void;
   onClear: () => void;
 }
 
-export function FileSection({ fileName, busy, preview, previewScale, scale, units, onScale, onChoose, onClear }: Props) {
-  const input = useRef<HTMLInputElement>(null);
+export function FileSection({
+  fileName, busy, preview, previewScale, scale, units, folder, saveState, saveError, onScale, onOpen, onClear,
+}: Props) {
   const [draft, setDraft] = useState(trimNum(scale, 1));
   useEffect(() => setDraft(trimNum(scale, 1)), [scale]);
 
@@ -51,18 +55,17 @@ export function FileSection({ fileName, busy, preview, previewScale, scale, unit
         {fileName && (
           <Button size="md" variant="ghost" tone="danger" disabled={busy} onClick={onClear}>Clear</Button>
         )}
-        <Button size="md" variant="secondary" disabled={busy} onClick={() => input.current?.click()}>Choose SVG</Button>
-        <input
-          ref={input}
-          type="file"
-          accept=".svg,image/svg+xml"
-          hidden
-          onChange={(e) => {
-            onChoose(e.target.files?.[0]);
-            e.target.value = "";
-          }}
-        />
+        <Button size="md" variant="secondary" disabled={busy} onClick={onOpen}>Open…</Button>
       </div>
+      {fileName && (
+        <p className={styles.fileWhere} role="status" data-tone={saveState === "error" ? "error" : undefined}>
+          {saveState === "error"
+            ? saveError
+            : !folder
+              ? "Uploaded copy. Use Open… to save changes to a file."
+              : saveState === "saving" ? `Saving to ${folder}…` : saveState === "saved" ? `Saved to ${folder}` : `In ${folder}`}
+        </p>
+      )}
 
       {fileName && (
         <div className={styles.scaleRow}>
