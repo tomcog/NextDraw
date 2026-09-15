@@ -387,6 +387,25 @@
 
 .wide { width: 100%; }
 
+.speedRow {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+}
+
+.speedLabel {
+  margin-right: auto;
+  font-size: 0.8125rem;
+  color: var(--ui-text-muted);
+}
+
+.speedValue {
+  min-width: 3.25rem;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+
 .confirm {
   display: flex;
   flex-direction: column;

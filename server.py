@@ -146,6 +146,8 @@ class Job:
         self.done_mm = 0.0
         self.total_mm = 0.0
         self.estimate_s = 0.0
+        self.speed_pct = 100        # live speed adjustment for this plot (see set_speed)
+        self.plot_settings = {}     # the running plot's settings at 100%
         self.started = None
         self.ended = None
         self.log = []
@@ -171,6 +173,7 @@ class Job:
             "done_mm": round(done, 1),
             "total_mm": round(self.total_mm, 1),
             "estimate_s": round(self.estimate_s),
+            "speed_pct": self.speed_pct,
             "elapsed_s": round(end - self.started) if self.started else 0,
             "started": self.started is not None,
             "log": self.log[-20:],
@@ -700,7 +703,7 @@ def clear_resume():
         path.unlink(missing_ok=True)
 
 
-def save_resume(svg_text, settings, placement, total_mm):
+def save_resume(svg_text, settings, placement, total_mm, speed_pct=100):
     """Keep a stopped plot's progress so it can be resumed. Returns the stopping point in mm."""
     m = re.search(r'pause_dist="(-?\d+)"', svg_text or "")
     pause_mm = int(m.group(1)) / 1000 if m else -1  # stored in µm
@@ -715,9 +718,55 @@ def save_resume(svg_text, settings, placement, total_mm):
         "placement": placement,
         "done_mm": round(pause_mm, 1),
         "total_mm": round(total_mm, 1),
+        "speed_pct": speed_pct,
         "saved_at": time.time(),
     }))
     return pause_mm
+
+
+def resume_source(settings):
+    """
+    The stopped plot's SVG, set to resume with the current Handling mode. NextDraw resumes with the
+    Handling mode saved in the file's plotdata, whatever it's given, but that mode only sets speed
+    limits and cornering for paths that are already laid out, so it's safe to change.
+    """
+    svg_text = RESUME_SVG.read_text()
+    handling = settings.get("handling")
+    if not handling:
+        return svg_text
+    return re.sub(r'(<[^>]*plotdata\b[^>]*\bhandling=")\d+(")', rf"\g<1>{handling}\g<2>", svg_text, count=1)
+
+
+SPEED_PCT_RANGE = (20, 200)
+LIVE_SPEED_KEYS = ("speed_pendown", "speed_penup", "accel")
+
+
+def scaled_speeds(settings, pct):
+    """
+    The plot's speeds and acceleration at pct percent. Pen lift rates aren't included: they're sent
+    to the plotter once when a plot starts, so they can't follow a change made while it runs.
+    """
+    return {**settings, **{
+        key: max(1.0, min(100.0, settings[key] * pct / 100)) for key in LIVE_SPEED_KEYS if key in settings
+    }}
+
+
+def apply_live_speed(nd, settings, pct):
+    """
+    Change a running plot's speeds. NextDraw plans each path's motion when it gets to it, reading
+    the acceleration from its options and the speeds from values enable_motors() works out at the
+    start of the plot and of each layer, so set both. The next path drawn uses the new speeds.
+    """
+    scaled = scaled_speeds(settings, pct)
+    for key in LIVE_SPEED_KEYS:
+        if key in scaled:
+            setattr(nd.options, key, scaled[key])
+    params = getattr(nd, "params", None)
+    if params is None or not hasattr(params, "speed_limit") or not hasattr(nd, "speed_pendown"):
+        return  # not planned yet: enable_motors() will work them out from the options
+    pendown = nd.layer_speed_pendown if getattr(nd, "use_layer_speed", False) else nd.options.speed_pendown
+    nd.speed_pendown = pendown * params.speed_limit / 100.0
+    nd.speed_penup = nd.options.speed_penup * params.speed_up / 100.0
 
 
 def run_plot(settings, placement, resume=None):
@@ -725,12 +774,12 @@ def run_plot(settings, placement, resume=None):
     log = job.log
     try:
         if resume:
-            source, mode = RESUME_SVG.read_text(), "res_plot"
+            source, mode = resume_source(settings), "res_plot"
         else:
             clear_resume()  # a new plot replaces any stopped one
             source, mode = svg_input(placement["scale"], placement.get("layer"), placement.get("rotation", 0)), "plot"
 
-        estimate = dry_run(settings, render=False, source=source, mode=mode)
+        estimate = dry_run(scaled_speeds(settings, job.speed_pct), render=False, source=source, mode=mode)
         problem = placement_problem(settings, placement, estimate)
         if problem:
             with job.lock:
@@ -755,6 +804,8 @@ def run_plot(settings, placement, resume=None):
         apply_settings(nd, settings)
         nd.options.mode = mode
         with job.lock:
+            apply_live_speed(nd, settings, job.speed_pct)
+            job.plot_settings = settings
             job.nd = nd
             if job.state == "stopping":  # Stop was pressed while preparing
                 job.state, job.message = "stopped", "Stopped before the plot started."
@@ -768,7 +819,7 @@ def run_plot(settings, placement, resume=None):
 
         resumable = 0
         if code in (102, 103):
-            resumable = save_resume(output, settings, placement, job.total_mm)
+            resumable = save_resume(output, settings, placement, job.total_mm, job.speed_pct)
         elif code == 0:
             clear_resume()
 
@@ -1104,6 +1155,7 @@ def status():
     resume = load_resume()
     snap["resume"] = {
         "done_mm": resume["done_mm"], "total_mm": resume["total_mm"],
+        "speed_pct": resume.get("speed_pct", 100),
         "layer": (resume.get("placement") or {}).get("layer"),  # the layer being plotted, if one
     } if resume else None
     name_file = JOBS / "current.name"
@@ -1665,13 +1717,14 @@ def resume_plot():
     if not resume:
         return jsonify(error="There's no stopped plot to resume."), 400
     # The drawing, placement and stopping point are the stopped plot's. The settings are the page's
-    # current ones when it sends them, so changes made while stopped (Small paths, speeds, a re-seated
-    # pen's heights) apply to the rest of the plot.
+    # current ones when it sends them, so changes made while stopped (Small paths, speeds, Handling mode,
+    # a re-seated pen's heights) apply to the rest of the plot.
     settings = {**resume["settings"], **clean_settings(request.get_json(silent=True) or {})}
     with job.lock:
         if job.busy():
             return jsonify(error="A plot is already running."), 409
         job.reset("preparing")
+        job.speed_pct = resume.get("speed_pct", 100)  # a plot slowed down before it stopped carries on slowed down
         job.thread = threading.Thread(
             target=run_plot, args=(settings, resume["placement"], resume), daemon=True)
         job.thread.start()
@@ -1691,6 +1744,39 @@ def discard_resume():
         job.thread = threading.Thread(target=run_manual, args=("home", settings, 0.0, None), daemon=True)
         job.thread.start()
     return jsonify(ok=True)
+
+
+@app.post("/api/speed")
+def set_speed():
+    """
+    Speed up or slow down the running plot (or the stopped one, for when it resumes), as a percentage
+    of its tool's speeds. It applies from the next path, and a new plot starts back at 100%.
+    """
+    try:
+        pct = int(round(float((request.get_json(silent=True) or {}).get("percent"))))
+    except (TypeError, ValueError):
+        return jsonify(error="Give the speed as a percentage."), 400
+    pct = max(SPEED_PCT_RANGE[0], min(SPEED_PCT_RANGE[1], pct))
+    with job.lock:
+        if job.state in ("preparing", "plotting"):
+            old = job.speed_pct
+            job.speed_pct = pct
+            if job.nd is not None:
+                apply_live_speed(job.nd, job.plot_settings, pct)
+                if job.started and job.estimate_s and old != pct:
+                    # Roughly: the time left changes with the speed. (Acceleration makes it less than that.)
+                    elapsed = time.time() - job.started
+                    left = max(0.0, job.estimate_s - elapsed)
+                    job.estimate_s = elapsed + left * old / pct
+            return jsonify(speed_pct=pct)
+        if job.busy():
+            return jsonify(error="The plotter is finishing up."), 409
+    resume = load_resume()
+    if not resume:
+        return jsonify(error="There's no plot to change the speed of."), 409
+    resume["speed_pct"] = pct
+    RESUME_META.write_text(json.dumps(resume))
+    return jsonify(speed_pct=pct)
 
 
 @app.post("/api/stop")

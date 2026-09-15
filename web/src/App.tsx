@@ -627,6 +627,23 @@ export default function App() {
     }
   };
 
+  // Live speed: the page shows the last speed asked for until the plotter's status catches up, so quick
+  // clicks build on each other instead of on a status that's a poll behind.
+  const speedAsked = useRef<{ pct: number; at: number } | null>(null);
+  const shownSpeed = (serverPct: number) =>
+    speedAsked.current && Date.now() - speedAsked.current.at < 3000 ? speedAsked.current.pct : serverPct;
+  const setPlotSpeed = async (percent: number) => {
+    speedAsked.current = { pct: percent, at: Date.now() };
+    setStatus((s) => (s ? { ...s, speed_pct: percent, resume: s.resume ? { ...s.resume, speed_pct: percent } : s.resume } : s));
+    try {
+      await postJSON("/api/speed", { percent });
+      speedAsked.current = { pct: percent, at: Date.now() };
+    } catch (err) {
+      speedAsked.current = null;
+      setLocalMessage({ text: (err as Error).message, tone: "error" });
+    }
+  };
+
   const manual = async (command: string, extra: Record<string, unknown> = {}) => {
     if (busy) return;
     const action = "manual"; // every manual command reports in the Utilities panel
@@ -912,6 +929,8 @@ export default function App() {
             onResume={resumePlot}
             onDiscard={discardResume}
             onStop={stopPlot}
+            speedPct={plotting ? shownSpeed(status?.speed_pct ?? 100) : resume ? shownSpeed(resume.speed_pct ?? 100) : null}
+            onSpeed={setPlotSpeed}
           />
           <Card variant="flat" className={`${styles.controls} ${styles.fileCard}`}>
             <DrawingNotes notes={notes} className={styles.fileNotes} />
