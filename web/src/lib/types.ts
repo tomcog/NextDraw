@@ -115,6 +115,7 @@ export interface LayerEdits {
   order: string[]; // layer ids, bottom layer first
   names: Record<string, string>;
   hidden: Record<string, boolean>;
+  colors: Record<string, string>; // pen colors picked from the drawing tool's palette
 }
 
 // The page's choices saved inside a drawing file, restored when it's opened again.
@@ -129,6 +130,12 @@ export interface Studio {
 export interface Preset {
   name: string;
   settings: Partial<Settings>;
+  palette?: PenColor[]; // the drawing tool's colors, set up by hand in presets.json
+}
+
+export interface PenColor {
+  name: string;
+  color: string; // #rrggbb
 }
 
 export interface Placement {

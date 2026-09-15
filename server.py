@@ -302,6 +302,27 @@ def read_layers(root):
     return layers
 
 
+HEX_COLOR = re.compile(r"^#[0-9a-fA-F]{6}$")
+STROKE_RULE = re.compile(r"(?:^|;)\s*stroke\s*:[^;]*")
+
+
+def recolor_layer(group, color, by_class):
+    """Give every line on the layer the pen's color. Only shapes that are stroked change (the color is
+    set on the shape itself, which beats a class or a parent's stroke); fill-only shapes are left alone."""
+    for node in group.iter():
+        if node.tag not in SHAPE_TAGS:
+            continue
+        current, walk = None, node
+        while walk is not None and current is None:
+            current = stroke_of(walk, by_class)
+            walk = walk.getparent() if walk is not group else None
+        if not current or current.strip().lower() == "none":
+            continue
+        style = STROKE_RULE.sub("", node.get("style") or "").strip(" ;")
+        node.set("style", f"{style};stroke:{color}" if style else f"stroke:{color}")
+        node.attrib.pop("stroke", None)
+
+
 def has_art(group):
     """Whether a group holds anything that can be drawn. Illustrator exports can carry empty groups."""
     return any(el.tag in SHAPE_TAGS or el.tag == SVG_NS + "use" for el in group.iter())
@@ -1280,6 +1301,8 @@ def save_drawing():
                 group.attrib.pop("data-name", None)
                 if isinstance(item.get("hidden"), bool):
                     set_layer_hidden(group, item["hidden"])
+                if isinstance(item.get("color"), str) and HEX_COLOR.match(item["color"]):
+                    recolor_layer(group, item["color"].lower(), class_strokes(root))
                 root.insert(slot, group)
         if isinstance(body.get("studio"), dict):
             studio = clean_studio(body["studio"])

@@ -7,7 +7,7 @@ import { cleanNote } from "./lib/format";
 import { fitsOnBed, fitsOnPaper, footprint } from "./lib/geometry";
 import { parsePreview, type Preview } from "./lib/preview";
 import { load, save } from "./lib/storage";
-import type { Confirmation, Estimate, Info, Layer, LayerEdits, LayerView, Message, Placement, Preset, Settings, Status, Studio } from "./lib/types";
+import type { Confirmation, Estimate, Info, Layer, LayerEdits, PenColor, LayerView, Message, Placement, Preset, Settings, Status, Studio } from "./lib/types";
 import { Header } from "./components/Header";
 import { Bed, type Zoom } from "./components/Bed";
 import { ZoomControl } from "./components/ZoomControl";
@@ -79,22 +79,33 @@ export default function App() {
       const layer = byId.get(id)!;
       const name = (editsFit && layerEdits!.names[id]) || layer.name;
       const hidden = editsFit && id in layerEdits!.hidden ? layerEdits!.hidden[id] : layer.hidden;
-      return { ...layer, name, hidden, originalName: layer.name, renamed: name !== layer.name, skipped: name.startsWith("%") };
+      const color = (editsFit && layerEdits!.colors[id]) || layer.color;
+      return { ...layer, name, hidden, color, originalName: layer.name, renamed: name !== layer.name, skipped: name.startsWith("%") };
     });
   }, [fileLayers, layerEdits]);
   const layerNames = () => Object.fromEntries(layerViews.map((l) => [l.id, l.name]));
   const layerHidden = () => Object.fromEntries(layerViews.map((l) => [l.id, l.hidden]));
+  const layerColors = () => layerEdits?.colors ?? {};
   const renameLayer = (id: string, name: string) => {
-    setLayerEdits({ order: layerViews.map((l) => l.id), names: { ...layerNames(), [id]: name }, hidden: layerHidden() });
+    setLayerEdits({ order: layerViews.map((l) => l.id), names: { ...layerNames(), [id]: name }, hidden: layerHidden(), colors: layerColors() });
+  };
+  // Picking a pen color from the palette names the layer after the pen and gives its lines that color.
+  const colorLayer = (id: string, pen: PenColor) => {
+    setLayerEdits({
+      order: layerViews.map((l) => l.id),
+      names: { ...layerNames(), [id]: pen.name },
+      hidden: layerHidden(),
+      colors: { ...layerColors(), [id]: pen.color },
+    });
   };
   const moveLayer = (id: string, to: number) => {
     const order = layerViews.map((l) => l.id).filter((i) => i !== id);
     order.splice(to, 0, id);
-    setLayerEdits({ order, names: layerNames(), hidden: layerHidden() });
+    setLayerEdits({ order, names: layerNames(), hidden: layerHidden(), colors: layerColors() });
   };
   // A hidden layer isn't shown or plotted, so it can't stay the layer chosen to print.
   const setLayerVisible = (id: string, visible: boolean) => {
-    setLayerEdits({ order: layerViews.map((l) => l.id), names: layerNames(), hidden: { ...layerHidden(), [id]: !visible } });
+    setLayerEdits({ order: layerViews.map((l) => l.id), names: layerNames(), hidden: { ...layerHidden(), [id]: !visible }, colors: layerColors() });
     if (!visible && printLayer === id) setPrintLayer(null);
   };
   // Drawings with more than one layer plot one layer at a time: the one picked in the Layers card.
@@ -235,7 +246,9 @@ export default function App() {
     tool: activePreset ?? undefined,
     paper: { paper_size: settings.paper_size, paper_w: settings.paper_w, paper_h: settings.paper_h, paper_x: settings.paper_x, paper_y: settings.paper_y },
   };
-  const layersNow = layerEdits ? layerViews.map((l) => ({ id: l.id, name: l.name, hidden: l.hidden })) : null;
+  const layersNow = layerEdits
+    ? layerViews.map((l) => ({ id: l.id, name: l.name, hidden: l.hidden, ...(layerEdits.colors[l.id] ? { color: l.color } : {}) }))
+    : null;
   const saveKey = JSON.stringify([studioNow, layersNow]);
   const saveChain = useRef(Promise.resolve());
   useEffect(() => {
@@ -735,9 +748,7 @@ export default function App() {
               canPaper={settings.paper_w > 0 && settings.paper_h > 0}
               canDrawing={Boolean(fp)}
               onZoom={setZoomChoice}
-              canRotate={!busy}
               updating={updating}
-              onRotate={(turn) => setRotation((r) => (((r + turn * 90) % 360) + 360) % 360)}
             />
           </div>
 
@@ -821,6 +832,7 @@ export default function App() {
                 trimmed={trimmed}
                 trimming={trimming}
                 onTrim={trimPage}
+                onRotate={(turn) => setRotation((r) => (((r + turn * 90) % 360) + 360) % 360)}
               />
             </div>
           </Card>
@@ -834,6 +846,8 @@ export default function App() {
                   target={printLayer}
                   printed={status?.printed_layers ?? []}
                   onTarget={setPrintLayer}
+                  palette={active?.palette ?? []}
+                  onColor={colorLayer}
                   onVisible={setLayerVisible}
                   disabled={plotting}
                   onRename={renameLayer}

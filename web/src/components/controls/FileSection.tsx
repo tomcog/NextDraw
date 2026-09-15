@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Button, ButtonRound, InputText } from "@tomcoggia/ui";
-import { RotateCcw, X } from "lucide-react";
+import { Crop, RotateCcw, RotateCcwSquare, RotateCwSquare, ScanSquare, X } from "lucide-react";
 import styles from "./controls.module.css";
 import { Section } from "./Section";
 import { fmtLen, trimNum } from "../../lib/format";
@@ -23,10 +23,11 @@ interface Props {
   trimmed: boolean; // the page has been trimmed to the drawing's lines
   trimming: boolean;
   onTrim: (restore: boolean) => void;
+  onRotate: (quarterTurns: 1 | -1) => void;
 }
 
 export function FileSection({
-  fileName, busy, preview, previewScale, scale, units, folder, saveState, saveError, onScale, onOpen, onClear, trimmed, trimming, onTrim,
+  fileName, busy, preview, previewScale, scale, units, folder, saveState, saveError, onScale, onOpen, onClear, trimmed, trimming, onTrim, onRotate,
 }: Props) {
   const [draft, setDraft] = useState(trimNum(scale, 1));
   useEffect(() => setDraft(trimNum(scale, 1)), [scale]);
@@ -123,18 +124,20 @@ export function FileSection({
 
       {fileName && (
         <div className={styles.trimRow}>
-          <Button
+          <ButtonRound
             size="sm"
-            variant="tertiary"
-            disabled={busy}
-            loading={trimming}
-            onClick={() => onTrim(trimmed)}
+            icon={trimmed ? <ScanSquare /> : <Crop />}
+            className={trimmed ? styles.roundActive : undefined}
+            aria-pressed={trimmed}
+            aria-label={trimmed ? "Restore the page size" : "Trim the page to the drawing"}
             title={trimmed
               ? "Put back the page size the drawing was made with"
-              : "Shrink the page to the lines in the drawing, so its empty margin no longer counts"}
-          >
-            {trimmed ? "Restore page" : "Trim to drawing"}
-          </Button>
+              : "Trim the page to the lines in the drawing, so its empty margin no longer counts"}
+            disabled={busy || trimming}
+            onClick={() => onTrim(trimmed)}
+          />
+          <ButtonRound size="sm" icon={<RotateCcwSquare />} aria-label="Turn the drawing left" title="Turn the drawing 90° left" disabled={busy} onClick={() => onRotate(-1)} />
+          <ButtonRound size="sm" icon={<RotateCwSquare />} aria-label="Turn the drawing right" title="Turn the drawing 90° right" disabled={busy} onClick={() => onRotate(1)} />
         </div>
       )}
     </Section>

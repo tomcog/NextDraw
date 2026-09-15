@@ -119,7 +119,13 @@
 
 .scaleField { width: 4rem; flex: none; }
 
-.trimRow { display: flex; }
+.trimRow { display: flex; gap: 0.25rem; }
+
+/* A round button that's switched on (the page is trimmed): held in the library's pressed colors. */
+.roundActive {
+  --ui-button-round-bg: var(--ui-surface-inverse);
+  --ui-button-round-icon: var(--ui-text-on-inverse);
+}
 
 .dimensions p { margin: 0; }
 
