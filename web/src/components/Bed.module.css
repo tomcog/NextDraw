@@ -17,6 +17,22 @@
   right: 2.5rem;
   bottom: 1rem;
   z-index: 2;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.rotate {
+  display: flex;
+  gap: 0.25rem;
+}
+
+.updating {
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+  font-size: 10px;
+  color: var(--ui-text-muted);
 }
 
 .wrap[data-loaded="true"] .bed { touch-action: none; }

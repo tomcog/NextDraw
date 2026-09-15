@@ -1,111 +1,211 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { KeyboardEvent, PointerEvent as ReactPointerEvent } from "react";
-import { InputText } from "@tomcoggia/ui";
-import { GripVertical } from "lucide-react";
+import { LayerController, Segment, SegmentedControl } from "@tomcoggia/ui";
 import styles from "./LayersSection.module.css";
 import { Section } from "./Section";
 import type { LayerView } from "../../lib/types";
 
 interface Props {
+  mode: "preview" | "work";
+  onMode: (mode: "preview" | "work") => void;
   layers: LayerView[]; // in the chosen order, bottom layer (number 1) first
+  target: string | null; // id of the layer chosen to print
+  printed: string[]; // ids of layers plotted to the end this session
   disabled: boolean;
+  onTarget: (id: string) => void;
+  onVisible: (id: string, visible: boolean) => void;
   onRename: (id: string, name: string) => void;
   onMove: (id: string, to: number) => void; // to: a position in the chosen order, 0 = bottom
 }
 
+interface Drag {
+  id: string;
+  pointerId: number;
+  grabOffset: number; // pointer distance from the row's top when it was picked up
+}
+
+const SLIDE_MS = 200;
+const reducedMotion = () => window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false;
+
 // The drawing's layers, listed like Illustrator's Layers panel: the top layer at the top and
-// layer 1, the bottom layer, last. Names can be edited in place and rows dragged by their
-// handle (or moved with the arrow keys) to reorder.
-export function LayersSection({ layers, disabled, onRename, onMove }: Props) {
+// layer 1, the bottom layer, last. The box picks the one layer to print; names are edited in
+// place; rows are dragged by their grip (or moved with the arrow keys on it) to reorder.
+export function LayersSection({ mode, onMode, layers, target, printed, disabled, onTarget, onVisible, onRename, onMove }: Props) {
+  // In Plot mode the layers hidden in Preview mode leave the list, and the eye goes. Numbers stay the
+  // plot-order numbers from the full list.
+  const numberOf = new Map(layers.map((l, i) => [l.id, i + 1]));
+  const rows = [...layers].reverse().filter((l) => mode === "preview" || !l.hidden);
+  const count = layers.length;
   const listRef = useRef<HTMLOListElement>(null);
+  const items = useRef(new Map<string, HTMLLIElement>());
   const handles = useRef(new Map<string, HTMLButtonElement>());
-  const [dragging, setDragging] = useState<{ id: string; pointerId: number } | null>(null);
+  const lastTops = useRef(new Map<string, number>());
+  const pointerY = useRef(0);
+  const [drag, setDrag] = useState<Drag | null>(null);
   const [refocus, setRefocus] = useState<string | null>(null);
 
-  // Moving a row can take focus with it; put it back on the handle that was used.
+  // Where the dragged row should sit, in list coordinates: under the pointer, kept inside the list.
+  const dragTop = (d: Drag) => {
+    const list = listRef.current!;
+    const last = items.current.get(rows[rows.length - 1]?.id);
+    const max = last ? last.offsetTop : 0;
+    return Math.max(0, Math.min(max, pointerY.current - d.grabOffset - list.getBoundingClientRect().top));
+  };
+
+  // After every render: rows whose place changed slide from where they were to where they are now
+  // (FLIP), and the dragged row stays glued to the pointer wherever the list put it.
+  useLayoutEffect(() => {
+    const animate = !reducedMotion();
+    for (const [id, li] of items.current) {
+      const top = li.offsetTop;
+      if (drag?.id === id) {
+        li.style.transition = "none";
+        li.style.transform = `translateY(${dragTop(drag) - top}px)`;
+      } else {
+        const before = lastTops.current.get(id);
+        if (animate && before !== undefined && before !== top) {
+          li.style.transition = "none";
+          li.style.transform = `translateY(${before - top}px)`;
+          void li.offsetHeight; // commit the start position before sliding
+          li.style.transition = `transform ${SLIDE_MS}ms ease`;
+          li.style.transform = "";
+        }
+      }
+      lastTops.current.set(id, top);
+    }
+  });
+
+  // Moving a row can take focus with it; put it back on the grip that was used.
   useEffect(() => {
     if (refocus == null) return;
     handles.current.get(refocus)?.focus();
     setRefocus(null);
   }, [refocus, layers]);
 
-  const rows = [...layers].reverse();
-  const count = layers.length;
+  // Drop: the row glides from under the pointer into its slot.
+  const finishDrag = () => {
+    setDrag((d) => {
+      if (!d) return d;
+      const li = items.current.get(d.id);
+      if (li) {
+        li.style.transition = reducedMotion() ? "none" : `transform ${SLIDE_MS}ms ease`;
+        li.style.transform = "";
+      }
+      return null;
+    });
+  };
+
+  // End a drag however the pointer is released, even outside the grip or the window.
+  useEffect(() => {
+    if (!drag) return;
+    window.addEventListener("pointerup", finishDrag);
+    window.addEventListener("pointercancel", finishDrag);
+    window.addEventListener("blur", finishDrag);
+    return () => {
+      window.removeEventListener("pointerup", finishDrag);
+      window.removeEventListener("pointercancel", finishDrag);
+      window.removeEventListener("blur", finishDrag);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [drag]);
 
   // Positions below are in the chosen order (0 = bottom layer); the list shows them reversed.
   const onHandleKey = (e: KeyboardEvent<HTMLButtonElement>, id: string, position: number) => {
     const to = e.key === "ArrowUp" ? position + 1 : e.key === "ArrowDown" ? position - 1 : null;
     if (to == null) return;
     e.preventDefault();
-    if (to < 0 || to >= layers.length) return;
+    if (to < 0 || to >= count) return;
     onMove(id, to);
     setRefocus(id);
   };
 
   const onPointerDown = (e: ReactPointerEvent<HTMLButtonElement>, id: string) => {
-    if (disabled || e.button !== 0) return;
+    const li = items.current.get(id);
+    if (disabled || e.button !== 0 || !li) return;
     try {
-      e.currentTarget.setPointerCapture(e.pointerId); // keeps the moves coming if the pointer leaves the handle
+      e.currentTarget.setPointerCapture(e.pointerId); // keeps the moves coming if the pointer leaves the grip
     } catch {
-      // not a live pointer (synthetic events); dragging still works while over the handle
+      // not a live pointer (synthetic events); dragging still works while over the grip
     }
-    setDragging({ id, pointerId: e.pointerId });
+    e.preventDefault();
+    pointerY.current = e.clientY;
+    setDrag({ id, pointerId: e.pointerId, grabOffset: e.clientY - li.getBoundingClientRect().top });
   };
 
   const onPointerMove = (e: ReactPointerEvent<HTMLButtonElement>) => {
-    if (!dragging || e.pointerId !== dragging.pointerId || !listRef.current) return;
-    const elements = [...listRef.current.children] as HTMLElement[];
-    const from = rows.findIndex((l) => l.id === dragging.id);
-    // The row under the pointer: move there once the pointer passes that row's middle.
-    let to = from;
-    elements.forEach((row, i) => {
-      const r = row.getBoundingClientRect();
-      if (i < from && e.clientY < r.top + r.height / 2) to = Math.min(to, i);
-      if (i > from && e.clientY > r.top + r.height / 2) to = Math.max(to, i);
-    });
-    if (to !== from) onMove(dragging.id, count - 1 - to);
-  };
-
-  const endDrag = (e: ReactPointerEvent<HTMLButtonElement>) => {
-    if (dragging && e.pointerId === dragging.pointerId) setDragging(null);
+    if (!drag || e.pointerId !== drag.pointerId || !listRef.current) return;
+    pointerY.current = e.clientY;
+    const li = items.current.get(drag.id);
+    if (!li) return;
+    const top = dragTop(drag);
+    li.style.transform = `translateY(${top - li.offsetTop}px)`;
+    // Rows are one height apart, so the slot under the dragged row's middle is a division away.
+    const first = items.current.get(rows[0].id);
+    const second = rows[1] ? items.current.get(rows[1].id) : null;
+    const pitch = first && second ? second.offsetTop - first.offsetTop : li.offsetHeight;
+    const to = Math.max(0, Math.min(rows.length - 1, Math.round(top / pitch)));
+    const from = rows.findIndex((l) => l.id === drag.id);
+    if (to !== from) onMove(drag.id, numberOf.get(rows[to].id)! - 1);
   };
 
   return (
-    <Section title="Layers">
-      <ol className={styles.list} ref={listRef}>
-        {rows.map((layer, row) => {
-          const i = count - 1 - row; // position in the chosen order
+    <Section
+      title="Layers"
+      action={
+        <SegmentedControl size="sm" aria-label="Layers view">
+          <Segment selected={mode === "preview"} onClick={() => onMode("preview")} title="Arrange the drawing: show, hide and reorder layers">
+            Preview
+          </Segment>
+          <Segment selected={mode === "work"} onClick={() => onMode("work")} title="Plot layer by layer: only the layer to print is drawn">
+            Plot
+          </Segment>
+        </SegmentedControl>
+      }
+    >
+      <ol className={styles.list} ref={listRef} data-dragging={Boolean(drag)}>
+        {rows.map((layer) => {
+          const i = numberOf.get(layer.id)! - 1; // position in the chosen order
           return (
-          <li key={layer.id} className={styles.row} data-skipped={layer.skipped} data-dragging={dragging?.id === layer.id}>
-            <span className={styles.number}>{i + 1}</span>
-            <span
-              className={styles.swatch}
-              style={layer.color ? { background: layer.color } : undefined}
-              data-empty={!layer.color}
-              title={layer.colors.length ? layer.colors.join(", ") : "No stroke color"}
-            />
-            <div className={styles.nameCell}>
-              <LayerName layer={layer} position={i} disabled={disabled} onRename={onRename} />
-            </div>
-            <button
-              type="button"
+            <li
+              key={layer.id}
               ref={(el) => {
-                if (el) handles.current.set(layer.id, el);
-                else handles.current.delete(layer.id);
+                if (el) items.current.set(layer.id, el);
+                else {
+                  items.current.delete(layer.id);
+                  lastTops.current.delete(layer.id);
+                }
               }}
-              className={styles.handle}
-              disabled={disabled || layers.length < 2}
-              aria-label={`Move ${layer.name}, now number ${i + 1} of ${layers.length}. Use the up and down arrow keys.`}
-              title="Drag to reorder"
-              onKeyDown={(e) => onHandleKey(e, layer.id, i)}
-              onPointerDown={(e) => onPointerDown(e, layer.id)}
-              onPointerMove={onPointerMove}
-              onPointerUp={endDrag}
-              onPointerCancel={endDrag}
+              className={styles.row}
+              data-skipped={layer.skipped}
+              data-dragging={drag?.id === layer.id}
             >
-              <GripVertical size={16} aria-hidden />
-            </button>
-          </li>
+              <LayerController
+                name="print-layer"
+                number={i + 1}
+                color={layer.color ?? undefined}
+                checked={target === layer.id}
+                printed={printed.includes(layer.id)}
+                visible={!layer.hidden}
+                hideVisibility={mode === "work"}
+                onVisibleChange={(visible) => onVisible(layer.id, visible)}
+                disabled={disabled}
+                onChange={() => onTarget(layer.id)}
+                aria-label={`Print layer ${i + 1}, ${layer.name}`}
+                label={<LayerName layer={layer} position={i} disabled={disabled} onRename={onRename} />}
+                handleProps={{
+                  ref: (el: HTMLButtonElement | null) => {
+                    if (el) handles.current.set(layer.id, el);
+                    else handles.current.delete(layer.id);
+                  },
+                  disabled: disabled || count < 2,
+                  "aria-label": `Move ${layer.name}, now number ${i + 1} of ${count}. Use the up and down arrow keys.`,
+                  title: "Drag to reorder",
+                  onKeyDown: (e) => onHandleKey(e, layer.id, i),
+                  onPointerDown: (e) => onPointerDown(e, layer.id),
+                  onPointerMove,
+                } as React.ButtonHTMLAttributes<HTMLButtonElement>}
+              />
+            </li>
           );
         })}
       </ol>
@@ -133,10 +233,8 @@ function LayerName({ layer, position, disabled, onRename }: {
   };
 
   return (
-    <InputText
-      className={styles.nameInput}
-      label={`Name of layer ${position + 1}`}
-      hideLabel
+    <input
+      aria-label={`Name of layer ${position + 1}`}
       value={draft}
       disabled={disabled}
       spellCheck={false}

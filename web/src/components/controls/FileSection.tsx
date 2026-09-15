@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Button, ButtonRound, InputText } from "@tomcoggia/ui";
-import { RotateCcw } from "lucide-react";
+import { RotateCcw, X } from "lucide-react";
 import styles from "./controls.module.css";
 import { Section } from "./Section";
 import { fmtLen, trimNum } from "../../lib/format";
@@ -53,9 +53,18 @@ export function FileSection({
           {fileName ?? "No file loaded"}
         </span>
         {fileName && (
-          <Button size="md" variant="ghost" tone="danger" disabled={busy} onClick={onClear}>Clear</Button>
+          <ButtonRound
+            size="sm"
+            variant="ghost"
+            tone="danger"
+            icon={<X />}
+            aria-label="Clear the drawing"
+            title="Clear the drawing"
+            disabled={busy}
+            onClick={onClear}
+          />
         )}
-        <Button size="md" variant="secondary" disabled={busy} onClick={onOpen}>Open…</Button>
+        <Button size="sm" variant="secondary" disabled={busy} onClick={onOpen}>Open…</Button>
       </div>
       {fileName && (
         <p className={styles.fileWhere} role="status" data-tone={saveState === "error" ? "error" : undefined}>
@@ -93,7 +102,7 @@ export function FileSection({
           {original && (
             <div className={styles.dimensions}>
               <p>{`Original ${original}`}</p>
-              {resized && <p>{`At ${trimNum(scale, 1)}%: ${resized}`}</p>}
+              {resized && <p>{`Scaled ${resized}`}</p>}
             </div>
           )}
           {scale !== 100 && (

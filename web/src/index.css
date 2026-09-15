@@ -31,10 +31,22 @@
   }
   .hide-pen-up .pv-up { display: none; }
 
+  /* The drawing on its own, shown at once while the plot simulation runs: its lines in ink. */
+  .pv-artwork:not(.pv-colored) :is(path, rect, circle, ellipse, line, polyline, polygon) {
+    fill: none !important;
+    stroke: var(--nd-ink) !important;
+    stroke-width: 1.4px !important;
+    vector-effect: non-scaling-stroke;
+  }
+  .pv-artwork :is(text, image) { display: none; }
+
   /* Drawings with layers: show each layer's own lines in its color instead of the single-color
      pen path (NextDraw's preview merges every layer into one path). Fills are never plotted. */
   .pv-colored .pv-down { display: none; }
-  .pv-colored .pv-layer { opacity: 1; }
+  /* Layers not being plotted arrive hidden (display:none) from the server; show them anyway.
+     Layers hidden in the Layers card stay out of the preview. */
+  .pv-colored .pv-layer { opacity: 1; display: inline !important; }
+  .pv-colored .pv-layer[data-hidden="true"] { display: none !important; }
   .pv-colored .pv-layer :is(path, rect, circle, ellipse, line, polyline, polygon) {
     fill: none !important;
     stroke: var(--layer-color, var(--nd-ink)) !important;
@@ -43,7 +55,7 @@
     vector-effect: non-scaling-stroke;
   }
   .pv-colored .pv-layer :is(text, image) { display: none; }
-  .pv-colored .pv-layer[data-skipped="true"] { display: none; }
+  .pv-colored .pv-layer[data-skipped="true"] { display: none !important; }
 }
 
 /* App-only colours for the plotter preview, built on the library's semantic tokens where one fits. */

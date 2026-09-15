@@ -27,7 +27,7 @@ interface Props {
   draggingFile: boolean;
   canDrag: boolean;
   onOpenBrowser: () => void;
-  layerLooks: Record<string, { color: string | null; skipped: boolean }> | null; // by layer id; null draws the pen path
+  layerLooks: Record<string, { color: string | null; skipped: boolean; hidden: boolean }> | null; // by layer id; null draws the pen path
 }
 
 interface Drag {
@@ -73,6 +73,7 @@ export function Bed(props: Props) {
       if (look?.color) g.style.setProperty("--layer-color", look.color);
       else g.style.removeProperty("--layer-color");
       g.dataset.skipped = String(Boolean(look?.skipped));
+      g.dataset.hidden = String(Boolean(look?.hidden));
     });
   }, [preview, layerLooks]);
 

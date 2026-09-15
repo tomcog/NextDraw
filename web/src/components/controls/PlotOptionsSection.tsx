@@ -44,7 +44,6 @@ export function PlotOptionsSection({ settings: s, disabled, onChange }: Props) {
         <option value={2}>Reorder and reverse paths</option>
       </InputSelect>
       <Checkbox size="md" label="Return home when finished" checked={s.return_home} disabled={disabled} onChange={(e) => onChange({ return_home: e.target.checked })} />
-      <Checkbox size="md" label="Turn tall drawings sideways" checked={s.auto_rotate} disabled={disabled} onChange={(e) => onChange({ auto_rotate: e.target.checked })} />
       <Checkbox size="md" label="Remove hidden lines" checked={s.hiding} disabled={disabled} onChange={(e) => onChange({ hiding: e.target.checked })} />
       <Checkbox size="md" label="Randomize where closed shapes start" checked={s.random_start} disabled={disabled} onChange={(e) => onChange({ random_start: e.target.checked })} />
     </div>

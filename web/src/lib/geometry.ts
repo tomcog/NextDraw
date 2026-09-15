@@ -10,9 +10,11 @@ export interface Footprint {
 }
 
 // The drawing's footprint on the plotter, in inches from home.
-export function footprint(preview: Preview | null, settings: Settings, placement: Placement): Footprint | null {
+export function footprint(preview: Preview | null, _settings: Settings, placement: Placement): Footprint | null {
   if (!preview) return null;
-  const rotated = settings.auto_rotate && preview.heightIn > preview.widthIn;
+  // Drawings plot as drawn (turned only by the rotate buttons, which the server applies to the SVG),
+  // so the footprint is never turned here. The server always sends auto_rotate off.
+  const rotated = false;
   return {
     rotated,
     x: placement.x / 25.4,

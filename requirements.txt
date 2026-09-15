@@ -1,2 +1,2 @@
 flask>=3.0
-https://software-download.bantamtools.com/nd/api/nextdraw_api.zip
+nextdraw_api @ https://software-download.bantamtools.com/nd/api/nextdraw_api.zip

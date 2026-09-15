@@ -90,6 +90,28 @@ app = Flask(__name__, static_folder=None)
 app.config["MAX_CONTENT_LENGTH"] = 50 * 1024 * 1024
 
 
+# Layers that finished plotting since the drawing was loaded (ids). In memory only: "printed this
+# session" clears when another drawing is opened or the app restarts.
+printed_layers = set()
+printed_lock = threading.Lock()
+
+
+def forget_printed():
+    with printed_lock:
+        printed_layers.clear()
+
+
+def mark_printed(layer_id):
+    """Record a plot that ran to the end: its one layer, or every shown layer when the whole drawing plotted."""
+    try:
+        root = parse_svg(CURRENT_SVG).getroot()
+        ids = [layer_id] if layer_id else [g.get("id") for g in layer_groups(root) if g.get("id") and not layer_hidden(g)]
+    except Exception:  # noqa: BLE001 - a missing mark is not worth failing a finished plot over
+        return
+    with printed_lock:
+        printed_layers.update(i for i in ids if i)
+
+
 class Job:
     """Shared state for the one plot or pen test that can run at a time."""
 
@@ -162,6 +184,9 @@ def clean_settings(raw):
     for key in BOOL_SETTINGS:
         if key in raw:
             settings[key] = bool(raw[key])
+    # Drawings plot in the orientation they were drawn; the operator turns them with the rotate
+    # buttons. NextDraw's own automatic sideways turn is always off.
+    settings["auto_rotate"] = False
     return settings
 
 
@@ -272,6 +297,7 @@ def read_layers(root):
             "colors": colors,
             "shapes": shapes,
             "skipped": name.startswith("%"),  # NextDraw doesn't plot layers whose names start with %
+            "hidden": layer_hidden(group),  # hidden in Illustrator/Inkscape or in the app; not plotted
         })
     return layers
 
@@ -378,7 +404,89 @@ def normalize_size(root):
     return note
 
 
-def svg_input(scale):
+DISPLAY_RULE = re.compile(r"(?:^|;)\s*display\s*:\s*([^;]*)")
+
+
+def layer_hidden(group):
+    style = DISPLAY_RULE.search(group.get("style") or "")
+    return (style and style.group(1).strip() == "none") or group.get("display") == "none" \
+        or group.get("visibility") in ("hidden", "collapse")
+
+
+def set_layer_hidden(group, hidden):
+    style = DISPLAY_RULE.sub("", group.get("style") or "").strip(" ;")
+    group.attrib.pop("display", None)
+    if group.get("visibility") in ("hidden", "collapse"):
+        group.attrib.pop("visibility")
+    if hidden:
+        group.set("style", f"{style};display:none" if style else "display:none")
+    elif style:
+        group.set("style", style)
+    else:
+        group.attrib.pop("style", None)
+
+
+def only_layer(root, layer_id):
+    """Hide every layer but one, so the NextDraw software plots just that layer (it skips display:none).
+    The hidden layers stay in the document, so the page size and the preview's layer ids don't change."""
+    groups = layer_groups(root)
+    target = next((g for g in groups if g.get("id") == layer_id), None)
+    if target is None:
+        raise RuntimeError("The layer chosen to print isn't in the drawing anymore. Choose it again.")
+    if layer_hidden(target):
+        raise RuntimeError("The layer chosen to print is hidden. Show it to plot it.")
+    for group in groups:
+        if group is not target:
+            set_layer_hidden(group, True)
+
+
+def clean_rotation(raw):
+    """Quarter turns clockwise: 0, 90, 180 or 270."""
+    try:
+        return int(round(float(raw.get("rotation", 0)) / 90)) % 4 * 90
+    except (TypeError, ValueError):
+        return 0
+
+
+NON_DRAWING_TAGS = {SVG_NS + t for t in ("defs", "style", "metadata", "title", "desc")}
+
+
+def rotate_document(root, rotation):
+    """Turn the whole drawing clockwise by a quarter turn (or two, or three), page and all. Each top-level
+    element gets the turn prepended to its own transform, rather than being wrapped in a new group, so
+    the layers stay top-level and keep working for plotting and the preview."""
+    if not rotation:
+        return
+    def length(value):
+        m = re.match(r"^\s*([0-9]*\.?[0-9]+(?:e[-+]?\d+)?)\s*([a-z%]*)\s*$", value or "", re.I)
+        return (float(m.group(1)), m.group(2).lower()) if m else None
+    width, height = length(root.get("width")), length(root.get("height"))
+    if not root.get("viewBox"):
+        if not (width and height and width[1] in PX_PER_UNIT and height[1] in PX_PER_UNIT):
+            raise RuntimeError("This SVG has no size the drawing can be turned from.")
+        root.set("viewBox", f"0 0 {width[0] * PX_PER_UNIT[width[1]]:g} {height[0] * PX_PER_UNIT[height[1]]:g}")
+    vx, vy, vw, vh = [float(v) for v in re.split(r"[\s,]+", root.get("viewBox").strip())]
+    matrix = {
+        90: (0, 1, -1, 0, vy + vh, -vx),
+        180: (-1, 0, 0, -1, vx + vw, vy + vh),
+        270: (0, -1, 1, 0, -vy, vx + vw),
+    }[rotation]
+    turn = "matrix(%s)" % " ".join(f"{v:g}" for v in matrix)
+    for child in root:
+        if not isinstance(child.tag, str) or child.tag in NON_DRAWING_TAGS:
+            continue
+        child.set("transform", f"{turn} {child.get('transform')}" if child.get("transform") else turn)
+    if rotation in (90, 270):
+        root.set("viewBox", f"0 0 {vh:g} {vw:g}")
+        if root.get("width") and root.get("height"):
+            w, h = root.get("width"), root.get("height")
+            root.set("width", h)
+            root.set("height", w)
+    else:
+        root.set("viewBox", f"0 0 {vw:g} {vh:g}")
+
+
+def svg_input(scale, layer=None, rotation=0):
     """
     The loaded SVG for the NextDraw software: sized (see normalize_size) and scaled if needed. The
     software plots a document at its width/height, so scaling multiplies those while a viewBox keeps
@@ -387,6 +495,9 @@ def svg_input(scale):
     from lxml import etree
     root = etree.parse(str(CURRENT_SVG), etree.XMLParser(huge_tree=True)).getroot()
     normalize_size(root)
+    if layer:
+        only_layer(root, layer)
+    rotate_document(root, rotation)
     if abs(scale - 100) < 1e-9:
         return etree.tostring(root, encoding="unicode")
     factor = scale / 100
@@ -414,6 +525,9 @@ def svg_input(scale):
 def clean_placement(raw):
     """Where the drawing starts, in mm from home, its scale, and whether to go home afterward."""
     placement = {"x": 0.0, "y": 0.0, "scale": clean_scale(raw), "return_home": bool(raw.get("return_home", True))}
+    # The one layer to plot, by id; None plots the whole drawing.
+    placement["rotation"] = clean_rotation(raw)
+    placement["layer"] = str(raw["layer"])[:200] if isinstance(raw.get("layer"), str) and raw["layer"] else None
     for key, name in (("x", "start_x"), ("y", "start_y")):
         try:
             placement[key] = max(0.0, min(2000.0, float(raw.get(name, 0))))
@@ -438,11 +552,11 @@ def apply_settings(nd, settings):
             setattr(nd.options, key, value)
 
 
-def dry_run(settings, render, scale=100.0, source=None, mode="plot"):
+def dry_run(settings, render, scale=100.0, source=None, mode="plot", layer=None, rotation=0):
     """Simulate the plot without the machine. Returns stats and (optionally) the path preview SVG."""
     log = []
     nd = make_nextdraw(log)
-    nd.plot_setup(source if source is not None else svg_input(scale))
+    nd.plot_setup(source if source is not None else svg_input(scale, layer, rotation))
     size_note = None
     if source is None and CURRENT_SVG.exists():
         from lxml import etree
@@ -561,7 +675,7 @@ def run_plot(settings, placement, resume=None):
             source, mode = RESUME_SVG.read_text(), "res_plot"
         else:
             clear_resume()  # a new plot replaces any stopped one
-            source, mode = svg_input(placement["scale"]), "plot"
+            source, mode = svg_input(placement["scale"], placement.get("layer"), placement.get("rotation", 0)), "plot"
 
         estimate = dry_run(settings, render=False, source=source, mode=mode)
         problem = placement_problem(settings, placement, estimate)
@@ -613,6 +727,7 @@ def run_plot(settings, placement, resume=None):
             job.ended = time.time()
             if code == 0:
                 job.done_mm = job.total_mm
+                mark_printed(placement.get("layer"))
                 job.state = "returning" if placement["return_home"] else "finished"
                 job.message = "Plot finished." if not placement["return_home"] else "Returning home…"
             elif code in (102, 103):
@@ -916,6 +1031,8 @@ def status():
     snap["resume"] = {"done_mm": resume["done_mm"], "total_mm": resume["total_mm"]} if resume else None
     name_file = JOBS / "current.name"
     snap["file"] = name_file.read_text() if CURRENT_SVG.exists() and name_file.exists() else None
+    with printed_lock:
+        snap["printed_layers"] = sorted(printed_layers)
     snap["file_path"] = None
     snap["file_folder"] = None
     snap["sibling_ai"] = None
@@ -994,6 +1111,7 @@ def load_drawing(svg_path):
     if b"<svg" not in data:
         raise ValueError("That file doesn't look like an SVG.")
     clear_resume()  # a stopped plot of the previous drawing can't be resumed on this one
+    forget_printed()
     CURRENT_SVG.write_bytes(data)
     ensure_layer_ids(CURRENT_SVG)
     (JOBS / "current.name").write_text(svg_path.name)
@@ -1105,6 +1223,8 @@ def clean_studio(raw):
             pass
     if "scale" in raw:
         out["scale"] = clean_scale(raw)
+    if "rotation" in raw:
+        out["rotation"] = clean_rotation(raw)
     if isinstance(raw.get("tool"), str):
         out["tool"] = raw["tool"][:40]
     paper = raw.get("paper")
@@ -1163,6 +1283,8 @@ def save_drawing():
                 group.set(INKSCAPE_NS + "groupmode", "layer")
                 group.set(INKSCAPE_NS + "label", name)
                 group.attrib.pop("data-name", None)
+                if isinstance(item.get("hidden"), bool):
+                    set_layer_hidden(group, item["hidden"])
                 root.insert(slot, group)
         if isinstance(body.get("studio"), dict):
             write_studio(root, clean_studio(body["studio"]))
@@ -1197,6 +1319,7 @@ def upload():
     if b"<svg" not in data[:4096] and b"<svg" not in data:
         return jsonify(error="That file doesn't look like an SVG."), 400
     clear_resume()  # a stopped plot of the previous drawing can't be resumed on this one
+    forget_printed()
     CURRENT_SVG.write_bytes(data)
     try:
         ensure_layer_ids(CURRENT_SVG)
@@ -1216,6 +1339,7 @@ def upload():
 def clear_file():
     if job.busy():
         return jsonify(error="Wait for the plotter to finish before clearing the drawing."), 409
+    forget_printed()
     for path in (CURRENT_SVG, JOBS / "current.name", CURRENT_PATH, CURRENT_MTIME):
         path.unlink(missing_ok=True)
     clear_resume()
@@ -1225,16 +1349,47 @@ def clear_file():
     return jsonify(ok=True)
 
 
+# Simulations run one at a time, newest first: a request that is still waiting when a newer one arrives
+# is answered with superseded=true instead of being simulated. Two at once only slow each other down
+# (the NextDraw software's planning is pure Python), and the page only wants the latest answer anyway.
+estimate_lock = threading.Lock()
+estimate_counter = {"latest": 0}
+
+
 @app.post("/api/estimate")
 def estimate():
     if not CURRENT_SVG.exists():
         return jsonify(error="Load an SVG first."), 400
+    with printed_lock:  # any small lock will do for the counter
+        estimate_counter["latest"] += 1
+        mine = estimate_counter["latest"]
+    with estimate_lock:
+        if mine != estimate_counter["latest"]:
+            return jsonify(superseded=True)
+        try:
+            body = request.json or {}
+            layer = body.get("layer") if isinstance(body.get("layer"), str) and body.get("layer") else None
+            result = dry_run(clean_settings(body), render=True, scale=clean_scale(body), layer=layer, rotation=clean_rotation(body))
+            from lxml import etree
+            result["layers"] = read_layers(etree.parse(str(CURRENT_SVG), etree.XMLParser(huge_tree=True)).getroot())
+            return jsonify(result)
+        except Exception as exc:
+            return jsonify(error=f"Couldn't read that SVG: {exc}"), 400
+
+
+@app.post("/api/artwork")
+def artwork():
+    """The drawing as it will be placed (sized, scaled, turned), without simulating the plot - fast, so
+    the preview can update at once while /api/estimate works out the pen paths and timing."""
+    if not CURRENT_SVG.exists():
+        return jsonify(error="Load an SVG first."), 400
     try:
         body = request.json or {}
-        result = dry_run(clean_settings(body), render=True, scale=clean_scale(body))
         from lxml import etree
-        result["layers"] = read_layers(etree.parse(str(CURRENT_SVG), etree.XMLParser(huge_tree=True)).getroot())
-        return jsonify(result)
+        svg = svg_input(clean_scale(body), None, clean_rotation(body))
+        root = etree.parse(str(CURRENT_SVG), etree.XMLParser(huge_tree=True)).getroot()
+        size_note = normalize_size(root)
+        return jsonify(svg=svg, layers=read_layers(root), warnings=[size_note] if size_note else [])
     except Exception as exc:
         return jsonify(error=f"Couldn't read that SVG: {exc}"), 400
 

@@ -8,6 +8,7 @@ interface Props {
   stopping: boolean;
   preparing: boolean;
   canPlot: boolean;
+  plotLabel: string; // e.g. "Plot", or "Plot Red" when one layer of the drawing is chosen
   resume: { done_mm: number; total_mm: number } | null; // a stopped plot that can be resumed
   confirmation: Confirmation | null;
   onCancelConfirmation: () => void;
@@ -22,7 +23,7 @@ const SHOW_STATUS = false;
 
 // Above the controls panel: Plot / Stop, or Resume after a stopped plot. The plotter's own messages
 // are in the caution callout in the File card (DrawingNotes).
-export function ActionBar({ message, plotting, stopping, preparing, canPlot, resume, confirmation, onCancelConfirmation, onPlot, onResume, onDiscard, onStop }: Props) {
+export function ActionBar({ message, plotting, stopping, preparing, canPlot, plotLabel, resume, confirmation, onCancelConfirmation, onPlot, onResume, onDiscard, onStop }: Props) {
   const resumePct = resume && resume.total_mm ? Math.floor((resume.done_mm / resume.total_mm) * 100) : 0;
   return (
     <div className={styles.actions}>
@@ -51,7 +52,7 @@ export function ActionBar({ message, plotting, stopping, preparing, canPlot, res
         </div>
       ) : (
         <Button size="lg" variant="primary" className={styles.wide} disabled={!canPlot} onClick={onPlot}>
-          Plot
+          {plotLabel}
         </Button>
       )}
       {SHOW_STATUS && (

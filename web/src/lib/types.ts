@@ -72,7 +72,8 @@ export interface Status {
   carriage: Carriage;
   plotter_found: boolean;
   file: string | null;
-  file_path: string | null; // where the loaded drawing lives; null for an uploaded copy
+  file_path: string | null;
+  printed_layers: string[]; // ids of layers that finished plotting since the drawing was opened // where the loaded drawing lives; null for an uploaded copy
   file_folder: string | null; // that folder, for display (e.g. "~/Desktop")
   sibling_ai: string | null; // an Illustrator file with the same name next to it
   resume: { done_mm: number; total_mm: number } | null; // a stopped plot that can be resumed
@@ -88,6 +89,7 @@ export interface Estimate {
   warnings: string[];
   preview_svg: string | null;
   layers: Layer[];
+  superseded?: boolean; // a newer estimate was asked for before this one ran
 }
 
 // A layer as found in the drawing file, in file order.
@@ -99,6 +101,7 @@ export interface Layer {
   colors: string[];
   shapes: number;
   skipped: boolean; // name starts with %, so NextDraw won't plot it
+  hidden: boolean; // hidden in the file (display:none); not shown or plotted
 }
 
 // A layer as shown in the Layers card, after the operator's renames.
@@ -111,12 +114,14 @@ export interface LayerView extends Layer {
 export interface LayerEdits {
   order: string[]; // layer ids, bottom layer first
   names: Record<string, string>;
+  hidden: Record<string, boolean>;
 }
 
 // The page's choices saved inside a drawing file, restored when it's opened again.
 export interface Studio {
   placement?: Placement;
   scale?: number;
+  rotation?: number; // quarter turns clockwise, in degrees
   tool?: string;
   paper?: Partial<Pick<Settings, "paper_size" | "paper_w" | "paper_h" | "paper_x" | "paper_y">>;
 }

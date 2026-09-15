@@ -6,6 +6,7 @@ export interface Preview {
   widthIn: number;
   heightIn: number;
   layers: number; // artwork layers tagged .pv-layer (same rule as the server); colored by their id
+  artworkOnly: boolean; // just the drawing, before the plot simulation adds pen paths
 }
 
 function lengthToInches(value: string | null) {
@@ -38,6 +39,8 @@ export function parsePreview(svgText: string | null): Preview | null {
   }
   if (!widthIn || !heightIn) return null;
 
+  const artworkOnly = ![...root.children].some((c) => c.getAttributeNS(INKSCAPE_NS, "label") === "% Preview");
+  if (artworkOnly) root.classList.add("pv-artwork");
   for (const child of [...root.children]) {
     const label = child.getAttributeNS(INKSCAPE_NS, "label");
     if (label === "% Preview") {
@@ -46,7 +49,7 @@ export function parsePreview(svgText: string | null): Preview | null {
         if (gl === "Pen-up movement") g.classList.add("pv-up");
         if (gl === "Pen-down movement") g.classList.add("pv-down");
       }
-    } else if (!["defs", "metadata", "title", "desc", "style"].includes(child.localName)) {
+    } else if (!artworkOnly && !["defs", "metadata", "title", "desc", "style"].includes(child.localName)) {
       child.setAttribute("opacity", "0.14"); // faint ghost of the artwork under the pen paths
     }
   }
@@ -61,5 +64,5 @@ export function parsePreview(svgText: string | null): Preview | null {
   const node = document.importNode(root, true) as unknown as SVGSVGElement;
   node.removeAttribute("width");
   node.removeAttribute("height");
-  return { node, widthIn, heightIn, layers: layerGroups.length };
+  return { node, widthIn, heightIn, layers: layerGroups.length, artworkOnly };
 }

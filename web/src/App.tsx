@@ -7,7 +7,7 @@ import { cleanNote } from "./lib/format";
 import { fitsOnBed, fitsOnPaper, footprint } from "./lib/geometry";
 import { parsePreview, type Preview } from "./lib/preview";
 import { load, save } from "./lib/storage";
-import type { Confirmation, Estimate, Info, LayerEdits, LayerView, Message, Placement, Preset, Settings, Status, Studio } from "./lib/types";
+import type { Confirmation, Estimate, Info, Layer, LayerEdits, LayerView, Message, Placement, Preset, Settings, Status, Studio } from "./lib/types";
 import { Header } from "./components/Header";
 import { Bed, type Zoom } from "./components/Bed";
 import { ZoomControl } from "./components/ZoomControl";
@@ -64,8 +64,12 @@ export default function App() {
   /* ---------- Layers ---------- */
 
   // Renames and order, by layer id. They're saved into the file automatically (see Auto-save).
-  const fileLayers = estimate?.layers ?? null;
+  // Layers come with the fast artwork and again with each estimate; whichever arrived last.
+  const [drawingLayers, setDrawingLayers] = useState<Layer[] | null>(null);
+  const fileLayers = drawingLayers;
   const [layerEdits, setLayerEdits] = useState<LayerEdits | null>(null);
+  // The one layer chosen to print (the green printer in the Layers card). None until the operator picks one.
+  const [printLayer, setPrintLayer] = useState<string | null>(null);
   const layerViews: LayerView[] = useMemo(() => {
     if (!fileLayers) return [];
     const byId = new Map(fileLayers.map((l) => [l.id, l]));
@@ -74,27 +78,70 @@ export default function App() {
     return order.map((id) => {
       const layer = byId.get(id)!;
       const name = (editsFit && layerEdits!.names[id]) || layer.name;
-      return { ...layer, name, originalName: layer.name, renamed: name !== layer.name, skipped: name.startsWith("%") };
+      const hidden = editsFit && id in layerEdits!.hidden ? layerEdits!.hidden[id] : layer.hidden;
+      return { ...layer, name, hidden, originalName: layer.name, renamed: name !== layer.name, skipped: name.startsWith("%") };
     });
   }, [fileLayers, layerEdits]);
   const layerNames = () => Object.fromEntries(layerViews.map((l) => [l.id, l.name]));
+  const layerHidden = () => Object.fromEntries(layerViews.map((l) => [l.id, l.hidden]));
   const renameLayer = (id: string, name: string) => {
-    setLayerEdits({ order: layerViews.map((l) => l.id), names: { ...layerNames(), [id]: name } });
+    setLayerEdits({ order: layerViews.map((l) => l.id), names: { ...layerNames(), [id]: name }, hidden: layerHidden() });
   };
   const moveLayer = (id: string, to: number) => {
     const order = layerViews.map((l) => l.id).filter((i) => i !== id);
     order.splice(to, 0, id);
-    setLayerEdits({ order, names: layerNames() });
+    setLayerEdits({ order, names: layerNames(), hidden: layerHidden() });
   };
+  // A hidden layer isn't shown or plotted, so it can't stay the layer chosen to print.
+  const setLayerVisible = (id: string, visible: boolean) => {
+    setLayerEdits({ order: layerViews.map((l) => l.id), names: layerNames(), hidden: { ...layerHidden(), [id]: !visible } });
+    if (!visible && printLayer === id) setPrintLayer(null);
+  };
+  // Drawings with more than one layer plot one layer at a time: the one picked in the Layers card.
+  const printTarget = layerViews.find((l) => l.id === printLayer && !l.hidden) ?? null;
+  const needsLayerChoice = layerViews.length > 1 && !printTarget;
+  const plotLayerId = layerViews.length > 1 ? printTarget?.id ?? null : null;
+  // Preview mode: arrange the drawing - every shown layer in its color, show/hide and reorder layers.
+  // Plot mode ("work" in code): only the layer chosen to print is drawn; layers hidden in Preview mode leave the list.
+  // Drawings always open in Preview mode.
+  const [layerMode, setLayerMode] = useState<"preview" | "work">("preview");
   const layerLooks = useMemo(
-    () => (layerViews.length ? Object.fromEntries(layerViews.map((l) => [l.id, { color: l.color, skipped: l.skipped }])) : null),
-    [layerViews],
+    () => (layerViews.length
+      ? Object.fromEntries(layerViews.map((l) => [l.id, {
+        color: l.color,
+        skipped: l.skipped,
+        hidden: layerMode === "work" ? l.id !== printTarget?.id : l.hidden,
+      }]))
+      : null),
+    [layerViews, layerMode, printTarget],
   );
-  const [preview, setPreview] = useState<Preview | null>(null);
+  // The drawing itself, straight from the file (instant), and the plot simulation's picture with pen
+  // paths (seconds on a big drawing). Preview mode shows the drawing; Work mode and drawings without
+  // layers show the simulation once it's ready.
+  const [artPreview, setArtPreview] = useState<Preview | null>(null);
+  const [simPreview, setSimPreview] = useState<Preview | null>(null);
+  const layered = (drawingLayers?.length ?? 0) > 1;
+  const preview = layered && layerMode === "preview" ? artPreview : simPreview ?? artPreview;
+  const setPreview = (p: Preview | null) => {
+    setArtPreview(p);
+    setSimPreview(p);
+  };
   const [previewScale, setPreviewScale] = useState(100); // the scale the current preview was made at
   const [placement, setPlacementState] = useState<Placement>({ x: 0, y: 0 });
   const [scale, setScaleState] = useState(100); // percent; per drawing, 100 for every new file
+  const [rotation, setRotation] = useState(0); // quarter turns clockwise, in degrees; per drawing
   const [status, setStatus] = useState<Status | null>(null);
+  // When the chosen layer finishes plotting, let go of it so its row shows the printed mark. Picking
+  // it again (clicking the printed icon) makes it the layer to print once more, to reprint it.
+  const printedKey = (status?.printed_layers ?? []).join("|");
+  const seenPrinted = useRef<string>(printedKey);
+  useEffect(() => {
+    const before = new Set(seenPrinted.current.split("|"));
+    seenPrinted.current = printedKey;
+    if (printLayer && printedKey.split("|").includes(printLayer) && !before.has(printLayer)) setPrintLayer(null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [printedKey]);
+
   const [lostContact, setLostContact] = useState(false);
   const [localMessage, setLocalMessage] = useState<Message | null>(null);
   const [machineError, setMachineError] = useState<string | null>(null);
@@ -107,7 +154,9 @@ export default function App() {
   useEffect(() => save(STORAGE.zoom, zoomChoice), [zoomChoice]);
 
   // Refs let the polling loop see current values without restarting.
-  const refs = useRef({ fileName, status, lastAction, settings, scale, presets, readRequested: false });
+  const refs = useRef({ fileName, status, lastAction, settings, scale, presets, plotLayerId, rotation, readRequested: false });
+  refs.current.rotation = rotation;
+  refs.current.plotLayerId = plotLayerId;
   refs.current.presets = presets;
   refs.current.fileName = fileName;
   refs.current.status = status;
@@ -154,7 +203,12 @@ export default function App() {
     const nextScale = studio?.scale ?? 100;
     refs.current.scale = nextScale;
     setScaleState(nextScale);
+    const nextRotation = ((Math.round((studio?.rotation ?? 0) / 90) % 4) + 4) % 4 * 90;
+    refs.current.rotation = nextRotation;
+    setRotation(nextRotation);
     setLayerEdits(null);
+    setPrintLayer(null);
+    setLayerMode("preview");
     const tool = studio?.tool ? refs.current.presets.find((p) => p.name === studio.tool) : undefined;
     if (tool) setActivePreset(tool.name);
     const patch = { ...(tool?.settings ?? {}), ...(studio?.paper ?? {}) };
@@ -177,10 +231,11 @@ export default function App() {
   const studioNow: Studio = {
     placement,
     scale,
+    rotation,
     tool: activePreset ?? undefined,
     paper: { paper_size: settings.paper_size, paper_w: settings.paper_w, paper_h: settings.paper_h, paper_x: settings.paper_x, paper_y: settings.paper_y },
   };
-  const layersNow = layerEdits ? layerViews.map((l) => ({ id: l.id, name: l.name })) : null;
+  const layersNow = layerEdits ? layerViews.map((l) => ({ id: l.id, name: l.name, hidden: l.hidden })) : null;
   const saveKey = JSON.stringify([studioNow, layersNow]);
   const saveChain = useRef(Promise.resolve());
   useEffect(() => {
@@ -225,9 +280,13 @@ export default function App() {
     setFileName(null);
     setEstimate(null);
     setPreview(null);
+    setDrawingLayers(null);
+    setUpdating(false);
     setPlacementState({ x: 0, y: 0 });
     setScaleState(100);
+    setRotation(0);
     setLayerEdits(null);
+    setPrintLayer(null);
     setLoadedFile(null);
     setSaveState(null);
     setLocalMessage(null);
@@ -273,28 +332,72 @@ export default function App() {
     };
   }, [clearDrawing]);
 
-  /* ---------- Estimate ---------- */
+  /* ---------- Preview and estimate ---------- */
 
+  // Two steps. The drawing itself (sized, scaled, turned) comes back from the server at once and is
+  // shown straight away; the plot simulation - pen paths, time, reach - takes seconds on a big
+  // drawing and replaces it when done. `updating` covers the gap, and Plot waits for it.
+  const [drawingVersion, setDrawingVersion] = useState(0); // bumped when a drawing is (re)loaded
+  const [updating, setUpdating] = useState(false);
+  const artworkKey = useRef("");
+  const estimatedSeq = useRef(0); // the last request whose full simulation is on screen
   const estimateKey = ESTIMATE_KEYS.map((k) => settings[k]).join("|");
+  // The plot simulation (pen paths, time, distance) never runs just because something changed: the
+  // plot time is worked out when Plot is pressed, by the plot itself. The one exception is showing
+  // pen-up moves (Utilities), which only the simulation can draw - for what would be plotted.
+  const layerCount = drawingLayers ? drawingLayers.length : null;
+  const simulate = showPenUp && layerCount !== null && (layerCount <= 1 || Boolean(plotLayerId));
+  const [artWarnings, setArtWarnings] = useState<string[]>([]);
   useEffect(() => {
     if (!fileName) return;
     const seq = ++estimateSeq.current;
+    const sentScale = refs.current.scale;
+    const sentRotation = refs.current.rotation;
+
+    const key = [fileName, drawingVersion, sentScale, sentRotation].join("|");
+    if (key !== artworkKey.current) {
+      artworkKey.current = key;
+      setSimPreview(null); // its pen paths are for the old size or turn
+      postJSON<{ svg: string; layers: Layer[]; warnings: string[] }>("/api/artwork", { scale: sentScale, rotation: sentRotation })
+        .then((art) => {
+          if (key !== artworkKey.current) return; // a newer size or turn was asked for
+          setArtPreview(parsePreview(art.svg));
+          setPreviewScale(sentScale);
+          setDrawingLayers(art.layers);
+          setArtWarnings(art.warnings);
+        })
+        .catch(() => {}); // the estimate reports anything wrong with the file
+    }
+
+    if (!simulate) {
+      setUpdating(false);
+      setEstimate(null); // nothing to plot yet, so no time or distance to show
+      return;
+    }
+    setUpdating(true);
+
     const timer = window.setTimeout(async () => {
       try {
-        const sentScale = refs.current.scale;
-        const result = await postJSON<Estimate>("/api/estimate", { ...refs.current.settings, scale: sentScale });
-        if (seq !== estimateSeq.current) return; // a newer estimate is on its way
+        const result = await postJSON<Estimate>("/api/estimate", {
+          ...refs.current.settings, scale: sentScale, layer: refs.current.plotLayerId, rotation: sentRotation,
+        });
+        if (seq !== estimateSeq.current || result.superseded) return; // a newer estimate is on its way
+        estimatedSeq.current = seq;
         setEstimate(result);
-        setPreview(parsePreview(result.preview_svg));
-        setPreviewScale(sentScale);
+        setSimPreview(parsePreview(result.preview_svg));
+        setDrawingLayers(result.layers);
+        setUpdating(false);
         setLocalMessage((m) => (m && (m.text === "Working out the plot…" || m.text.startsWith("Loading ")) ? null : m));
       } catch (err) {
-        if (seq === estimateSeq.current) setLocalMessage({ text: (err as Error).message, tone: "error" });
+        if (seq === estimateSeq.current) {
+          setUpdating(false);
+          setLocalMessage({ text: (err as Error).message, tone: "error" });
+        }
       }
-    }, estimate ? 450 : 0);
+    }, 450);
     return () => window.clearTimeout(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [fileName, estimateKey, scale]);
+  }, [fileName, drawingVersion, simulate ? estimateKey : "", scale, simulate ? plotLayerId : "", rotation, simulate]);
 
   /* ---------- Actions ---------- */
 
@@ -303,23 +406,13 @@ export default function App() {
     estimateSeq.current++;
     setEstimate(null);
     setPreview(null);
+    setDrawingLayers(null);
     refs.current.fileName = name;
-    const startScale = applyStudio(name, studio);
+    applyStudio(name, studio);
     setStatus((s) => (s ? { ...s, resume: null } : s));
     setFileName(name);
+    setDrawingVersion((v) => v + 1); // reloading the same name still redraws and re-estimates
     setLocalMessage({ text: "Working out the plot…" });
-    // Reloading the same name doesn't change fileName, so run the estimate directly.
-    if (name === fileName) {
-      try {
-        const result = await postJSON<Estimate>("/api/estimate", { ...refs.current.settings, scale: startScale });
-        setEstimate(result);
-        setPreview(parsePreview(result.preview_svg));
-        setPreviewScale(startScale);
-        setLocalMessage(null);
-      } catch (err) {
-        setLocalMessage({ text: (err as Error).message, tone: "error" });
-      }
-    }
   };
 
   // Drag and drop from Finder: the browser only hands over a copy, not the file's location.
@@ -386,7 +479,7 @@ export default function App() {
     setLastAction("plot");
     setLocalMessage(null);
     try {
-      await postJSON("/api/plot", { ...settings, start_x: placement.x, start_y: placement.y, scale });
+      await postJSON("/api/plot", { ...settings, start_x: placement.x, start_y: placement.y, scale, layer: plotLayerId, rotation });
       setStatus((s) => (s ? { ...s, state: "preparing", message: "", started: false } : s));
     } catch (err) {
       setLocalMessage({ text: (err as Error).message, tone: "error" });
@@ -527,15 +620,14 @@ export default function App() {
   const plotterLog = status?.log;
   const notes = useMemo(() => {
     const list: string[] = [];
-    if (estimate && fp) {
+    if (fp) {
       if (!onBed) list.push("At this size and position the drawing goes past the plotter’s reach, so it can’t be plotted. Scale it down or move it closer to home.");
       if (!onPaper) list.push("Part of the drawing runs off the paper. Move the drawing, or check the paper size and where the paper sits.");
-      if (fp.rotated) list.push("This drawing is taller than it is wide, so it will be turned sideways to fit the plotter.");
-      list.push(...(estimate.warnings || []).map(cleanNote));
+      list.push(...(estimate?.warnings ?? artWarnings).map(cleanNote));
     }
     list.push(...(plotterLog || []).map(cleanNote));
     return [...new Set(list)];
-  }, [estimate, fp, onBed, onPaper, plotterLog]);
+  }, [estimate, artWarnings, fp, onBed, onPaper, plotterLog]);
 
   let actionMessage: Message | null = localMessage;
   if (!actionMessage && status) {
@@ -620,6 +712,9 @@ export default function App() {
               canPaper={settings.paper_w > 0 && settings.paper_h > 0}
               canDrawing={Boolean(fp)}
               onZoom={setZoomChoice}
+              canRotate={!busy}
+              updating={updating}
+              onRotate={(turn) => setRotation((r) => (((r + turn * 90) % 360) + 360) % 360)}
             />
           </div>
 
@@ -673,7 +768,8 @@ export default function App() {
             message={actionMessage}
             plotting={plotting}
             stopping={status?.state === "stopping" || status?.state === "returning"}
-            canPlot={!busy && Boolean(fileName) && Boolean(estimate) && onBed}
+            canPlot={!busy && Boolean(fileName) && Boolean(preview) && onBed && !needsLayerChoice}
+            plotLabel={needsLayerChoice ? "Choose a layer to plot" : printTarget && plotLayerId ? `Plot ${printTarget.name}` : "Plot"}
             preparing={status?.state === "preparing"}
             resume={resume}
             confirmation={confirmation}
@@ -702,11 +798,17 @@ export default function App() {
               />
             </div>
           </Card>
-          {fileName && estimate && estimate.layers.length > 0 && (
+          {fileName && layerViews.length > 0 && (
             <Card variant="flat" className={styles.controls}>
               <div className={styles.cardBody}>
                 <LayersSection
+                  mode={layerMode}
+                  onMode={setLayerMode}
                   layers={layerViews}
+                  target={printLayer}
+                  printed={status?.printed_layers ?? []}
+                  onTarget={setPrintLayer}
+                  onVisible={setLayerVisible}
                   disabled={plotting}
                   onRename={renameLayer}
                   onMove={moveLayer}
