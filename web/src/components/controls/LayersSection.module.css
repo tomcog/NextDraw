@@ -1,3 +1,9 @@
+.headerTools {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
 .list {
   position: relative; /* rows measure their offsetTop against the list */
   list-style: none;

@@ -4,6 +4,7 @@ import styles from "./App.module.css";
 import { api, postJSON } from "./lib/api";
 import { BUSY_STATES, DEFAULT_SETTINGS, PAPER_SIZES, PLOTTING_STATES, PRESET_FIELDS, STEPS, STORAGE } from "./lib/constants";
 import { cleanNote } from "./lib/format";
+import { lightness } from "./lib/color";
 import { fitsOnBed, fitsOnPaper, footprint } from "./lib/geometry";
 import { parsePreview, type Preview } from "./lib/preview";
 import { load, save } from "./lib/storage";
@@ -88,6 +89,16 @@ export default function App() {
   const layerColors = () => layerEdits?.colors ?? {};
   const renameLayer = (id: string, name: string) => {
     setLayerEdits({ order: layerViews.map((l) => l.id), names: { ...layerNames(), [id]: name }, hidden: layerHidden(), colors: layerColors() });
+  };
+  // Sort by darkness: the lightest color becomes layer 1 (plotted first, at the bottom) and darker
+  // colors stack on top. Layers without a color stay at the bottom; ties keep their current order.
+  const sortLayersByLightness = () => {
+    const ranked = layerViews.map((l, i) => ({ id: l.id, i, light: lightness(l.color) }));
+    ranked.sort((a, b) => {
+      if (a.light === null || b.light === null) return a.light === null && b.light === null ? a.i - b.i : a.light === null ? -1 : 1;
+      return b.light - a.light || a.i - b.i;
+    });
+    setLayerEdits({ order: ranked.map((r) => r.id), names: layerNames(), hidden: layerHidden(), colors: layerColors() });
   };
   // Picking a pen color from the palette names the layer after the pen and gives its lines that color.
   const colorLayer = (id: string, pen: PenColor) => {
@@ -848,6 +859,7 @@ export default function App() {
                   onTarget={setPrintLayer}
                   palette={active?.palette ?? []}
                   onColor={colorLayer}
+                  onSort={sortLayersByLightness}
                   onVisible={setLayerVisible}
                   disabled={plotting}
                   onRename={renameLayer}

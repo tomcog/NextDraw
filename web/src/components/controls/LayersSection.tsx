@@ -1,6 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { KeyboardEvent, PointerEvent as ReactPointerEvent } from "react";
-import { LayerController, Segment, SegmentedControl } from "@tomcoggia/ui";
+import { ButtonRound, LayerController, Segment, SegmentedControl } from "@tomcoggia/ui";
+import { ArrowDownWideNarrow } from "lucide-react";
 import styles from "./LayersSection.module.css";
 import { Section } from "./Section";
 import { PaletteMenu } from "./PaletteMenu";
@@ -16,6 +17,7 @@ interface Props {
   onTarget: (id: string) => void;
   palette: PenColor[]; // the drawing tool's colors; empty means the dots don't open a menu
   onColor: (id: string, pen: PenColor) => void;
+  onSort: () => void; // reorder lightest (layer 1) to darkest
   onVisible: (id: string, visible: boolean) => void;
   onRename: (id: string, name: string) => void;
   onMove: (id: string, to: number) => void; // to: a position in the chosen order, 0 = bottom
@@ -33,7 +35,7 @@ const reducedMotion = () => window.matchMedia?.("(prefers-reduced-motion: reduce
 // The drawing's layers, listed like Illustrator's Layers panel: the top layer at the top and
 // layer 1, the bottom layer, last. The box picks the one layer to print; names are edited in
 // place; rows are dragged by their grip (or moved with the arrow keys on it) to reorder.
-export function LayersSection({ mode, onMode, layers, target, printed, disabled, onTarget, palette, onColor, onVisible, onRename, onMove }: Props) {
+export function LayersSection({ mode, onMode, layers, target, printed, disabled, onTarget, palette, onColor, onSort, onVisible, onRename, onMove }: Props) {
   // In Plot mode the layers hidden in Preview mode leave the list, and the eye goes. Numbers stay the
   // plot-order numbers from the full list.
   const numberOf = new Map(layers.map((l, i) => [l.id, i + 1]));
@@ -157,6 +159,17 @@ export function LayersSection({ mode, onMode, layers, target, printed, disabled,
     <Section
       title="Layers"
       action={
+        <span className={styles.headerTools}>
+        {mode === "preview" && count > 1 && (
+          <ButtonRound
+            size="sm"
+            icon={<ArrowDownWideNarrow />}
+            aria-label="Sort layers by darkness"
+            title="Sort by darkness: lightest color is layer 1, darker colors stack on top"
+            disabled={disabled}
+            onClick={onSort}
+          />
+        )}
         <SegmentedControl size="sm" aria-label="Layers view">
           <Segment selected={mode === "preview"} onClick={() => onMode("preview")} title="Arrange the drawing: show, hide and reorder layers">
             Preview
@@ -165,6 +178,7 @@ export function LayersSection({ mode, onMode, layers, target, printed, disabled,
             Plot
           </Segment>
         </SegmentedControl>
+        </span>
       }
     >
       <ol className={styles.list} ref={listRef} data-dragging={Boolean(drag)}>

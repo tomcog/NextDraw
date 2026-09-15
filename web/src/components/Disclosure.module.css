@@ -1,5 +1,7 @@
+/* Only the chevron and title are the click target, not the whole row. */
 .summary {
   display: flex;
+  width: fit-content;
   align-items: center;
   gap: 0.35rem;
   padding: 0.2rem 0;
