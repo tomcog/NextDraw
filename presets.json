@@ -3,14 +3,14 @@
     "name": "EnerGel",
     "settings": {
       "handling": 1,
-      "speed_pendown": 40,
-      "speed_penup": 50,
-      "accel": 40,
+      "speed_pendown": 55,
+      "speed_penup": 65,
+      "accel": 75,
       "pen_pos_down": 45,
       "pen_pos_up": 70,
       "pen_setup": 60,
-      "pen_rate_lower": 20,
-      "pen_rate_raise": 50,
+      "pen_rate_lower": 30,
+      "pen_rate_raise": 75,
       "pen_width": 0.7
     },
     "palette": [
