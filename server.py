@@ -10,6 +10,7 @@ Add --lan to also serve the page to phones, tablets and other computers on the s
 import inspect
 import json
 import logging
+import mimetypes
 import os
 import re
 import shutil
@@ -108,6 +109,8 @@ ERRORS = {
     105: "The plotter lost power during the plot.",
     106: "Homing failed. Check that nothing is blocking the carriage.",
 }
+
+mimetypes.add_type("application/manifest+json", ".webmanifest")  # the page's Add to Home Screen details
 
 app = Flask(__name__, static_folder=None)
 app.config["MAX_CONTENT_LENGTH"] = 50 * 1024 * 1024
