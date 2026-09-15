@@ -856,7 +856,7 @@ export default function App() {
           </Disclosure>
 
           <Disclosure title="Plot options">
-            <PlotOptionsSection settings={settings} disabled={plotting} onChange={updateSettings} />
+            <PlotOptionsSection settings={settings} disabled={plotting} onChange={updateSettings} handling={info?.handling ?? []} />
           </Disclosure>
 
           <MachinePanel

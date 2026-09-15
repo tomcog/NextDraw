@@ -6,12 +6,13 @@ interface Props {
   settings: Settings;
   disabled: boolean;
   onChange: (patch: Partial<Settings>) => void;
+  handling: { id: number; name: string }[]; // the NextDraw software's handling modes
 }
 
 const clampInt = (text: string, min: number, max: number) => Math.min(max, Math.max(min, Math.round(Number(text) || min)));
 
 // Plot options, shown in the collapsed "Plot options" section under the preview.
-export function PlotOptionsSection({ settings: s, disabled, onChange }: Props) {
+export function PlotOptionsSection({ settings: s, disabled, onChange, handling }: Props) {
   return (
     <div className={styles.plotOptions}>
       <div className={styles.row2}>
@@ -36,6 +37,11 @@ export function PlotOptionsSection({ settings: s, disabled, onChange }: Props) {
           />
         )}
       </div>
+      {handling.length > 0 && (
+        <InputSelect label="Handling mode" value={s.handling} disabled={disabled} onChange={(e) => onChange({ handling: Number(e.target.value) })}>
+          {handling.map((h) => <option key={h.id} value={h.id}>{h.name}</option>)}
+        </InputSelect>
+      )}
       <InputSelect label="Path order" value={s.reordering} disabled={disabled} onChange={(e) => onChange({ reordering: Number(e.target.value) })}>
         {/* Least to most change. Each of 0-2 includes the one before; 4 turns everything off. */}
         <option value={4}>Keep the file’s order</option>

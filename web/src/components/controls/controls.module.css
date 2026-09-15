@@ -60,6 +60,19 @@
   max-width: 26rem;
 }
 
+/* Plot options uses compact fields: the library's input tokens, scaled down to a 24px field with
+   12px type. */
+.plotOptions {
+  --ui-input-text-height: 24px;
+  --ui-input-text-padding-top: 4px;
+  --ui-input-text-padding-bottom: 2px;
+  --ui-input-text-font-size: 12px;
+  --ui-input-text-line-height: 16px;
+  --ui-input-text-icon-size: 14px;
+  gap: 0.5rem;
+  max-width: 16rem;
+}
+
 .offsetGroup {
   display: flex;
   flex-direction: column;
