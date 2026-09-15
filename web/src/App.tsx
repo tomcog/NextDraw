@@ -9,7 +9,7 @@ import { fitsOnBed, fitsOnPaper, footprint } from "./lib/geometry";
 import { parsePlotPaths, type PlotPaths } from "./lib/progressPaths";
 import { parsePreview, type Preview } from "./lib/preview";
 import { load, save } from "./lib/storage";
-import type { Confirmation, Estimate, Info, Layer, LayerEdits, PenColor, LayerView, MatchResult, Message, Placement, Preset, Settings, Status, Studio } from "./lib/types";
+import type { Confirmation, Estimate, Info, Layer, LayerEdits, PenColor, LayerNote, LayerView, Message, Placement, Preset, Settings, Status, Studio } from "./lib/types";
 import { Header } from "./components/Header";
 import { Bed, type Zoom } from "./components/Bed";
 import { ZoomControl } from "./components/ZoomControl";
@@ -32,6 +32,12 @@ import { ActionBar } from "./components/controls/ActionBar";
 
 // A match further off than this (CIEDE2000) is flagged: the pen is clearly a different color.
 const FAR_MATCH = 15;
+
+// 3, 5 and 8
+function listNumbers(numbers: number[]) {
+  const sorted = [...numbers].sort((a, b) => a - b).map(String);
+  return sorted.length < 2 ? sorted.join("") : `${sorted.slice(0, -1).join(", ")} and ${sorted[sorted.length - 1]}`;
+}
 
 // Settings that change what the NextDraw software's dry run reports.
 const ESTIMATE_KEYS: (keyof Settings)[] = [
@@ -276,6 +282,7 @@ export default function App() {
     : null;
   const saveKey = JSON.stringify([studioNow, layersNow]);
   const saveChain = useRef(Promise.resolve());
+  const holdSaves = useRef(false); // while deleting a layer: that request carries the layers itself
   useEffect(() => {
     if (!fileName || loadedFile !== fileName) return;
     if (savedKey.current === null) {
@@ -287,7 +294,7 @@ export default function App() {
     const body = { file: fileName, studio: studioNow, ...(layersNow ? { layers: layersNow } : {}) };
     const timer = window.setTimeout(() => {
       saveChain.current = saveChain.current.then(async () => {
-        if (refs.current.fileName !== fileName) return;
+        if (refs.current.fileName !== fileName || holdSaves.current) return;
         setSaveState("saving");
         try {
           await postJSON("/api/drawing", body);
@@ -706,8 +713,8 @@ export default function App() {
   // Match to pens: each layer with a color gets the pen from its tool's palette that looks most like
   // it, named and colored as if picked from the menu. The drawing is kept first, so one Undo puts it
   // back exactly. Layers sharing a pen and layers with no close pen are listed for a second look.
-  const [matchResult, setMatchResult] = useState<MatchResult | null>(null);
-  useEffect(() => setMatchResult(null), [fileName]);
+  const [layerNote, setLayerNote] = useState<LayerNote | null>(null);
+  useEffect(() => setLayerNote(null), [fileName]);
   const matchPens = async () => {
     const matches = layerViews.flatMap((l, i) => {
       const found = l.color ? nearestColor(l.color, paletteFor(l.id)) : null;
@@ -730,18 +737,53 @@ export default function App() {
     setLayerEdits({ order: layerViews.map((l) => l.id), names, hidden: layerHidden(), colors });
     const byPen = new Map<string, number[]>();
     for (const m of matches) byPen.set(m.pen.name, [...(byPen.get(m.pen.name) ?? []), m.number]);
-    setMatchResult({
-      count: matches.length,
-      shared: [...byPen].filter(([, layers]) => layers.length > 1).map(([pen, layers]) => ({ pen, layers })),
-      far: matches.filter((m) => m.difference > FAR_MATCH).map((m) => ({ layer: m.number, pen: m.pen.name })),
+    setLayerNote({
+      title: `Matched ${matches.length} ${matches.length === 1 ? "layer" : "layers"} to pens.`,
+      lines: [
+        ...[...byPen].filter(([, layers]) => layers.length > 1)
+          .map(([pen, layers]) => ({ text: `Layers ${listNumbers(layers)} ${layers.length === 2 ? "both" : "all"} got ${pen}.` })),
+        ...matches.filter((m) => m.difference > FAR_MATCH)
+          .map((m) => ({ text: `No close pen for layer ${m.number}; it got ${m.pen.name}.`, warn: true })),
+      ],
     });
   };
-  const undoMatch = async () => {
-    setLayerEdits(null); // drop the matched names and colors, and any save of them still waiting
+
+  // Delete a layer from the drawing file. The request also carries the other layers as the page has
+  // them, so a rename or reorder not saved yet goes in with it; the drawing before is kept for Undo.
+  const deleteLayer = async (id: string) => {
+    const layer = layerViews.find((l) => l.id === id);
+    if (!layer || layerViews.length < 2) return;
+    const kept = layerViews.filter((l) => l.id !== id);
+    holdSaves.current = true;
+    try {
+      await saveChain.current;
+      await postJSON("/api/drawing/delete-layer", {
+        file: fileName,
+        id,
+        layers: kept.map((l) => ({ id: l.id, name: l.name, hidden: l.hidden, ...(layerEdits?.colors[l.id] ? { color: l.color } : {}) })),
+      });
+    } catch (err) {
+      setSaveError((err as Error).message);
+      setSaveState("error");
+      return;
+    } finally {
+      holdSaves.current = false;
+    }
+    const without = <T,>(record: Record<string, T>) => Object.fromEntries(Object.entries(record).filter(([k]) => k !== id));
+    setDrawingLayers((layers) => layers?.filter((l) => l.id !== id) ?? layers);
+    setLayerEdits((edits) => edits && { order: edits.order.filter((k) => k !== id), names: without(edits.names), hidden: without(edits.hidden), colors: without(edits.colors) });
+    setSecondToolLayers((list) => list.filter((k) => k !== id));
+    if (printLayer === id) setPrintLayer(null);
+    setDrawingVersion((v) => v + 1); // redraw without it
+    setLayerNote({ title: `Deleted layer “${layer.name}”.`, lines: [] });
+  };
+
+  const undoLayerChange = async () => {
+    setLayerEdits(null); // drop page edits made since, and any save of them still waiting
     try {
       await saveChain.current;
       await postJSON("/api/drawing/undo", { file: fileName });
-      setMatchResult(null);
+      setLayerNote(null);
       setDrawingVersion((v) => v + 1); // read the restored layers
     } catch (err) {
       setSaveError((err as Error).message);
@@ -1034,9 +1076,10 @@ export default function App() {
                   paletteFor={paletteFor}
                   onColor={colorLayer}
                   onMatch={layerViews.some((l) => l.color && paletteFor(l.id).length) ? matchPens : null}
-                  matchResult={matchResult}
-                  onUndoMatch={undoMatch}
-                  onDismissMatch={() => setMatchResult(null)}
+                  note={layerNote}
+                  onUndo={undoLayerChange}
+                  onDismissNote={() => setLayerNote(null)}
+                  onDelete={deleteLayer}
                   onSort={sortLayersByLightness}
                   onVisible={setLayerVisible}
                   disabled={plotting}

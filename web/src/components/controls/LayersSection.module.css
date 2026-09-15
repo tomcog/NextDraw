@@ -32,7 +32,8 @@
 
 .row[data-skipped="true"] input:not([type="radio"]) { text-decoration: line-through; }
 
-/* The note after Match to pens: what happened, Undo, and layers worth a second look. */
+/* The note after Match to pens or Delete layer (what happened, Undo, details worth a second look),
+   and Delete's question before it. */
 .match {
   display: flex;
   flex-direction: column;
@@ -63,6 +64,15 @@
 }
 
 .matchUndo:disabled { opacity: 0.5; cursor: default; }
+.matchUndo[data-tone="plain"] { color: var(--ui-text-default); font-weight: 400; }
+.matchUndo[data-tone="danger"] { color: var(--ui-danger); }
+
+.confirmRow {
+  display: flex;
+  justify-content: flex-end;
+  gap: 1rem;
+  margin-top: 4px;
+}
 
 .matchNote {
   margin: 0;

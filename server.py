@@ -7,6 +7,7 @@ Then open http://127.0.0.1:5055
 Add --lan to also serve the page to phones, tablets and other computers on the same network.
 """
 
+import copy
 import inspect
 import json
 import logging
@@ -1489,26 +1490,8 @@ def save_drawing():
         tree = parse_svg(CURRENT_SVG)
         root = tree.getroot()
         wanted = body.get("layers")
-        if isinstance(wanted, list):
-            groups = layer_groups(root)
-            by_id = {g.get("id"): g for g in groups}
-            ids = [str(item.get("id")) for item in wanted if isinstance(item, dict)]
-            if sorted(ids) != sorted(by_id):
-                return jsonify(error="The drawing's layers changed. Open it again."), 409
-            slots = [root.index(g) for g in groups]
-            for g in groups:
-                root.remove(g)
-            for slot, item in sorted(zip(slots, wanted), key=lambda pair: pair[0]):
-                group = by_id[str(item["id"])]
-                name = str(item.get("name") or "").strip()[:200] or layer_name(group, is_illustrator_svg(root))
-                group.set(INKSCAPE_NS + "groupmode", "layer")
-                group.set(INKSCAPE_NS + "label", name)
-                group.attrib.pop("data-name", None)
-                if isinstance(item.get("hidden"), bool):
-                    set_layer_hidden(group, item["hidden"])
-                if isinstance(item.get("color"), str) and HEX_COLOR.match(item["color"]):
-                    recolor_layer(group, item["color"].lower(), class_strokes(root))
-                root.insert(slot, group)
+        if isinstance(wanted, list) and not apply_layers(root, wanted):
+            return jsonify(error="The drawing's layers changed. Open it again."), 409
         if isinstance(body.get("studio"), dict):
             studio = clean_studio(body["studio"])
             kept = (read_studio(root) or {}).get("original_page")
@@ -1545,6 +1528,68 @@ def undo_drawing():
     if problem:
         return problem
     UNDO_SVG.unlink(missing_ok=True)
+    return jsonify(ok=True)
+
+
+def apply_layers(root, wanted):
+    """
+    Put the page's layer names, order (bottom layer first), hidden layers and pen colors into the
+    drawing. Returns False, changing nothing, if the page's layers aren't the drawing's.
+    """
+    groups = layer_groups(root)
+    by_id = {g.get("id"): g for g in groups}
+    ids = [str(item.get("id")) for item in wanted if isinstance(item, dict)]
+    if sorted(ids) != sorted(by_id):
+        return False
+    slots = [root.index(g) for g in groups]
+    for g in groups:
+        root.remove(g)
+    for slot, item in sorted(zip(slots, wanted), key=lambda pair: pair[0]):
+        group = by_id[str(item["id"])]
+        name = str(item.get("name") or "").strip()[:200] or layer_name(group, is_illustrator_svg(root))
+        group.set(INKSCAPE_NS + "groupmode", "layer")
+        group.set(INKSCAPE_NS + "label", name)
+        group.attrib.pop("data-name", None)
+        if isinstance(item.get("hidden"), bool):
+            set_layer_hidden(group, item["hidden"])
+        if isinstance(item.get("color"), str) and HEX_COLOR.match(item["color"]):
+            recolor_layer(group, item["color"].lower(), class_strokes(root))
+        root.insert(slot, group)
+    return True
+
+
+@app.post("/api/drawing/delete-layer")
+def delete_layer():
+    """
+    Delete one layer from the drawing, keeping the drawing as it was for one step of undo. The page
+    sends its other layers as they are now (names, order, colors), so a change it hadn't saved yet
+    isn't lost or left to clash with the deletion.
+    """
+    body = request.json or {}
+    problem, disk_path = saving_problem(body)
+    if problem:
+        return problem
+    layer_id = str(body.get("id") or "")
+    try:
+        tree = parse_svg(CURRENT_SVG)
+        root = tree.getroot()
+        groups = layer_groups(root)
+        group = next((g for g in groups if g.get("id") == layer_id), None)
+        if group is None:
+            return jsonify(error="That layer isn't in the drawing anymore. Reload this page."), 409
+        if len(groups) < 2:
+            return jsonify(error="A drawing needs at least one layer."), 409
+        undo = copy.deepcopy(tree)
+        group.getparent().remove(group)
+        wanted = body.get("layers")
+        if isinstance(wanted, list) and not apply_layers(root, wanted):
+            return jsonify(error="The drawing's layers changed. Reload this page."), 409
+    except Exception as exc:  # noqa: BLE001
+        return jsonify(error=f"Couldn't delete the layer: {exc}"), 400
+    UNDO_SVG.write_bytes(svg_bytes(undo))
+    problem = commit_drawing(tree, disk_path)
+    if problem:
+        return problem
     return jsonify(ok=True)
 
 

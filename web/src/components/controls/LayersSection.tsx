@@ -1,11 +1,11 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { KeyboardEvent, PointerEvent as ReactPointerEvent } from "react";
 import { ButtonRound, LayerController, Segment, SegmentedControl } from "@tomcoggia/ui";
-import { ArrowDownWideNarrow, Eye, SwatchBook, Waypoints, X } from "lucide-react";
+import { ArrowDownWideNarrow, Eye, SwatchBook, Trash2, Waypoints, X } from "lucide-react";
 import styles from "./LayersSection.module.css";
 import { Section } from "./Section";
 import { PaletteMenu } from "./PaletteMenu";
-import type { LayerView, MatchResult, PenColor } from "../../lib/types";
+import type { LayerNote, LayerView, PenColor } from "../../lib/types";
 
 interface Props {
   mode: "preview" | "work";
@@ -19,9 +19,10 @@ interface Props {
   onColor: (id: string, pen: PenColor) => void;
   onSort: () => void; // reorder lightest (layer 1) to darkest
   onMatch: (() => void) | null; // give each layer its closest pen; null when no layer has a palette to match
-  matchResult: MatchResult | null;
-  onUndoMatch: () => void;
-  onDismissMatch: () => void;
+  note: LayerNote | null; // after Match to pens or Delete layer, with Undo
+  onUndo: () => void;
+  onDismissNote: () => void;
+  onDelete: (id: string) => void; // delete a layer from the drawing (asked here first)
   onVisible: (id: string, visible: boolean) => void;
   onRename: (id: string, name: string) => void;
   onMove: (id: string, to: number) => void; // to: a position in the chosen order, 0 = bottom
@@ -39,7 +40,7 @@ const reducedMotion = () => window.matchMedia?.("(prefers-reduced-motion: reduce
 // The drawing's layers, listed like Illustrator's Layers panel: the top layer at the top and
 // layer 1, the bottom layer, last. The box picks the one layer to print; names are edited in
 // place; rows are dragged by their grip (or moved with the arrow keys on it) to reorder.
-export function LayersSection({ mode, onMode, layers, target, printed, disabled, onTarget, paletteFor, onColor, onSort, onMatch, matchResult, onUndoMatch, onDismissMatch, onVisible, onRename, onMove }: Props) {
+export function LayersSection({ mode, onMode, layers, target, printed, disabled, onTarget, paletteFor, onColor, onSort, onMatch, note, onUndo, onDismissNote, onDelete, onVisible, onRename, onMove }: Props) {
   // In Plot mode the layers hidden in Preview mode leave the list, and the eye goes. Numbers stay the
   // plot-order numbers from the full list.
   const numberOf = new Map(layers.map((l, i) => [l.id, i + 1]));
@@ -54,6 +55,12 @@ export function LayersSection({ mode, onMode, layers, target, printed, disabled,
   const [refocus, setRefocus] = useState<string | null>(null);
   const [colorMenu, setColorMenu] = useState<{ id: string; anchor: HTMLElement } | null>(null);
   const menuLayer = colorMenu ? layers.find((l) => l.id === colorMenu.id) : null;
+  // Delete asks first, in the card: the layer to delete, or null.
+  const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
+  // Delete is part of Plot mode, where one layer is chosen; leaving it drops the question.
+  useEffect(() => setConfirmDelete(null), [mode]);
+  const deleting = confirmDelete ? layers.find((l) => l.id === confirmDelete) : null;
+  const targetLayer = layers.find((l) => l.id === target);
 
   // Where the dragged row should sit, in list coordinates: under the pointer, kept inside the list.
   const dragTop = (d: Drag) => {
@@ -164,6 +171,16 @@ export function LayersSection({ mode, onMode, layers, target, printed, disabled,
       title="Layers"
       action={
         <span className={styles.headerTools}>
+        {mode === "work" && count > 1 && (
+          <ButtonRound
+            size="sm"
+            icon={<Trash2 />}
+            aria-label={targetLayer ? `Delete layer ${targetLayer.name}` : "Delete layer"}
+            title={targetLayer ? `Delete “${targetLayer.name}” from the drawing` : "Delete layer: select a layer first"}
+            disabled={disabled || !targetLayer}
+            onClick={() => targetLayer && setConfirmDelete(targetLayer.id)}
+          />
+        )}
         {mode === "preview" && onMatch && (
           <ButtonRound
             size="sm"
@@ -191,18 +208,26 @@ export function LayersSection({ mode, onMode, layers, target, printed, disabled,
         </span>
       }
     >
-      {matchResult && (
+      {deleting ? (
+        <div className={styles.match} role="alertdialog" aria-label={`Delete layer ${deleting.name}?`}>
+          <div className={styles.matchHead}>
+            <span>{`Delete layer ${numberOf.get(deleting.id)}, “${deleting.name}”, from the drawing?`}</span>
+          </div>
+          <div className={styles.confirmRow}>
+            <button type="button" className={styles.matchUndo} data-tone="plain" onClick={() => setConfirmDelete(null)}>Cancel</button>
+            <button type="button" className={styles.matchUndo} data-tone="danger" disabled={disabled} autoFocus
+              onClick={() => { setConfirmDelete(null); onDelete(deleting.id); }}>Delete</button>
+          </div>
+        </div>
+      ) : note && (
         <div className={styles.match} role="status">
           <div className={styles.matchHead}>
-            <span>{`Matched ${matchResult.count} ${matchResult.count === 1 ? "layer" : "layers"} to pens.`}</span>
-            <button type="button" className={styles.matchUndo} disabled={disabled} onClick={onUndoMatch}>Undo</button>
-            <ButtonRound size="sm" variant="ghost" icon={<X />} aria-label="Dismiss" title="Keep the matches and close this note" onClick={onDismissMatch} />
+            <span>{note.title}</span>
+            <button type="button" className={styles.matchUndo} disabled={disabled} onClick={onUndo}>Undo</button>
+            <ButtonRound size="sm" variant="ghost" icon={<X />} aria-label="Dismiss" title="Keep the change and close this note" onClick={onDismissNote} />
           </div>
-          {matchResult.shared.map((s) => (
-            <p key={`s-${s.pen}`} className={styles.matchNote}>{`Layers ${listNumbers(s.layers)} ${s.layers.length === 2 ? "both" : "all"} got ${s.pen}.`}</p>
-          ))}
-          {matchResult.far.map((f) => (
-            <p key={`f-${f.layer}`} className={styles.matchNote} data-tone="warn">{`No close pen for layer ${f.layer}; it got ${f.pen}.`}</p>
+          {note.lines.map((line) => (
+            <p key={line.text} className={styles.matchNote} data-tone={line.warn ? "warn" : undefined}>{line.text}</p>
           ))}
         </div>
       )}
@@ -275,12 +300,6 @@ export function LayersSection({ mode, onMode, layers, target, printed, disabled,
       )}
     </Section>
   );
-}
-
-// 3, 5 and 8
-function listNumbers(numbers: number[]) {
-  const sorted = [...numbers].sort((a, b) => a - b).map(String);
-  return sorted.length < 2 ? sorted.join("") : `${sorted.slice(0, -1).join(", ")} and ${sorted[sorted.length - 1]}`;
 }
 
 function LayerName({ layer, position, disabled, onRename }: {

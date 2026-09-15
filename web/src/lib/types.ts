@@ -114,11 +114,10 @@ export interface LayerView extends Layer {
   renamed: boolean;
 }
 
-// What Match to pens did, for the note under the Layers card's header (layer numbers are plot order).
-export interface MatchResult {
-  count: number;
-  shared: { pen: string; layers: number[] }[]; // pens given to more than one layer
-  far: { layer: number; pen: string }[]; // layers whose closest pen still looks clearly different
+// The note under the Layers card's header after a change that can be undone (Match to pens, Delete layer).
+export interface LayerNote {
+  title: string;
+  lines: { text: string; warn?: boolean }[]; // details worth a second look
 }
 
 // The operator's changes to a drawing's layers, kept until they're saved into the file.
