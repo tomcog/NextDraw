@@ -20,10 +20,13 @@ interface Props {
   onScale: (percent: number) => void;
   onOpen: () => void;
   onClear: () => void;
+  trimmed: boolean; // the page has been trimmed to the drawing's lines
+  trimming: boolean;
+  onTrim: (restore: boolean) => void;
 }
 
 export function FileSection({
-  fileName, busy, preview, previewScale, scale, units, folder, saveState, saveError, onScale, onOpen, onClear,
+  fileName, busy, preview, previewScale, scale, units, folder, saveState, saveError, onScale, onOpen, onClear, trimmed, trimming, onTrim,
 }: Props) {
   const [draft, setDraft] = useState(trimNum(scale, 1));
   useEffect(() => setDraft(trimNum(scale, 1)), [scale]);
@@ -115,6 +118,23 @@ export function FileSection({
               onClick={() => onScale(100)}
             />
           )}
+        </div>
+      )}
+
+      {fileName && (
+        <div className={styles.trimRow}>
+          <Button
+            size="sm"
+            variant="tertiary"
+            disabled={busy}
+            loading={trimming}
+            onClick={() => onTrim(trimmed)}
+            title={trimmed
+              ? "Put back the page size the drawing was made with"
+              : "Shrink the page to the lines in the drawing, so its empty margin no longer counts"}
+          >
+            {trimmed ? "Restore page" : "Trim to drawing"}
+          </Button>
         </div>
       )}
     </Section>

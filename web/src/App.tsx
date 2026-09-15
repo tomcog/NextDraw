@@ -348,6 +348,7 @@ export default function App() {
   const layerCount = drawingLayers ? drawingLayers.length : null;
   const simulate = showPenUp && layerCount !== null && (layerCount <= 1 || Boolean(plotLayerId));
   const [artWarnings, setArtWarnings] = useState<string[]>([]);
+  const [trimmed, setTrimmed] = useState(false);
   useEffect(() => {
     if (!fileName) return;
     const seq = ++estimateSeq.current;
@@ -358,13 +359,14 @@ export default function App() {
     if (key !== artworkKey.current) {
       artworkKey.current = key;
       setSimPreview(null); // its pen paths are for the old size or turn
-      postJSON<{ svg: string; layers: Layer[]; warnings: string[] }>("/api/artwork", { scale: sentScale, rotation: sentRotation })
+      postJSON<{ svg: string; layers: Layer[]; warnings: string[]; trimmed: boolean }>("/api/artwork", { scale: sentScale, rotation: sentRotation })
         .then((art) => {
           if (key !== artworkKey.current) return; // a newer size or turn was asked for
           setArtPreview(parsePreview(art.svg));
           setPreviewScale(sentScale);
           setDrawingLayers(art.layers);
           setArtWarnings(art.warnings);
+          setTrimmed(art.trimmed);
         })
         .catch(() => {}); // the estimate reports anything wrong with the file
     }
@@ -430,6 +432,27 @@ export default function App() {
       await startNewDrawing(res.name, res.studio);
     } catch (err) {
       setLocalMessage({ text: (err as Error).message, tone: "error" });
+    }
+  };
+
+  // Trim to drawing / Restore page. The server changes the page and says how far the lines sit from the
+  // old page's corner; moving the drawing by that much keeps the lines where they were on the paper.
+  const [trimming, setTrimming] = useState(false);
+  const trimPage = async (restore: boolean) => {
+    if (busy || trimming || !fileName) return;
+    setTrimming(true);
+    try {
+      const res = await postJSON<{ offset_mm: [number, number] }>(restore ? "/api/untrim" : "/api/trim", {
+        ...settings, file: fileName, rotation, scale,
+      });
+      setPlacement({ x: placement.x + res.offset_mm[0], y: placement.y + res.offset_mm[1] });
+      setTrimmed(!restore);
+      setDrawingVersion((v) => v + 1); // redraw with the new page
+    } catch (err) {
+      setSaveError((err as Error).message); // shown in the File card, under the file name
+      setSaveState("error");
+    } finally {
+      setTrimming(false);
     }
   };
 
@@ -795,6 +818,9 @@ export default function App() {
                 saveError={saveError}
                 onOpen={openBrowser}
                 onClear={clearFile}
+                trimmed={trimmed}
+                trimming={trimming}
+                onTrim={trimPage}
               />
             </div>
           </Card>

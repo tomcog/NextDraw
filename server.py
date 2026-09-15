@@ -1248,22 +1248,10 @@ def save_drawing():
     placement, scale, drawing tool and paper in a metadata block. The loaded copy is always updated;
     a drawing opened from a folder is also written back to its file.
     """
-    if job.busy():
-        return jsonify(error="Changes are saved once the plotter is done."), 409
-    if not CURRENT_SVG.exists():
-        return jsonify(error="Load an SVG first."), 400
     body = request.json or {}
-    name_file = JOBS / "current.name"
-    if body.get("file") != (name_file.read_text() if name_file.exists() else None):
-        # Another window (or this one, before it caught up) loaded a different drawing since.
-        return jsonify(error="A different drawing was opened in another window. Reload this page."), 409
-    disk_path = Path(CURRENT_PATH.read_text()) if CURRENT_PATH.exists() else None
-    if disk_path is not None:
-        if allowed_path(str(disk_path)) is None or not disk_path.exists():
-            return jsonify(error=f"{disk_path.name} is no longer in {display_path(disk_path.parent)}. Open it again to keep saving."), 409
-        opened = CURRENT_MTIME.read_text().strip() if CURRENT_MTIME.exists() else ""
-        if opened and str(disk_path.stat().st_mtime_ns) != opened:
-            return jsonify(error=f"{disk_path.name} was changed by another app. Open it again to keep saving."), 409
+    problem, disk_path = saving_problem(body)
+    if problem:
+        return problem
     try:
         tree = parse_svg(CURRENT_SVG)
         root = tree.getroot()
@@ -1287,12 +1275,44 @@ def save_drawing():
                     set_layer_hidden(group, item["hidden"])
                 root.insert(slot, group)
         if isinstance(body.get("studio"), dict):
-            write_studio(root, clean_studio(body["studio"]))
-        from lxml import etree
-        etree.cleanup_namespaces(tree, top_nsmap={"inkscape": INKSCAPE_NS[1:-1]})
-        data = svg_bytes(tree)
+            studio = clean_studio(body["studio"])
+            kept = (read_studio(root) or {}).get("original_page")
+            if kept:
+                studio["original_page"] = kept  # set by Trim to drawing, not by the page's choices
+            write_studio(root, studio)
     except Exception as exc:  # noqa: BLE001
         return jsonify(error=f"Couldn't save the drawing: {exc}"), 400
+    problem = commit_drawing(tree, disk_path)
+    if problem:
+        return problem
+    return jsonify(saved_to=display_path(disk_path.parent) if disk_path else None)
+
+
+def saving_problem(body):
+    """Checks before changing the loaded drawing. Returns (error response or None, file on disk or None)."""
+    if job.busy():
+        return (jsonify(error="Changes are saved once the plotter is done."), 409), None
+    if not CURRENT_SVG.exists():
+        return (jsonify(error="Load an SVG first."), 400), None
+    name_file = JOBS / "current.name"
+    if body.get("file") != (name_file.read_text() if name_file.exists() else None):
+        # Another window (or this one, before it caught up) loaded a different drawing since.
+        return (jsonify(error="A different drawing was opened in another window. Reload this page."), 409), None
+    disk_path = Path(CURRENT_PATH.read_text()) if CURRENT_PATH.exists() else None
+    if disk_path is not None:
+        if allowed_path(str(disk_path)) is None or not disk_path.exists():
+            return (jsonify(error=f"{disk_path.name} is no longer in {display_path(disk_path.parent)}. Open it again to keep saving."), 409), None
+        opened = CURRENT_MTIME.read_text().strip() if CURRENT_MTIME.exists() else ""
+        if opened and str(disk_path.stat().st_mtime_ns) != opened:
+            return (jsonify(error=f"{disk_path.name} was changed by another app. Open it again to keep saving."), 409), None
+    return None, disk_path
+
+
+def commit_drawing(tree, disk_path):
+    """Write the changed drawing to the loaded copy and, if it came from a folder, to its file."""
+    from lxml import etree
+    etree.cleanup_namespaces(tree, top_nsmap={"inkscape": INKSCAPE_NS[1:-1]})
+    data = svg_bytes(tree)
     tmp = CURRENT_SVG.with_suffix(".tmp")
     tmp.write_bytes(data)
     os.replace(tmp, CURRENT_SVG)
@@ -1305,7 +1325,139 @@ def save_drawing():
             CURRENT_MTIME.write_text(str(disk_path.stat().st_mtime_ns))
         except OSError as exc:
             return jsonify(error=f"Couldn't save {disk_path.name}: {exc.strerror or exc}"), 500
-    return jsonify(saved_to=display_path(disk_path.parent) if disk_path else None)
+    return None
+
+
+def drawing_bounds(settings):
+    """
+    The box around every line in the drawing, in inches from the page's top-left, as the NextDraw
+    software flattens it: all layers, hidden ones included, so every color is trimmed alike. Clipping
+    masks aren't taken into account, so clipped artwork can make the box a little looser than what
+    shows. Returns (x0, y0, x1, y1, page_w, page_h) or None when there are no lines.
+    """
+    from lxml import etree
+    root = parse_svg(CURRENT_SVG).getroot()
+    normalize_size(root)
+    for group in layer_groups(root):
+        set_layer_hidden(group, False)
+    nd = make_nextdraw([])
+    nd.plot_setup(etree.tostring(root, encoding="unicode"))
+    apply_settings(nd, settings)  # the plotter model sets the travel the lines are kept within; never auto-turned
+    nd.options.mode = "plot"
+    nd.options.preview = True
+    nd.options.digest = 2  # flatten to polylines only; no plot or simulation
+    plob = nd.plot_run(output=True)
+    doc = etree.fromstring(plob.encode("utf-8"), etree.XMLParser(huge_tree=True))
+    xs, ys = [], []
+    for node in doc.iter("{http://www.w3.org/2000/svg}polyline"):
+        numbers = re.findall(r"-?\d*\.?\d+(?:e[-+]?\d+)?", node.get("points") or "")
+        xs.extend(float(v) for v in numbers[0::2])
+        ys.extend(float(v) for v in numbers[1::2])
+    if not xs:
+        return None
+    vb = [float(v) for v in re.split(r"[\s,]+", doc.get("viewBox").strip())]
+    return min(xs), min(ys), max(xs), max(ys), vb[2], vb[3]
+
+
+def turned_offset(box, page_w, page_h, rotation):
+    """Where a box inside the page ends up from the turned page's top-left, in inches."""
+    x0, y0, x1, y1 = box
+    return {
+        0: (x0, y0),
+        90: (page_h - y1, x0),
+        180: (page_w - x1, page_h - y1),
+        270: (y0, page_w - x1),
+    }[rotation]
+
+
+@app.post("/api/trim")
+def trim_to_drawing():
+    """
+    Shrink the page to the lines in the drawing. The original page is kept in the metadata so Restore
+    page can put it back. Returns how far the lines sit from the old page's corner (mm, as placed:
+    turned and scaled), so the page can move the drawing by that much and the lines stay put.
+    """
+    body = request.json or {}
+    problem, disk_path = saving_problem(body)
+    if problem:
+        return problem
+    try:
+        tree = parse_svg(CURRENT_SVG)
+        root = tree.getroot()
+        studio = read_studio(root) or {}
+        if studio.get("original_page"):
+            return jsonify(error="The page is already trimmed to the drawing."), 409
+        bounds = drawing_bounds(clean_settings(body))
+        if not bounds:
+            return jsonify(error="There are no lines in this drawing to trim to."), 400
+        x0, y0, x1, y1, page_w, page_h = bounds
+        sized = parse_svg(CURRENT_SVG).getroot()
+        normalize_size(sized)
+        vb = sized.get("viewBox")
+        vx, vy, vw, vh = [float(v) for v in re.split(r"[\s,]+", vb.strip())] if vb else (0, 0, page_w * 96, page_h * 96)
+        ux, uy = vw / page_w, vh / page_h  # user units per inch
+        studio["original_page"] = {k: root.get(k) for k in ("width", "height", "viewBox")}
+        root.set("viewBox", f"{vx + x0 * ux:g} {vy + y0 * uy:g} {(x1 - x0) * ux:g} {(y1 - y0) * uy:g}")
+        root.set("width", f"{x1 - x0:g}in")
+        root.set("height", f"{y1 - y0:g}in")
+        write_studio(root, studio)
+        dx, dy = turned_offset((x0, y0, x1, y1), page_w, page_h, clean_rotation(body))
+    except Exception as exc:  # noqa: BLE001
+        return jsonify(error=f"Couldn't trim the drawing: {exc}"), 400
+    problem = commit_drawing(tree, disk_path)
+    if problem:
+        return problem
+    factor = clean_scale(body) / 100 * 25.4
+    return jsonify(offset_mm=[dx * factor, dy * factor])
+
+
+@app.post("/api/untrim")
+def restore_page():
+    """Put back the page Trim to drawing removed. Returns the offset to move the drawing back by (mm)."""
+    body = request.json or {}
+    problem, disk_path = saving_problem(body)
+    if problem:
+        return problem
+    try:
+        tree = parse_svg(CURRENT_SVG)
+        root = tree.getroot()
+        studio = read_studio(root) or {}
+        original = studio.pop("original_page", None)
+        if not original:
+            return jsonify(error="This drawing's page hasn't been trimmed."), 409
+        trimmed = parse_svg(CURRENT_SVG).getroot()
+        normalize_size(trimmed)
+        for key in ("width", "height", "viewBox"):
+            if original.get(key) is None:
+                root.attrib.pop(key, None)
+            else:
+                root.set(key, original[key])
+        write_studio(root, studio)
+        # Work out where the trimmed page sat on the restored one. A copy of the whole document, so
+        # the Illustrator comment before <svg> still tells normalize_size the units are points.
+        import copy
+        restored = copy.deepcopy(tree).getroot()
+        normalize_size(restored)
+        def box(el):
+            def inches(value):
+                m = re.match(r"^\s*([0-9]*\.?[0-9]+(?:e[-+]?\d+)?)\s*([a-z]*)\s*$", value or "", re.I)
+                return float(m.group(1)) * PX_PER_UNIT[m.group(2).lower()] / 96
+            w, h = inches(el.get("width")), inches(el.get("height"))
+            vb = el.get("viewBox")
+            vb = [float(v) for v in re.split(r"[\s,]+", vb.strip())] if vb else [0, 0, w * 96, h * 96]
+            return vb, w, h
+        (tvb, tw, th), (ovb, ow, oh) = box(trimmed), box(restored)
+        ux, uy = ovb[2] / ow, ovb[3] / oh
+        x0, y0 = (tvb[0] - ovb[0]) / ux, (tvb[1] - ovb[1]) / uy
+        dx, dy = turned_offset((x0, y0, x0 + tw, y0 + th), ow, oh, clean_rotation(body))
+    except Exception as exc:  # noqa: BLE001
+        return jsonify(error=f"Couldn't restore the page: {exc}"), 400
+    problem = commit_drawing(tree, disk_path)
+    if problem:
+        return problem
+    factor = clean_scale(body) / 100 * 25.4
+    return jsonify(offset_mm=[-dx * factor, -dy * factor])
+
 
 
 @app.post("/api/upload")
@@ -1389,7 +1541,8 @@ def artwork():
         svg = svg_input(clean_scale(body), None, clean_rotation(body))
         root = etree.parse(str(CURRENT_SVG), etree.XMLParser(huge_tree=True)).getroot()
         size_note = normalize_size(root)
-        return jsonify(svg=svg, layers=read_layers(root), warnings=[size_note] if size_note else [])
+        trimmed = bool((read_studio(root) or {}).get("original_page"))
+        return jsonify(svg=svg, layers=read_layers(root), warnings=[size_note] if size_note else [], trimmed=trimmed)
     except Exception as exc:
         return jsonify(error=f"Couldn't read that SVG: {exc}"), 400
 
