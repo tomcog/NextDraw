@@ -583,6 +583,12 @@ def svg_input(scale, layer=None, rotation=0):
 def clean_placement(raw):
     """Where the drawing starts, in mm from home, its scale, and whether to go home afterward."""
     placement = {"x": 0.0, "y": 0.0, "scale": clean_scale(raw), "return_home": bool(raw.get("return_home", True))}
+    # Angle compensation: a tilted tool's tip lands this far toward home from the carriage along the
+    # width, so the carriage starts that much further out. x/y stay where the tip draws.
+    try:
+        placement["tip_offset_x"] = max(0.0, min(100.0, float(raw.get("tip_offset_x", 0))))
+    except (TypeError, ValueError):
+        placement["tip_offset_x"] = 0.0
     # The one layer to plot, by id; None plots the whole drawing.
     placement["rotation"] = clean_rotation(raw)
     placement["layer"] = str(raw["layer"])[:200] if isinstance(raw.get("layer"), str) and raw["layer"] else None
@@ -636,6 +642,11 @@ def dry_run(settings, render, scale=100.0, source=None, mode="plot", layer=None,
     }
 
 
+def carriage_start(placement):
+    """Where the carriage starts the plot, in mm from home: the drawing's place plus any tip offset."""
+    return placement["x"] + placement.get("tip_offset_x", 0.0), placement["y"]
+
+
 def placement_problem(settings, placement, estimate):
     """
     The NextDraw software limits motion to the plotter's travel measured from the plot's
@@ -647,7 +658,8 @@ def placement_problem(settings, placement, estimate):
     if estimate["rotated"]:
         width, height = height, width
     tol = 0.003
-    if placement["x"] / 25.4 + width > model.travel_x + tol or placement["y"] / 25.4 + height > model.travel_y + tol:
+    start_x, start_y = carriage_start(placement)
+    if start_x / 25.4 + width > model.travel_x + tol or start_y / 25.4 + height > model.travel_y + tol:
         return ("At this position the drawing would go past the plotter's reach. "
                 "Move it closer to home or use a smaller drawing.")
     return None
@@ -668,7 +680,8 @@ def set_plot_start(settings, log, placement):
                 problem.append("not homed")
                 return
             nd.homing.find_home()  # Models without homing: treat the current position as home
-        a, b = homing.xy_to_step_pos(nd, placement["x"] / 25.4 * 1000, placement["y"] / 25.4 * 1000)
+        start_x, start_y = carriage_start(placement)
+        a, b = homing.xy_to_step_pos(nd, start_x / 25.4 * 1000, start_y / 25.4 * 1000)
         serial_utils.write_step_offsets(nd, a, b)
         if serial_utils.read_step_offsets(nd) != [a, b]:
             raise RuntimeError("Couldn't set where the plot starts, so it wasn't plotted.")
@@ -687,6 +700,33 @@ def set_plot_start(settings, log, placement):
     if not code and problem:
         raise RuntimeError("The plotter isn't homed, so the plot start couldn't be set.")
     return code
+
+
+def go_to_plot_start(nd, placement):
+    """
+    Make the plot start from its place however it begins. When a plot starts, the NextDraw software
+    re-homes the plotter if it doesn't count as homed (it clears that flag whenever it has to turn
+    the motors on), and homing resets the plot start to home - so a plot could draw from home. After
+    homing, or finding it isn't needed, set the plot start again and move the carriage there with
+    the pen up, so the drawing begins where it was placed.
+    """
+    find_home = nd.homing.find_home
+
+    def find_home_then_start():
+        if not find_home():
+            return False
+        start_x, start_y = carriage_start(placement)
+        a, b = homing.xy_to_step_pos(nd, start_x / 25.4 * 1000, start_y / 25.4 * 1000)
+        serial_utils.write_step_offsets(nd, a, b)
+        if serial_utils.read_step_offsets(nd) != [a, b]:
+            raise RuntimeError("Couldn't set where the plot starts, so it wasn't plotted.")
+        nd.homing.read_position()  # the carriage's place relative to the plot start
+        nd.pen.pen_raise(nd)
+        nd.go_to_position(0, 0)
+        nd.homing.precision_move_to(0, 0)
+        return True
+
+    nd.homing.find_home = find_home_then_start
 
 
 def load_resume():
@@ -825,13 +865,14 @@ def run_plot(settings, placement, resume=None):
                 job.message = ERRORS.get(code, f"The plotter reported error code {code}.")
             return
         with job.lock:
-            carriage.update(origin_known=True, origin_x=placement["x"], origin_y=placement["y"])
+            carriage.update(origin_known=True, origin_x=carriage_start(placement)[0], origin_y=placement["y"])
             job.message = ""
 
         nd = make_nextdraw(log)
         nd.plot_setup(source)
         apply_settings(nd, settings)
         nd.options.mode = mode
+        go_to_plot_start(nd, placement)
         with job.lock:
             apply_live_speed(nd, settings, job.speed_pct)
             job.plot_settings = settings
@@ -1873,6 +1914,8 @@ def put_preset(name):
     entry = {"name": name, "settings": settings}
     if previous.get("palette"):
         entry["palette"] = previous["palette"]  # the tool's colors, set up by hand in presets.json
+    if previous.get("tilt"):
+        entry["tilt"] = previous["tilt"]  # angle compensation, measured when the tool was set up
     presets.append(entry)
     presets.sort(key=lambda p: p["name"].lower())
     save_presets(presets)

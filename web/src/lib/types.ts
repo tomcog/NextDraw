@@ -138,6 +138,14 @@ export interface Preset {
   name: string;
   settings: Partial<Settings>;
   palette?: PenColor[]; // the drawing tool's colors, set up by hand in presets.json
+  tilt?: Tilt; // angle compensation, measured when the tool was set up
+}
+
+// A tilted clip puts the tool's tip offset_mm toward home from the carriage, along the width.
+export interface Tilt {
+  angle: number; // degrees to set the clip to
+  offset_mm: number;
+  on: boolean; // compensation is on unless turned off for this tool
 }
 
 export interface PenColor {

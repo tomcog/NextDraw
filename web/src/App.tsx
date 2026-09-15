@@ -573,7 +573,7 @@ export default function App() {
     setLastAction("plot");
     setLocalMessage(null);
     try {
-      await postJSON("/api/plot", { ...settingsFor(plotLayerId), start_x: placement.x, start_y: placement.y, scale, layer: plotLayerId, rotation });
+      await postJSON("/api/plot", { ...settingsFor(plotLayerId), start_x: placement.x, start_y: placement.y, tip_offset_x: tipOffsetFor(plotLayerId), scale, layer: plotLayerId, rotation });
       setLastPlottedTool(toolNameFor(plotLayerId));
       setPenChangeSeen(null);
       setStatus((s) => (s ? { ...s, state: "preparing", message: "", started: false } : s));
@@ -721,6 +721,13 @@ export default function App() {
   const secondPreset = secondTool ? presets.find((p) => p.name === secondTool) : undefined;
   const usesSecond = (id: string | null) => Boolean(secondTool && id && secondToolLayers.includes(id));
   const toolNameFor = (id: string | null) => (usesSecond(id) ? secondTool : activePreset);
+  // Angle compensation: on or off per tool, starting from its preset. Only tools set up tilted have it.
+  const [tiltChoice, setTiltChoice] = useState<Record<string, boolean>>({});
+  const tiltOn = (tool: Preset | undefined) => Boolean(tool?.tilt && (tiltChoice[tool.name] ?? tool.tilt.on));
+  const tipOffsetFor = (id: string | null) => {
+    const tool = usesSecond(id) ? secondPreset : active;
+    return tiltOn(tool) ? tool!.tilt!.offset_mm : 0;
+  };
   // Small paths slows everything that makes tiny marks violent: how hard the carriage starts and stops,
   // how fast it travels and draws, and how hard the pen is raised and lowered. Pen heights don't change.
   const slowForSmallPaths = (s: Settings): Settings => {
@@ -1027,6 +1034,8 @@ export default function App() {
                 onAssign={assignLayerTool}
                 smallPaths={smallPaths}
                 onSmallPaths={setSmallPaths}
+                tiltOn={tiltOn}
+                onTilt={(name, on) => setTiltChoice((c) => ({ ...c, [name]: on }))}
                 changed={presetChanged}
                 disabled={plotting}
                 onApply={applyPreset}

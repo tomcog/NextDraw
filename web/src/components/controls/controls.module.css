@@ -243,6 +243,7 @@
 
 .toolBlock + .toolBlock { margin-top: 0.5rem; }
 
+
 .toolRow {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;

@@ -24,6 +24,8 @@ interface Props {
   onAssign: (id: string, second: boolean) => void;
   smallPaths: number | null; // percent slower, or null when off
   onSmallPaths: (percent: number | null) => void;
+  tiltOn: (tool: Preset | undefined) => boolean;
+  onTilt: (toolName: string, on: boolean) => void;
 }
 
 // Save / Update / Delete are hidden for now; presets can still be chosen.
@@ -32,8 +34,19 @@ const SHOW_PRESET_ACTIONS = false;
 export function PresetSection({
   presets, active, changed, disabled, onApply, onSave, onDelete,
   secondTool, secondLayers, layers, inUse, onAddSecond, onSecondTool, onRemoveSecond, onAssign,
-  smallPaths, onSmallPaths,
+  smallPaths, onSmallPaths, tiltOn, onTilt,
 }: Props) {
+  // A tool set up for a tilted clip: switch its compensation on or off. The label gives the angle to set.
+  const tiltSwitch = (tool: Preset | undefined) => tool?.tilt && (
+      <Checkbox
+        size="md"
+        label={`Angle compensation ${tool.tilt.angle}°`}
+        checked={tiltOn(tool)}
+        disabled={disabled}
+        title={`The tip of a tilted ${tool.name} lands ${Math.round(tool.tilt.offset_mm * 10) / 10} mm toward home from the carriage; the plot starts that much further out`}
+        onChange={(e) => onTilt(tool.name, e.target.checked)}
+      />
+  );
   // Turning Chill-out mode back on returns to the last amount chosen.
   const lastSlow = useRef(smallPaths ?? 50);
   if (smallPaths !== null) lastSlow.current = smallPaths;
@@ -92,6 +105,7 @@ export function PresetSection({
           </option>
         ))}
       </InputSelect>
+      {tiltSwitch(active)}
       {mixed && layers.length > 0 && chips(false)}
       </div>
 
@@ -114,6 +128,7 @@ export function PresetSection({
             </InputSelect>
             <ButtonRound size="sm" variant="ghost" icon={<X />} aria-label="Remove the second drawing tool" title="Remove the second tool; its layers go back to the first" disabled={disabled} onClick={onRemoveSecond} />
           </div>
+          {tiltSwitch(presets.find((p) => p.name === secondTool))}
           {layers.length > 0 && chips(true)}
         </div>
       )}
