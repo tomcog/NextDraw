@@ -4,16 +4,19 @@
   flex-direction: column;
 }
 
+/* The panel is a left rail, so the preview can size itself freely without moving the panel. */
 .layout {
   flex: 1;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 16.25rem;
-  gap: 1.5rem 0; /* no column gap: the preview's own right margin separates it from the panel */
-  padding: 0 1.5rem 1.5rem 0.75rem;
+  grid-template-columns: 16.25rem minmax(0, 1fr);
+  gap: 1.5rem 0.75rem; /* the preview's own left margin (room for its side dimension line) adds to this */
+  padding: 0 1.5rem 1.5rem;
   align-items: start;
 }
 
 .stage {
+  grid-column: 2;
+  grid-row: 1;
   position: sticky;
   top: 1rem;
   display: flex;
@@ -27,6 +30,8 @@
 }
 
 .side {
+  grid-column: 1;
+  grid-row: 1;
   display: flex;
   flex-direction: column;
   gap: 0.75rem;
@@ -57,4 +62,5 @@
 @media (max-width: 860px) {
   .layout { grid-template-columns: minmax(0, 1fr); padding-inline: 1rem; }
   .stage { position: static; }
+  .stage, .side { grid-column: auto; grid-row: auto; } /* one column: the preview first, then the controls */
 }
