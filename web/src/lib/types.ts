@@ -78,7 +78,7 @@ export interface Status {
   printed_layers: string[]; // ids of layers that finished plotting since the drawing was opened // where the loaded drawing lives; null for an uploaded copy
   file_folder: string | null; // that folder, for display (e.g. "~/Desktop")
   sibling_ai: string | null; // an Illustrator file with the same name next to it
-  resume: { done_mm: number; total_mm: number } | null; // a stopped plot that can be resumed
+  resume: { done_mm: number; total_mm: number; layer?: string | null } | null; // a stopped plot that can be resumed
 }
 
 export interface Estimate {

@@ -1099,7 +1099,10 @@ def status():
         snap["carriage"] = dict(carriage)
     snap["plotter_found"] = bool(ebb_serial.listEBBports())
     resume = load_resume()
-    snap["resume"] = {"done_mm": resume["done_mm"], "total_mm": resume["total_mm"]} if resume else None
+    snap["resume"] = {
+        "done_mm": resume["done_mm"], "total_mm": resume["total_mm"],
+        "layer": (resume.get("placement") or {}).get("layer"),  # the layer being plotted, if one
+    } if resume else None
     name_file = JOBS / "current.name"
     snap["file"] = name_file.read_text() if CURRENT_SVG.exists() and name_file.exists() else None
     with printed_lock:
@@ -1658,12 +1661,16 @@ def resume_plot():
     resume = load_resume()
     if not resume:
         return jsonify(error="There's no stopped plot to resume."), 400
+    # The drawing, placement and stopping point are the stopped plot's. The settings are the page's
+    # current ones when it sends them, so changes made while stopped (Small paths, speeds, a re-seated
+    # pen's heights) apply to the rest of the plot.
+    settings = {**resume["settings"], **clean_settings(request.get_json(silent=True) or {})}
     with job.lock:
         if job.busy():
             return jsonify(error="A plot is already running."), 409
         job.reset("preparing")
         job.thread = threading.Thread(
-            target=run_plot, args=(resume["settings"], resume["placement"], resume), daemon=True)
+            target=run_plot, args=(settings, resume["placement"], resume), daemon=True)
         job.thread.start()
     return jsonify(ok=True)
 

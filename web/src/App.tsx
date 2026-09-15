@@ -580,7 +580,9 @@ export default function App() {
     setLastAction("plot");
     setLocalMessage(null);
     try {
-      await postJSON("/api/resume");
+      // Resume with the settings chosen now (for the stopped layer's tool), so Small paths or speed changes
+      // made while stopped apply to the rest of the plot.
+      await postJSON("/api/resume", settingsFor(status?.resume?.layer ?? plotLayerId));
       setStatus((s) => (s ? { ...s, state: "preparing", message: "", started: false } : s));
     } catch (err) {
       setLocalMessage({ text: (err as Error).message, tone: "error" });
