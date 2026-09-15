@@ -302,10 +302,17 @@ def read_layers(root):
     return layers
 
 
+def has_art(group):
+    """Whether a group holds anything that can be drawn. Illustrator exports can carry empty groups."""
+    return any(el.tag in SHAPE_TAGS or el.tag == SVG_NS + "use" for el in group.iter())
+
+
 def layer_groups(root):
-    """The elements read_layers reports, in file order."""
+    """The elements read_layers reports, in file order: Inkscape layers if there are any, otherwise the
+    top-level groups. Groups with nothing to draw in them aren't layers."""
     groups = [g for g in root if g.tag == SVG_NS + "g" and g.get(INKSCAPE_NS + "groupmode") == "layer"]
-    return groups or [g for g in root if g.tag == SVG_NS + "g"]
+    groups = groups or [g for g in root if g.tag == SVG_NS + "g"]
+    return [g for g in groups if has_art(g)]
 
 
 AUTO_LAYER_ID = "nds-layer-"  # ids the app gives unnamed layers; never shown as a name

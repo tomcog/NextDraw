@@ -58,7 +58,9 @@ export function parsePreview(svgText: string | null): Preview | null {
   // (Illustrator). Matches read_layers in server.py so data-layer lines up with the Layers card.
   const art = [...root.children].filter((c) => c.localName === "g" && c.getAttributeNS(INKSCAPE_NS, "label") !== "% Preview");
   const inkscapeLayers = art.filter((g) => g.getAttributeNS(INKSCAPE_NS, "groupmode") === "layer");
-  const layerGroups = inkscapeLayers.length ? inkscapeLayers : art;
+  // Groups with nothing to draw aren't layers (Illustrator exports can carry empty ones).
+  const layerGroups = (inkscapeLayers.length ? inkscapeLayers : art)
+    .filter((g) => g.querySelector("path, rect, circle, ellipse, line, polyline, polygon, use"));
   layerGroups.forEach((g) => g.classList.add("pv-layer"));
 
   const node = document.importNode(root, true) as unknown as SVGSVGElement;
