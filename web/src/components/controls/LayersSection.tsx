@@ -1,11 +1,11 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { KeyboardEvent, PointerEvent as ReactPointerEvent } from "react";
 import { ButtonRound, LayerController, Segment, SegmentedControl } from "@tomcoggia/ui";
-import { ArrowDownWideNarrow } from "lucide-react";
+import { ArrowDownWideNarrow, Eye, SwatchBook, Waypoints, X } from "lucide-react";
 import styles from "./LayersSection.module.css";
 import { Section } from "./Section";
 import { PaletteMenu } from "./PaletteMenu";
-import type { LayerView, PenColor } from "../../lib/types";
+import type { LayerView, MatchResult, PenColor } from "../../lib/types";
 
 interface Props {
   mode: "preview" | "work";
@@ -18,6 +18,10 @@ interface Props {
   paletteFor: (id: string) => PenColor[]; // the colors of the layer's drawing tool; empty: the dot opens nothing
   onColor: (id: string, pen: PenColor) => void;
   onSort: () => void; // reorder lightest (layer 1) to darkest
+  onMatch: (() => void) | null; // give each layer its closest pen; null when no layer has a palette to match
+  matchResult: MatchResult | null;
+  onUndoMatch: () => void;
+  onDismissMatch: () => void;
   onVisible: (id: string, visible: boolean) => void;
   onRename: (id: string, name: string) => void;
   onMove: (id: string, to: number) => void; // to: a position in the chosen order, 0 = bottom
@@ -35,7 +39,7 @@ const reducedMotion = () => window.matchMedia?.("(prefers-reduced-motion: reduce
 // The drawing's layers, listed like Illustrator's Layers panel: the top layer at the top and
 // layer 1, the bottom layer, last. The box picks the one layer to print; names are edited in
 // place; rows are dragged by their grip (or moved with the arrow keys on it) to reorder.
-export function LayersSection({ mode, onMode, layers, target, printed, disabled, onTarget, paletteFor, onColor, onSort, onVisible, onRename, onMove }: Props) {
+export function LayersSection({ mode, onMode, layers, target, printed, disabled, onTarget, paletteFor, onColor, onSort, onMatch, matchResult, onUndoMatch, onDismissMatch, onVisible, onRename, onMove }: Props) {
   // In Plot mode the layers hidden in Preview mode leave the list, and the eye goes. Numbers stay the
   // plot-order numbers from the full list.
   const numberOf = new Map(layers.map((l, i) => [l.id, i + 1]));
@@ -160,6 +164,16 @@ export function LayersSection({ mode, onMode, layers, target, printed, disabled,
       title="Layers"
       action={
         <span className={styles.headerTools}>
+        {mode === "preview" && onMatch && (
+          <ButtonRound
+            size="sm"
+            icon={<SwatchBook />}
+            aria-label="Match layers to pens"
+            title="Match to pens: give each layer the closest color from its drawing tool's palette"
+            disabled={disabled}
+            onClick={onMatch}
+          />
+        )}
         {mode === "preview" && count > 1 && (
           <ButtonRound
             size="sm"
@@ -171,16 +185,27 @@ export function LayersSection({ mode, onMode, layers, target, printed, disabled,
           />
         )}
         <SegmentedControl size="sm" aria-label="Layers view">
-          <Segment selected={mode === "preview"} onClick={() => onMode("preview")} title="Arrange the drawing: show, hide and reorder layers">
-            Preview
-          </Segment>
-          <Segment selected={mode === "work"} onClick={() => onMode("work")} title="Plot layer by layer: only the layer to print is drawn">
-            Plot
-          </Segment>
+          <Segment selected={mode === "preview"} onClick={() => onMode("preview")} icon={<Eye />} aria-label="Preview" title="Preview: arrange the drawing - show, hide and reorder layers" />
+          <Segment selected={mode === "work"} onClick={() => onMode("work")} icon={<Waypoints />} aria-label="Plot" title="Plot: layer by layer - only the layer to print is drawn" />
         </SegmentedControl>
         </span>
       }
     >
+      {matchResult && (
+        <div className={styles.match} role="status">
+          <div className={styles.matchHead}>
+            <span>{`Matched ${matchResult.count} ${matchResult.count === 1 ? "layer" : "layers"} to pens.`}</span>
+            <button type="button" className={styles.matchUndo} disabled={disabled} onClick={onUndoMatch}>Undo</button>
+            <ButtonRound size="sm" variant="ghost" icon={<X />} aria-label="Dismiss" title="Keep the matches and close this note" onClick={onDismissMatch} />
+          </div>
+          {matchResult.shared.map((s) => (
+            <p key={`s-${s.pen}`} className={styles.matchNote}>{`Layers ${listNumbers(s.layers)} ${s.layers.length === 2 ? "both" : "all"} got ${s.pen}.`}</p>
+          ))}
+          {matchResult.far.map((f) => (
+            <p key={`f-${f.layer}`} className={styles.matchNote} data-tone="warn">{`No close pen for layer ${f.layer}; it got ${f.pen}.`}</p>
+          ))}
+        </div>
+      )}
       <ol className={styles.list} ref={listRef} data-dragging={Boolean(drag)}>
         {rows.map((layer) => {
           const i = numberOf.get(layer.id)! - 1; // position in the chosen order
@@ -250,6 +275,12 @@ export function LayersSection({ mode, onMode, layers, target, printed, disabled,
       )}
     </Section>
   );
+}
+
+// 3, 5 and 8
+function listNumbers(numbers: number[]) {
+  const sorted = [...numbers].sort((a, b) => a - b).map(String);
+  return sorted.length < 2 ? sorted.join("") : `${sorted.slice(0, -1).join(", ")} and ${sorted[sorted.length - 1]}`;
 }
 
 function LayerName({ layer, position, disabled, onRename }: {

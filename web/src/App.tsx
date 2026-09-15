@@ -4,12 +4,12 @@ import styles from "./App.module.css";
 import { api, postJSON } from "./lib/api";
 import { BUSY_STATES, DEFAULT_SETTINGS, DEFAULT_TOOL, PAPER_SIZES, PLOTTING_STATES, PRESET_FIELDS, STEPS, STORAGE } from "./lib/constants";
 import { cleanNote } from "./lib/format";
-import { lightness } from "./lib/color";
+import { lightness, nearestColor } from "./lib/color";
 import { fitsOnBed, fitsOnPaper, footprint } from "./lib/geometry";
 import { parsePlotPaths, type PlotPaths } from "./lib/progressPaths";
 import { parsePreview, type Preview } from "./lib/preview";
 import { load, save } from "./lib/storage";
-import type { Confirmation, Estimate, Info, Layer, LayerEdits, PenColor, LayerView, Message, Placement, Preset, Settings, Status, Studio } from "./lib/types";
+import type { Confirmation, Estimate, Info, Layer, LayerEdits, PenColor, LayerView, MatchResult, Message, Placement, Preset, Settings, Status, Studio } from "./lib/types";
 import { Header } from "./components/Header";
 import { Bed, type Zoom } from "./components/Bed";
 import { ZoomControl } from "./components/ZoomControl";
@@ -29,6 +29,9 @@ import { SpeedSection } from "./components/controls/SpeedSection";
 import { PlotOptionsSection } from "./components/controls/PlotOptionsSection";
 import { PlotterSection } from "./components/controls/PlotterSection";
 import { ActionBar } from "./components/controls/ActionBar";
+
+// A match further off than this (CIEDE2000) is flagged: the pen is clearly a different color.
+const FAR_MATCH = 15;
 
 // Settings that change what the NextDraw software's dry run reports.
 const ESTIMATE_KEYS: (keyof Settings)[] = [
@@ -698,6 +701,54 @@ export default function App() {
   // Angle compensation: on or off per tool, starting from its preset. Only tools set up tilted have it.
   const [tiltChoice, setTiltChoice] = useState<Record<string, boolean>>({});
   const tiltOn = (tool: Preset | undefined) => Boolean(tool?.tilt && (tiltChoice[tool.name] ?? tool.tilt.on));
+  const paletteFor = (id: string | null) => (usesSecond(id) ? secondPreset : active)?.palette ?? [];
+
+  // Match to pens: each layer with a color gets the pen from its tool's palette that looks most like
+  // it, named and colored as if picked from the menu. The drawing is kept first, so one Undo puts it
+  // back exactly. Layers sharing a pen and layers with no close pen are listed for a second look.
+  const [matchResult, setMatchResult] = useState<MatchResult | null>(null);
+  useEffect(() => setMatchResult(null), [fileName]);
+  const matchPens = async () => {
+    const matches = layerViews.flatMap((l, i) => {
+      const found = l.color ? nearestColor(l.color, paletteFor(l.id)) : null;
+      return found ? [{ id: l.id, number: i + 1, pen: found.pen, difference: found.difference }] : [];
+    });
+    if (!matches.length) return;
+    try {
+      await saveChain.current; // the undo point should include changes already on their way
+      await postJSON("/api/drawing/undo-point", { file: fileName });
+    } catch (err) {
+      setSaveError((err as Error).message);
+      setSaveState("error");
+      return;
+    }
+    const names = layerNames(), colors = { ...layerColors() };
+    for (const m of matches) {
+      names[m.id] = m.pen.name;
+      colors[m.id] = m.pen.color;
+    }
+    setLayerEdits({ order: layerViews.map((l) => l.id), names, hidden: layerHidden(), colors });
+    const byPen = new Map<string, number[]>();
+    for (const m of matches) byPen.set(m.pen.name, [...(byPen.get(m.pen.name) ?? []), m.number]);
+    setMatchResult({
+      count: matches.length,
+      shared: [...byPen].filter(([, layers]) => layers.length > 1).map(([pen, layers]) => ({ pen, layers })),
+      far: matches.filter((m) => m.difference > FAR_MATCH).map((m) => ({ layer: m.number, pen: m.pen.name })),
+    });
+  };
+  const undoMatch = async () => {
+    setLayerEdits(null); // drop the matched names and colors, and any save of them still waiting
+    try {
+      await saveChain.current;
+      await postJSON("/api/drawing/undo", { file: fileName });
+      setMatchResult(null);
+      setDrawingVersion((v) => v + 1); // read the restored layers
+    } catch (err) {
+      setSaveError((err as Error).message);
+      setSaveState("error");
+    }
+  };
+
   const tipOffsetFor = (id: string | null) => {
     const tool = usesSecond(id) ? secondPreset : active;
     return tiltOn(tool) ? tool!.tilt!.offset_mm : 0;
@@ -979,8 +1030,12 @@ export default function App() {
                   target={printLayer}
                   printed={status?.printed_layers ?? []}
                   onTarget={setPrintLayer}
-                  paletteFor={(id) => (usesSecond(id) ? secondPreset : active)?.palette ?? []}
+                  paletteFor={paletteFor}
                   onColor={colorLayer}
+                  onMatch={layerViews.some((l) => l.color && paletteFor(l.id).length) ? matchPens : null}
+                  matchResult={matchResult}
+                  onUndoMatch={undoMatch}
+                  onDismissMatch={() => setMatchResult(null)}
                   onSort={sortLayersByLightness}
                   onVisible={setLayerVisible}
                   disabled={plotting}

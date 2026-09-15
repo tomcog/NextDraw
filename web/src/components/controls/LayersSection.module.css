@@ -31,3 +31,43 @@
 .list[data-dragging="true"] { user-select: none; }
 
 .row[data-skipped="true"] input:not([type="radio"]) { text-decoration: line-through; }
+
+/* The note after Match to pens: what happened, Undo, and layers worth a second look. */
+.match {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-bottom: 0.5rem;
+  padding: 6px 8px;
+  border-radius: 6px;
+  background: var(--ui-surface-muted);
+  font-size: 0.8125rem;
+}
+
+.matchHead {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.matchHead > span { margin-right: auto; }
+
+.matchUndo {
+  border: none;
+  background: none;
+  padding: 0;
+  font: inherit;
+  font-weight: 600;
+  color: var(--ui-primary);
+  cursor: pointer;
+}
+
+.matchUndo:disabled { opacity: 0.5; cursor: default; }
+
+.matchNote {
+  margin: 0;
+  font-size: 11px;
+  color: var(--ui-text-muted);
+}
+
+.matchNote[data-tone="warn"] { color: var(--ui-text-default); }

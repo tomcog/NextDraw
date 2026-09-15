@@ -64,6 +64,8 @@ RESUME_SVG = JOBS / "resume.svg"
 RESUME_META = JOBS / "resume.json"
 # The pen-down paths of the plot in progress, in the order they're drawn, for showing what's left.
 PLOT_PATHS = JOBS / "plot-paths.svg"
+# The loaded drawing as it was before its layers were matched to pens, for one step of undo.
+UNDO_SVG = JOBS / "undo.svg"
 
 # Settings the GUI may change, with (min, max) limits from the NextDraw docs.
 NUMERIC_SETTINGS = {
@@ -109,6 +111,14 @@ ERRORS = {
 
 app = Flask(__name__, static_folder=None)
 app.config["MAX_CONTENT_LENGTH"] = 50 * 1024 * 1024
+
+
+@app.after_request
+def no_stale_api(response):
+    """The app's data changes under the page (presets, status, drawings): never let a browser reuse an old answer."""
+    if request.path.startswith("/api/"):
+        response.headers["Cache-Control"] = "no-store"
+    return response
 
 
 # Layers that finished plotting since the drawing was loaded (ids). In memory only: "printed this
@@ -1317,6 +1327,7 @@ def load_drawing(svg_path):
         raise ValueError("That file doesn't look like an SVG.")
     clear_resume()  # a stopped plot of the previous drawing can't be resumed on this one
     forget_printed()
+    UNDO_SVG.unlink(missing_ok=True)
     CURRENT_SVG.write_bytes(data)
     ensure_layer_ids(CURRENT_SVG)
     (JOBS / "current.name").write_text(svg_path.name)
@@ -1509,6 +1520,31 @@ def save_drawing():
     return jsonify(saved_to=display_path(disk_path.parent) if disk_path else None)
 
 
+@app.post("/api/drawing/undo-point")
+def keep_undo_point():
+    """Keep the drawing as it is now, before a change the page can undo (matching layers to pens)."""
+    problem, _ = saving_problem(request.json or {})
+    if problem:
+        return problem
+    shutil.copyfile(CURRENT_SVG, UNDO_SVG)
+    return jsonify(ok=True)
+
+
+@app.post("/api/drawing/undo")
+def undo_drawing():
+    """Put the drawing back the way it was at the undo point, in the loaded copy and its file."""
+    problem, disk_path = saving_problem(request.json or {})
+    if problem:
+        return problem
+    if not UNDO_SVG.exists():
+        return jsonify(error="There's nothing to undo."), 409
+    problem = commit_drawing(parse_svg(UNDO_SVG), disk_path)
+    if problem:
+        return problem
+    UNDO_SVG.unlink(missing_ok=True)
+    return jsonify(ok=True)
+
+
 def saving_problem(body):
     """Checks before changing the loaded drawing. Returns (error response or None, file on disk or None)."""
     if job.busy():
@@ -1693,6 +1729,7 @@ def upload():
         return jsonify(error="That file doesn't look like an SVG."), 400
     clear_resume()  # a stopped plot of the previous drawing can't be resumed on this one
     forget_printed()
+    UNDO_SVG.unlink(missing_ok=True)
     CURRENT_SVG.write_bytes(data)
     try:
         ensure_layer_ids(CURRENT_SVG)
@@ -1713,7 +1750,7 @@ def clear_file():
     if job.busy():
         return jsonify(error="Wait for the plotter to finish before clearing the drawing."), 409
     forget_printed()
-    for path in (CURRENT_SVG, JOBS / "current.name", CURRENT_PATH, CURRENT_MTIME):
+    for path in (CURRENT_SVG, JOBS / "current.name", CURRENT_PATH, CURRENT_MTIME, UNDO_SVG):
         path.unlink(missing_ok=True)
     clear_resume()
     with job.lock:
