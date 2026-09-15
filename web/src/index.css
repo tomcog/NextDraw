@@ -80,6 +80,18 @@
     vector-effect: none;
   }
   .pv-true-width .pv-down path { stroke-width: var(--pen-in) !important; }
+
+  /* Plot mode (Layers card): every path as a thin line, whatever the pen's width, to see the paths
+     themselves. Preview mode shows them at the pen's width. */
+  .pv-hairline .pv-down path,
+  .pv-hairline .pv-up path,
+  .pv-hairline.pv-artwork :is(path, rect, circle, ellipse, line, polyline, polygon),
+  .pv-hairline .pv-layer :is(path, rect, circle, ellipse, line, polyline, polygon) {
+    stroke-width: 1px !important;
+    stroke-linecap: butt !important;
+    stroke-linejoin: miter !important;
+    vector-effect: non-scaling-stroke;
+  }
 }
 
 /* App-only colours for the plotter preview, built on the library's semantic tokens where one fits. */

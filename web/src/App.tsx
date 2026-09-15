@@ -919,6 +919,7 @@ export default function App() {
               penWidthMm={active?.settings.pen_width ?? settings.pen_width}
               layerPenWidths={secondTool ? layerPenWidths : undefined}
               plotPaths={shownPlotPaths}
+              hairlines={layerMode === "work"}
               plotFraction={plotFraction}
               toolbar={
                 <ZoomControl

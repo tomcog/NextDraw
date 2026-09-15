@@ -24,6 +24,7 @@ interface Props {
   onPlacementChange: (p: Placement, persist?: boolean) => void;
   carriage: Carriage | undefined;
   showPenUp: boolean;
+  hairlines?: boolean; // every path as a thin line, ignoring the pen's width: the Layers card's Plot mode
   hasFile: boolean;
   draggingFile: boolean;
   canDrag: boolean;
@@ -66,6 +67,9 @@ export function Bed(props: Props) {
     node.setAttribute("overflow", "visible");
     host.appendChild(node);
   }, [plotPaths]);
+  useLayoutEffect(() => {
+    plotPaths?.preview.node.classList.toggle("pv-hairline", Boolean(props.hairlines));
+  }, [plotPaths, props.hairlines]);
 
   useLayoutEffect(() => {
     if (plotPaths) showProgress(plotPaths, plotFraction);
@@ -89,12 +93,13 @@ export function Bed(props: Props) {
   }, [preview]);
 
   // True line width: the pen's width converted to the preview drawing's own units.
-  const { penWidthMm, layerPenWidths } = props;
+  const { penWidthMm, layerPenWidths, hairlines } = props;
   useLayoutEffect(() => {
     if (!preview) return;
     const node = preview.node;
     const layerWidths = Object.values(layerPenWidths ?? {}).filter((w): w is number => Boolean(w && w > 0));
-    const on = Boolean(penWidthMm && penWidthMm > 0) || layerWidths.length > 0;
+    const on = !hairlines && (Boolean(penWidthMm && penWidthMm > 0) || layerWidths.length > 0);
+    node.classList.toggle("pv-hairline", Boolean(hairlines));
     node.classList.toggle("pv-true-width", on);
     if (!on) return;
     const box = node.viewBox?.baseVal;
@@ -108,7 +113,7 @@ export function Bed(props: Props) {
       if (w && w > 0) g.style.setProperty("--pen-art", String((w / 25.4) * unitsPerInch));
       else g.style.removeProperty("--pen-art");
     });
-  }, [preview, penWidthMm, layerPenWidths]);
+  }, [preview, penWidthMm, layerPenWidths, hairlines]);
 
   // Color each artwork layer. Runs after the preview is mounted, and again when colors change.
   const { layerLooks } = props;
