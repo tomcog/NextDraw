@@ -38,7 +38,9 @@ fi
 web_hash=$(git rev-parse HEAD:web 2>/dev/null || echo "no-git")
 if [ ! -f static/index.html ] || [ "$(cat static/.built-from 2>/dev/null)" != "$web_hash" ]; then
   echo "Building the page (this takes a minute)…"
-  if (cd web && npm install --no-audit --no-fund --loglevel=error && npm run build --silent); then
+  # npm ci installs exactly what package-lock.json lists and never rewrites it, so the next update
+  # isn't blocked by a lock file changed on this Mac.
+  if (cd web && npm ci --no-audit --no-fund --loglevel=error && npm run build --silent); then
     echo "$web_hash" > static/.built-from
   elif [ -f static/index.html ]; then
     warn "Couldn't rebuild the page, so this uses the one built before."
