@@ -2041,4 +2041,5 @@ if __name__ == "__main__":
         print("  Anyone on this network can use the plotter and open drawings from the app's folders.")
     if "--no-browser" not in sys.argv:
         threading.Timer(1.0, lambda: webbrowser.open(url)).start()
-    app.run(host="0.0.0.0" if lan else HOST, port=PORT, threaded=True)
+    # "::" listens on IPv6 and IPv4 alike. Name.local resolves to IPv6 first, and Safari won't fall back.
+    app.run(host="::" if lan else HOST, port=PORT, threaded=True)
