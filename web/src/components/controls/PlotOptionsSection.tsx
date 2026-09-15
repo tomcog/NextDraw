@@ -17,6 +17,7 @@ export function PlotOptionsSection({ settings: s, disabled, onChange, handling }
     <div className={styles.plotOptions}>
       <div className={styles.row2}>
         <InputText
+          size="md"
           label="Copies"
           type="number"
           min={1}
@@ -27,6 +28,7 @@ export function PlotOptionsSection({ settings: s, disabled, onChange, handling }
         />
         {s.copies > 1 && (
           <InputText
+            size="md"
             label="Wait between copies (s)"
             type="number"
             min={0}
@@ -38,11 +40,11 @@ export function PlotOptionsSection({ settings: s, disabled, onChange, handling }
         )}
       </div>
       {handling.length > 0 && (
-        <InputSelect label="Handling mode" value={s.handling} disabled={disabled} onChange={(e) => onChange({ handling: Number(e.target.value) })}>
+        <InputSelect size="md" label="Handling mode" value={s.handling} disabled={disabled} onChange={(e) => onChange({ handling: Number(e.target.value) })}>
           {handling.map((h) => <option key={h.id} value={h.id}>{h.name}</option>)}
         </InputSelect>
       )}
-      <InputSelect label="Path order" value={s.reordering} disabled={disabled} onChange={(e) => onChange({ reordering: Number(e.target.value) })}>
+      <InputSelect size="md" label="Path order" value={s.reordering} disabled={disabled} onChange={(e) => onChange({ reordering: Number(e.target.value) })}>
         {/* Least to most change. Each of 0-2 includes the one before; 4 turns everything off. */}
         <option value={4}>Keep the file’s order</option>
         <option value={0}>Join paths that touch</option>

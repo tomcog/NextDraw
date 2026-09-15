@@ -34,6 +34,7 @@ export function LengthField({ label, mm, units, min, disabled, suffix, onChange 
 
   const input = (
     <InputText
+      size="md"
       label={`${label} (${units})`}
       hideLabel={Boolean(suffix)}
       style={suffix ? { paddingRight: "4rem" } : undefined}

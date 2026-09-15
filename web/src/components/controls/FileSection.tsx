@@ -85,6 +85,7 @@ export function FileSection({
       {fileName && (
         <div className={styles.scaleRow}>
           <InputText
+            size="md"
             className={styles.scaleField}
             label="Scale (%)"
             type="number"

@@ -83,6 +83,7 @@ export function PresetSection({
     >
       <div className={styles.toolBlock} data-in-use={inUse === "first"}>
       <InputSelect
+        size="md"
         label="Drawing tool"
         hideLabel
         value={active?.name ?? ""}
@@ -103,6 +104,7 @@ export function PresetSection({
         <div className={styles.toolBlock} data-in-use={inUse === "second"}>
           <div className={styles.toolRow}>
             <InputSelect
+              size="md"
               label="Second drawing tool"
               hideLabel
               value={secondTool ?? ""}
@@ -123,7 +125,7 @@ export function PresetSection({
       <div className={styles.smallPaths}>
         <Checkbox
           size="md"
-          label="Small paths"
+          label="Chill-out mode"
           checked={smallPaths !== null}
           disabled={disabled}
           title="For drawings full of tiny marks: slows acceleration, travel and drawing speed, and pen lifts, so the plotter doesn't shake"
@@ -131,6 +133,7 @@ export function PresetSection({
         />
         {smallPaths !== null && (
           <InputText
+            size="md"
             className={styles.slowField}
             label="Slower by (%)"
             type="number"
@@ -154,6 +157,7 @@ export function PresetSection({
       {SHOW_PRESET_ACTIONS && (naming ? (
         <div className={styles.stack}>
           <InputText
+            size="md"
             label="Preset name"
             value={name}
             maxLength={40}

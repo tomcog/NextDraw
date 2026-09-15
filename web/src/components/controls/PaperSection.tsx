@@ -38,7 +38,7 @@ export function PaperSection({ settings: s, disabled, onPickSize, onChange }: Pr
   return (
     <Section title="Paper">
       <div className={styles.paperHead}>
-        <InputSelect label="Paper size" hideLabel value={s.paper_size} disabled={disabled} onChange={(e) => onPickSize(e.target.value)}>
+        <InputSelect size="md" label="Paper size" hideLabel value={s.paper_size} disabled={disabled} onChange={(e) => onPickSize(e.target.value)}>
           {PAPER_SIZES.map((p) => <option key={p.id} value={p.id}>{sizeName(p)}</option>)}
         </InputSelect>
         <div className={styles.unitsGroup}>

@@ -16,7 +16,7 @@ export function SpeedSection({ settings: s, handling, disabled, onChange }: Prop
       <Slider label="Drawing speed" value={s.speed_pendown} min={1} disabled={disabled} onChange={(v) => onChange({ speed_pendown: v })} />
       <Slider label="Moving speed" value={s.speed_penup} min={1} disabled={disabled} onChange={(v) => onChange({ speed_penup: v })} />
       <Slider label="Acceleration" value={s.accel} min={1} disabled={disabled} onChange={(v) => onChange({ accel: v })} />
-      <InputSelect label="Motion style" value={s.handling} disabled={disabled} onChange={(e) => onChange({ handling: Number(e.target.value) })}>
+      <InputSelect size="md" label="Motion style" value={s.handling} disabled={disabled} onChange={(e) => onChange({ handling: Number(e.target.value) })}>
         {handling.map((h) => <option key={h.id} value={h.id}>{h.name}</option>)}
       </InputSelect>
     </Section>

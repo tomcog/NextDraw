@@ -38,6 +38,7 @@ export function Slider({ label, value, min = 0, max = 100, disabled, onChange }:
         onChange={(e) => onChange(Number(e.target.value))}
       />
       <InputText
+        size="md"
         className={styles.sliderNumber}
         type="number"
         inputMode="numeric"
