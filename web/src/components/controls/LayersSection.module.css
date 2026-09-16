@@ -95,6 +95,10 @@
 
 /* A round button that's switched on (ink simulation): the same pressed state the other cards use. */
 .roundActive {
-  --ui-button-round-bg: var(--ui-surface-inverse);
-  --ui-button-round-icon: var(--ui-text-on-inverse);
+  /* Ink and white, not the inverse surface: the inverse flips with the theme, so
+     in the dark theme a switched-on button came out pale with a dark glyph. */
+  --ui-button-round-bg: var(--ui-ink);
+  --ui-button-round-icon: var(--ui-white);
+  --ui-button-round-bg-hover: var(--ui-ink);
+  --ui-button-round-icon-hover: var(--ui-white);
 }
