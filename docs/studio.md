@@ -183,5 +183,15 @@ counts what it can't redraw and says so, and saving over that same name is refus
 saves a copy and leaves the original alone. Studio owning the files it makes was never a licence to
 gut someone else's artwork.
 
-What it deliberately doesn't do yet: move or resize a shape once drawn, undo, choose a pen, or fill
-anything. Fills are the next feature, and the decisions above are about them.
+**Shapes can be edited after they're drawn.** Select is its own tool, not a modifier: with a drawing
+tool chosen the shapes let a drag through to the page, so a shape covering the page is never a hole
+you can't draw in, and a drag over one is never ambiguous. In select mode the whole shape is the
+grip, interior included - these have no fill, so otherwise only the outline itself would catch the
+pointer. Corner handles resize a box, and a line's two ends move independently. Drawing a shape
+hands over to select, because what you want next is nearly always to nudge the thing you just drew.
+
+A move is limited as a whole rather than corner by corner: clamping each point on its own would
+squash a shape against the edge of the page instead of stopping it there.
+
+What it deliberately doesn't do yet: undo, choose a pen, or fill anything. Fills are the next
+feature, and the decisions above are about them.

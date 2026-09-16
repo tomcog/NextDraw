@@ -62,6 +62,22 @@
   stroke: var(--ui-primary);
 }
 
+/* With a drawing tool chosen, shapes let a drag through to the page, so a big shape is never a hole
+   you can't draw in. In select mode the whole shape is the grip, interior included - these have no
+   fill, so without pointer-events: all only the outline itself would catch the pointer. */
+.shape { pointer-events: none; }
+.canvas[data-tool="select"] .shape { pointer-events: all; cursor: grab; }
+.canvas[data-tool="select"][data-drag="move"] .shape { cursor: grabbing; }
+
+/* Corner handles: filled so they read as grips rather than as part of the drawing. */
+.handles circle {
+  /* Filled like the paper, not like the panel: the page is white in both themes. */
+  fill: #ffffff;
+  stroke: var(--ui-primary);
+  stroke-width: 1.5;
+  vector-effect: non-scaling-stroke;
+}
+
 /* The shape being dragged out, before it's committed. */
 .draft {
   fill: none;

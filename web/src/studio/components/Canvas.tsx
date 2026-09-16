@@ -1,29 +1,46 @@
 import { useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent } from "react";
-import { boxOf, clampToPage, isDegenerate, newShapeId, type Page, type Shape, type ShapeKind } from "../lib/shapes";
+import {
+  boxOf, clampToPage, dragHandle, handlesOf, isDegenerate, moveBy, newShapeId,
+  CURSOR, type Handle, type Page, type Shape, type ShapeKind,
+} from "../lib/shapes";
 import { fmtIn } from "../../lib/format";
 import styles from "./Canvas.module.css";
+
+/** Select picks shapes up; the rest draw. Without the distinction a shape covering the page would
+ *  be a hole you couldn't draw in, and a drag over one would be ambiguous. */
+export type Tool = ShapeKind | "select";
 
 interface Props {
   page: Page;
   shapes: Shape[];
-  tool: ShapeKind;
+  tool: Tool;
   selected: string | null;
   onSelect: (id: string | null) => void;
   onAdd: (shape: Shape) => void;
+  onUpdate: (shape: Shape) => void;
 }
 
-// The page at true proportions, with a one-inch grid. Drag on it to draw the chosen shape. It keeps
-// the page's own proportions and is sized to them (--canvas-aspect), so the drawing gets as large as
-// the space allows - the same way Plot's preview fills its column.
-export function Canvas({ page, shapes, tool, selected, onSelect, onAdd }: Props) {
+// One drag at a time, and what it means depends on where it started: on the page it draws a new
+// shape, on a shape it moves that shape, on a selected shape's handle it reshapes it. A shape being
+// moved or reshaped is updated as the pointer goes, so the page and the size in the list stay
+// truthful mid-drag rather than catching up at the end.
+type Drag =
+  | { mode: "new"; shape: Shape }
+  | { mode: "move"; id: string; from: { x: number; y: number }; origin: Shape }
+  | { mode: "handle"; id: string; handle: Handle; origin: Shape };
+
+// The page at true proportions, with a one-inch grid. It keeps the page's own proportions and is
+// sized to them (--canvas-aspect), so the drawing gets as large as the space allows - the same way
+// Plot's preview fills its column.
+export function Canvas({ page, shapes, tool, selected, onSelect, onAdd, onUpdate }: Props) {
   const svgRef = useRef<SVGSVGElement>(null);
-  const [draft, setDraft] = useState<Shape | null>(null);
-  const drawing = useRef<number | null>(null);
+  const [drag, setDrag] = useState<Drag | null>(null);
+  const pointer = useRef<number | null>(null);
 
   const pad = Math.max(page.w, page.h) * 0.06;
   const vb = [-pad, -pad, page.w + pad * 2, page.h + pad * 2];
   const viewBox = vb.join(" ");
-  const dot = vb[2] * 0.008; // the home marker's radius, in page units - real geometry, so it scales
+  const dot = vb[2] * 0.008; // handle and home-marker radius in page units - real geometry, so it scales
 
   // Where a pointer is on the page, in inches from its top-left corner.
   const pointAt = (e: ReactPointerEvent): { x: number; y: number } | null => {
@@ -37,32 +54,65 @@ export function Canvas({ page, shapes, tool, selected, onSelect, onAdd }: Props)
     };
   };
 
+  const begin = (e: ReactPointerEvent, next: Drag) => {
+    try {
+      (e.currentTarget as Element).setPointerCapture(e.pointerId);
+    } catch {
+      // not a live pointer (synthetic events); the drag still works while the pointer is over the page
+    }
+    pointer.current = e.pointerId;
+    setDrag(next);
+  };
+
+  // Started on the page itself: draw a new shape, or in select mode just clear the selection.
   const onPointerDown = (e: ReactPointerEvent<SVGSVGElement>) => {
     if (e.button !== 0) return;
     const p = pointAt(e);
     if (!p) return;
-    try {
-      e.currentTarget.setPointerCapture(e.pointerId);
-    } catch {
-      // not a live pointer (synthetic events); drawing still works while the pointer is over the page
-    }
-    drawing.current = e.pointerId;
     onSelect(null);
-    setDraft(clampToPage({ id: newShapeId(), kind: tool, x: p.x, y: p.y, x2: p.x, y2: p.y }, page));
+    if (tool === "select") return;
+    begin(e, {
+      mode: "new",
+      shape: clampToPage({ id: newShapeId(), kind: tool, x: p.x, y: p.y, x2: p.x, y2: p.y }, page),
+    });
+  };
+
+  // Started on a shape: pick it and move it. A press that doesn't move is just a selection. Only in
+  // select mode - while a drawing tool is chosen the shapes let the drag through to the page.
+  const onShapeDown = (e: ReactPointerEvent, shape: Shape) => {
+    if (e.button !== 0 || tool !== "select") return;
+    e.stopPropagation();
+    const p = pointAt(e);
+    if (!p) return;
+    onSelect(shape.id);
+    begin(e, { mode: "move", id: shape.id, from: p, origin: shape });
+  };
+
+  // Started on a handle: reshape.
+  const onHandleDown = (e: ReactPointerEvent, shape: Shape, handle: Handle) => {
+    if (e.button !== 0) return;
+    e.stopPropagation();
+    begin(e, { mode: "handle", id: shape.id, handle, origin: shape });
   };
 
   const onPointerMove = (e: ReactPointerEvent<SVGSVGElement>) => {
-    if (drawing.current !== e.pointerId || !draft) return;
+    if (!drag || pointer.current !== e.pointerId) return;
     const p = pointAt(e);
     if (!p) return;
-    setDraft(clampToPage({ ...draft, x2: p.x, y2: p.y }, page));
+    if (drag.mode === "new") {
+      setDrag({ ...drag, shape: clampToPage({ ...drag.shape, x2: p.x, y2: p.y }, page) });
+    } else if (drag.mode === "move") {
+      onUpdate(moveBy(drag.origin, p.x - drag.from.x, p.y - drag.from.y, page));
+    } else {
+      onUpdate(clampToPage(dragHandle(drag.origin, drag.handle, p.x, p.y), page));
+    }
   };
 
   const onPointerUp = (e: ReactPointerEvent<SVGSVGElement>) => {
-    if (drawing.current !== e.pointerId) return;
-    drawing.current = null;
-    if (draft && !isDegenerate(draft)) onAdd(draft);
-    setDraft(null);
+    if (pointer.current !== e.pointerId) return;
+    pointer.current = null;
+    if (drag?.mode === "new" && !isDegenerate(drag.shape)) onAdd(drag.shape);
+    setDrag(null);
   };
 
   const render = (s: Shape, key: string, kind: "shape" | "draft") => {
@@ -71,13 +121,7 @@ export function Canvas({ page, shapes, tool, selected, onSelect, onAdd }: Props)
       key,
       className: kind === "draft" ? styles.draft : styles.shape,
       "data-selected": kind === "shape" && s.id === selected ? "true" : undefined,
-      onPointerDown:
-        kind === "shape"
-          ? (e: ReactPointerEvent) => {
-              e.stopPropagation();
-              onSelect(s.id);
-            }
-          : undefined,
+      onPointerDown: kind === "shape" ? (e: ReactPointerEvent) => onShapeDown(e, s) : undefined,
     };
     if (s.kind === "line") return <line {...common} x1={s.x} y1={s.y} x2={s.x2} y2={s.y2} />;
     if (s.kind === "ellipse") {
@@ -103,11 +147,16 @@ export function Canvas({ page, shapes, tool, selected, onSelect, onAdd }: Props)
       ),
     );
 
+  const chosen = shapes.find((s) => s.id === selected) ?? null;
+  const showHandles = chosen && drag?.mode !== "new" && drag?.mode !== "move";
+
   return (
     <div className={styles.wrap} style={{ "--canvas-aspect": vb[2] / vb[3] } as CSSProperties}>
       <svg
         ref={svgRef}
         className={styles.canvas}
+        data-drag={drag?.mode}
+        data-tool={tool}
         viewBox={viewBox}
         role="img"
         aria-label={`Drawing page, ${fmtIn(page.w)} by ${fmtIn(page.h)}`}
@@ -123,12 +172,30 @@ export function Canvas({ page, shapes, tool, selected, onSelect, onAdd }: Props)
         </g>
         <rect className={styles.pageEdge} x={0} y={0} width={page.w} height={page.h} />
         {shapes.map((s) => render(s, s.id, "shape"))}
-        {draft && render(draft, "draft", "draft")}
+        {drag?.mode === "new" && render(drag.shape, "draft", "draft")}
+
+        {/* The chosen shape's corners, to drag it into shape. Out of the way while it's being moved,
+            so the handles aren't chasing the pointer at the same time as the shape is. */}
+        {showHandles && (
+          <g className={styles.handles}>
+            {handlesOf(chosen).map((h) => (
+              <circle
+                key={h.id}
+                cx={h.x}
+                cy={h.y}
+                r={dot}
+                style={{ cursor: CURSOR[h.id] }}
+                onPointerDown={(e) => onHandleDown(e, chosen, h.id)}
+              />
+            ))}
+          </g>
+        )}
+
         {/* Home, where the plotter starts, in the corner Plot puts it. */}
         <circle className={styles.home} cx={0} cy={0} r={dot} />
       </svg>
 
-      {shapes.length === 0 && !draft && (
+      {shapes.length === 0 && !drag && (
         <div className={styles.hint} aria-hidden="true">
           <strong>Drag on the page to draw</strong>
           <span>Then save it and open it in Plot</span>

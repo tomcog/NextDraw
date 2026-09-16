@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Button, ButtonRound, Card, InputSelect, InputText } from "@tomcoggia/ui";
-import { Circle, FolderOpen, Minus, Ratio, Square, Trash2 } from "lucide-react";
+import { Circle, FolderOpen, Minus, MousePointer2, Ratio, Square, Trash2 } from "lucide-react";
 import { FileBrowser, type OpenResult } from "../components/FileBrowser";
 import { Section } from "../components/controls/Section";
 import controls from "../components/controls/controls.module.css";
@@ -8,10 +8,10 @@ import { api, postJSON } from "../lib/api";
 import { load, save as remember } from "../lib/storage";
 import { PAPER_SIZES } from "../lib/constants";
 import { fmtIn } from "../lib/format";
-import { Canvas } from "./components/Canvas";
+import { Canvas, type Tool } from "./components/Canvas";
 import { StudioHeader } from "./components/StudioHeader";
 import { parseDrawing } from "./lib/parse";
-import { boxOf, shapeName, type Page, type Shape, type ShapeKind } from "./lib/shapes";
+import { boxOf, shapeName, type Page, type Shape } from "./lib/shapes";
 import { buildSvg, cleanFileName } from "./lib/svg";
 import styles from "./App.module.css";
 
@@ -24,10 +24,11 @@ const SIZES = PAPER_SIZES.filter((p) => p.w && p.h).map((p) => ({
   h: p.h! / 25.4,
 }));
 
-const TOOLS: { kind: ShapeKind; label: string; icon: JSX.Element }[] = [
-  { kind: "rect", label: "Rectangle", icon: <Square /> },
-  { kind: "ellipse", label: "Ellipse", icon: <Circle /> },
-  { kind: "line", label: "Line", icon: <Minus /> },
+const TOOLS: { kind: Tool; label: string; hint: string; icon: JSX.Element }[] = [
+  { kind: "select", label: "Select", hint: "Select: drag a shape to move it, its corners to resize", icon: <MousePointer2 /> },
+  { kind: "rect", label: "Rectangle", hint: "Draw a rectangle: drag on the page", icon: <Square /> },
+  { kind: "ellipse", label: "Ellipse", hint: "Draw an ellipse: drag on the page", icon: <Circle /> },
+  { kind: "line", label: "Line", hint: "Draw a line: drag on the page", icon: <Minus /> },
 ];
 
 // The layer the shapes are written into. Named after a pen, because a layer whose name matches one of
@@ -43,7 +44,7 @@ type Saved = { path: string; folder: string } | null;
 export default function App() {
   const [page, setPage] = useState<Page>({ w: 11, h: 8.5 });
   const [shapes, setShapes] = useState<Shape[]>([]);
-  const [tool, setTool] = useState<ShapeKind>("rect");
+  const [tool, setTool] = useState<Tool>("rect");
   const [selected, setSelected] = useState<string | null>(null);
   const [name, setName] = useState("Untitled");
   const [saved, setSaved] = useState<Saved>(null);
@@ -76,6 +77,11 @@ export default function App() {
   const addShape = useCallback((shape: Shape) => {
     setShapes((list) => [...list, shape]);
     setSelected(shape.id);
+    setTool("select"); // what you want next is nearly always to nudge the thing you just drew
+  }, []);
+
+  const updateShape = useCallback((shape: Shape) => {
+    setShapes((list) => list.map((s) => (s.id === shape.id ? shape : s)));
   }, []);
 
   const removeShape = (id: string) => {
@@ -219,6 +225,7 @@ export default function App() {
             selected={selected}
             onSelect={setSelected}
             onAdd={addShape}
+            onUpdate={updateShape}
           />
         </section>
 
@@ -289,7 +296,7 @@ export default function App() {
                       className={tool === t.kind ? controls.roundActive : undefined}
                       aria-label={t.label}
                       aria-pressed={tool === t.kind}
-                      title={`Draw a ${t.label.toLowerCase()}: drag on the page`}
+                      title={t.hint}
                       onClick={() => setTool(t.kind)}
                     />
                   ))}
@@ -306,7 +313,6 @@ export default function App() {
                           key={s.id}
                           className={styles.shapeRow}
                           data-selected={s.id === selected}
-                          onPointerEnter={() => setSelected(s.id)}
                         >
                           <button
                             type="button"
