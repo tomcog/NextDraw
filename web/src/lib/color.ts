@@ -74,3 +74,14 @@ export function nearestColor<T extends { color: string }>(color: string, palette
   }
   return best;
 }
+
+// How a pen color lands on paper: its ink at the tool's density over the paper's own color. The ink
+// multiplies with the paper, the way translucent ink does, and what shows through is the rest.
+export function onPaper(color: string, density: number, paper = "#ffffff"): string {
+  const channels = (hex: string) => [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16));
+  const [ir, ig, ib] = channels(color);
+  const [pr, pg, pb] = channels(paper);
+  const a = Math.min(1, Math.max(0, density));
+  const mix = (ink: number, sheet: number) => Math.round((ink * sheet / 255) * a + sheet * (1 - a));
+  return `#${[mix(ir, pr), mix(ig, pg), mix(ib, pb)].map((v) => v.toString(16).padStart(2, "0")).join("")}`;
+}

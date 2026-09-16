@@ -2,11 +2,12 @@ import { useEffect, useRef, useState } from "react";
 import { Button, ButtonRound, Card, InputText } from "@tomcoggia/ui";
 import { Plus, Trash2 } from "lucide-react";
 import styles from "./PaletteEditor.module.css";
-import { lightness } from "../lib/color";
+import { lightness, onPaper } from "../lib/color";
 import type { PenColor, Preset } from "../lib/types";
 
 interface Props {
   tool: Preset | undefined;
+  paper: string; // the paper's color, for showing how each ink lands on it
   disabled: boolean;
   saving: boolean;
   error: string | null;
@@ -21,7 +22,11 @@ const byDarkness = (pens: PenColor[]) =>
 
 // The pen colors of the chosen drawing tool, in place of the drawing preview: the colors a palette
 // menu offers and Match to pens picks from. Edits save themselves; there's nothing to press.
-export function PaletteEditor({ tool, disabled, saving, error, onChange }: Props) {
+export function PaletteEditor({ tool, paper, disabled, saving, error, onChange }: Props) {
+  // Each swatch is shown as it plots: the ink at this tool's density, over the paper. The file's own
+  // value stays in the field beside it, so a color can be chosen to land where you want it.
+  const density = tool?.settings.ink_opacity ?? 1;
+  const plotted = (color: string) => (density < 1 ? onPaper(color, density, paper) : color);
   // Edits live here while they're being typed, so a save on its way doesn't fight the fields. The
   // order settles when the palette opens: re-sorting mid-edit would slide a card out from under the
   // cursor as its color changed. A color added now waits at the end until the palette is opened again.
@@ -52,7 +57,9 @@ export function PaletteEditor({ tool, disabled, saving, error, onChange }: Props
       <header className={styles.head}>
         <h2 className={styles.title}>{tool.name}</h2>
         <span className={styles.count} role="status">
-          {error ? error : saving ? "Saving…" : colors.length ? `${colors.length} ${colors.length === 1 ? "color" : "colors"}` : "No colors yet"}
+          {error ? error : saving ? "Saving…"
+            : density < 1 ? `Shown as they plot, at ${Math.round(density * 100)}% ink. The corner is the file's own color.`
+            : colors.length ? `${colors.length} ${colors.length === 1 ? "color" : "colors"}` : "No colors yet"}
         </span>
       </header>
 
@@ -65,7 +72,8 @@ export function PaletteEditor({ tool, disabled, saving, error, onChange }: Props
         <div className={styles.grid}>
           {colors.map((pen, i) => (
             <Card key={i} variant="flat" className={styles.card}>
-              <label className={styles.swatch} style={{ background: pen.color }}>
+              <label className={styles.swatch} style={{ background: plotted(pen.color) }} data-ink={density < 1 || undefined}>
+                <span className={styles.raw} style={{ background: pen.color }} aria-hidden />
                 <span className={styles.hidden}>{`Color of ${pen.name}`}</span>
                 <input
                   type="color"

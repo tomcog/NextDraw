@@ -1020,6 +1020,7 @@ export default function App() {
               <PaletteEditor
                 key={active?.name}
                 tool={active}
+                paper={settings.paper_color}
                 disabled={plotting}
                 saving={paletteSaving}
                 error={paletteError}
