@@ -3,6 +3,9 @@
 A local web app for plotting SVG files on a Bantam Tools NextDraw, built on
 Bantam Tools' own [NextDraw Python API](https://bantam.tools/nd_py/).
 
+This is the app that plots. A companion app for creating and editing drawings, NextDraw Studio, is
+planned but not built; what was decided about it, and why, is in [docs/studio.md](docs/studio.md).
+
 - Preview the pen paths at true size on the plotter, with your paper, zoomed to the printer, paper or drawing
 - Position a drawing by dragging it or by typing its start, and scale it by percentage
 - Pick a drawing-tool preset (pen heights, lift and drop speeds, drawing speeds) from `presets.json`
@@ -109,6 +112,7 @@ alongside its `InputText`. The plotter preview and progress line are app-specifi
 - `samples/` – test drawings
 - `jobs/` – the most recently loaded SVG (created automatically)
 - `presets.json` – saved pen presets (created when you save one)
+- `docs/` – design notes that outlive a conversation
 
 ## Deployment notes
 
