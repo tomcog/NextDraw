@@ -67,6 +67,23 @@ export function parseDrawing(text: string): Opened {
   const generated = (el: Element) => Boolean(el.closest(`[id^="${FILL_GROUP_PREFIX}"]`));
   const idOf = (el: Element) => el.getAttribute("id") || newShapeId();
 
+  // Which shapes are on a layer NextDraw skips. Read from the file rather than from the parameters,
+  // because the layer is what actually decides whether a shape reaches the paper.
+  const sources = new Set<string>();
+  const onSkippedLayer = (el: Element) => {
+    for (let up = el.parentElement; up; up = up.parentElement) {
+      const label = up.getAttribute("inkscape:label") ?? up.getAttribute("label");
+      if (label?.trim().startsWith("%")) return true;
+    }
+    return false;
+  };
+
+  const noteSource = (el: Element) => {
+    const id = idOf(el);
+    if (onSkippedLayer(el)) sources.add(id);
+    return id;
+  };
+
   for (const el of Array.from(svg.querySelectorAll("*"))) {
     if (generated(el)) continue;
     switch (el.nodeName.toLowerCase()) {
@@ -74,7 +91,7 @@ export function parseDrawing(text: string): Opened {
         const x = attr(el, "x");
         const y = attr(el, "y");
         shapes.push({
-          id: idOf(el), kind: "rect",
+          id: noteSource(el), kind: "rect",
           x: toX(x), y: toY(y),
           x2: toX(x + attr(el, "width")), y2: toY(y + attr(el, "height")),
         });
@@ -87,14 +104,14 @@ export function parseDrawing(text: string): Opened {
         const rx = el.nodeName.toLowerCase() === "circle" ? attr(el, "r") : attr(el, "rx");
         const ry = el.nodeName.toLowerCase() === "circle" ? attr(el, "r") : attr(el, "ry");
         shapes.push({
-          id: idOf(el), kind: "ellipse",
+          id: noteSource(el), kind: "ellipse",
           x: toX(cx - rx), y: toY(cy - ry), x2: toX(cx + rx), y2: toY(cy + ry),
         });
         break;
       }
       case "line":
         shapes.push({
-          id: idOf(el), kind: "line",
+          id: noteSource(el), kind: "line",
           x: toX(attr(el, "x1")), y: toY(attr(el, "y1")),
           x2: toX(attr(el, "x2")), y2: toY(attr(el, "y2")),
         });
@@ -128,6 +145,9 @@ export function parseDrawing(text: string): Opened {
             angle: Number(f.angle) || 0,
             spacingMm: Number(f.spacing_mm) || 1.5,
             scale: Number(f.scale) || 100,
+            // The file's own layout wins over the recorded flag: a shape on a skipped layer was
+            // never going to be plotted whatever the parameters happen to say.
+            outline: !sources.has(f.shape as string),
           }));
       }
     } catch {

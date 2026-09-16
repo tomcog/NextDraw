@@ -219,5 +219,16 @@ from the fill that made them - and regenerates from the parameters. Plot rewrite
 
 Page size lives behind an icon in the Drawing card rather than taking a card of its own.
 
-What it deliberately doesn't do yet: choose a pen per fill, cross-hatch (a second fill on the same
-shape), or hatch without also drawing the outline.
+**A fill can be hatched without its outline.** The shape still has to be in the file, because the
+fill is regenerated from it - so it goes on the `%sources` layer, which is what that mechanism was
+designed and tested for. NextDraw skips it, Plot strikes it through and leaves it out of the drawing's
+bounds, and Studio shows it dashed and faint: you can still see and grab the thing the hatching comes
+from, but it can't be mistaken for a line the pen will make. Reading a drawing back takes the outline
+setting from which layer the shape is on rather than from the recorded flag, because the layer is
+what actually decides whether a shape reaches the paper.
+
+This needed one change in Plot: a `%` layer no longer counts towards "this drawing has more than one
+layer, choose one to plot". Only one of them can be plotted, so there was nothing to choose.
+
+What it deliberately doesn't do yet: choose a pen per fill, or cross-hatch (a second fill on the same
+shape).

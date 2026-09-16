@@ -124,9 +124,14 @@ export function Canvas({ page, shapes, fills, tool, selected, onSelect, onAdd, o
 
   const render = (s: Shape, key: string, kind: "shape" | "draft") => {
     const b = boxOf(s);
+    // A shape whose outline isn't plotted is still shown, as a guide: you have to be able to see and
+    // grab the thing the hatching is coming from. It's drawn thin and dashed so it can't be mistaken
+    // for a line the pen will make.
+    const guide = kind === "shape" && fills.some((f) => f.shapeId === s.id && !f.outline);
     const common = {
       key,
       className: kind === "draft" ? styles.draft : styles.shape,
+      "data-guide": guide ? "true" : undefined,
       "data-selected": kind === "shape" && s.id === selected ? "true" : undefined,
       onPointerDown: kind === "shape" ? (e: ReactPointerEvent) => onShapeDown(e, s) : undefined,
     };

@@ -137,8 +137,12 @@ export default function App() {
   };
   // Drawings with more than one layer plot one layer at a time: the one picked in the Layers card.
   const printTarget = layerViews.find((l) => l.id === printLayer && !l.hidden) ?? null;
-  const needsLayerChoice = layerViews.length > 1 && !printTarget;
-  const plotLayerId = layerViews.length > 1 ? printTarget?.id ?? null : null;
+  // A layer whose name starts with % is never drawn, so it doesn't make this a drawing with a choice
+  // to make: a hatch fill with its outline turned off leaves its source shape on one of those, and
+  // asking which layer to plot when only one of them can be would be asking about nothing.
+  const plottableLayers = layerViews.filter((l) => !l.skipped);
+  const needsLayerChoice = plottableLayers.length > 1 && !printTarget;
+  const plotLayerId = plottableLayers.length > 1 ? printTarget?.id ?? null : null;
   // Preview mode: arrange the drawing - every shown layer in its color, show/hide and reorder layers.
   // Plot mode ("work" in code): only the layer chosen to print is drawn; layers hidden in Preview mode leave the list.
   // Drawings always open in Preview mode.

@@ -42,6 +42,12 @@ function shapeMarkup(s: Shape): string {
 // them apart from shapes that were drawn by hand and regenerate them instead of listing them.
 export const FILL_GROUP_PREFIX = "studio-fill-";
 
+// A shape whose outline isn't wanted still has to be in the file, because its fill is regenerated
+// from it. It goes on a layer whose name starts with "%", which NextDraw skips: Plot hides those
+// from the preview, never plots them, and leaves them out of the drawing's bounds (tested - see
+// docs/studio.md). So the shape survives to be edited without ever reaching the paper.
+export const SOURCE_LAYER = "%sources";
+
 function fillMarkup(shapes: Shape[], fills: Fill[]): string {
   return fills
     .map((fill) => {
@@ -83,15 +89,20 @@ function designBlock(fills: Fill[]): string {
       angle: f.angle,
       spacing_mm: f.spacingMm,
       scale: f.scale,
+      outline: f.outline,
     })),
   };
   return `  <metadata id="nextdraw-studio"><nds:design>${escapeText(JSON.stringify(data))}</nds:design></metadata>`;
 }
 
 export function buildSvg(shapes: Shape[], fills: Fill[], page: Page, layerName: string, paperSizeId: string): string {
-  const drawn = shapes.map((s) => `      ${shapeMarkup(s)}`).join("\n");
-  const filled = fillMarkup(shapes, fills);
-  const body = [drawn, filled].filter(Boolean).join("\n");
+  const hidden = new Set(fills.filter((f) => !f.outline).map((f) => f.shapeId));
+  const drawn = shapes.filter((s) => !hidden.has(s.id));
+  const sources = shapes.filter((s) => hidden.has(s.id));
+  const body = [
+    drawn.map((s) => `      ${shapeMarkup(s)}`).join("\n"),
+    fillMarkup(shapes, fills),
+  ].filter(Boolean).join("\n");
   return `<?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="${SVG_NS}" xmlns:inkscape="${INKSCAPE_NS}" xmlns:nds="${PLOT_NS}"
      width="${num(page.w)}in" height="${num(page.h)}in"
@@ -102,7 +113,18 @@ ${designBlock(fills)}
      fill="none" stroke="#000000" stroke-width="${STROKE_IN}">
 ${body}
   </g>
-</svg>
+${sourceLayer(sources)}</svg>
+`;
+}
+
+/** The unplotted layer holding shapes that are filled but not outlined. Left out when it's empty. */
+function sourceLayer(sources: Shape[]): string {
+  if (!sources.length) return "";
+  const body = sources.map((s) => `      ${shapeMarkup(s)}`).join("\n");
+  return `  <g inkscape:groupmode="layer" inkscape:label="${escapeAttr(SOURCE_LAYER)}" id="studio-sources"
+     fill="none" stroke="#000000" stroke-width="${STROKE_IN}">
+${body}
+  </g>
 `;
 }
 

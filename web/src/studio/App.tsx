@@ -489,7 +489,13 @@ export default function App() {
                     onChange={(e) =>
                       setFill(
                         e.target.checked
-                          ? { shapeId: chosen.id, angle: defaults.angle, spacingMm: defaults.spacingMm, scale: 100 }
+                          ? {
+                              shapeId: chosen.id,
+                              angle: defaults.angle,
+                              spacingMm: defaults.spacingMm,
+                              scale: 100,
+                              outline: true,
+                            }
                           : null,
                       )
                     }
@@ -517,8 +523,15 @@ export default function App() {
                           }
                         />
                       </div>
+                      <Checkbox
+                        checked={chosenFill.outline}
+                        label="Draw the outline too"
+                        onChange={(e) => setFill({ ...chosenFill, outline: e.target.checked })}
+                      />
                       <p className={styles.empty}>
-                        Spacing is what it measures on the paper, so it holds at any plot size.
+                        {chosenFill.outline
+                          ? "Spacing is what it measures on the paper, so it holds at any plot size."
+                          : "Only the hatching is plotted. The shape stays in the file so the fill can be changed."}
                       </p>
                     </>
                   )}

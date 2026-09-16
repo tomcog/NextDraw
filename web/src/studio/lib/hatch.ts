@@ -17,6 +17,12 @@ export interface Fill {
   spacingMm: number;
   /** The plot scale these lines were generated for, as a percentage. */
   scale: number;
+  /**
+   * Whether the shape's own outline is drawn as well as the hatching. With it off the shape still
+   * lives in the file - a fill needs its shape to be regenerated from - but on a `%`-prefixed layer,
+   * which NextDraw skips and which Plot leaves out of the drawing's bounds.
+   */
+  outline: boolean;
 }
 
 export interface Seg {
