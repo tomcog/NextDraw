@@ -44,3 +44,10 @@
   border-radius: 50%;
   box-shadow: inset 0 0 0 1px rgb(0 0 0 / 0.12);
 }
+
+/* Back to the color the drawing was made with, set off from the pens above it. */
+.revert {
+  border-bottom: 1px solid var(--ui-border-subtle, var(--ui-border-default));
+  font-style: italic;
+  color: var(--ui-text-muted);
+}

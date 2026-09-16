@@ -76,6 +76,10 @@ export default function App() {
   // A layer named after one of its tool's pens is SHOWN in that pen's color, so editing a palette
   // updates the preview. Display only: the color in the file stays whatever Studio put there.
   const [penColors, setPenColors] = useState<Record<string, string>>({});
+  // The ink a layer is being plotted in today, when the operator has chosen one. Swapping a pen to
+  // see how the drawing looks in it is a decision about this plot, so it's kept in Plot's own block
+  // and the drawing's colors are left alone - which is what lets "the drawing's own" put it back.
+  const [inkColors, setInkColors] = useState<Record<string, string>>({});
   // A second drawing tool (mixed media): null normally; "" once added but not yet chosen.
   const [secondTool, setSecondTool] = useState<string | null>(null);
   const [secondToolLayers, setSecondToolLayers] = useState<string[]>([]);
@@ -89,11 +93,22 @@ export default function App() {
     if (!fileLayers) return [];
     return fileLayers.map((layer) => ({
       ...layer,
-      color: penColors[layer.id] || layer.color,
+      color: inkColors[layer.id] || penColors[layer.id] || layer.color,
+      // What the drawing itself says, so a swapped ink can be told from the planned one and undone.
+      ownColor: penColors[layer.id] || layer.color,
       hidden: hiddenLayers.includes(layer.id) || layer.hidden,
       skipped: layer.name.startsWith("%"),
     }));
-  }, [fileLayers, hiddenLayers, penColors]);
+  }, [fileLayers, hiddenLayers, penColors, inkColors]);
+  // Picking a pen shows the layer in that ink. Picking "the drawing's own" hands it back.
+  const colorLayer = (id: string, color: string | null) =>
+    setInkColors((all) => {
+      if (!color) {
+        const { [id]: _gone, ...rest } = all;
+        return rest;
+      }
+      return { ...all, [id]: color };
+    });
   // A hidden layer isn't shown or plotted, so it can't stay the layer chosen to print.
   const setLayerVisible = (id: string, visible: boolean) => {
     setHiddenLayers((list) => (visible ? list.filter((i) => i !== id) : [...list, id]));
@@ -220,6 +235,7 @@ export default function App() {
     refs.current.rotation = nextRotation;
     setRotation(nextRotation);
     setHiddenLayers(plot?.hidden_layers ?? []);
+    setInkColors(plot?.layer_colors ?? {});
     setPenColors({});
     setPrintLayer(null);
     setLayerMode("preview");
@@ -255,6 +271,7 @@ export default function App() {
     ...(smallPaths ? { small_paths: smallPaths } : {}),
     ...(secondTool ? { second_tool: secondTool, second_tool_layers: secondToolLayers } : {}),
     ...(hiddenLayers.length ? { hidden_layers: hiddenLayers } : {}),
+    ...(Object.keys(inkColors).length ? { layer_colors: inkColors } : {}),
     paper: { paper_size: settings.paper_size, paper_w: settings.paper_w, paper_h: settings.paper_h, paper_x: settings.paper_x, paper_y: settings.paper_y, paper_color: settings.paper_color },
   };
   const saveKey = JSON.stringify(drawingNow);
@@ -320,6 +337,7 @@ export default function App() {
     setScaleState(100);
     setRotation(0);
     setHiddenLayers([]);
+    setInkColors({});
     setPenColors({});
     setPrintLayer(null);
     setLoadedFile(null);
@@ -733,15 +751,16 @@ export default function App() {
     const colors = { ...penColors };
     let changed = false;
     for (const layer of layerViews) {
+      if (inkColors[layer.id]) continue; // an ink chosen by hand outranks the layer's name
       const pen = paletteFor(layer.id).find((p) => p.name.trim().toLowerCase() === layer.name.trim().toLowerCase());
-      if (pen && layer.color?.toLowerCase() !== pen.color.toLowerCase()) {
+      if (pen && layer.ownColor?.toLowerCase() !== pen.color.toLowerCase()) {
         colors[layer.id] = pen.color;
         changed = true;
       }
     }
     if (changed) setPenColors(colors);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [presets, layerViews]);
+  }, [presets, layerViews, inkColors]);
 
   // The ink sliders on the Drawing tool card: the preview follows at once, and the tool keeps the
   // values a moment after the slider stops moving.
@@ -1109,6 +1128,8 @@ export default function App() {
                   printed={status?.printed_layers ?? []}
                   onTarget={setPrintLayer}
                   onVisible={setLayerVisible}
+                  paletteFor={paletteFor}
+                  onColor={colorLayer}
                   disabled={plotting}
                 />
               </div>

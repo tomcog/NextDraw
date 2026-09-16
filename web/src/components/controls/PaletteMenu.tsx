@@ -9,13 +9,15 @@ interface Props {
   anchor: HTMLElement; // the color dot that opened it
   palette: PenColor[];
   current: string | null; // the layer's color now, to mark in the list
+  /** The color the drawing gives this layer, offered as a way back when an ink has been chosen. */
+  own?: string | null;
   onPick: (pen: PenColor) => void;
   onClose: () => void;
 }
 
 // The drawing tool's pen colors, opened from a layer's color dot. Arrow keys move through the list,
 // Enter picks, Escape or a click elsewhere closes, and focus goes back to the dot.
-export function PaletteMenu({ anchor, palette: pens, current, onPick, onClose }: Props) {
+export function PaletteMenu({ anchor, palette: pens, current, own, onPick, onClose }: Props) {
   // Darkest at the top, lightest at the bottom, the way the layers themselves stack. Colors that
   // can't be read keep their place at the end.
   const palette = useMemo(
@@ -81,6 +83,21 @@ export function PaletteMenu({ anchor, palette: pens, current, onPick, onClose }:
       style={position ? { left: position.left, top: position.top } : { visibility: "hidden" }}
       onKeyDown={onKeyDown}
     >
+      {/* Only once an ink has actually been swapped in - otherwise it's a row that does nothing. */}
+      {own && current?.toLowerCase() !== own.toLowerCase() && (
+        <button
+          type="button"
+          role="menuitem"
+          className={`${styles.item} ${styles.revert}`}
+          onClick={() => {
+            onPick({ name: "", color: own });
+            close();
+          }}
+        >
+          <span className={styles.dot} style={{ background: own }} aria-hidden />
+          The drawing’s own
+        </button>
+      )}
       {palette.map((pen, i) => {
         const selected = pen.color.toLowerCase() === current?.toLowerCase();
         return (

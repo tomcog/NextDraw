@@ -116,6 +116,8 @@ export interface Layer {
 // A layer as shown in the Layers card. Plot adds nothing to the drawing's own layers but whether it
 // is holding this one back today and the pen color to show it in - both Plot's, neither the file's.
 export interface LayerView extends Layer {
+  /** The color the drawing itself gives this layer, before any ink the operator chose for today. */
+  ownColor: string | null;
 }
 
 // The page's choices saved inside a drawing file, restored when it's opened again.
@@ -128,6 +130,7 @@ export interface Plot {
   second_tool?: string; // a second drawing tool, for drawings that mix pens
   second_tool_layers?: string[]; // ids of the layers that use it; every other layer uses `tool`
   hidden_layers?: string[]; // ids of the layers Plot is holding back; not a change to the drawing
+  layer_colors?: Record<string, string>; // ids to the ink each is being plotted in, when not the drawing's own
   paper?: Partial<Pick<Settings, "paper_size" | "paper_w" | "paper_h" | "paper_x" | "paper_y" | "paper_color">>;
 }
 

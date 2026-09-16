@@ -1568,6 +1568,19 @@ def clean_plot(raw):
             out["small_paths"] = int(max(10, min(90, float(raw["small_paths"]))))
     except (TypeError, ValueError):
         pass
+    # The ink each layer is being plotted in today, by layer id, when it isn't the color the drawing
+    # was made with. The operator swaps a pen to see how the drawing looks in it; that's a choice about
+    # this plot, not about the artwork, so it lives here and the drawing's own colors stay untouched -
+    # which is also what lets it be put back.
+    inks = raw.get("layer_colors")
+    if isinstance(inks, dict):
+        picked = {
+            str(k)[:200]: v.lower()
+            for k, v in inks.items()
+            if isinstance(v, str) and HEX_COLOR.match(v)
+        }
+        if picked:
+            out["layer_colors"] = dict(list(picked.items())[:500])
     # Which layers Plot is holding back (by layer id). Kept here rather than as a hidden attribute on
     # the layer itself: hiding a layer is Plot deciding what to draw today, not a change to the
     # drawing, so it goes in Plot's own block where Studio will never see it.

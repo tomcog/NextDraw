@@ -18,3 +18,14 @@
 
 /* A layer NextDraw skips (its name starts with %): struck through, because it won't be drawn. */
 .row[data-skipped="true"] input:not([type="radio"]) { text-decoration: line-through; }
+
+/* The system color picker, opened from a layer's dot when its tool has no palette. */
+.hiddenPicker {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  border: 0;
+  opacity: 0;
+  pointer-events: none;
+}

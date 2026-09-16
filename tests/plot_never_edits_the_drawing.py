@@ -110,6 +110,8 @@ DAMAGE = {
         r'<g inkscape:groupmode="layer" inkscape:label="%sources".*?</g>', "", s, flags=re.S),
     "a renamed layer": lambda s: s.replace('inkscape:label="Sky Blue"', 'inkscape:label="Lime Green"'),
     "a recoloured layer": lambda s: s.replace('stroke="#0086b2"', 'stroke="#1f4736"'),
+    "a recolour written onto a shape": lambda s: s.replace(
+        '<rect id="shape-a"', '<rect style="stroke:#912474" id="shape-a"'),
     "a deleted shape": lambda s: s.replace('<rect id="shape-a" x="1" y="1" width="3" height="2"/>', ""),
     "a rewritten design block": lambda s: s.replace('"angle":45', '"angle":90'),
 }
@@ -158,6 +160,7 @@ def main():
                 "rotation": 90,
                 "tool": "EnerGel",
                 "hidden_layers": ["studio-sources"],
+                "layer_colors": {"studio-layer-1": "#912474"},
                 "paper": {"paper_size": "a4", "paper_w": 210.0, "paper_h": 297.0,
                           "paper_x": 5.0, "paper_y": 5.0, "paper_color": "#fffbea"},
             },
@@ -190,7 +193,8 @@ def main():
 
         # And the half that has to work: Plot's own choices really are kept.
         saved = plot_block(after) or {}
-        for key, want in (("scale", 63.0), ("rotation", 90), ("hidden_layers", ["studio-sources"])):
+        for key, want in (("scale", 63.0), ("rotation", 90), ("hidden_layers", ["studio-sources"]),
+                          ("layer_colors", {"studio-layer-1": "#912474"})):
             if saved.get(key) != want:
                 failures.append(f"Plot did not keep {key}: {saved.get(key)!r} (wanted {want!r})")
         if saved.get("placement") != {"x": 12.5, "y": 30.0}:
