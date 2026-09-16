@@ -104,7 +104,11 @@
     stroke-opacity: 1;
     mix-blend-mode: normal;
   }
-  /* Ink simulation off: flat color, nothing to blend. */
+  /* Ink simulation off: flat color, nothing to blend.
+     The [data-builds] in the first selector is only there to outrank the density rules above, which
+     are themselves !important and would otherwise keep a layer at the tool's ink opacity with the
+     simulation switched off - so "flat" came out translucent rather than solid. */
+  .pv-flat.pv-colored .pv-layer[data-builds],
   .pv-flat .pv-layer,
   .pv-flat.pv-artwork {
     isolation: auto !important;

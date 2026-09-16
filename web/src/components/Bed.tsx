@@ -1,6 +1,7 @@
 import { useLayoutEffect, useRef, useState } from "react";
 import type { PointerEvent as ReactPointerEvent, ReactNode } from "react";
 import styles from "./Bed.module.css";
+import { inkLayer } from "../lib/ink";
 import { BedCanvas, type Box, type Zoom } from "./BedCanvas";
 import { MM, UNITS } from "../lib/constants";
 import { maxPlacement, type Footprint } from "../lib/geometry";
@@ -121,13 +122,9 @@ export function Bed(props: Props) {
     });
   }, [preview, penWidthMm, layerPenWidths, hairlines]);
 
-  // How solid the ink is. The strokes multiply where they cross, so overlaps darken the way ink
-  // does on paper, whatever transparency the file itself was exported with.
-  // Ink that builds up gets two passes: the ink itself, drawn solid, and a copy over it that only
-  // multiplies. Where two strokes cross, the copy multiplies twice, so the crossing darkens while a
-  // single pass doesn't - which is how the build slider can run from nothing to full without the
-  // density moving. The copy dims one pass a little too, so the base color is lightened to cancel
-  // exactly that. Ink that doesn't build, and no build at all, need neither: solid color, one pass.
+  // How solid the ink is, and how it darkens where strokes cross. The two kinds of ink and the
+  // arithmetic behind them are in lib/ink.ts, which Studio uses too; this mounts it onto the preview
+  // the server sent, cloning the build pass into each layer that needs one.
   const { inkOpacity, layerInkOpacity, inkBuilds, layerInkBuilds, inkBuild, inkSim, layerLooks } = props;
   useLayoutEffect(() => {
     if (!preview) return;
@@ -137,17 +134,6 @@ export function Bed(props: Props) {
     node.style.setProperty("--ink-build-alpha", String(build));
     node.style.setProperty("--ink-opacity", String(inkOpacity && inkOpacity > 0 ? inkOpacity : 1));
     node.dataset.builds = String(inkBuilds !== false);
-
-    // A stroke of this color over one of its own, at this build: what the crossing comes out as.
-    const dim = (hex: string, at: number) => {
-      const parts = [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16) / 255);
-      return parts.map((c) => (1 - at) + at * c);
-    };
-    const lighten = (hex: string, by: number[]) => {
-      const parts = [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16) / 255);
-      const out = parts.map((c, i) => Math.round(Math.min(1, c / by[i]) * 255));
-      return `#${out.map((v) => v.toString(16).padStart(2, "0")).join("")}`;
-    };
 
     node.querySelectorAll<SVGGElement>(".pv-layer").forEach((g) => {
       const o = layerInkOpacity?.[g.id];
@@ -175,9 +161,9 @@ export function Bed(props: Props) {
       }
       const color = layerLooks?.[g.id]?.color;
       if (color) {
-        const factor = dim(color, build);
-        g.style.setProperty("--layer-color", lighten(color, factor)); // the base, pre-dimmed
-        g.querySelector<SVGGElement>(":scope > .pv-build")?.style.setProperty("--layer-color", color);
+        const { base, buildPass } = inkLayer(color, build, true, true); // wanted, so both are true here
+        g.style.setProperty("--layer-color", base);
+        if (buildPass) g.querySelector<SVGGElement>(":scope > .pv-build")?.style.setProperty("--layer-color", buildPass);
       }
     });
   }, [preview, inkOpacity, layerInkOpacity, inkBuilds, layerInkBuilds, inkBuild, inkSim, layerLooks]);

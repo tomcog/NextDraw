@@ -7,42 +7,41 @@
 /* Dragging draws; it must not scroll the page under the finger. */
 .wrap svg { touch-action: none; }
 
-/* A fill's hatch lines: the same ink as the shape, and never in the way of grabbing it. */
-.fills line {
-  stroke-linecap: round;
+/* The ink. How it's painted is index.css's business - the same .pv-colored rules Plot's preview
+   uses - so all this does is keep it out of the way of the pointer. Nothing here is grabbable; the
+   grips below are, which is what lets a hairline mark still be easy to pick up. */
+.ink { pointer-events: none; }
+
+/* Filled, but its outline isn't plotted: a guide, not ink. Interface rather than drawing, so its
+   width is in screen pixels and stays thin however far the page is zoomed. */
+.guide {
+  fill: none;
+  stroke: var(--ui-text-faint);
+  stroke-width: 1;
+  stroke-dasharray: 3 3;
+  vector-effect: non-scaling-stroke;
   pointer-events: none;
 }
 
-/* Ink: drawn in the pen's own color at the pen's own width, which Canvas.tsx sets per shape. The
-   width is in the page's units rather than in screen pixels - no vector-effect here - because the
-   whole point is to show the real weight of the line against the spacing of a hatch. */
-.shape {
+/* What you actually grab: the shape again, invisible and generously wide, so picking a mark up
+   doesn't mean hitting a stroke a fraction of a millimetre across. With a drawing tool chosen it
+   lets the drag through to the page, so a big shape is never a hole you can't draw in. In select
+   mode the whole shape is the grip, interior included - it has no fill, so without
+   pointer-events: all only the outline itself would catch the pointer. */
+.grab {
   fill: none;
-  stroke-linecap: round;
-  stroke-linejoin: round;
-  cursor: pointer;
+  stroke: transparent;
+  stroke-width: 10;
+  vector-effect: non-scaling-stroke;
+  pointer-events: none;
 }
 
-/* Filled, but its outline isn't plotted: a guide, not ink. This one is interface rather than
-   drawing, so its width IS in screen pixels and stays thin however far the page is zoomed. */
-.shape[data-guide="true"] {
-  stroke: var(--ui-text-faint) !important;
-  stroke-width: 1 !important;
-  stroke-dasharray: 3 3;
-  vector-effect: non-scaling-stroke;
-}
+.wrap[data-tool="select"] .grab { pointer-events: all; cursor: grab; }
+
+.wrap[data-tool="select"][data-drag="move"] .grab { cursor: grabbing; }
 
 /* Which shape is chosen is said by its handles, not by recoloring it: a shape has to keep showing
    the pen it will actually be drawn with. */
-
-/* With a drawing tool chosen, shapes let a drag through to the page, so a big shape is never a hole
-   you can't draw in. In select mode the whole shape is the grip, interior included - these have no
-   fill, so without pointer-events: all only the outline itself would catch the pointer. */
-.shape { pointer-events: none; }
-
-.wrap[data-tool="select"] .shape { pointer-events: all; cursor: grab; }
-
-.wrap[data-tool="select"][data-drag="move"] .shape { cursor: grabbing; }
 
 /* Corner handles: filled so they read as grips rather than as part of the drawing. */
 .handles circle {

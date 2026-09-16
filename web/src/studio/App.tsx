@@ -6,10 +6,11 @@ import { Section } from "../components/controls/Section";
 import controls from "../components/controls/controls.module.css";
 import { api, postJSON } from "../lib/api";
 import { load, save as remember } from "../lib/storage";
-import { DEFAULT_SETTINGS, PAPER_SIZES } from "../lib/constants";
+import { DEFAULT_SETTINGS, PAPER_SIZES, STORAGE } from "../lib/constants";
 import type { Info, PenColor, PlotterModel, Preset } from "../lib/types";
 import { fmtIn } from "../lib/format";
 import { ZoomControl } from "../components/ZoomControl";
+import { InkSimControl } from "../components/InkSimControl";
 import type { Zoom } from "../components/BedCanvas";
 import { useRowDrag } from "../lib/useRowDrag";
 import { Canvas, type Tool } from "./components/Canvas";
@@ -286,11 +287,20 @@ export default function App() {
       .catch(() => {}); // no presets is not a reason to stop; the fallbacks below stand
   }, []);
 
+  // Shown or not, the drawing is the same; this is only how it's painted. Remembered per browser,
+  // under Plot's key, so turning it on in one app turns it on in the other.
+  const [inkSim, setInkSim] = useState(() => load<boolean>(STORAGE.inkSim) ?? false);
+  useEffect(() => remember(STORAGE.inkSim, inkSim), [inkSim]);
+
   const tool2 = presets.find((t) => t.name === toolName) ?? null;
   const palette: PenColor[] = tool2?.palette?.length ? tool2.palette : [PLAIN_PEN];
   // Darkest last in the list, so the default pen is the one you'd reach for first.
   // The real line the pen lays down, so the drawing shows its true weight against the hatch spacing.
   const penWidthMm = tool2?.settings.pen_width ?? 0.7;
+  // The same three numbers Plot reads off the same preset, so the ink looks the same in both.
+  const inkOpacity = tool2?.settings.ink_opacity ?? 1;
+  const inkBuilds = tool2?.settings.ink_builds !== false;
+  const inkBuild = tool2?.settings.ink_build ?? 1;
 
   // A fill starts from the chosen tool's own measured numbers when it has them.
   useEffect(() => {
@@ -425,6 +435,7 @@ export default function App() {
             fills={fills}
             model={model}
             zoom={zoom}
+            toolbarLeft={<InkSimControl on={inkSim} onChange={setInkSim} />}
             toolbar={
               <ZoomControl
                 zoom={zoom}
@@ -439,6 +450,10 @@ export default function App() {
             layers={layers}
             activeLayer={active?.id ?? ""}
             penWidthMm={penWidthMm}
+            inkOpacity={inkOpacity}
+            inkBuilds={inkBuilds}
+            inkBuild={inkBuild}
+            inkSim={inkSim}
             tool={tool}
             selected={selected}
             onSelect={setSelected}
