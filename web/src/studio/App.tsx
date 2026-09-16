@@ -498,22 +498,20 @@ export default function App() {
 
           <Card variant="flat" className={styles.controls}>
             <div className={styles.cardBody}>
-              <Section title="Shapes" collapsibleKey="tools">
-                <div className={styles.tools} role="group" aria-label="Shape to draw">
-                  {TOOLS.map((t) => (
-                    <ButtonRound
-                      key={t.kind}
-                      size="sm"
-                      icon={t.icon}
-                      className={tool === t.kind ? controls.roundActive : undefined}
-                      aria-label={t.label}
-                      aria-pressed={tool === t.kind}
-                      title={t.hint}
-                      onClick={() => setTool(t.kind)}
-                    />
-                  ))}
-                </div>
-              </Section>
+              <div className={styles.tools} role="group" aria-label="Shape to draw">
+                {TOOLS.map((t) => (
+                  <ButtonRound
+                    key={t.kind}
+                    size="sm"
+                    icon={t.icon}
+                    className={tool === t.kind ? controls.roundActive : undefined}
+                    aria-label={t.label}
+                    aria-pressed={tool === t.kind}
+                    title={t.hint}
+                    onClick={() => setTool(t.kind)}
+                  />
+                ))}
+              </div>
             </div>
           </Card>
 
