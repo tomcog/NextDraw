@@ -64,4 +64,5 @@ export const STORAGE = {
   zoom: "nextdraw-studio-zoom",
   layers: "nextdraw-studio-layers",
   penUpMoves: "nextdraw-studio-pen-up-moves",
+  inkSim: "nextdraw-studio-ink-sim",
 };

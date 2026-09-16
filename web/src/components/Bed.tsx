@@ -36,6 +36,8 @@ interface Props {
   layerInkOpacity?: Record<string, number | undefined>; // layers drawn with the second tool
   inkBuilds?: boolean; // more of the same ink darkens (a brush); gel ink saturates and adds nothing
   layerInkBuilds?: Record<string, boolean | undefined>;
+  inkBuild?: number; // 0-1: how much a second pass of a building ink adds
+  inkSim?: boolean; // off: flat color, no blending - much cheaper on a drawing of many thousands of paths
   penWidthMm?: number; // draw lines at the pen's real width; undefined keeps a hairline
   plotPaths?: PlotPaths | null; // show the plot in progress, drawn and left to draw, instead of the preview
   plotFraction?: number; // how much of it is drawn, 0-1
@@ -124,11 +126,20 @@ export function Bed(props: Props) {
   // does on paper, whatever transparency the file itself was exported with.
   // Ink that builds up blends stroke by stroke, so its own crossings darken. Ink that doesn't is
   // flattened a color at a time and only then blended, so laying more of it down adds nothing.
-  const { inkOpacity, layerInkOpacity, inkBuilds, layerInkBuilds } = props;
+  const { inkOpacity, layerInkOpacity, inkBuilds, layerInkBuilds, inkBuild, inkSim } = props;
   useLayoutEffect(() => {
     if (!preview) return;
     const node = preview.node;
+    node.classList.toggle("pv-flat", inkSim === false);
     node.style.setProperty("--ink-opacity", String(inkOpacity && inkOpacity > 0 ? inkOpacity : 1));
+    // Building ink: the strokes are drawn at this alpha inside the layer, which is then faded back to
+    // the ink's own density. The more translucent the strokes are in there, the more a second pass
+    // over the same spot darkens it - so this is the build knob, and density stays put either way.
+    const density = inkOpacity && inkOpacity > 0 ? inkOpacity : 1;
+    const build = Math.min(1, Math.max(0, inkBuild ?? 1));
+    const alpha = density + (1 - density) * (1 - build);
+    node.style.setProperty("--ink-stroke-alpha", String(alpha));
+    node.style.setProperty("--ink-layer-opacity", String(Math.min(1, density / alpha)));
     node.dataset.builds = String(inkBuilds !== false);
     node.querySelectorAll<SVGGElement>(".pv-layer").forEach((g) => {
       const o = layerInkOpacity?.[g.id];
@@ -137,7 +148,7 @@ export function Bed(props: Props) {
       const builds = layerInkBuilds?.[g.id];
       g.dataset.builds = String(builds === undefined ? inkBuilds !== false : builds);
     });
-  }, [preview, inkOpacity, layerInkOpacity, inkBuilds, layerInkBuilds]);
+  }, [preview, inkOpacity, layerInkOpacity, inkBuilds, layerInkBuilds, inkBuild, inkSim]);
 
   // Stack the artwork layers the way they'll be plotted: the first layer at the bottom, later ones
   // over it. Reordering the Layers card moves them here too, so the preview shows what opaque ink

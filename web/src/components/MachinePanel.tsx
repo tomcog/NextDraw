@@ -24,6 +24,8 @@ interface Props {
   onSetupHeight: () => void;
   onTestPen: () => void;
   showPenUp: boolean;
+  inkSim: boolean;
+  onInkSim: (on: boolean) => void;
   onShowPenUp: (show: boolean) => void;
 }
 
@@ -108,6 +110,13 @@ export function MachinePanel(props: Props) {
             label="Show pen-up movement on the preview"
             checked={props.showPenUp}
             onChange={(e) => props.onShowPenUp(e.target.checked)}
+          />
+          <Checkbox
+            size="md"
+            label="Simulate the ink on the preview"
+            checked={props.inkSim}
+            title="How solid each tool's ink is and how it darkens where strokes cross. Turn it off on a very large drawing: blending every stroke is slow."
+            onChange={(e) => props.onInkSim(e.target.checked)}
           />
           <p className={styles.status} role="status" aria-live="polite" data-tone={props.message?.tone}>
             {props.message?.text}

@@ -63,15 +63,19 @@
   /* Layers not being plotted arrive hidden (display:none) from the server; show them anyway.
      Layers hidden in the Layers card stay out of the preview. */
   /* The tool's ink decides how solid a stroke is, not the transparency the file was exported with. */
-  .pv-colored .pv-layer { opacity: 1 !important; display: inline !important; }
+  .pv-colored .pv-layer { opacity: var(--ink-layer-opacity, 1) !important; display: inline !important; }
   .pv-colored .pv-layer[data-hidden="true"] { display: none !important; }
   /* Ink that builds up (a brush): every stroke is translucent in itself, so it darkens whatever it
      crosses, its own color included. This is the default; a tool whose ink saturates the paper says
      so below. */
+  .pv-colored .pv-layer[data-builds="true"] {
+    isolation: isolate;
+    mix-blend-mode: multiply;
+  }
   .pv-colored .pv-layer :is(path, rect, circle, ellipse, line, polyline, polygon) {
     fill: none !important;
     stroke: var(--layer-color, var(--nd-ink)) !important;
-    stroke-opacity: var(--ink-opacity, 1);
+    stroke-opacity: var(--ink-stroke-alpha, var(--ink-opacity, 1));
     mix-blend-mode: multiply;
     stroke-width: 1.4px !important;
     stroke-dasharray: none !important;
@@ -81,7 +85,7 @@
      what's under it. More of the same ink over itself adds nothing, while other colors still blend. */
   .pv-colored .pv-layer[data-builds="false"] {
     isolation: isolate;
-    opacity: var(--ink-opacity, 1) !important;
+    opacity: var(--ink-opacity, 1) !important; /* flattened solid, so density is the group's */
     /* darken, not multiply: this ink over the same color leaves it exactly as it was, however many
        layers of it go down, while a different color still takes whichever is darker. */
     mix-blend-mode: darken;
@@ -89,6 +93,17 @@
   .pv-colored .pv-layer[data-builds="false"] :is(path, rect, circle, ellipse, line, polyline, polygon) {
     stroke-opacity: 1;
     mix-blend-mode: normal;
+  }
+  /* Ink simulation off: flat color, nothing to blend. */
+  .pv-flat .pv-layer,
+  .pv-flat.pv-artwork {
+    isolation: auto !important;
+    opacity: 1 !important;
+    mix-blend-mode: normal !important;
+  }
+  .pv-flat :is(path, rect, circle, ellipse, line, polyline, polygon) {
+    stroke-opacity: 1 !important;
+    mix-blend-mode: normal !important;
   }
   .pv-colored .pv-layer :is(text, image) { display: none; }
   .pv-colored .pv-layer[data-skipped="true"] { display: none !important; }

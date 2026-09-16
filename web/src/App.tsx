@@ -190,6 +190,11 @@ export default function App() {
   // The dashed pen-up travel lines on the preview are off unless turned on under Utilities.
   const [showPenUp, setShowPenUp] = useState(() => load<boolean>(STORAGE.penUpMoves) ?? false);
   useEffect(() => save(STORAGE.penUpMoves, showPenUp), [showPenUp]);
+  // Ink simulation: how solid each tool's ink is and how it builds up where strokes cross. Blending
+  // every stroke costs the browser real work on a drawing of many thousands of paths, so it can be
+  // switched off, which draws each layer flat in its own color.
+  const [inkSim, setInkSim] = useState(() => load<boolean>(STORAGE.inkSim) ?? true);
+  useEffect(() => save(STORAGE.inkSim, inkSim), [inkSim]);
   const [zoomChoice, setZoomChoice] = useState<Zoom>(() => load<Zoom>(STORAGE.zoom) ?? "plotter");
   useEffect(() => save(STORAGE.zoom, zoomChoice), [zoomChoice]);
 
@@ -1025,6 +1030,8 @@ export default function App() {
               inkOpacity={active?.settings.ink_opacity ?? settings.ink_opacity}
               layerInkOpacity={secondTool ? layerInkOpacity : undefined}
               inkBuilds={active?.settings.ink_builds ?? settings.ink_builds}
+              inkBuild={active?.settings.ink_build ?? settings.ink_build}
+              inkSim={inkSim}
               layerInkBuilds={secondTool ? layerInkBuilds : undefined}
               layerPenWidths={secondTool ? layerPenWidths : undefined}
               plotPaths={shownPlotPaths}
@@ -1080,6 +1087,8 @@ export default function App() {
             onTestPen={() => manual("pen_test")}
             showPenUp={showPenUp}
             onShowPenUp={setShowPenUp}
+            inkSim={inkSim}
+            onInkSim={setInkSim}
           />
           </>}
 
