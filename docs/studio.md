@@ -70,6 +70,16 @@ The bigger payoff is that Studio then reads `pen_width`, `drag` and the palettes
 `/api/presets` instead of keeping a second copy of numbers that would silently drift — and the
 failure mode of drift is hatching that looks right on screen and comes out wrong on paper.
 
+**Both front ends live in this repo.** `server.py` serves them: `web/` builds to `static/` as it does
+now, and Studio's front end gets its own folder beside it, served at its own route. One repo, one
+`start.command`, one deploy to odin.
+
+*Why:* this follows from one Flask process rather than being a separate choice. A Studio in its own
+repo would need either a second server — which gives up the shared presets and the plain-link handoff
+that made the one-process decision worth making — or a repo that can't run on its own. An earlier
+note in this file's commit history suggested moving these notes out to a Studio repo later; that was
+written before this was thought through, and it's wrong. They stay here.
+
 **Live reload rides the existing poll.** The page already polls `/api/status` every 2 s (500 ms while
 plotting), and that payload already carries an mtime change-token for `plot_paths` purely so the page
 knows to refetch — the same shape works for the drawing itself. Plot also already stat()s the disk
