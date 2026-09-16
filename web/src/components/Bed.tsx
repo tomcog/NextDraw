@@ -132,14 +132,16 @@ export function Bed(props: Props) {
     const node = preview.node;
     node.classList.toggle("pv-flat", inkSim === false);
     node.style.setProperty("--ink-opacity", String(inkOpacity && inkOpacity > 0 ? inkOpacity : 1));
-    // Building ink: the strokes are drawn at this alpha inside the layer, which is then faded back to
-    // the ink's own density. The more translucent the strokes are in there, the more a second pass
-    // over the same spot darkens it - so this is the build knob, and density stays put either way.
+    // Building ink: strokes multiply inside the layer, which is then faded back to the ink's own
+    // density, so density stays put whatever the build is. The stroke's own alpha is what decides how
+    // much a crossing darkens - the more solid it is in there, the more it multiplies. At no build at
+    // all the strokes don't multiply: solid color, and a crossing looks like anywhere else.
     const density = inkOpacity && inkOpacity > 0 ? inkOpacity : 1;
     const build = Math.min(1, Math.max(0, inkBuild ?? 1));
-    const alpha = density + (1 - density) * (1 - build);
+    const alpha = build === 0 ? 1 : density + (1 - density) * build;
     node.style.setProperty("--ink-stroke-alpha", String(alpha));
-    node.style.setProperty("--ink-layer-opacity", String(Math.min(1, density / alpha)));
+    node.style.setProperty("--ink-layer-opacity", String(build === 0 ? density : Math.min(1, density / alpha)));
+    node.dataset.build = build === 0 ? "none" : "some";
     node.dataset.builds = String(inkBuilds !== false);
     node.querySelectorAll<SVGGElement>(".pv-layer").forEach((g) => {
       const o = layerInkOpacity?.[g.id];

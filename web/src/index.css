@@ -72,6 +72,10 @@
     isolation: isolate;
     mix-blend-mode: multiply;
   }
+  /* No build at all: the strokes lie over each other in solid color, so a crossing is just ink. */
+  [data-build="none"] .pv-layer[data-builds="true"] :is(path, rect, circle, ellipse, line, polyline, polygon) {
+    mix-blend-mode: normal;
+  }
   .pv-colored .pv-layer :is(path, rect, circle, ellipse, line, polyline, polygon) {
     fill: none !important;
     stroke: var(--layer-color, var(--nd-ink)) !important;
