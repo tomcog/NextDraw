@@ -391,8 +391,12 @@ def layer_groups(root):
 
 
 AUTO_LAYER_ID = "nds-layer-"  # ids the app gives unnamed layers; never shown as a name
-STUDIO_NS = "https://github.com/tomcog/NextDraw"
-STUDIO_TAG = "{%s}studio" % STUDIO_NS
+PLOT_NS = "https://github.com/tomcog/NextDraw"
+PLOT_TAG = "{%s}plot" % PLOT_NS
+# Drawings saved before the app was renamed carry the same block under the old element name. They're
+# read as they are and rewritten as <nds:plot> the next time the drawing is saved.
+LEGACY_PLOT_TAG = "{%s}studio" % PLOT_NS
+PLOT_METADATA_ID = "nextdraw-plot"
 
 
 def parse_svg(path):
@@ -424,27 +428,34 @@ def ensure_layer_ids(path):
         path.write_bytes(svg_bytes(tree))
 
 
-def read_studio(root):
-    """The page's saved choices for this drawing (placement, scale, tool, paper), or None."""
-    for node in root.iter(STUDIO_TAG):
-        try:
-            data = json.loads(node.text or "{}")
-            return data if isinstance(data, dict) else None
-        except ValueError:
-            return None
+def read_plot(root):
+    """
+    The page's saved choices for this drawing (placement, scale, tool, paper), or None. A block in
+    the current name wins outright: if one is there but unreadable the answer is None, rather than
+    quietly falling back to whatever an older save left behind.
+    """
+    for tag in (PLOT_TAG, LEGACY_PLOT_TAG):
+        for node in root.iter(tag):
+            try:
+                data = json.loads(node.text or "{}")
+                return data if isinstance(data, dict) else None
+            except ValueError:
+                return None
     return None
 
 
-def write_studio(root, data):
+def write_plot(root, data):
+    """Write the block under the current name, taking out any older one so a drawing never has both."""
     from lxml import etree
-    for node in list(root.iter(STUDIO_TAG)):
-        parent = node.getparent()
-        parent.remove(node)
-        if parent.tag == SVG_NS + "metadata" and len(parent) == 0 and not (parent.text or "").strip():
-            parent.getparent().remove(parent)
+    for tag in (PLOT_TAG, LEGACY_PLOT_TAG):
+        for node in list(root.iter(tag)):
+            parent = node.getparent()
+            parent.remove(node)
+            if parent.tag == SVG_NS + "metadata" and len(parent) == 0 and not (parent.text or "").strip():
+                parent.getparent().remove(parent)
     metadata = etree.Element(SVG_NS + "metadata")
-    metadata.set("id", "nextdraw-studio")
-    node = etree.SubElement(metadata, STUDIO_TAG, nsmap={"nds": STUDIO_NS})
+    metadata.set("id", PLOT_METADATA_ID)
+    node = etree.SubElement(metadata, PLOT_TAG, nsmap={"nds": PLOT_NS})
     node.text = json.dumps(data, separators=(",", ":"))
     metadata.tail = "\n"
     root.insert(0, metadata)
@@ -1421,7 +1432,7 @@ def load_drawing(svg_path):
     with job.lock:
         if not job.busy():
             job.reset("idle")
-    return read_studio(parse_svg(CURRENT_SVG).getroot())
+    return read_plot(parse_svg(CURRENT_SVG).getroot())
 
 
 ILLUSTRATOR_EXPORT_JSX = """
@@ -1508,7 +1519,7 @@ def get_drawing():
     if not CURRENT_SVG.exists():
         return jsonify(error="Load an SVG first."), 400
     try:
-        return jsonify(studio=read_studio(parse_svg(CURRENT_SVG).getroot()))
+        return jsonify(studio=read_plot(parse_svg(CURRENT_SVG).getroot()))
     except Exception as exc:  # noqa: BLE001
         return jsonify(error=f"Couldn't read that SVG: {exc}"), 400
 
@@ -1575,10 +1586,10 @@ def save_drawing():
             return jsonify(error="The drawing's layers changed. Open it again."), 409
         if isinstance(body.get("studio"), dict):
             studio = clean_studio(body["studio"])
-            kept = (read_studio(root) or {}).get("original_page")
+            kept = (read_plot(root) or {}).get("original_page")
             if kept:
                 studio["original_page"] = kept  # set by Trim to drawing, not by the page's choices
-            write_studio(root, studio)
+            write_plot(root, studio)
     except Exception as exc:  # noqa: BLE001
         return jsonify(error=f"Couldn't save the drawing: {exc}"), 400
     problem = commit_drawing(tree, disk_path)
@@ -1770,7 +1781,7 @@ def trim_to_drawing():
     try:
         tree = parse_svg(CURRENT_SVG)
         root = tree.getroot()
-        studio = read_studio(root) or {}
+        studio = read_plot(root) or {}
         if studio.get("original_page"):
             return jsonify(error="The page is already trimmed to the drawing."), 409
         bounds = drawing_bounds(clean_settings(body))
@@ -1786,7 +1797,7 @@ def trim_to_drawing():
         root.set("viewBox", f"{vx + x0 * ux:g} {vy + y0 * uy:g} {(x1 - x0) * ux:g} {(y1 - y0) * uy:g}")
         root.set("width", f"{x1 - x0:g}in")
         root.set("height", f"{y1 - y0:g}in")
-        write_studio(root, studio)
+        write_plot(root, studio)
         dx, dy = turned_offset((x0, y0, x1, y1), page_w, page_h, clean_rotation(body))
     except Exception as exc:  # noqa: BLE001
         return jsonify(error=f"Couldn't trim the drawing: {exc}"), 400
@@ -1807,7 +1818,7 @@ def restore_page():
     try:
         tree = parse_svg(CURRENT_SVG)
         root = tree.getroot()
-        studio = read_studio(root) or {}
+        studio = read_plot(root) or {}
         original = studio.pop("original_page", None)
         if not original:
             return jsonify(error="This drawing's page hasn't been trimmed."), 409
@@ -1818,7 +1829,7 @@ def restore_page():
                 root.attrib.pop(key, None)
             else:
                 root.set(key, original[key])
-        write_studio(root, studio)
+        write_plot(root, studio)
         # Work out where the trimmed page sat on the restored one. A copy of the whole document, so
         # the Illustrator comment before <svg> still tells normalize_size the units are points.
         import copy
@@ -1862,7 +1873,7 @@ def upload():
     CURRENT_SVG.write_bytes(data)
     try:
         ensure_layer_ids(CURRENT_SVG)
-        studio = read_studio(parse_svg(CURRENT_SVG).getroot())
+        studio = read_plot(parse_svg(CURRENT_SVG).getroot())
     except Exception:  # noqa: BLE001 - an unreadable SVG is reported by the estimate
         studio = None
     (JOBS / "current.name").write_text(file.filename)
@@ -1928,7 +1939,7 @@ def artwork():
         svg = svg_input(clean_scale(body), None, clean_rotation(body))
         root = etree.parse(str(CURRENT_SVG), etree.XMLParser(huge_tree=True)).getroot()
         size_note = normalize_size(root)
-        trimmed = bool((read_studio(root) or {}).get("original_page"))
+        trimmed = bool((read_plot(root) or {}).get("original_page"))
         return jsonify(svg=svg, layers=read_layers(root), warnings=[size_note] if size_note else [], trimmed=trimmed)
     except Exception as exc:
         return jsonify(error=f"Couldn't read that SVG: {exc}"), 400
