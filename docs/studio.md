@@ -58,6 +58,28 @@ and `viewBox`, keeping the old ones in `<nds:plot>` so Untrim can put them back.
 geometry and no layer, but it is Plot changing something outside its own block, and it would be
 tidier for the trim to live in the block and be applied at plot time.
 
+**Studio is paused as of 2026-09-16**, to work out what it should actually be. Of everything built,
+only the parametric hatch fills do something Tom can't already do elsewhere - which may be enough for
+a first slice, but isn't what got built first.
+
+*What stopped it:* Studio's renderer is a function of its editable model - to draw a mark, the mark
+has to become a `Shape` first. `craggy-rocks.svg` (18,553 `<path>`, 7,495 `<line>`) therefore opened
+as 7,495 editable stipple marks with every path silently dropped from the picture, and Save one click
+away. Plot renders the same file perfectly, because Plot never has to understand a drawing; it
+renders marks. Displaying and editing are separate jobs, and Studio welded them together.
+
+*Before Studio resumes, that seam has to be cut.* The pieces are in place: Studio's canvas now draws
+into the same `.pv-layer` structure Plot mounts its artwork into, and Studio already receives the raw
+SVG - it just discards most of it while parsing. Mount the file's own markup; let parsing find what's
+editable rather than convert-or-discard; write unmodelled marks back untouched. The sequencing error
+is worth remembering: the first feature should have been "open a drawing made elsewhere and hatch it",
+which forces the renderer and the model apart on day one. "Draw a rectangle" let them fuse.
+
+*What came back to Plot in the meantime:* choosing a layer's ink. Swapping a pen to see how a drawing
+looks in it is a decision about this plot, not an edit, so it's `layer_colors` in `<nds:plot>` keyed
+by layer id - stored in the file, so it travels and survives a quit, but leaving the drawing's own
+colours alone. That's what lets "The drawing's own" put it back, and what keeps Plot read-only.
+
 **One preview engine, used by both apps.** Decided 2026-09-16. A drawing has to look the same in
 Studio as in Plot, or Studio isn't showing you what you're about to make.
 
