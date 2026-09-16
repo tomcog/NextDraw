@@ -1,7 +1,11 @@
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
+import { resolve } from "node:path";
 
-// The Flask server (server.py) serves the built page from ../static at /static/.
+// Two front ends, one build: Plot at index.html and Studio at studio.html. They share this folder so
+// they share one install and one version of the component library - the drift between two copies is
+// what the single-server decision was meant to avoid (see docs/studio.md).
+// The Flask server (server.py) serves the built pages from ../static at /static/.
 // During `npm run dev`, Vite proxies /api to the running Flask server.
 export default defineConfig({
   plugins: [react()],
@@ -9,6 +13,12 @@ export default defineConfig({
   build: {
     outDir: "../static",
     emptyOutDir: true,
+    rollupOptions: {
+      input: {
+        index: resolve(__dirname, "index.html"),
+        studio: resolve(__dirname, "studio.html"),
+      },
+    },
   },
   server: {
     port: 5173,

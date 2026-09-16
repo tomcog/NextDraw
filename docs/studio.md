@@ -1,8 +1,9 @@
 # NextDraw Studio — design notes
 
-Studio is a planned companion app: it creates and edits drawings, Plot prints them. None of it is
-built. This is the record of what was decided in discussion on 2026-09-16 and, more usefully, why —
-so that building it starts from those conclusions instead of re-deriving them.
+Studio is the companion app: it creates and edits drawings, Plot prints them. A first version is
+built — see **Where it's got to**, at the end. The rest of this is the record of what was decided in
+discussion on 2026-09-16 and, more usefully, why, so that building on it starts from those
+conclusions instead of re-deriving them.
 
 Mark the difference as you read: **Decided** is settled, **Open** is a leaning with a question still
 attached. Where a decision rested on something testable, it was tested, and the result is recorded
@@ -60,8 +61,8 @@ already gives a layer whose name matches one of its tool's pens that pen's color
 naming layers after pens makes colors carry across with no new plumbing, and emitting them
 lightest-first means Plot's "Sort by darkness" is a no-op rather than a correction.
 
-**One Flask process, two front-ends.** The button in Plot that opens a drawing in Studio is then a
-plain link (`http://odin.local:5056/edit?path=…`).
+**One Flask process, two front-ends.** The button that moves a drawing between them is then a plain
+link — Studio lives at `/studio` on the same server, so the handoff is one origin and no new port.
 
 *Why, and what was rejected:* a custom URL scheme (`nextdraw-edit://`) launches on the device you're
 *viewing* from, which is the wrong machine when you're on the iPad. A server-side `open -a` launches
@@ -70,15 +71,18 @@ The bigger payoff is that Studio then reads `pen_width`, `drag` and the palettes
 `/api/presets` instead of keeping a second copy of numbers that would silently drift — and the
 failure mode of drift is hatching that looks right on screen and comes out wrong on paper.
 
-**Both front ends live in this repo.** `server.py` serves them: `web/` builds to `static/` as it does
-now, and Studio's front end gets its own folder beside it, served at its own route. One repo, one
-`start.command`, one deploy to odin.
+**Both front ends live in this repo**, and in one `web/` folder: `index.html` is Plot, `studio.html`
+is Studio, and one `npm run build` writes both into `static/`. Studio's code is `web/src/studio/`.
+One repo, one install, one `start.command`, one deploy to odin.
 
 *Why:* this follows from one Flask process rather than being a separate choice. A Studio in its own
 repo would need either a second server — which gives up the shared presets and the plain-link handoff
-that made the one-process decision worth making — or a repo that can't run on its own. An earlier
-note in this file's commit history suggested moving these notes out to a Studio repo later; that was
-written before this was thought through, and it's wrong. They stay here.
+that made the one-process decision worth making — or a repo that can't run on its own. Sharing one
+`web/` folder goes further: one copy of `@tomcoggia/ui`, so the two apps cannot drift to different
+versions of the design system, and Studio imports Plot's `Section`, `Header` styles and `api` helper
+rather than owning near-copies of them. An earlier note in this file's commit history suggested
+moving these notes out to a Studio repo later; that was written before this was thought through, and
+it's wrong. They stay here.
 
 **Live reload rides the existing poll.** The page already polls `/api/status` every 2 s (500 ms while
 plotting), and that payload already carries an mtime change-token for `plot_paths` purely so the page
@@ -138,3 +142,30 @@ app, and this one is NextDraw Plot. Three lowercase `studio`s survive on purpose
 `<nds:studio>` element that the read-both shim still opens, the `iCloud Drive/NextDraw Studio/`
 folder that holds the drawings and presets, and the `localStorage` keys, which would reset the
 remembered tool, placement, zoom and layers on every device if they moved.
+
+## Where it's got to
+
+A first version, built 2026-09-17: draw a shape, save it, open it in Plot.
+
+- Studio is at `/studio`, wearing Plot's layout — a left rail of cards and a stage that sizes itself
+  to the page the same way Plot's preview sizes itself to the drawing.
+- Rectangle, ellipse and line, drawn by dragging on the page. One-inch grid, home marked in the
+  corner the plotter starts from, shapes listed with their real size and deletable.
+- Page size comes from the list Plot already offers, and can be turned.
+- **Save** writes an SVG into the drawings folder through `POST /api/studio/save`. The drawing is
+  sized in inches with a matching viewBox, its shapes sit in an Inkscape layer, and they're stroked
+  and never filled, because the plotter draws lines and a fill would only make the preview lie.
+- **Open in Plot** saves, calls `/api/open`, and goes to `/`. Nothing is passed in the URL: Plot
+  already picks up whatever drawing is loaded when its page opens.
+- The layer is named `Black`, which is not decoration — Plot colors a layer from the pen its name
+  matches, so the drawing arrives already colored. The file also carries an `<nds:plot>` block naming
+  the paper it was drawn for, so it doesn't land on whatever paper Plot was last set to.
+
+Two colors are deliberately not Plot's tokens. Studio's page is white in both themes, so it uses an
+on-white grey for the grid rather than `--nd-grid`, which is drawn on Plot's dark bed and goes
+near-black; and shapes are drawn in the pen's own ink rather than `--nd-ink`, which is the blue Plot
+uses for paths whose pen isn't known yet.
+
+What it deliberately doesn't do yet: move or resize a shape once drawn, undo, open an existing
+drawing for editing, choose a pen, or fill anything. Fills are the next feature, and the decisions
+above are about them.

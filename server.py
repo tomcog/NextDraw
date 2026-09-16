@@ -67,6 +67,10 @@ for folder in ICLOUD_FOLDERS:
     if (ICLOUD_DRIVE / folder).is_dir():
         FOLDER_NAMES[ICLOUD_DRIVE / folder] = folder.title()
 ALLOWED_FOLDERS = list(FOLDER_NAMES)
+# Where Studio writes a new drawing: the shared iCloud folder when there is one, so it syncs to the
+# other Mac like every other drawing, and otherwise whichever folder the browser lists first.
+DRAWINGS_FOLDER = ICLOUD_DRAWINGS if ICLOUD_DRAWINGS.is_dir() else ALLOWED_FOLDERS[0]
+MAX_STUDIO_SVG = 20 * 1024 * 1024  # generous: hatch fills will make these big
 # A stopped plot's progress: the NextDraw software writes where it stopped into its output SVG,
 # which is what its res_plot mode resumes from. The JSON keeps what this app needs to resume it.
 RESUME_SVG = JOBS / "resume.svg"
@@ -1309,6 +1313,13 @@ def static_files(name):
     return send_from_directory(ROOT / "static", name)
 
 
+@app.get("/studio")
+def studio_index():
+    """NextDraw Studio: the companion app that makes the drawings this one plots (docs/studio.md).
+    Both front ends are built from web/ into static/, and this server serves them both."""
+    return send_from_directory(ROOT / "static", "studio.html")
+
+
 @app.get("/api/info")
 def info():
     model_list = [
@@ -1883,6 +1894,48 @@ def upload():
         if not job.busy():
             job.reset("idle")
     return jsonify(name=file.filename, plot=plot)
+
+
+# Anything that isn't a plain name is replaced rather than rejected, so a drawing called "1/2 done"
+# still saves. The basename comes first, so no name can climb out of the folder it's saved in.
+STUDIO_NAME_STRIP = re.compile(r"[^\w \-.()\[\]]+")
+
+
+def studio_file_name(raw):
+    """A file name from Studio, reduced to one that's safe to write. None when nothing is left."""
+    base = os.path.basename(str(raw or "")).strip()
+    if base.lower().endswith(".svg"):
+        base = base[:-4]
+    base = STUDIO_NAME_STRIP.sub("-", base).strip(" .-")[:60].strip()
+    return f"{base}.svg" if base else None
+
+
+@app.post("/api/studio/save")
+def studio_save():
+    """
+    Write a drawing Studio made into a folder this app can open from, so it can then be opened for
+    plotting like any other file. Saving doesn't load it - Studio calls /api/open for that.
+    """
+    body = request.json or {}
+    svg = body.get("svg")
+    if not isinstance(svg, str) or "<svg" not in svg:
+        return jsonify(error="That doesn't look like an SVG."), 400
+    if len(svg.encode("utf-8")) > MAX_STUDIO_SVG:
+        return jsonify(error="That drawing is too big to save."), 413
+    name = studio_file_name(body.get("name"))
+    if name is None:
+        return jsonify(error="Give the drawing a name."), 400
+    folder = allowed_path(body.get("folder")) if body.get("folder") else DRAWINGS_FOLDER
+    if folder is None or not folder.is_dir():
+        return jsonify(error="That isn't a folder the app can save drawings in."), 403
+    path = folder / name
+    try:
+        tmp = path.with_name(f".{path.name}.studio-saving")
+        tmp.write_text(svg, encoding="utf-8")
+        os.replace(tmp, path)
+    except OSError as exc:
+        return jsonify(error=f"Couldn't save {name}: {exc.strerror or exc}"), 500
+    return jsonify(name=path.name, path=str(path), folder=display_path(folder))
 
 
 @app.delete("/api/file")

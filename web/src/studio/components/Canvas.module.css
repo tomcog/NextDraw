@@ -1,0 +1,92 @@
+.wrap {
+  position: relative;
+  width: 100%;
+}
+
+/* Beside the panel, the page fits the window's height too: it's only as wide as lets the whole page
+   show without scrolling (5rem: the header above it and the page's bottom padding). Canvas.tsx sets
+   --canvas-aspect to the view's width over its height. The same rule Plot's preview uses. */
+@media (min-width: 861px) {
+  .wrap { max-width: calc((100dvh - 5rem) * var(--canvas-aspect, 1.3)); }
+}
+
+.canvas {
+  display: block;
+  width: 100%;
+  height: auto;
+  touch-action: none; /* dragging draws, it doesn't scroll the page */
+  cursor: crosshair;
+}
+
+.page {
+  fill: var(--nd-sheet);
+  stroke: var(--ui-border-default);
+  stroke-width: 1;
+  vector-effect: non-scaling-stroke;
+}
+
+/* Stroke widths here are screen pixels, not page units: non-scaling-stroke measures them that way,
+   so the grid stays a hairline and the ink stays legible however far the page is zoomed. */
+.grid line {
+  /* Not Plot's --nd-grid: that one is drawn on the plotter's dark bed and turns near-black in the
+     dark theme, whereas this grid is always on white paper. One on-white grey suits both themes. */
+  stroke: var(--studio-grid, #d6dbd9);
+  stroke-width: 1;
+  vector-effect: non-scaling-stroke;
+}
+
+.pageEdge {
+  fill: none;
+  stroke: var(--ui-border-default);
+  stroke-width: 1;
+  vector-effect: non-scaling-stroke;
+}
+
+.home { fill: var(--ui-text-default); }
+
+/* Drawn lines in the pen's own color, which is what Plot will show: the shapes go on a layer named
+   after a pen, and Plot colors a layer from the pen its name matches. Plot's --nd-ink blue is for
+   paths whose pen isn't known yet, which isn't the case here. The page is white in both themes, so
+   one ink color works in both. */
+.shape {
+  fill: none;
+  stroke: var(--studio-ink, #262626);
+  stroke-width: 1.6;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  cursor: pointer;
+  vector-effect: non-scaling-stroke;
+}
+
+.shape[data-selected="true"] {
+  stroke: var(--ui-primary);
+}
+
+/* The shape being dragged out, before it's committed. */
+.draft {
+  fill: none;
+  stroke: var(--ui-primary);
+  stroke-width: 1.5;
+  stroke-dasharray: 4 3;
+  pointer-events: none;
+  vector-effect: non-scaling-stroke;
+}
+
+.hint {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.25rem;
+  pointer-events: none;
+  text-align: center;
+  color: var(--ui-text-muted);
+}
+
+.hint strong {
+  font-size: 1.5rem;
+  font-weight: 500;
+  color: var(--ui-text-default);
+}
