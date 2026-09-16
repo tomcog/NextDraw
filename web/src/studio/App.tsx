@@ -336,6 +336,49 @@ export default function App() {
     setShapes((list) => list.map((sh) => (sh.id === chosen.id ? { ...sh, outline: on } : sh)));
   };
 
+  // Restacking. The list is shown top-down but `layers` is bottom-first, like Plot's, so a row moved
+  // n places down the list moves n places up the stack.
+  const layerList = useRef<HTMLUListElement>(null);
+  const layerRows = useRef(new Map<string, HTMLLIElement>());
+  const [layerDrag, setLayerDrag] = useState<string | null>(null);
+
+  const startLayerDrag = (e: React.PointerEvent, id: string) => {
+    if (busy || layers.length < 2) return;
+    e.preventDefault();
+    try {
+      (e.currentTarget as Element).setPointerCapture(e.pointerId);
+    } catch {
+      // not a live pointer; the drag still works while it's over the list
+    }
+    record();
+    setLayerDrag(id);
+    const move = (ev: PointerEvent) => {
+      const shown = [...layers].reverse();
+      const rows = shown.map((l) => layerRows.current.get(l.id)).filter(Boolean) as HTMLLIElement[];
+      if (rows.length < 2) return;
+      const pitch = rows[1].offsetTop - rows[0].offsetTop || rows[0].offsetHeight;
+      const top = rows[0].getBoundingClientRect().top;
+      const to = Math.max(0, Math.min(shown.length - 1, Math.round((ev.clientY - top) / pitch)));
+      const from = shown.findIndex((l) => l.id === id);
+      if (to === from) return;
+      setLayers((list) => {
+        const next = [...list];
+        // Back into bottom-first order to do the move.
+        const a = next.length - 1 - from;
+        const b = next.length - 1 - to;
+        next.splice(b, 0, next.splice(a, 1)[0]);
+        return next;
+      });
+    };
+    const up = () => {
+      setLayerDrag(null);
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", up);
+    };
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", up);
+  };
+
   const patchLayer = (id: string, patch: Partial<Layer>) => {
     record();
     setLayers((list) => list.map((l) => (l.id === id ? { ...l, ...patch } : l)));
@@ -517,7 +560,7 @@ export default function App() {
 
           <Card variant="flat" className={styles.controls}>
             <div className={styles.cardBody}>
-              <Section title="Drawing tool" collapsibleKey="tool">
+              <Section title="Drawing tool">
                 <InputSelect
                   size="md"
                   label="Tool"
@@ -555,40 +598,58 @@ export default function App() {
                   </span>
                 }
               >
-                <ul className={styles.layerList}>
-                  {layers.map((layer, i) => (
-                    <li key={layer.id} className={styles.layerRow}>
-                      <LayerController
-                        name="studio-layer"
-                        number={i + 1}
-                        color={layer.color}
-                        swatchProps={{
-                          "aria-label": `Pen color for ${layer.name}`,
-                          "aria-haspopup": "menu",
-                          "aria-expanded": colorMenu?.id === layer.id,
-                          title: "Choose the pen this layer draws with",
-                          disabled: busy,
-                          onClick: (e) => {
-                            const anchor = e.currentTarget;
-                            setColorMenu((open) => (open?.id === layer.id ? null : { id: layer.id, anchor }));
-                          },
+                <ul className={styles.layerList} ref={layerList}>
+                  {[...layers].reverse().map((layer) => {
+                    const at = layers.indexOf(layer); // 0 is the bottom layer, as in Plot
+                    return (
+                      <li
+                        key={layer.id}
+                        className={styles.layerRow}
+                        data-dragging={layerDrag === layer.id}
+                        ref={(el) => {
+                          if (el) layerRows.current.set(layer.id, el);
+                          else layerRows.current.delete(layer.id);
                         }}
-                        checked={active?.id === layer.id}
-                        visible={!layer.hidden}
-                        onVisibleChange={(visible) => patchLayer(layer.id, { hidden: !visible })}
-                        disabled={busy}
-                        onChange={() => setActiveLayer(layer.id)}
-                        aria-label={`Draw on layer ${i + 1}, ${layer.name}`}
-                        label={layer.name}
-                      />
-                      {layers.length > 1 && (
-                        <ButtonRound size="sm" variant="ghost" icon={<Trash2 />}
-                          aria-label={`Delete layer ${layer.name}`}
-                          title={`Delete ${layer.name} and everything on it`}
-                          disabled={busy} onClick={() => removeLayer(layer.id)} />
-                      )}
-                    </li>
-                  ))}
+                      >
+                        <LayerController
+                          name="studio-layer"
+                          purpose="draw"
+                          number={at + 1}
+                          color={layer.color}
+                          swatchProps={{
+                            "aria-label": `Pen color for ${layer.name}`,
+                            "aria-haspopup": "menu",
+                            "aria-expanded": colorMenu?.id === layer.id,
+                            title: "Choose the pen this layer draws with",
+                            disabled: busy,
+                            onClick: (e) => {
+                              const anchor = e.currentTarget;
+                              setColorMenu((open) => (open?.id === layer.id ? null : { id: layer.id, anchor }));
+                            },
+                          }}
+                          checked={active?.id === layer.id}
+                          visible={!layer.hidden}
+                          onVisibleChange={(visible) => patchLayer(layer.id, { hidden: !visible })}
+                          disabled={busy}
+                          onChange={() => setActiveLayer(layer.id)}
+                          aria-label={`Draw on layer ${at + 1}, ${layer.name}`}
+                          label={layer.name}
+                          handleProps={{
+                            "aria-label": `Move ${layer.name}`,
+                            title: "Drag to restack",
+                            disabled: busy || layers.length < 2,
+                            onPointerDown: (e) => startLayerDrag(e, layer.id),
+                          }}
+                        />
+                        {layers.length > 1 && (
+                          <ButtonRound size="sm" variant="ghost" icon={<Trash2 />}
+                            aria-label={`Delete layer ${layer.name}`}
+                            title={`Delete ${layer.name} and everything on it`}
+                            disabled={busy} onClick={() => removeLayer(layer.id)} />
+                        )}
+                      </li>
+                    );
+                  })}
                 </ul>
               </Section>
             </div>
