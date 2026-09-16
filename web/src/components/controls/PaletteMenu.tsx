@@ -1,7 +1,8 @@
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { KeyboardEvent } from "react";
 import { createPortal } from "react-dom";
 import styles from "./PaletteMenu.module.css";
+import { lightness } from "../../lib/color";
 import type { PenColor } from "../../lib/types";
 
 interface Props {
@@ -14,7 +15,13 @@ interface Props {
 
 // The drawing tool's pen colors, opened from a layer's color dot. Arrow keys move through the list,
 // Enter picks, Escape or a click elsewhere closes, and focus goes back to the dot.
-export function PaletteMenu({ anchor, palette, current, onPick, onClose }: Props) {
+export function PaletteMenu({ anchor, palette: pens, current, onPick, onClose }: Props) {
+  // Darkest at the top, lightest at the bottom, the way the layers themselves stack. Colors that
+  // can't be read keep their place at the end.
+  const palette = useMemo(
+    () => [...pens].sort((a, b) => (lightness(a.color) ?? Infinity) - (lightness(b.color) ?? Infinity)),
+    [pens],
+  );
   const menuRef = useRef<HTMLDivElement>(null);
   const items = useRef<(HTMLButtonElement | null)[]>([]);
   const [position, setPosition] = useState<{ left: number; top: number } | null>(null);
