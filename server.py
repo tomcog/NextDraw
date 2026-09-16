@@ -2084,6 +2084,8 @@ def put_preset(name):
         entry["tilt"] = previous["tilt"]  # angle compensation, measured when the tool was set up
     if previous.get("drag"):
         entry["drag"] = previous["drag"]  # a soft tip that may only be pulled, never pushed
+    if previous.get("hatch"):
+        entry["hatch"] = previous["hatch"]  # the angle and line spacing this tool fills with
     presets.append(entry)
     presets.sort(key=lambda p: p["name"].lower())
     save_presets(presets)
