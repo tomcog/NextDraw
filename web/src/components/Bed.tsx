@@ -247,22 +247,17 @@ export function Bed(props: Props) {
       vb: [box[0] - pad * LEFT, box[1] - pad * TOP, box[2] - box[0] + pad * (LEFT + 0.4), box[3] - box[1] + pad * (TOP + 0.1)],
     };
   };
-  // The plotter view. Every zoom keeps its proportions, so the preview never changes height, and the
-  // dimension lines, their labels and the toolbar keep its positions on screen, so nothing shifts.
+  // The plotter view. The dimension lines, their labels and the toolbar are measured against it, so
+  // they stay the same size and sit in the same place whichever zoom is showing.
   const base = fit(travelBox);
-  const aspect = base.vb[2] / base.vb[3];
+  // Each zoom keeps its own proportions: the preview is sized to them (--bed-aspect, below), so what
+  // is framed grows to the largest it fits in the space beside the panel instead of being padded out
+  // to the plotter's shape.
   const { vb } = fit(frame);
-  if (vb[2] / vb[3] < aspect) {
-    vb[2] = vb[3] * aspect; // widen to the right, keeping the left edge where it is
-  } else {
-    const height = vb[2] / aspect;
-    vb[1] -= (height - vb[3]) / 2;
-    vb[3] = height;
-  }
   const viewBox = drag?.viewBox ?? vb.join(" ");
 
   // Where the dimension lines sit in the plotter view, carried into this view at the same screen spot.
-  const [vx, vy, vw] = viewBox.split(" ").map(Number);
+  const [vx, vy, vw, vh] = viewBox.split(" ").map(Number);
   const k = vw / base.vb[2]; // this view's units per plotter-view unit
   const baseDy = -base.pad * 0.3;
   const baseDx = -base.pad * 0.35;
@@ -274,10 +269,11 @@ export function Bed(props: Props) {
   const [dimX0, dimY0, dimX1, dimY1] = dimBox;
   const dimMidX = (dimX0 + dimX1) / 2;
   const dimMidY = (dimY0 + dimY1) / 2;
-  // The toolbar is HTML over the SVG, placed in percentages of the plotter view so it never moves.
+  // The toolbar is HTML over the SVG, placed in percentages of the view so it lands on the width
+  // dimension line, ending just short of its right tick.
   const toolbarStyle = {
-    "--toolbar-top": `${((baseDy - base.vb[1]) / base.vb[3]) * 100}%`,
-    "--toolbar-right": `${((base.vb[0] + base.vb[2] - W) / base.vb[2]) * 100}%`,
+    "--toolbar-top": `${((dy - vy) / vh) * 100}%`,
+    "--toolbar-right": `${((vx + vw - dimX1) / vw) * 100}%`,
   } as CSSProperties;
 
   const snap = (mm: number) => {
@@ -322,7 +318,7 @@ export function Bed(props: Props) {
     : undefined;
 
   return (
-    <div className={styles.wrap} style={{ "--bed-aspect": aspect } as CSSProperties} data-loaded={props.hasFile} data-dragging-file={props.draggingFile}>
+    <div className={styles.wrap} style={{ "--bed-aspect": vw / vh } as CSSProperties} data-loaded={props.hasFile} data-dragging-file={props.draggingFile}>
       <svg
         ref={svgRef}
         className={styles.bed}

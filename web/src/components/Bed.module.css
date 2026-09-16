@@ -3,11 +3,14 @@
   width: 100%;
 }
 
-/* Beside the panel, the preview fits the window's height too: on a wide screen it's only as wide as
-   lets the whole plotter show without scrolling (4.5rem: the header above it and a little room below).
-   Bed.tsx sets --bed-aspect to the preview's width over its height. */
+/* Beside the panel, the preview fits the window's height too: it's only as wide as lets the whole of
+   what's zoomed show without scrolling (5rem: the header above it and the page's bottom padding).
+   The collapsed sections under it are allowed to fall below the fold - they're rarely opened, and
+   scrolling to them costs less than the height they'd take off every preview.
+   Bed.tsx sets --bed-aspect to the preview's width over its height, which changes with the zoom, so
+   whatever is framed ends up as large as the space allows. */
 @media (min-width: 861px) {
-  .wrap { max-width: calc((100dvh - 4.5rem) * var(--bed-aspect, 1.4)); }
+  .wrap { max-width: calc((100dvh - 5rem) * var(--bed-aspect, 1.4)); }
 }
 
 .bed {
