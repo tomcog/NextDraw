@@ -641,11 +641,6 @@ export default function App() {
                     label="Draw the outline too"
                     onChange={(e) => setOutline(e.target.checked)}
                   />
-                  <p className={styles.empty}>
-                    {chosen.outline === false
-                      ? "Only the hatching is plotted. The shape stays in the file so the fill can be changed."
-                      : "Spacing is what it measures on the paper, so it holds at any plot size."}
-                  </p>
                 </Section>
               </div>
             </Card>

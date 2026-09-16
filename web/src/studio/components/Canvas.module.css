@@ -44,6 +44,20 @@
 
 .home { fill: var(--ui-text-default); }
 
+/* The paper's measurements, in Plot's own dimension-line styling so the two previews read alike. */
+.dim line {
+  stroke: var(--ui-text-muted);
+  stroke-width: 1;
+  vector-effect: non-scaling-stroke;
+}
+
+.dim text {
+  fill: var(--ui-text-faint);
+  font-family: var(--ui-font-primary), var(--ui-font-fallback);
+  font-weight: 500;
+  letter-spacing: 0.05em;
+}
+
 /* A fill's hatch lines: the same ink as the shape, and never in the way of grabbing it. */
 .fills line {
   stroke-linecap: round;

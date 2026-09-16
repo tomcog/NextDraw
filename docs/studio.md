@@ -148,7 +148,8 @@ remembered tool, placement, zoom and layers on every device if they moved.
 A first version, built 2026-09-17: draw a shape, save it, open it in Plot.
 
 - Studio is at `/studio`, wearing Plot's layout — a left rail of cards and a stage that sizes itself
-  to the page the same way Plot's preview sizes itself to the drawing.
+  to the page the same way Plot's preview sizes itself to the drawing, measured along the top and
+  down the left by the same dimension lines Plot draws around the plotter's travel.
 - Rectangle, ellipse and line, drawn by dragging on the page. One-inch grid, home marked in the
   corner the plotter starts from. The tools are their own card and what's been drawn is another,
   Layers, listing each shape with its real size - the same split Plot has between choosing a tool and

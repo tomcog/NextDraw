@@ -47,9 +47,19 @@ export function Canvas({ page, shapes, fills, colorOf, defaultPen, penWidthMm, t
   const [drag, setDrag] = useState<Drag | null>(null);
   const pointer = useRef<number | null>(null);
 
-  const pad = Math.max(page.w, page.h) * 0.06;
-  const vb = [-pad, -pad, page.w + pad * 2, page.h + pad * 2];
+  // The margins around the page, sized the way Plot's preview sizes its own: a slim left one with
+  // just room for the side dimension line, and a top one with room for the width line and its label.
+  const pad = Math.max(page.w, page.h) * 0.075;
+  const LEFT = 0.8;
+  const TOP = 0.7;
+  const vb = [-pad * LEFT, -pad * TOP, page.w + pad * (LEFT + 0.4), page.h + pad * (TOP + 0.1)];
   const viewBox = vb.join(" ");
+  // The rulers, in page units. Sized against the view rather than the page so they hold roughly the
+  // same size on screen whatever is being drawn on.
+  const tick = vb[2] * 0.008;
+  const labelFont = vb[2] * 0.026;
+  const dimY = -pad * 0.3; // the width line, above the page
+  const dimX = -pad * 0.35; // the height line, to its left
   const dot = vb[2] * 0.008; // handle and home-marker radius in page units - real geometry, so it scales
   // The pen's real width, in the page's inches, so the line on screen is the line on paper. Held to a
   // visible minimum: a 0.3 mm pen on a big page would otherwise vanish rather than read as thin.
@@ -194,6 +204,30 @@ export function Canvas({ page, shapes, fills, colorOf, defaultPen, penWidthMm, t
           {lines(page.h, "y")}
         </g>
         <rect className={styles.pageEdge} x={0} y={0} width={page.w} height={page.h} />
+
+        {/* How big the paper is, measured along the top and down the left, the way Plot measures the
+            plotter's travel. Ticks at each end so it reads as a dimension rather than as a border. */}
+        <g className={styles.dim} aria-hidden="true">
+          <line x1={0} y1={dimY} x2={page.w} y2={dimY} />
+          <line x1={0} y1={dimY - tick} x2={0} y2={dimY + tick} />
+          <line x1={page.w} y1={dimY - tick} x2={page.w} y2={dimY + tick} />
+          <text x={page.w / 2} y={dimY - tick * 1.3} textAnchor="middle" fontSize={labelFont}>
+            {fmtIn(page.w)}
+          </text>
+
+          <line x1={dimX} y1={0} x2={dimX} y2={page.h} />
+          <line x1={dimX - tick} y1={0} x2={dimX + tick} y2={0} />
+          <line x1={dimX - tick} y1={page.h} x2={dimX + tick} y2={page.h} />
+          <text
+            x={dimX - tick * 1.3}
+            y={page.h / 2}
+            textAnchor="middle"
+            fontSize={labelFont}
+            transform={`rotate(-90 ${dimX - tick * 1.3} ${page.h / 2})`}
+          >
+            {fmtIn(page.h)}
+          </text>
+        </g>
 
         {/* Hatch lines, drawn from the fill's parameters rather than stored, so they follow the shape
             as it's moved or resized. They aren't clickable: the shape underneath is what you grab. */}
