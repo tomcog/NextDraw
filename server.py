@@ -79,8 +79,6 @@ RESUME_SVG = JOBS / "resume.svg"
 RESUME_META = JOBS / "resume.json"
 # The pen-down paths of the plot in progress, in the order they're drawn, for showing what's left.
 PLOT_PATHS = JOBS / "plot-paths.svg"
-# The loaded drawing as it was before its layers were matched to pens, for one step of undo.
-UNDO_SVG = JOBS / "undo.svg"
 
 # Settings the GUI may change, with (min, max) limits from the NextDraw docs.
 NUMERIC_SETTINGS = {
@@ -364,23 +362,6 @@ def read_layers(root):
 
 HEX_COLOR = re.compile(r"^#[0-9a-fA-F]{6}$")
 STROKE_RULE = re.compile(r"(?:^|;)\s*stroke\s*:[^;]*")
-
-
-def recolor_layer(group, color, by_class):
-    """Give every line on the layer the pen's color. Only shapes that are stroked change (the color is
-    set on the shape itself, which beats a class or a parent's stroke); fill-only shapes are left alone."""
-    for node in group.iter():
-        if node.tag not in SHAPE_TAGS:
-            continue
-        current, walk = None, node
-        while walk is not None and current is None:
-            current = stroke_of(walk, by_class)
-            walk = walk.getparent() if walk is not group else None
-        if not current or current.strip().lower() == "none":
-            continue
-        style = STROKE_RULE.sub("", node.get("style") or "").strip(" ;")
-        node.set("style", f"{style};stroke:{color}" if style else f"stroke:{color}")
-        node.attrib.pop("stroke", None)
 
 
 def has_art(group):
@@ -1465,7 +1446,6 @@ def load_drawing(svg_path):
         raise ValueError("That file doesn't look like an SVG.")
     clear_resume()  # a stopped plot of the previous drawing can't be resumed on this one
     forget_printed()
-    UNDO_SVG.unlink(missing_ok=True)
     CURRENT_SVG.write_bytes(data)
     ensure_layer_ids(CURRENT_SVG)
     (JOBS / "current.name").write_text(svg_path.name)
@@ -1588,6 +1568,12 @@ def clean_plot(raw):
             out["small_paths"] = int(max(10, min(90, float(raw["small_paths"]))))
     except (TypeError, ValueError):
         pass
+    # Which layers Plot is holding back (by layer id). Kept here rather than as a hidden attribute on
+    # the layer itself: hiding a layer is Plot deciding what to draw today, not a change to the
+    # drawing, so it goes in Plot's own block where Studio will never see it.
+    hidden = raw.get("hidden_layers")
+    if isinstance(hidden, list):
+        out["hidden_layers"] = [str(x)[:200] for x in hidden if isinstance(x, str)][:500]
     # A second drawing tool for mixed-media drawings, and which layers use it (by layer id).
     if isinstance(raw.get("second_tool"), str) and raw["second_tool"]:
         out["second_tool"] = raw["second_tool"][:40]
@@ -1613,9 +1599,10 @@ def clean_plot(raw):
 @app.post("/api/drawing")
 def save_drawing():
     """
-    Save the page's changes into the drawing: layer names and order (bottom layer first), plus the
-    placement, scale, drawing tool and paper in a metadata block. The loaded copy is always updated;
-    a drawing opened from a folder is also written back to its file.
+    Save how the drawing is to be plotted - placement, scale, rotation, tool, paper, which layers
+    are hidden - into Plot's own metadata block. Nothing else in the drawing is touched: the geometry
+    and the layers are Studio's, and Plot only ever swaps this one block. The loaded copy is always
+    updated; a drawing opened from a folder is also written back to its file.
     """
     body = request.json or {}
     problem, disk_path = saving_problem(body)
@@ -1624,9 +1611,6 @@ def save_drawing():
     try:
         tree = parse_svg(CURRENT_SVG)
         root = tree.getroot()
-        wanted = body.get("layers")
-        if isinstance(wanted, list) and not apply_layers(root, wanted):
-            return jsonify(error="The drawing's layers changed. Open it again."), 409
         if isinstance(body.get("plot"), dict):
             plot = clean_plot(body["plot"])
             kept = (read_plot(root) or {}).get("original_page")
@@ -1639,93 +1623,6 @@ def save_drawing():
     if problem:
         return problem
     return jsonify(saved_to=display_path(disk_path.parent) if disk_path else None)
-
-
-@app.post("/api/drawing/undo-point")
-def keep_undo_point():
-    """Keep the drawing as it is now, before a change the page can undo (matching layers to pens)."""
-    problem, _ = saving_problem(request.json or {})
-    if problem:
-        return problem
-    shutil.copyfile(CURRENT_SVG, UNDO_SVG)
-    return jsonify(ok=True)
-
-
-@app.post("/api/drawing/undo")
-def undo_drawing():
-    """Put the drawing back the way it was at the undo point, in the loaded copy and its file."""
-    problem, disk_path = saving_problem(request.json or {})
-    if problem:
-        return problem
-    if not UNDO_SVG.exists():
-        return jsonify(error="There's nothing to undo."), 409
-    problem = commit_drawing(parse_svg(UNDO_SVG), disk_path)
-    if problem:
-        return problem
-    UNDO_SVG.unlink(missing_ok=True)
-    return jsonify(ok=True)
-
-
-def apply_layers(root, wanted):
-    """
-    Put the page's layer names, order (bottom layer first), hidden layers and pen colors into the
-    drawing. Returns False, changing nothing, if the page's layers aren't the drawing's.
-    """
-    groups = layer_groups(root)
-    by_id = {g.get("id"): g for g in groups}
-    ids = [str(item.get("id")) for item in wanted if isinstance(item, dict)]
-    if sorted(ids) != sorted(by_id):
-        return False
-    slots = [root.index(g) for g in groups]
-    for g in groups:
-        root.remove(g)
-    for slot, item in sorted(zip(slots, wanted), key=lambda pair: pair[0]):
-        group = by_id[str(item["id"])]
-        name = str(item.get("name") or "").strip()[:200] or layer_name(group, is_illustrator_svg(root))
-        group.set(INKSCAPE_NS + "groupmode", "layer")
-        group.set(INKSCAPE_NS + "label", name)
-        group.attrib.pop("data-name", None)
-        if isinstance(item.get("hidden"), bool):
-            set_layer_hidden(group, item["hidden"])
-        if isinstance(item.get("color"), str) and HEX_COLOR.match(item["color"]):
-            recolor_layer(group, item["color"].lower(), class_strokes(root))
-        root.insert(slot, group)
-    return True
-
-
-@app.post("/api/drawing/delete-layer")
-def delete_layer():
-    """
-    Delete one layer from the drawing, keeping the drawing as it was for one step of undo. The page
-    sends its other layers as they are now (names, order, colors), so a change it hadn't saved yet
-    isn't lost or left to clash with the deletion.
-    """
-    body = request.json or {}
-    problem, disk_path = saving_problem(body)
-    if problem:
-        return problem
-    layer_id = str(body.get("id") or "")
-    try:
-        tree = parse_svg(CURRENT_SVG)
-        root = tree.getroot()
-        groups = layer_groups(root)
-        group = next((g for g in groups if g.get("id") == layer_id), None)
-        if group is None:
-            return jsonify(error="That layer isn't in the drawing anymore. Reload this page."), 409
-        if len(groups) < 2:
-            return jsonify(error="A drawing needs at least one layer."), 409
-        undo = copy.deepcopy(tree)
-        group.getparent().remove(group)
-        wanted = body.get("layers")
-        if isinstance(wanted, list) and not apply_layers(root, wanted):
-            return jsonify(error="The drawing's layers changed. Reload this page."), 409
-    except Exception as exc:  # noqa: BLE001
-        return jsonify(error=f"Couldn't delete the layer: {exc}"), 400
-    UNDO_SVG.write_bytes(svg_bytes(undo))
-    problem = commit_drawing(tree, disk_path)
-    if problem:
-        return problem
-    return jsonify(ok=True)
 
 
 def saving_problem(body):
@@ -1913,7 +1810,6 @@ def upload():
         return jsonify(error="That file doesn't look like an SVG."), 400
     clear_resume()  # a stopped plot of the previous drawing can't be resumed on this one
     forget_printed()
-    UNDO_SVG.unlink(missing_ok=True)
     CURRENT_SVG.write_bytes(data)
     try:
         ensure_layer_ids(CURRENT_SVG)
@@ -1995,7 +1891,7 @@ def clear_file():
     if job.busy():
         return jsonify(error="Wait for the plotter to finish before clearing the drawing."), 409
     forget_printed()
-    for path in (CURRENT_SVG, JOBS / "current.name", CURRENT_PATH, CURRENT_MTIME, UNDO_SVG):
+    for path in (CURRENT_SVG, JOBS / "current.name", CURRENT_PATH, CURRENT_MTIME):
         path.unlink(missing_ok=True)
     clear_resume()
     with job.lock:

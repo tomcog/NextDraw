@@ -4,12 +4,11 @@ import styles from "./App.module.css";
 import { api, postJSON } from "./lib/api";
 import { BUSY_STATES, DEFAULT_SETTINGS, DEFAULT_TOOL, PAPER_SIZES, PLOTTING_STATES, PRESET_FIELDS, STEPS, STORAGE } from "./lib/constants";
 import { cleanNote } from "./lib/format";
-import { lightness, nearestColor } from "./lib/color";
 import { fitsOnBed, fitsOnPaper, footprint } from "./lib/geometry";
 import { parsePlotPaths, type PlotPaths } from "./lib/progressPaths";
 import { parsePreview, type Preview } from "./lib/preview";
 import { load, save } from "./lib/storage";
-import type { Confirmation, Estimate, Info, Layer, LayerEdits, PenColor, LayerNote, LayerView, Message, Placement, Preset, Settings, Status, Plot } from "./lib/types";
+import type { Confirmation, Estimate, Info, Layer, PenColor, LayerView, Message, Placement, Preset, Settings, Status, Plot } from "./lib/types";
 import { Header } from "./components/Header";
 import { Bed, type Zoom } from "./components/Bed";
 import { PaletteEditor } from "./components/PaletteEditor";
@@ -31,15 +30,6 @@ import { SpeedSection } from "./components/controls/SpeedSection";
 import { PlotOptionsSection } from "./components/controls/PlotOptionsSection";
 import { PlotterSection } from "./components/controls/PlotterSection";
 import { ActionBar } from "./components/controls/ActionBar";
-
-// A match further off than this (CIEDE2000) is flagged: the pen is clearly a different color.
-const FAR_MATCH = 15;
-
-// 3, 5 and 8
-function listNumbers(numbers: number[]) {
-  const sorted = [...numbers].sort((a, b) => a - b).map(String);
-  return sorted.length < 2 ? sorted.join("") : `${sorted.slice(0, -1).join(", ")} and ${sorted[sorted.length - 1]}`;
-}
 
 // Settings that change what the NextDraw software's dry run reports.
 const ESTIMATE_KEYS: (keyof Settings)[] = [
@@ -80,7 +70,12 @@ export default function App() {
   // Layers come with the fast artwork and again with each estimate; whichever arrived last.
   const [drawingLayers, setDrawingLayers] = useState<Layer[] | null>(null);
   const fileLayers = drawingLayers;
-  const [layerEdits, setLayerEdits] = useState<LayerEdits | null>(null);
+  // Which layers Plot is holding back, by id. Plot's own decision about today's plot, kept in its own
+  // metadata block - the drawing's layers belong to Studio and Plot never edits them.
+  const [hiddenLayers, setHiddenLayers] = useState<string[]>([]);
+  // A layer named after one of its tool's pens is SHOWN in that pen's color, so editing a palette
+  // updates the preview. Display only: the color in the file stays whatever Studio put there.
+  const [penColors, setPenColors] = useState<Record<string, string>>({});
   // A second drawing tool (mixed media): null normally; "" once added but not yet chosen.
   const [secondTool, setSecondTool] = useState<string | null>(null);
   const [secondToolLayers, setSecondToolLayers] = useState<string[]>([]);
@@ -88,52 +83,20 @@ export default function App() {
   const [smallPaths, setSmallPaths] = useState<number | null>(null);
   // The one layer chosen to print (the green printer in the Layers card). None until the operator picks one.
   const [printLayer, setPrintLayer] = useState<string | null>(null);
+  // The drawing's layers as they are in the file - name, order and color all Studio's. Plot adds only
+  // its own two things: whether it is holding the layer back today, and the pen color to show it in.
   const layerViews: LayerView[] = useMemo(() => {
     if (!fileLayers) return [];
-    const byId = new Map(fileLayers.map((l) => [l.id, l]));
-    const editsFit = layerEdits && layerEdits.order.length === fileLayers.length && layerEdits.order.every((id) => byId.has(id));
-    const order = editsFit ? layerEdits!.order : fileLayers.map((l) => l.id);
-    return order.map((id) => {
-      const layer = byId.get(id)!;
-      const name = (editsFit && layerEdits!.names[id]) || layer.name;
-      const hidden = editsFit && id in layerEdits!.hidden ? layerEdits!.hidden[id] : layer.hidden;
-      const color = (editsFit && layerEdits!.colors[id]) || layer.color;
-      return { ...layer, name, hidden, color, originalName: layer.name, renamed: name !== layer.name, skipped: name.startsWith("%") };
-    });
-  }, [fileLayers, layerEdits]);
-  const layerNames = () => Object.fromEntries(layerViews.map((l) => [l.id, l.name]));
-  const layerHidden = () => Object.fromEntries(layerViews.map((l) => [l.id, l.hidden]));
-  const layerColors = () => layerEdits?.colors ?? {};
-  const renameLayer = (id: string, name: string) => {
-    setLayerEdits({ order: layerViews.map((l) => l.id), names: { ...layerNames(), [id]: name }, hidden: layerHidden(), colors: layerColors() });
-  };
-  // Sort by darkness: the lightest color becomes layer 1 (plotted first, at the bottom) and darker
-  // colors stack on top. Layers without a color stay at the bottom; ties keep their current order.
-  const sortLayersByLightness = () => {
-    const ranked = layerViews.map((l, i) => ({ id: l.id, i, light: lightness(l.color) }));
-    ranked.sort((a, b) => {
-      if (a.light === null || b.light === null) return a.light === null && b.light === null ? a.i - b.i : a.light === null ? -1 : 1;
-      return b.light - a.light || a.i - b.i;
-    });
-    setLayerEdits({ order: ranked.map((r) => r.id), names: layerNames(), hidden: layerHidden(), colors: layerColors() });
-  };
-  // Picking a pen color from the palette names the layer after the pen and gives its lines that color.
-  const colorLayer = (id: string, pen: PenColor) => {
-    setLayerEdits({
-      order: layerViews.map((l) => l.id),
-      names: { ...layerNames(), [id]: pen.name },
-      hidden: layerHidden(),
-      colors: { ...layerColors(), [id]: pen.color },
-    });
-  };
-  const moveLayer = (id: string, to: number) => {
-    const order = layerViews.map((l) => l.id).filter((i) => i !== id);
-    order.splice(to, 0, id);
-    setLayerEdits({ order, names: layerNames(), hidden: layerHidden(), colors: layerColors() });
-  };
+    return fileLayers.map((layer) => ({
+      ...layer,
+      color: penColors[layer.id] || layer.color,
+      hidden: hiddenLayers.includes(layer.id) || layer.hidden,
+      skipped: layer.name.startsWith("%"),
+    }));
+  }, [fileLayers, hiddenLayers, penColors]);
   // A hidden layer isn't shown or plotted, so it can't stay the layer chosen to print.
   const setLayerVisible = (id: string, visible: boolean) => {
-    setLayerEdits({ order: layerViews.map((l) => l.id), names: layerNames(), hidden: { ...layerHidden(), [id]: !visible }, colors: layerColors() });
+    setHiddenLayers((list) => (visible ? list.filter((i) => i !== id) : [...list, id]));
     if (!visible && printLayer === id) setPrintLayer(null);
   };
   // Drawings with more than one layer plot one layer at a time: the one picked in the Layers card.
@@ -256,7 +219,8 @@ export default function App() {
     const nextRotation = ((Math.round((plot?.rotation ?? 0) / 90) % 4) + 4) % 4 * 90;
     refs.current.rotation = nextRotation;
     setRotation(nextRotation);
-    setLayerEdits(null);
+    setHiddenLayers(plot?.hidden_layers ?? []);
+    setPenColors({});
     setPrintLayer(null);
     setLayerMode("preview");
     setSmallPaths(plot?.small_paths ?? null);
@@ -279,8 +243,10 @@ export default function App() {
 
   /* ---------- Auto-save ---------- */
 
-  // Changes to the drawing (layer names and order, placement, scale, drawing tool, paper) are written
-  // into the SVG shortly after they're made. Saves run one at a time, and wait while the plotter is busy.
+  // How the drawing is to be plotted - placement, scale, rotation, tool, paper, which layers are held
+  // back - written into Plot's own metadata block shortly after each change, so reopening the file on
+  // any machine puts the drawing back exactly where it was. Plot writes nothing else: the geometry and
+  // the layers are Studio's. Saves run one at a time, and wait while the plotter is busy.
   const drawingNow: Plot = {
     placement,
     scale,
@@ -288,14 +254,11 @@ export default function App() {
     tool: activePreset ?? undefined,
     ...(smallPaths ? { small_paths: smallPaths } : {}),
     ...(secondTool ? { second_tool: secondTool, second_tool_layers: secondToolLayers } : {}),
+    ...(hiddenLayers.length ? { hidden_layers: hiddenLayers } : {}),
     paper: { paper_size: settings.paper_size, paper_w: settings.paper_w, paper_h: settings.paper_h, paper_x: settings.paper_x, paper_y: settings.paper_y, paper_color: settings.paper_color },
   };
-  const layersNow = layerEdits
-    ? layerViews.map((l) => ({ id: l.id, name: l.name, hidden: l.hidden, ...(layerEdits.colors[l.id] ? { color: l.color } : {}) }))
-    : null;
-  const saveKey = JSON.stringify([drawingNow, layersNow]);
+  const saveKey = JSON.stringify(drawingNow);
   const saveChain = useRef(Promise.resolve());
-  const holdSaves = useRef(false); // while deleting a layer: that request carries the layers itself
   useEffect(() => {
     if (!fileName || loadedFile !== fileName) return;
     if (savedKey.current === null) {
@@ -304,10 +267,10 @@ export default function App() {
     }
     if (saveKey === savedKey.current || busy) return;
     const key = saveKey;
-    const body = { file: fileName, plot: drawingNow, ...(layersNow ? { layers: layersNow } : {}) };
+    const body = { file: fileName, plot: drawingNow };
     const timer = window.setTimeout(() => {
       saveChain.current = saveChain.current.then(async () => {
-        if (refs.current.fileName !== fileName || holdSaves.current) return;
+        if (refs.current.fileName !== fileName) return;
         setSaveState("saving");
         try {
           await postJSON("/api/drawing", body);
@@ -356,7 +319,8 @@ export default function App() {
     setPlacementState({ x: 0, y: 0 });
     setScaleState(100);
     setRotation(0);
-    setLayerEdits(null);
+    setHiddenLayers([]);
+    setPenColors({});
     setPrintLayer(null);
     setLoadedFile(null);
     setSaveState(null);
@@ -755,10 +719,10 @@ export default function App() {
   const paletteFor = (id: string | null) => (usesSecond(id) ? secondPreset : active)?.palette ?? [];
 
   // A layer named after one of its tool's pens follows that pen: edit a color in the palette and
-  // every layer drawn with it catches up, here and in the file.
+  // every layer drawn with it catches up in the preview. Nothing is written to the drawing.
   useEffect(() => {
     if (!layerViews.length) return;
-    const colors = { ...layerColors() };
+    const colors = { ...penColors };
     let changed = false;
     for (const layer of layerViews) {
       const pen = paletteFor(layer.id).find((p) => p.name.trim().toLowerCase() === layer.name.trim().toLowerCase());
@@ -767,9 +731,7 @@ export default function App() {
         changed = true;
       }
     }
-    if (changed) {
-      setLayerEdits({ order: layerViews.map((l) => l.id), names: layerNames(), hidden: layerHidden(), colors });
-    }
+    if (changed) setPenColors(colors);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [presets, layerViews]);
 
@@ -817,87 +779,6 @@ export default function App() {
         setPaletteSaving(false);
       }
     }, 500);
-  };
-
-  // Match to pens: each layer with a color gets the pen from its tool's palette that looks most like
-  // it, named and colored as if picked from the menu. The drawing is kept first, so one Undo puts it
-  // back exactly. Layers sharing a pen and layers with no close pen are listed for a second look.
-  const [layerNote, setLayerNote] = useState<LayerNote | null>(null);
-  useEffect(() => setLayerNote(null), [fileName]);
-  const matchPens = async () => {
-    const matches = layerViews.flatMap((l, i) => {
-      const found = l.color ? nearestColor(l.color, paletteFor(l.id)) : null;
-      return found ? [{ id: l.id, number: i + 1, pen: found.pen, difference: found.difference }] : [];
-    });
-    if (!matches.length) return;
-    try {
-      await saveChain.current; // the undo point should include changes already on their way
-      await postJSON("/api/drawing/undo-point", { file: fileName });
-    } catch (err) {
-      setSaveError((err as Error).message);
-      setSaveState("error");
-      return;
-    }
-    const names = layerNames(), colors = { ...layerColors() };
-    for (const m of matches) {
-      names[m.id] = m.pen.name;
-      colors[m.id] = m.pen.color;
-    }
-    setLayerEdits({ order: layerViews.map((l) => l.id), names, hidden: layerHidden(), colors });
-    const byPen = new Map<string, number[]>();
-    for (const m of matches) byPen.set(m.pen.name, [...(byPen.get(m.pen.name) ?? []), m.number]);
-    setLayerNote({
-      title: `Matched ${matches.length} ${matches.length === 1 ? "layer" : "layers"} to pens.`,
-      lines: [
-        ...[...byPen].filter(([, layers]) => layers.length > 1)
-          .map(([pen, layers]) => ({ text: `Layers ${listNumbers(layers)} ${layers.length === 2 ? "both" : "all"} got ${pen}.` })),
-        ...matches.filter((m) => m.difference > FAR_MATCH)
-          .map((m) => ({ text: `No close pen for layer ${m.number}; it got ${m.pen.name}.`, warn: true })),
-      ],
-    });
-  };
-
-  // Delete a layer from the drawing file. The request also carries the other layers as the page has
-  // them, so a rename or reorder not saved yet goes in with it; the drawing before is kept for Undo.
-  const deleteLayer = async (id: string) => {
-    const layer = layerViews.find((l) => l.id === id);
-    if (!layer || layerViews.length < 2) return;
-    const kept = layerViews.filter((l) => l.id !== id);
-    holdSaves.current = true;
-    try {
-      await saveChain.current;
-      await postJSON("/api/drawing/delete-layer", {
-        file: fileName,
-        id,
-        layers: kept.map((l) => ({ id: l.id, name: l.name, hidden: l.hidden, ...(layerEdits?.colors[l.id] ? { color: l.color } : {}) })),
-      });
-    } catch (err) {
-      setSaveError((err as Error).message);
-      setSaveState("error");
-      return;
-    } finally {
-      holdSaves.current = false;
-    }
-    const without = <T,>(record: Record<string, T>) => Object.fromEntries(Object.entries(record).filter(([k]) => k !== id));
-    setDrawingLayers((layers) => layers?.filter((l) => l.id !== id) ?? layers);
-    setLayerEdits((edits) => edits && { order: edits.order.filter((k) => k !== id), names: without(edits.names), hidden: without(edits.hidden), colors: without(edits.colors) });
-    setSecondToolLayers((list) => list.filter((k) => k !== id));
-    if (printLayer === id) setPrintLayer(null);
-    setDrawingVersion((v) => v + 1); // redraw without it
-    setLayerNote({ title: `Deleted layer “${layer.name}”.`, lines: [] });
-  };
-
-  const undoLayerChange = async () => {
-    setLayerEdits(null); // drop page edits made since, and any save of them still waiting
-    try {
-      await saveChain.current;
-      await postJSON("/api/drawing/undo", { file: fileName });
-      setLayerNote(null);
-      setDrawingVersion((v) => v + 1); // read the restored layers
-    } catch (err) {
-      setSaveError((err as Error).message);
-      setSaveState("error");
-    }
   };
 
   const tipOffsetFor = (id: string | null) => {
@@ -1219,18 +1100,8 @@ export default function App() {
                   target={printLayer}
                   printed={status?.printed_layers ?? []}
                   onTarget={setPrintLayer}
-                  paletteFor={paletteFor}
-                  onColor={colorLayer}
-                  onMatch={layerViews.some((l) => l.color && paletteFor(l.id).length) ? matchPens : null}
-                  note={layerNote}
-                  onUndo={undoLayerChange}
-                  onDismissNote={() => setLayerNote(null)}
-                  onDelete={deleteLayer}
-                  onSort={sortLayersByLightness}
                   onVisible={setLayerVisible}
                   disabled={plotting}
-                  onRename={renameLayer}
-                  onMove={moveLayer}
                 />
               </div>
             </Card>

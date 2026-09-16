@@ -113,24 +113,9 @@ export interface Layer {
   hidden: boolean; // hidden in the file (display:none); not shown or plotted
 }
 
-// A layer as shown in the Layers card, after the operator's renames.
+// A layer as shown in the Layers card. Plot adds nothing to the drawing's own layers but whether it
+// is holding this one back today and the pen color to show it in - both Plot's, neither the file's.
 export interface LayerView extends Layer {
-  originalName: string;
-  renamed: boolean;
-}
-
-// The note under the Layers card's header after a change that can be undone (Match to pens, Delete layer).
-export interface LayerNote {
-  title: string;
-  lines: { text: string; warn?: boolean }[]; // details worth a second look
-}
-
-// The operator's changes to a drawing's layers, kept until they're saved into the file.
-export interface LayerEdits {
-  order: string[]; // layer ids, bottom layer first
-  names: Record<string, string>;
-  hidden: Record<string, boolean>;
-  colors: Record<string, string>; // pen colors picked from the drawing tool's palette
 }
 
 // The page's choices saved inside a drawing file, restored when it's opened again.
@@ -142,6 +127,7 @@ export interface Plot {
   small_paths?: number; // percent to slow the plotter by, for drawings full of tiny marks
   second_tool?: string; // a second drawing tool, for drawings that mix pens
   second_tool_layers?: string[]; // ids of the layers that use it; every other layer uses `tool`
+  hidden_layers?: string[]; // ids of the layers Plot is holding back; not a change to the drawing
   paper?: Partial<Pick<Settings, "paper_size" | "paper_w" | "paper_h" | "paper_x" | "paper_y" | "paper_color">>;
 }
 

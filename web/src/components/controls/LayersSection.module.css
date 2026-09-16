@@ -1,11 +1,4 @@
-.headerTools {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-}
-
 .list {
-  position: relative; /* rows measure their offsetTop against the list */
   list-style: none;
   margin: 0;
   padding: 0;
@@ -15,96 +8,13 @@
 }
 
 .row {
-  position: relative;
   display: flex;
   align-items: center;
-  gap: 0.25rem;
   border-radius: 4px;
   background: var(--ui-surface-raised);
 }
 
-/* The controller takes the row; the bin after it keeps its own width. */
 .row > :first-child { flex: 1; min-width: 0; }
 
-/* The row being dragged: lifted above the others and following the pointer. The shadow is only
-   there while it's held. */
-.row[data-dragging="true"] {
-  z-index: 2;
-  box-shadow: var(--ui-shadow-float-2);
-  cursor: grabbing;
-}
-
-.list[data-dragging="true"] { user-select: none; }
-
+/* A layer NextDraw skips (its name starts with %): struck through, because it won't be drawn. */
 .row[data-skipped="true"] input:not([type="radio"]) { text-decoration: line-through; }
-
-/* The note after Match to pens or Delete layer (what happened, Undo, details worth a second look),
-   and Delete's question before it. */
-.match {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  margin-bottom: 0.5rem;
-  padding: 6px 8px;
-  border-radius: 6px;
-  background: var(--ui-surface-muted);
-  font-size: 0.8125rem;
-}
-
-.matchHead {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-}
-
-.matchHead > span { margin-right: auto; }
-
-.matchUndo {
-  border: none;
-  background: none;
-  padding: 0;
-  font: inherit;
-  font-weight: 600;
-  color: var(--ui-primary);
-  cursor: pointer;
-}
-
-.matchUndo:disabled { opacity: 0.5; cursor: default; }
-.matchUndo[data-tone="plain"] { color: var(--ui-text-default); font-weight: 400; }
-.matchUndo[data-tone="danger"] { color: var(--ui-danger); }
-
-.confirmRow {
-  display: flex;
-  justify-content: flex-end;
-  gap: 1rem;
-  margin-top: 4px;
-}
-
-.matchNote {
-  margin: 0;
-  font-size: 11px;
-  color: var(--ui-text-muted);
-}
-
-.matchNote[data-tone="warn"] { color: var(--ui-text-default); }
-
-/* The system color picker, opened from a layer's dot when its tool has no palette. */
-.hiddenPicker {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  padding: 0;
-  border: 0;
-  opacity: 0;
-  pointer-events: none;
-}
-
-/* A round button that's switched on (ink simulation): the same pressed state the other cards use. */
-.roundActive {
-  /* Ink and white, not the inverse surface: the inverse flips with the theme, so
-     in the dark theme a switched-on button came out pale with a dark glyph. */
-  --ui-button-round-bg: var(--ui-ink);
-  --ui-button-round-icon: var(--ui-white);
-  --ui-button-round-bg-hover: var(--ui-ink);
-  --ui-button-round-icon-hover: var(--ui-white);
-}
