@@ -1,6 +1,6 @@
 import { useRef, useState } from "react";
 import { Button, ButtonRound, Checkbox, InputSelect, InputText } from "@tomcoggia/ui";
-import { Angle, LineSquiggle, PencilSparkles, X } from "lucide-react";
+import { Angle, CirclePlus, LineSquiggle, Palette, X } from "lucide-react";
 import styles from "./controls.module.css";
 import { Section } from "./Section";
 import { Slider } from "./Slider";
@@ -22,6 +22,8 @@ interface Props {
   onSecondTool: (name: string) => void;
   onRemoveSecond: () => void;
   onAssign: (id: string, second: boolean) => void;
+  paletteOpen: boolean; // the palette view stands in for the drawing preview
+  onPalette: () => void;
   smallPaths: number | null; // percent slower, or null when off
   onSmallPaths: (percent: number | null) => void;
   tiltOn: (tool: Preset | undefined) => boolean;
@@ -36,7 +38,7 @@ const SHOW_PRESET_ACTIONS = false;
 export function PresetSection({
   presets, active, changed, disabled, onApply, onSave, onDelete,
   secondTool, secondLayers, layers, inUse, onAddSecond, onSecondTool, onRemoveSecond, onAssign,
-  smallPaths, onSmallPaths, tiltOn, onTilt, dragOn, onDrag,
+  smallPaths, onSmallPaths, tiltOn, onTilt, dragOn, onDrag, paletteOpen, onPalette,
 }: Props) {
   // What a tool is always set up for, with nothing to switch: the clip angle, and one-way strokes.
   const toolNote = (tool: Preset | undefined) => {
@@ -111,9 +113,18 @@ export function PresetSection({
   return (
     <Section
       title="Drawing tool"
-      action={!mixed ? (
-        <ButtonRound size="sm" icon={<PencilSparkles />} aria-label="Add a second drawing tool" title="Add another preset, for a drawing that mixes pens" disabled={disabled || !presets.length} onClick={onAddSecond} />
-      ) : undefined}
+      action={
+          <ButtonRound
+            size="sm"
+            icon={<Palette />}
+            className={paletteOpen ? styles.roundActive : undefined}
+            aria-label={`${paletteOpen ? "Hide" : "Show"} the drawing tool's colors`}
+            aria-expanded={paletteOpen}
+            title={paletteOpen ? "Back to the drawing" : "The tool's colors: add, name and change them"}
+            disabled={!presets.length}
+            onClick={onPalette}
+          />
+      }
     >
       <div className={styles.toolBlock} data-in-use={inUse === "first"}>
       <InputSelect
@@ -137,6 +148,17 @@ export function PresetSection({
       {dragSwitch(active)}
       {mixed && layers.length > 0 && chips(false)}
       </div>
+
+      {!mixed && (
+        <ButtonRound
+          size="sm"
+          icon={<CirclePlus />}
+          aria-label="Add a second drawing tool"
+          title="Add another preset, for a drawing that mixes pens"
+          disabled={disabled || !presets.length}
+          onClick={onAddSecond}
+        />
+      )}
 
       {mixed && (
         <div className={styles.toolBlock} data-in-use={inUse === "second"}>

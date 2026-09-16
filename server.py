@@ -2081,6 +2081,35 @@ def put_preset(name):
     return jsonify(presets=presets)
 
 
+def clean_palette(raw):
+    """A tool's pen colors, as edited in the palette view: each one a name and a #rrggbb color."""
+    colors = []
+    for item in raw if isinstance(raw, list) else []:
+        if not isinstance(item, dict) or not isinstance(item.get("color"), str):
+            continue
+        if not HEX_COLOR.match(item["color"]):
+            continue
+        name = item.get("name") if isinstance(item.get("name"), str) else ""
+        colors.append({"name": name.strip()[:40] or "Unnamed", "color": item["color"].lower()})
+    return colors[:100]
+
+
+@app.put("/api/presets/<name>/palette")
+def put_palette(name):
+    """Save the pen colors of one tool. An empty palette leaves the tool without one."""
+    presets = load_presets()
+    preset = next((p for p in presets if p.get("name") == name.strip()[:40]), None)
+    if preset is None:
+        return jsonify(error="That drawing tool isn't on this Mac."), 404
+    colors = clean_palette((request.json or {}).get("palette"))
+    if colors:
+        preset["palette"] = colors
+    else:
+        preset.pop("palette", None)
+    save_presets(presets)
+    return jsonify(presets=presets)
+
+
 @app.delete("/api/presets/<name>")
 def delete_preset(name):
     presets = [p for p in load_presets() if p.get("name") != name]

@@ -12,6 +12,7 @@ import { load, save } from "./lib/storage";
 import type { Confirmation, Estimate, Info, Layer, LayerEdits, PenColor, LayerNote, LayerView, Message, Placement, Preset, Settings, Status, Studio } from "./lib/types";
 import { Header } from "./components/Header";
 import { Bed, type Zoom } from "./components/Bed";
+import { PaletteEditor } from "./components/PaletteEditor";
 import { ZoomControl } from "./components/ZoomControl";
 import { FileBrowser, type OpenResult } from "./components/FileBrowser";
 import { MachinePanel } from "./components/MachinePanel";
@@ -716,6 +717,34 @@ export default function App() {
     Boolean(tool?.drag && (tool.drag.fixed || (dragChoice[tool.name] ?? tool.drag.on)));
   const paletteFor = (id: string | null) => (usesSecond(id) ? secondPreset : active)?.palette ?? [];
 
+  // The palette view stands in for the drawing preview while the tool's colors are being worked on.
+  // Edits save a moment after the last keystroke, so typing a name isn't a request per letter.
+  const [paletteOpen, setPaletteOpen] = useState(false);
+  const [paletteSaving, setPaletteSaving] = useState(false);
+  const [paletteError, setPaletteError] = useState<string | null>(null);
+  const paletteTimer = useRef<number>();
+  const savePalette = (palette: PenColor[]) => {
+    if (!active) return;
+    const tool = active.name;
+    setPaletteSaving(true);
+    setPaletteError(null);
+    window.clearTimeout(paletteTimer.current);
+    paletteTimer.current = window.setTimeout(async () => {
+      try {
+        const r = await api<{ presets: Preset[] }>(`/api/presets/${encodeURIComponent(tool)}/palette`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ palette }),
+        });
+        setPresets(r.presets);
+      } catch (err) {
+        setPaletteError((err as Error).message);
+      } finally {
+        setPaletteSaving(false);
+      }
+    }, 500);
+  };
+
   // Match to pens: each layer with a color gets the pen from its tool's palette that looks most like
   // it, named and colored as if picked from the menu. The drawing is kept first, so one Undo puts it
   // back exactly. Layers sharing a pen and layers with no close pen are listed for a second look.
@@ -950,8 +979,18 @@ export default function App() {
       <Header plotterFound={Boolean(status?.plotter_found)} lostContact={lostContact} />
 
       <main className={styles.layout}>
-        <section className={styles.stage} aria-label="Drawing preview">
+        <section className={styles.stage} aria-label={paletteOpen ? "Drawing tool colors" : "Drawing preview"}>
           <div className={styles.bedArea}>
+            {paletteOpen ? (
+              <PaletteEditor
+                key={active?.name}
+                tool={active}
+                disabled={plotting}
+                saving={paletteSaving}
+                error={paletteError}
+                onChange={savePalette}
+              />
+            ) : (
             <Bed
               zoom={zoom}
               model={model}
@@ -986,8 +1025,10 @@ export default function App() {
                 />
               }
             />
+            )}
           </div>
 
+          {!paletteOpen && <>
           <Disclosure title="Drawing position">
             <PositionSection
               placement={placement}
@@ -1023,6 +1064,7 @@ export default function App() {
             showPenUp={showPenUp}
             onShowPenUp={setShowPenUp}
           />
+          </>}
 
           <PlotSummary
             estimate={preview ? estimate : null}
@@ -1122,6 +1164,8 @@ export default function App() {
                 onTilt={(name, on) => setTiltChoice((c) => ({ ...c, [name]: on }))}
                 dragOn={dragOn}
                 onDrag={(name, on) => setDragChoice((c) => ({ ...c, [name]: on }))}
+                paletteOpen={paletteOpen}
+                onPalette={() => setPaletteOpen((open) => !open)}
                 changed={presetChanged}
                 disabled={plotting}
                 onApply={applyPreset}

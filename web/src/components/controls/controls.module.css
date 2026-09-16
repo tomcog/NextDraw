@@ -461,3 +461,10 @@
   align-items: center;
   gap: 4px;
 }
+
+/* The card's own buttons, side by side in its heading. */
+.headerTools {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
