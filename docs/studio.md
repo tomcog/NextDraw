@@ -18,6 +18,66 @@ converting images to lines.
 **One file, and Studio owns it.** Whatever Studio saves is the version to keep. There's no
 obligation to preserve what the file looked like beforehand, and no separate plot-ready export.
 
+**The line between the two apps: Studio decides what marks exist, Plot decides how they get onto
+paper.** Decided 2026-09-16, and it settles what had been a running argument rather than a design.
+
+Everything about what the drawing *is* belongs to Studio: geometry, layers, their names, their order,
+their colours, fills. Plot chooses which layers to print and when, and how the drawing is laid onto
+the sheet — paper, placement, scale, rotation.
+
+*Why the apps stay separate:* Plot runs on the old Mac wired to the plotter. It never needs to know
+what a hatch is, and keeping it ignorant is what keeps it light.
+
+*Why scale and rotation are Plot's, not edits:* every printer on earth scales and rotates a document
+to fit the media without touching it. A 5×7 drawing going onto 18×24 paper shouldn't need a trip back
+through Studio, a resave and a reopen. Page setup isn't an edit.
+
+**Plot writes exactly one thing into a drawing: its own `<nds:plot>` block.** Placement, scale,
+rotation, tool, paper, and which layers it's holding back — so the drawing opens on any machine
+exactly where it was left, which is the point of keeping it in the file rather than beside it.
+
+*Why this is the whole fix:* until 2026-09-16 Plot could also rename, reorder, recolour and delete
+layers, and it wrote all of that back over the original in the Drawings folder — not to a working
+copy, to the file Studio made. That is one file with two writers, and every file-handling bug chased
+that day was a symptom of it: `layers test.svg` lost the rectangle behind a cross-hatch fill because
+the `%sources` layer holding it could be deleted from Plot's own Layers card, leaving the hatch lines
+drawn and the shape that made them gone. Studio's record still described a shape that no longer
+existed. Removing the six editing controls doesn't make Plot careful — it removes the code that could
+do the damage, which is a different and much stronger claim.
+
+*The guarantee is tested, not asserted:* `tests/plot_never_edits_the_drawing.py` opens a fixture with
+a `%sources` layer, a shape, fills and an `<nds:design>` block, makes every change Plot can make, and
+compares the drawing's structure before and after. It also checks its own comparison first, against
+five kinds of damage, so a test that has gone blind fails loudly instead of passing quietly.
+
+*What is deliberately not kept:* which layers have already been plotted. It's in memory only, and a
+quit or a power cut loses it. You can see what's been drawn by looking at the paper.
+
+*The one exception left:* Trim to drawing still rewrites the root `<svg>` element's `width`, `height`
+and `viewBox`, keeping the old ones in `<nds:plot>` so Untrim can put them back. It touches no
+geometry and no layer, but it is Plot changing something outside its own block, and it would be
+tidier for the trim to live in the block and be applied at plot time.
+
+**One preview engine, used by both apps.** Decided 2026-09-16. A drawing has to look the same in
+Studio as in Plot, or Studio isn't showing you what you're about to make.
+
+The rules live in `index.css` (`.pv-colored .pv-layer`, `.pv-build`, `.pv-flat`), which both apps
+already loaded; the arithmetic behind them is `lib/ink.ts`. What differs is only how each app gets
+the marks into that structure: Plot mounts an SVG the server sent, so it clones the second pass with
+DOM calls, while Studio renders its own shapes and so renders the second pass declaratively. Same
+structure, same CSS, same numbers - verified by reading the computed styles in both at once:
+`--pen-art` 0.0555 in, base `#00d8eb` over a build pass of `#0086b2`, opacity 0.7, multiply.
+
+*Studio keeps the ink out of the interface's way.* The preview rules paint everything beneath them as
+ink, so a dashed guide or an invisible grip inside a layer would come out as a stroke the plotter
+appears to make. Studio's ink group is therefore the marks and nothing else - `pointer-events: none`
+- and the guides, grips, draft and handles sit in a sibling group. A mark and the thing you grab to
+move it are now drawn separately, which also means a hairline stroke is still easy to pick up.
+
+*A bug this turned up:* with simulation off, `.pv-flat` was outranked by the density rules (both
+`!important`, and the density selectors were more specific), so "flat" still came out at the tool's
+ink opacity instead of solid. Both apps had it. Fixed by giving the flat rules a selector that wins.
+
 **Fills are parametric, not baked.** A fill is its own object that *references* a shape and carries
 its angle, spacing and pen.
 
@@ -58,8 +118,19 @@ after palette entries ("Sepia", "Sky Blue") and emit them lightest-first.
 
 *Why:* hatching regenerates geometry wholesale, so ids churn on every save. Names don't. Plot
 already gives a layer whose name matches one of its tool's pens that pen's color (`0eb63af`), so
-naming layers after pens makes colors carry across with no new plumbing, and emitting them
-lightest-first means Plot's "Sort by darkness" is a no-op rather than a correction.
+naming layers after pens makes colors carry across with no new plumbing.
+
+*Corrected 2026-09-16.* The reasoning above was sound but the conclusion overshot, and it cost a day.
+What fails is matching ids up *by position* when shapes and layers are in different orders — not ids
+themselves. Names looked like the safe alternative only because Plot could rename layers, which made
+them the one thing in the file guaranteed to move. `layers test.svg` is the evidence: Plot's
+match-to-pens renamed a layer from "Sky Blue" to "Lime Green" and Studio's `<nds:design>` block, which
+records each shape's layer by name, was instantly describing a layer that no longer existed.
+
+Now that Plot cannot rename anything, names are stable — but the right key was always **a stable id,
+written into the file and never regenerated**. Names are for people. "Sort by darkness" is gone from
+Plot along with the rest of the layer editing, so emitting layers lightest-first is now Studio's job
+alone, not a courtesy to save Plot a correction.
 
 **One Flask process, two front-ends.** The button that moves a drawing between them is then a plain
 link — Studio lives at `/studio` on the same server, so the handoff is one origin and no new port.
@@ -111,6 +182,15 @@ identically, so it looks right until it's on paper.
 Rotation is harmless by comparison — it's in 90° steps and doesn't scale anything — but note a fill's
 angle is relative to the artwork, not the paper.
 
+**Closing a drawing is a question, not a button.** Added 2026-09-16. New drawing clears the page,
+the layers, the name and the pointer to the file on disk, and forgets `studio-last-file` so Studio
+doesn't reopen the old drawing next time it starts.
+
+It asks first when there's unsaved work, because Studio's undo can't put this back: a snapshot holds
+shapes, fills, layers and page, not which file was open. The three answers - save first, discard,
+keep editing - are in the card rather than in a dialog, so the drawing being decided about stays
+visible.
+
 ## Open
 
 **What happens to a fill when Plot's scale changes.** Storing spacing in plotted millimetres means a
@@ -129,8 +209,16 @@ for a warning rather than a refusal.
 These stand on their own, whether or not Studio gets built soon.
 
 - `second_tool_layers` still keys layers by id, so every Studio save would orphan it. It should
-  match on name, like the pen-color lookup already does.
-- A drawing-changed token on `/api/status`, alongside the one `plot_paths` already uses.
+  match on name, like the pen-color lookup already does. `hidden_layers`, added 2026-09-16, has the
+  same weakness and needs the same answer.
+- ~~A drawing-changed token on `/api/status`~~ — built 2026-09-16. A sha1 of the file's bytes, only
+  recomputed when its mtime moves (iCloud touches mtime without changing content), suppressed while
+  a plot is running or a stopped one is waiting to resume. Plot reopens within about half a second.
+  It reloads silently: the action bar's status line is switched off (`SHOW_STATUS = false`), so there
+  is nowhere for a transient notice to appear, and the only signal is the drawing changing.
+- Nothing tells Studio when Plot has written to a drawing it has open. Plot's own change is confined
+  to `<nds:plot>`, which Studio ignores, so nothing is lost today — but Studio has no equivalent of
+  the disk-hash poll and would happily overwrite a newer file.
 - Per-tool hatch numbers are only recorded for the Faber-Castell Brush (45°, 1.711 mm). The EnerGel
   and the Flair have none; both are 0.7 mm pens and will want tighter spacing than the brush, but
   neither has been measured.
