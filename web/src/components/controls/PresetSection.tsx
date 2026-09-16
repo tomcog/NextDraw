@@ -40,7 +40,7 @@ export function PresetSection({
 }: Props) {
   // A tool that is only ever used tilted has nothing to switch: it says the angle to set the clip to.
   const tiltSwitch = (tool: Preset | undefined) => tool?.tilt?.fixed ? (
-      <p className={styles.hint}>{`Set the clip to ${tool.tilt.angle}°. This tool is always tilted.`}</p>
+      <p className={styles.tiltNote} title={`This tool is always tilted: set the clip to ${tool.tilt.angle}°`}>{`Tilt ${tool.tilt.angle}°`}</p>
   ) : tool?.tilt && (
       <Checkbox
         size="md"
