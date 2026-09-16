@@ -100,6 +100,28 @@
 
 .layerRow > :first-child { flex: 1; min-width: 0; }
 
+/* The question before a drawing is thrown away. Set into the card rather than floating over the
+   page: it's about this card's drawing, and it shouldn't cover the thing you're deciding about. */
+.confirm {
+  margin-top: 0.5rem;
+  padding: 0.5rem;
+  border-radius: 6px;
+  background: var(--ui-surface-muted);
+}
+
+.confirm p {
+  margin: 0 0 0.5rem;
+  font-size: 0.8125rem;
+  color: var(--ui-text-muted);
+}
+
+/* Stacked, not in a row: three choices don't fit across a card this narrow without the labels
+   wrapping mid-word, and a decision is easier to read down than across. */
+.confirm .actions {
+  flex-direction: column;
+  gap: 0.375rem;
+}
+
 .tools {
   display: flex;
   gap: 0.375rem;

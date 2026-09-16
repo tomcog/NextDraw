@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Button, ButtonRound, Card, Checkbox, InputSelect, InputText, LayerController } from "@tomcoggia/ui";
-import { Circle, FolderOpen, Minus, MousePointer2, Plus, Ratio, Redo2, Square, StickyNote, Trash2, Undo2 } from "lucide-react";
+import { Circle, FilePlus, FolderOpen, Minus, MousePointer2, Plus, Ratio, Redo2, Square, StickyNote, Trash2, Undo2 } from "lucide-react";
 import { FileBrowser, type OpenResult } from "../components/FileBrowser";
 import { Section } from "../components/controls/Section";
 import controls from "../components/controls/controls.module.css";
@@ -216,6 +216,34 @@ export default function App() {
       setBusy(false);
     }
   };
+
+  // Close whatever is open and begin again on a blank page. The page size stays as it is: it's the
+  // paper you're working on today, and a new drawing is almost always for the same sheet.
+  const [confirmNew, setConfirmNew] = useState(false);
+  const newDrawing = useCallback(() => {
+    setShapes([]);
+    setFills([]);
+    const first = { id: newLayerId(), name: "Black", color: "#262626" };
+    setLayers([first]);
+    setActiveLayer(first.id);
+    setSelected(null);
+    setPast([]);
+    setFuture([]);
+    setName("Untitled");
+    setSaved(null);
+    setForeign(0);
+    setOpenedAs(null);
+    setConfirmNew(false);
+    remember(LAST_FILE_KEY, null); // don't reopen the old drawing next time Studio starts
+    setMessage({ text: "New drawing", ok: true });
+    window.setTimeout(() => {
+      dirty.current = false; // an empty page is not unsaved work
+    }, 0);
+  }, []);
+
+  // Undo can't bring back which file was open - a snapshot is the drawing, not the drawing's name -
+  // so unsaved work gets a question rather than a silent discard.
+  const startNew = () => (dirty.current && shapes.length ? setConfirmNew(true) : newDrawing());
 
   const openDrawing = useCallback((res: OpenResult, note: (n: number) => string) => {
     const drawing = parseDrawing(res.svg ?? "");
@@ -481,6 +509,14 @@ export default function App() {
                     />
                     <ButtonRound
                       size="sm"
+                      icon={<FilePlus />}
+                      aria-label="New drawing"
+                      title="Close this drawing and start a new one"
+                      disabled={busy}
+                      onClick={startNew}
+                    />
+                    <ButtonRound
+                      size="sm"
                       icon={<FolderOpen />}
                       aria-label="Open a drawing"
                       title="Open a drawing to carry on with"
@@ -508,6 +544,34 @@ export default function App() {
                 <p className={controls.fileWhere} title={saved?.path ?? undefined}>
                   {saved ? `In ${saved.folder}` : "Not saved yet"}
                 </p>
+
+                {/* Asked here rather than in a dialog: the question is about this card's drawing, and
+                    the answer is one of two buttons. Saving first is offered because wanting a new
+                    drawing is rarely the same as wanting to lose this one. */}
+                {confirmNew && (
+                  <div className={styles.confirm} role="alertdialog" aria-label="Start a new drawing">
+                    <p>
+                      {saved ? `“${name}” has` : "This drawing has"} changes that aren’t saved.
+                    </p>
+                    <div className={styles.actions}>
+                      <Button
+                        size="sm"
+                        disabled={busy}
+                        onClick={async () => {
+                          if (await save()) newDrawing();
+                        }}
+                      >
+                        Save, then start new
+                      </Button>
+                      <Button size="sm" tone="danger" variant="secondary" onClick={newDrawing}>
+                        Discard and start new
+                      </Button>
+                      <Button size="sm" variant="tertiary" onClick={() => setConfirmNew(false)}>
+                        Keep editing
+                      </Button>
+                    </div>
+                  </div>
+                )}
 
                 {pageOpen && (
                   <div className={styles.pageRow}>
