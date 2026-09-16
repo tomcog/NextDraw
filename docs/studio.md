@@ -150,7 +150,9 @@ A first version, built 2026-09-17: draw a shape, save it, open it in Plot.
 - Studio is at `/studio`, wearing Plot's layout — a left rail of cards and a stage that sizes itself
   to the page the same way Plot's preview sizes itself to the drawing.
 - Rectangle, ellipse and line, drawn by dragging on the page. One-inch grid, home marked in the
-  corner the plotter starts from, shapes listed with their real size and deletable.
+  corner the plotter starts from. The tools are their own card and what's been drawn is another,
+  Layers, listing each shape with its real size - the same split Plot has between choosing a tool and
+  working on the drawing.
 - Page size comes from the list Plot already offers, and can be turned.
 - **Save** writes an SVG into the drawings folder through `POST /api/studio/save`. The drawing is
   sized in inches with a matching viewBox, its shapes sit in an Inkscape layer, and they're stroked

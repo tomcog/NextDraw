@@ -408,8 +408,29 @@ export default function App() {
 
           <Card variant="flat" className={styles.controls}>
             <div className={styles.cardBody}>
+              <Section title="Shapes">
+                <div className={styles.tools} role="group" aria-label="Shape to draw">
+                  {TOOLS.map((t) => (
+                    <ButtonRound
+                      key={t.kind}
+                      size="sm"
+                      icon={t.icon}
+                      className={tool === t.kind ? controls.roundActive : undefined}
+                      aria-label={t.label}
+                      aria-pressed={tool === t.kind}
+                      title={t.hint}
+                      onClick={() => setTool(t.kind)}
+                    />
+                  ))}
+                </div>
+              </Section>
+            </div>
+          </Card>
+
+          <Card variant="flat" className={styles.controls}>
+            <div className={styles.cardBody}>
               <Section
-                title="Shapes"
+                title="Layers"
                 action={
                   <span className={styles.headerTools}>
                     <ButtonRound
@@ -428,39 +449,24 @@ export default function App() {
                       disabled={busy || !future.length}
                       onClick={redo}
                     />
-                  {shapes.length ? (
-                    <ButtonRound
-                      size="sm"
-                      icon={<Trash2 />}
-                      aria-label="Delete every shape"
-                      title="Delete every shape on the page"
-                      disabled={busy}
-                      onClick={() => {
-                        record();
-                        setShapes([]);
-                        setFills([]);
-                        setSelected(null);
-                      }}
-                    />
-                  ) : null}
+                    {shapes.length ? (
+                      <ButtonRound
+                        size="sm"
+                        icon={<Trash2 />}
+                        aria-label="Delete every shape"
+                        title="Delete every shape on the page"
+                        disabled={busy}
+                        onClick={() => {
+                          record();
+                          setShapes([]);
+                          setFills([]);
+                          setSelected(null);
+                        }}
+                      />
+                    ) : null}
                   </span>
                 }
               >
-                <div className={styles.tools} role="group" aria-label="Shape to draw">
-                  {TOOLS.map((t) => (
-                    <ButtonRound
-                      key={t.kind}
-                      size="sm"
-                      icon={t.icon}
-                      className={tool === t.kind ? controls.roundActive : undefined}
-                      aria-label={t.label}
-                      aria-pressed={tool === t.kind}
-                      title={t.hint}
-                      onClick={() => setTool(t.kind)}
-                    />
-                  ))}
-                </div>
-
                 {shapes.length === 0 ? (
                   <p className={styles.empty}>Drag on the page to draw one.</p>
                 ) : (
@@ -468,11 +474,7 @@ export default function App() {
                     {shapes.map((s, i) => {
                       const b = boxOf(s);
                       return (
-                        <li
-                          key={s.id}
-                          className={styles.shapeRow}
-                          data-selected={s.id === selected}
-                        >
+                        <li key={s.id} className={styles.shapeRow} data-selected={s.id === selected}>
                           <button
                             type="button"
                             className={styles.shapePick}
