@@ -450,8 +450,14 @@
 .tiltNote {
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: 10px; /* between the parts; each icon sits closer to its own words */
   margin: 0;
   font-size: 11px;
   color: var(--ui-text-muted);
+}
+
+.tiltNoteItem {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
 }

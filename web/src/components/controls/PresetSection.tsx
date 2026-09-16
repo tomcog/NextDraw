@@ -1,6 +1,6 @@
 import { useRef, useState } from "react";
 import { Button, ButtonRound, Checkbox, InputSelect, InputText } from "@tomcoggia/ui";
-import { Angle, PenTool, X } from "lucide-react";
+import { Angle, LineSquiggle, PenTool, X } from "lucide-react";
 import styles from "./controls.module.css";
 import { Section } from "./Section";
 import { Slider } from "./Slider";
@@ -40,18 +40,14 @@ export function PresetSection({
 }: Props) {
   // What a tool is always set up for, with nothing to switch: the clip angle, and one-way strokes.
   const toolNote = (tool: Preset | undefined) => {
-    const parts = [
-      ...(tool?.tilt?.fixed ? [`Tilt ${tool.tilt.angle}°`] : []),
-      ...(tool?.drag?.fixed ? ["one-way strokes"] : []),
-    ];
     const why = [
       ...(tool?.tilt?.fixed ? [`always tilted: set the clip to ${tool.tilt.angle}°`] : []),
       ...(tool?.drag?.fixed ? ["only ever pulled, so strokes that would push it are cut and turned around"] : []),
     ];
-    return parts.length ? (
+    return why.length ? (
       <p className={styles.tiltNote} title={`This tool is ${why.join("; ")}`}>
-        {tool?.tilt?.fixed && <Angle size={12} aria-hidden />}
-        {parts.join(" · ")}
+        {tool?.tilt?.fixed && <span className={styles.tiltNoteItem}><Angle size={12} aria-hidden />{`Tilt ${tool.tilt.angle}°`}</span>}
+        {tool?.drag?.fixed && <span className={styles.tiltNoteItem}><LineSquiggle size={12} aria-hidden />Constrained</span>}
       </p>
     ) : null;
   };
@@ -77,7 +73,7 @@ export function PresetSection({
         onChange={(e) => onDrag(tool.name, e.target.checked)}
       />
   );
-  // Turning Chill-out mode back on returns to the last amount chosen.
+  // Turning Chill mode back on returns to the last amount chosen.
   const lastSlow = useRef(smallPaths ?? 50);
   if (smallPaths !== null) lastSlow.current = smallPaths;
   const mixed = secondTool !== null;
@@ -170,7 +166,7 @@ export function PresetSection({
       <div className={styles.smallPaths}>
         <Checkbox
           size="md"
-          label="Chill-out mode"
+          label="Chill mode"
           checked={smallPaths !== null}
           disabled={disabled}
           title="For drawings full of tiny marks: slows acceleration, travel and drawing speed, and pen lifts, so the plotter doesn't shake"
