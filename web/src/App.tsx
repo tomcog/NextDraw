@@ -724,6 +724,24 @@ export default function App() {
     Boolean(tool?.drag && (tool.drag.fixed || (dragChoice[tool.name] ?? tool.drag.on)));
   const paletteFor = (id: string | null) => (usesSecond(id) ? secondPreset : active)?.palette ?? [];
 
+  // The ink sliders on the Drawing tool card: the preview follows at once, and the tool keeps the
+  // values a moment after the slider stops moving.
+  const inkTimer = useRef<number>();
+  const setInk = (patch: { ink_opacity?: number; ink_build?: number }) => {
+    if (!active) return;
+    const name = active.name;
+    const merged = { ...active.settings, ...patch };
+    setPresets((list) => list.map((p) => (p.name === name ? { ...p, settings: merged } : p)));
+    window.clearTimeout(inkTimer.current);
+    inkTimer.current = window.setTimeout(() => {
+      api(`/api/presets/${encodeURIComponent(name)}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(merged),
+      }).catch(() => setLocalMessage({ text: "Couldn't save the ink settings.", tone: "error" }));
+    }, 500);
+  };
+
   // The palette view stands in for the drawing preview while the tool's colors are being worked on.
   // Edits save a moment after the last keystroke, so typing a name isn't a request per letter.
   const [paletteOpen, setPaletteOpen] = useState(false);
@@ -1192,6 +1210,7 @@ export default function App() {
                 onDrag={(name, on) => setDragChoice((c) => ({ ...c, [name]: on }))}
                 paletteOpen={paletteOpen}
                 onPalette={() => setPaletteOpen((open) => !open)}
+                onInk={setInk}
                 changed={presetChanged}
                 disabled={plotting}
                 onApply={applyPreset}

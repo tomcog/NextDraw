@@ -24,6 +24,7 @@ interface Props {
   onAssign: (id: string, second: boolean) => void;
   paletteOpen: boolean; // the palette view stands in for the drawing preview
   onPalette: () => void;
+  onInk: (patch: { ink_opacity?: number; ink_build?: number }) => void;
   smallPaths: number | null; // percent slower, or null when off
   onSmallPaths: (percent: number | null) => void;
   tiltOn: (tool: Preset | undefined) => boolean;
@@ -35,10 +36,13 @@ interface Props {
 // Save / Update / Delete are hidden for now; presets can still be chosen.
 const SHOW_PRESET_ACTIONS = false;
 
+// Temporary: sliders for finding a tool's ink by eye. Take them out once the tools are set.
+const SHOW_INK_TUNING = true;
+
 export function PresetSection({
   presets, active, changed, disabled, onApply, onSave, onDelete,
   secondTool, secondLayers, layers, inUse, onAddSecond, onSecondTool, onRemoveSecond, onAssign,
-  smallPaths, onSmallPaths, tiltOn, onTilt, dragOn, onDrag, paletteOpen, onPalette,
+  smallPaths, onSmallPaths, tiltOn, onTilt, dragOn, onDrag, paletteOpen, onPalette, onInk,
 }: Props) {
   // What a tool is always set up for, with nothing to switch: the clip angle, and one-way strokes.
   const toolNote = (tool: Preset | undefined) => {
@@ -175,6 +179,33 @@ export function PresetSection({
           {layers.length > 0 && chips(true)}
         </div>
       )}
+      {SHOW_INK_TUNING && active && (
+        <div className={styles.stack}>
+          <Slider
+            label="Ink density"
+            value={Math.round((active.settings.ink_opacity ?? 1) * 100)}
+            min={5}
+            max={100}
+            step={5}
+            format={(v) => `${v}%`}
+            disabled={disabled}
+            onChange={(v) => onInk({ ink_opacity: v / 100 })}
+          />
+          {active.settings.ink_builds !== false && (
+            <Slider
+              label="Build-up where strokes cross"
+              value={Math.round((active.settings.ink_build ?? 1) * 100)}
+              min={0}
+              max={100}
+              step={5}
+              format={(v) => `${v}%`}
+              disabled={disabled}
+              onChange={(v) => onInk({ ink_build: v / 100 })}
+            />
+          )}
+        </div>
+      )}
+
       <div className={styles.smallPaths}>
         <div className={styles.smallPathsRow}>
         <Checkbox
