@@ -230,5 +230,13 @@ what actually decides whether a shape reaches the paper.
 This needed one change in Plot: a `%` layer no longer counts towards "this drawing has more than one
 layer, choose one to plot". Only one of them can be plotted, so there was nothing to choose.
 
-What it deliberately doesn't do yet: choose a pen per fill, or cross-hatch (a second fill on the same
-shape).
+**Cross-hatch** is a second fill on the same shape, starting square to the first because that is what
+makes it read as a mesh rather than as two hatchings sharing a shape. Each pass keeps its own angle
+and spacing, so a dense diagonal can be crossed with a sparse vertical.
+
+Adding it moved one thing: whether the outline is drawn is a property of the *shape*, not of a fill.
+With two fills there was no sensible owner for it. Reading a drawing back still takes that setting
+from the layer the shape sits on, so nothing about the format changed.
+
+What it deliberately doesn't do yet: choose a pen per fill - which is the next thing worth having,
+since two passes in two colours is most of what cross-hatching is for.

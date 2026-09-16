@@ -58,7 +58,7 @@ function fillMarkup(shapes: Shape[], fills: Fill[]): string {
       const body = lines
         .map((l) => `        <line x1="${num(l.x1)}" y1="${num(l.y1)}" x2="${num(l.x2)}" y2="${num(l.y2)}"/>`)
         .join("\n");
-      return `      <g id="${FILL_GROUP_PREFIX}${escapeAttr(fill.shapeId)}">\n${body}\n      </g>`;
+      return `      <g id="${FILL_GROUP_PREFIX}${escapeAttr(fill.id)}">\n${body}\n      </g>`;
     })
     .filter(Boolean)
     .join("\n");
@@ -85,20 +85,19 @@ function plotBlock(page: Page, paperSizeId: string): string {
 function designBlock(fills: Fill[]): string {
   const data = {
     fills: fills.map((f) => ({
+      id: f.id,
       shape: f.shapeId,
       angle: f.angle,
       spacing_mm: f.spacingMm,
       scale: f.scale,
-      outline: f.outline,
     })),
   };
   return `  <metadata id="nextdraw-studio"><nds:design>${escapeText(JSON.stringify(data))}</nds:design></metadata>`;
 }
 
 export function buildSvg(shapes: Shape[], fills: Fill[], page: Page, layerName: string, paperSizeId: string): string {
-  const hidden = new Set(fills.filter((f) => !f.outline).map((f) => f.shapeId));
-  const drawn = shapes.filter((s) => !hidden.has(s.id));
-  const sources = shapes.filter((s) => hidden.has(s.id));
+  const drawn = shapes.filter((s) => s.outline !== false);
+  const sources = shapes.filter((s) => s.outline === false);
   const body = [
     drawn.map((s) => `      ${shapeMarkup(s)}`).join("\n"),
     fillMarkup(shapes, fills),

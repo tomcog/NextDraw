@@ -10,7 +10,7 @@ import { PAPER_SIZES } from "../lib/constants";
 import { fmtIn } from "../lib/format";
 import { Canvas, type Tool } from "./components/Canvas";
 import { StudioHeader } from "./components/StudioHeader";
-import { canFill, type Fill } from "./lib/hatch";
+import { canFill, newFillId, type Fill } from "./lib/hatch";
 import { parseDrawing } from "./lib/parse";
 import { boxOf, shapeName, type Page, type Shape } from "./lib/shapes";
 import { buildSvg, cleanFileName } from "./lib/svg";
@@ -270,15 +270,35 @@ export default function App() {
   }, []);
 
   const chosen = shapes.find((s) => s.id === selected) ?? null;
-  const chosenFill = chosen ? fills.find((f) => f.shapeId === chosen.id) ?? null : null;
+  // In order, so the first is the hatch and the second is the cross-hatch laid over it.
+  const chosenFills = chosen ? fills.filter((f) => f.shapeId === chosen.id) : [];
 
-  const setFill = (next: Fill | null) => {
+  const newFill = (angle: number): Fill => ({
+    id: newFillId(),
+    shapeId: chosen!.id,
+    angle,
+    spacingMm: defaults.spacingMm,
+    scale: 100,
+  });
+
+  /** Replace one of the chosen shape's fills, or drop it. Adding uses `at` past the end. */
+  const setFillAt = (at: number, next: Fill | null) => {
     if (!chosen) return;
     record();
     setFills((list) => {
-      const rest = list.filter((f) => f.shapeId !== chosen.id);
-      return next ? [...rest, next] : rest;
+      const mine = list.filter((f) => f.shapeId === chosen.id);
+      const others = list.filter((f) => f.shapeId !== chosen.id);
+      const updated = [...mine];
+      if (next) updated[at] = next;
+      else updated.splice(at, 1);
+      return [...others, ...updated.filter(Boolean)];
     });
+  };
+
+  const setOutline = (on: boolean) => {
+    if (!chosen) return;
+    record();
+    setShapes((list) => list.map((s) => (s.id === chosen.id ? { ...s, outline: on } : s)));
   };
 
   const setSize = (id: string) => {
@@ -484,57 +504,54 @@ export default function App() {
               <div className={styles.cardBody}>
                 <Section title="Fill">
                   <Checkbox
-                    checked={Boolean(chosenFill)}
+                    checked={chosenFills.length > 0}
                     label="Hatch this shape"
-                    onChange={(e) =>
-                      setFill(
-                        e.target.checked
-                          ? {
-                              shapeId: chosen.id,
-                              angle: defaults.angle,
-                              spacingMm: defaults.spacingMm,
-                              scale: 100,
-                              outline: true,
-                            }
-                          : null,
-                      )
-                    }
+                    onChange={(e) => setFillAt(0, e.target.checked ? newFill(defaults.angle) : null)}
                   />
-                  {chosenFill && (
-                    <>
-                      <div className={styles.fillRow}>
-                        <InputText
-                          size="md"
-                          label="Angle (°)"
-                          type="number"
-                          step={5}
-                          value={String(chosenFill.angle)}
-                          onChange={(e) => setFill({ ...chosenFill, angle: Number(e.target.value) || 0 })}
-                        />
-                        <InputText
-                          size="md"
-                          label="Spacing (mm)"
-                          type="number"
-                          step={0.1}
-                          min={0.05}
-                          value={String(chosenFill.spacingMm)}
-                          onChange={(e) =>
-                            setFill({ ...chosenFill, spacingMm: Math.max(0.05, Number(e.target.value) || 0.05) })
-                          }
-                        />
-                      </div>
-                      <Checkbox
-                        checked={chosenFill.outline}
-                        label="Draw the outline too"
-                        onChange={(e) => setFill({ ...chosenFill, outline: e.target.checked })}
+                  {chosenFills.map((fill, i) => (
+                    <div key={fill.id} className={styles.fillRow}>
+                      <InputText
+                        size="md"
+                        label={i === 0 ? "Angle (°)" : "Cross angle (°)"}
+                        type="number"
+                        step={5}
+                        value={String(fill.angle)}
+                        onChange={(e) => setFillAt(i, { ...fill, angle: Number(e.target.value) || 0 })}
                       />
-                      <p className={styles.empty}>
-                        {chosenFill.outline
-                          ? "Spacing is what it measures on the paper, so it holds at any plot size."
-                          : "Only the hatching is plotted. The shape stays in the file so the fill can be changed."}
-                      </p>
-                    </>
+                      <InputText
+                        size="md"
+                        label="Spacing (mm)"
+                        type="number"
+                        step={0.1}
+                        min={0.05}
+                        value={String(fill.spacingMm)}
+                        onChange={(e) =>
+                          setFillAt(i, { ...fill, spacingMm: Math.max(0.05, Number(e.target.value) || 0.05) })
+                        }
+                      />
+                    </div>
+                  ))}
+                  {chosenFills.length > 0 && (
+                    <Checkbox
+                      checked={chosenFills.length > 1}
+                      label="Cross-hatch"
+                      onChange={(e) =>
+                        // A second pass square to the first, which is what makes it read as a mesh
+                        // rather than as two hatchings that happen to share a shape.
+                        setFillAt(1, e.target.checked ? newFill((chosenFills[0].angle + 90) % 180) : null)
+                      }
+                    />
                   )}
+                  <Checkbox
+                    checked={chosen.outline !== false}
+                    label="Draw the outline too"
+                    onChange={(e) => setOutline(e.target.checked)}
+                  />
+                  <p className={styles.empty}>
+                    {chosen.outline === false
+                      ? "Only the hatching is plotted. The shape stays in the file so the fill can be changed."
+                      : "Spacing is what it measures on the paper, so it holds at any plot size."}
+                  </p>
                 </Section>
               </div>
             </Card>

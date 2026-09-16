@@ -10,6 +10,8 @@ import { boxOf, type Shape } from "./shapes";
 // Plot's scale ever differs from it, the fill is stale and wants regenerating.
 
 export interface Fill {
+  /** Its own id, because a shape can carry more than one - two angles make a cross-hatch. */
+  id: string;
   shapeId: string;
   /** Degrees, clockwise, relative to the artwork rather than to the paper. */
   angle: number;
@@ -17,13 +19,10 @@ export interface Fill {
   spacingMm: number;
   /** The plot scale these lines were generated for, as a percentage. */
   scale: number;
-  /**
-   * Whether the shape's own outline is drawn as well as the hatching. With it off the shape still
-   * lives in the file - a fill needs its shape to be regenerated from - but on a `%`-prefixed layer,
-   * which NextDraw skips and which Plot leaves out of the drawing's bounds.
-   */
-  outline: boolean;
 }
+
+let fillCounter = 0;
+export const newFillId = () => `fill-${++fillCounter}-${Date.now().toString(36)}`;
 
 export interface Seg {
   x1: number;

@@ -1,4 +1,4 @@
-import type { Fill } from "./hatch";
+import { newFillId, type Fill } from "./hatch";
 import { newShapeId, type Page, type Shape } from "./shapes";
 import { FILL_GROUP_PREFIX } from "./svg";
 
@@ -83,6 +83,11 @@ export function parseDrawing(text: string): Opened {
     if (onSkippedLayer(el)) sources.add(id);
     return id;
   };
+  // Applied once every shape is read, since the flag belongs to the shape rather than to its fills.
+  const markOutlines = () =>
+    shapes.forEach((s) => {
+      if (sources.has(s.id)) s.outline = false;
+    });
 
   for (const el of Array.from(svg.querySelectorAll("*"))) {
     if (generated(el)) continue;
@@ -129,6 +134,8 @@ export function parseDrawing(text: string): Opened {
     }
   }
 
+  markOutlines();
+
   // Studio's own parameters, if the drawing was made here. A fill whose shape has gone is dropped.
   const ids = new Set(shapes.map((s) => s.id));
   let fills: Fill[] = [];
@@ -141,13 +148,11 @@ export function parseDrawing(text: string): Opened {
           .map((f) => f as Record<string, unknown>)
           .filter((f) => typeof f.shape === "string" && ids.has(f.shape as string))
           .map((f) => ({
+            id: typeof f.id === "string" ? f.id : newFillId(),
             shapeId: f.shape as string,
             angle: Number(f.angle) || 0,
             spacingMm: Number(f.spacing_mm) || 1.5,
             scale: Number(f.scale) || 100,
-            // The file's own layout wins over the recorded flag: a shape on a skipped layer was
-            // never going to be plotted whatever the parameters happen to say.
-            outline: !sources.has(f.shape as string),
           }));
       }
     } catch {

@@ -12,6 +12,12 @@ export interface Shape {
   y: number;
   x2: number;
   y2: number;
+  /**
+   * Whether the shape's own outline is plotted. Off, it still lives in the file - any fill on it is
+   * regenerated from it - but on a `%`-prefixed layer, which NextDraw skips and which Plot leaves
+   * out of the drawing's bounds. Absent means drawn.
+   */
+  outline?: boolean;
 }
 
 export interface Page {
