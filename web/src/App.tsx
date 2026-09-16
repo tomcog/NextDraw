@@ -341,11 +341,19 @@ export default function App() {
         if (!next.file && currentFile) clearDrawing(); // cleared in another window
         if (next.file && !currentFile) {
           // The page was reloaded with a drawing loaded: pick up the choices saved in it.
-          refs.current.fileName = next.file;
-          const drawing = await api<{ plot: Plot | null }>("/api/drawing").catch(() => ({ plot: null }));
+          // If that fetch fails, leave the drawing unloaded and try again on the next poll. Carrying
+          // on with `plot: null` would put the page at 100% at home with nothing hidden, and the
+          // first thing the operator touched afterwards would save those defaults over the placement
+          // the file actually holds - losing it to a blip rather than to a decision.
+          const drawing = await api<{ plot: Plot | null }>("/api/drawing").catch(() => null);
           if (cancelled) return;
-          applyPlot(next.file, drawing.plot);
-          setFileName(next.file);
+          if (!drawing) {
+            refs.current.fileName = currentFile; // not loaded after all; the next poll tries again
+          } else {
+            refs.current.fileName = next.file;
+            applyPlot(next.file, drawing.plot);
+            setFileName(next.file);
+          }
         }
         // Changed on disk since it was opened - saved from Studio, or synced from another Mac.
         // Reopening is the same path as opening it by hand, so the drawing, its layers and the
