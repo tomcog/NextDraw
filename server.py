@@ -9,6 +9,7 @@ Add --lan to also serve the page to phones, tablets and other computers on the s
 
 import copy
 import inspect
+import hashlib
 import json
 import logging
 import math
@@ -41,6 +42,7 @@ JOBS = ROOT / "jobs"
 JOBS.mkdir(exist_ok=True)
 CURRENT_SVG = JOBS / "current.svg"
 CURRENT_MTIME = JOBS / "current.mtime"  # the file's modified time when opened or last saved, to catch outside edits
+CURRENT_HASH = JOBS / "current.hash"  # and a hash of its bytes, so the page can be told it changed
 CURRENT_PATH = JOBS / "current.path"  # where the loaded drawing lives on disk; absent for uploaded copies
 
 
@@ -1361,7 +1363,36 @@ def status():
         snap["file_folder"] = display_path(disk_path.parent)
         if disk_path.with_suffix(".ai").exists():
             snap["sibling_ai"] = str(disk_path.with_suffix(".ai"))
+        # Changed underneath us - by Studio, or by another Mac's iCloud sync. Never mid-plot: the
+        # copy being drawn from mustn't move, and a stopped plot still has to be resumable.
+        on_disk = disk_token(disk_path)
+        snap["drawing_stale"] = bool(on_disk and loaded_token() and on_disk != loaded_token()) and not (live or resume)
     return jsonify(snap)
+
+
+# What the drawing on disk looks like now, for telling the page it has been changed underneath it.
+# The mtime only gates the work: iCloud can touch it without the contents moving, so what's compared
+# is a hash of the bytes, and the hash is only recomputed when the mtime says it might have changed.
+_disk_seen = {"key": None, "hash": None}
+
+
+def disk_token(path):
+    try:
+        key = (str(path), path.stat().st_mtime_ns)
+    except OSError:
+        return None
+    if _disk_seen["key"] != key:
+        try:
+            _disk_seen["hash"] = hashlib.sha1(path.read_bytes()).hexdigest()[:16]
+        except OSError:
+            return None
+        _disk_seen["key"] = key
+    return _disk_seen["hash"]
+
+
+def loaded_token():
+    """The same, for the copy being worked on, written when it's opened or saved."""
+    return CURRENT_HASH.read_text().strip() if CURRENT_HASH.exists() else None
 
 
 def allowed_path(raw):
@@ -1440,6 +1471,7 @@ def load_drawing(svg_path):
     (JOBS / "current.name").write_text(svg_path.name)
     CURRENT_PATH.write_text(str(svg_path))
     CURRENT_MTIME.write_text(str(svg_path.stat().st_mtime_ns))
+    CURRENT_HASH.write_text(disk_token(svg_path) or "")
     with job.lock:
         if not job.busy():
             job.reset("idle")
@@ -1731,6 +1763,7 @@ def commit_drawing(tree, disk_path):
             shutil.copymode(disk_path, tmp)
             os.replace(tmp, disk_path)
             CURRENT_MTIME.write_text(str(disk_path.stat().st_mtime_ns))
+            CURRENT_HASH.write_text(disk_token(disk_path) or "")
         except OSError as exc:
             return jsonify(error=f"Couldn't save {disk_path.name}: {exc.strerror or exc}"), 500
     return None

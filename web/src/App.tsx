@@ -364,6 +364,7 @@ export default function App() {
   }, []);
 
   // Poll the server for plot progress, carriage state and plotter connection.
+  const reloading = useRef(false); // one reopen at a time, however long the poll takes
   useEffect(() => {
     let timer: number | undefined;
     let cancelled = false;
@@ -382,6 +383,30 @@ export default function App() {
           applyPlot(next.file, drawing.plot);
           setFileName(next.file);
         }
+        // Changed on disk since it was opened - saved from Studio, or synced from another Mac.
+        // Reopening is the same path as opening it by hand, so the drawing, its layers and the
+        // choices saved in it all come back from the file rather than being patched piecemeal.
+        if (next.drawing_stale && next.file_path && !reloading.current) {
+          reloading.current = true;
+          try {
+            const res = await postJSON<OpenResult>("/api/open", { path: next.file_path });
+            if (!cancelled) {
+              applyPlot(res.name, res.plot ?? null);
+              setFileName(res.name);
+              // The name hasn't changed, so nothing else would notice. This is what makes the page
+              // fetch the artwork and its layers again - the drawing itself is what moved.
+              setDrawingVersion((v) => v + 1);
+              // Nothing is said about it: ActionBar's status line is switched off (SHOW_STATUS), so
+              // there is nowhere for a passing note to go. The drawing changing in front of you is
+              // the whole signal for now.
+            }
+          } catch {
+            /* it will still be stale on the next poll, which tries again */
+          } finally {
+            reloading.current = false;
+          }
+        }
+
         if (isBusy(prev) && !isBusy(next) && action === "plot") setLocalMessage(null);
         setStatus(next);
 

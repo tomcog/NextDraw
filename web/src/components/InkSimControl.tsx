@@ -1,6 +1,5 @@
 import { ButtonRound } from "@tomcoggia/ui";
 import { Blend } from "lucide-react";
-import controls from "./controls/controls.module.css";
 import styles from "./InkSimControl.module.css";
 
 interface Props {
@@ -13,15 +12,15 @@ interface Props {
 // about a layer.
 //
 // The label says what is true, not what the button does - "Simulate inks" while it is off, and
-// "Simulated inks" once it is on - so the row reads as the state of the preview you are looking at.
+// "Simulated" once it is on - so the row reads as the state of the preview you are looking at.
 export function InkSimControl({ on, onChange }: Props) {
-  const label = on ? "Simulated inks" : "Simulate inks";
+  const label = on ? "Simulated" : "Simulate inks";
   return (
-    <span className={styles.control}>
+    <span className={styles.control} data-on={on}>
       <ButtonRound
         size="sm"
         icon={<Blend />}
-        className={on ? controls.roundActive : undefined}
+        className={on ? `${styles.button} ${styles.on}` : styles.button}
         aria-label={label}
         aria-pressed={on}
         title={

@@ -4,6 +4,28 @@
   gap: 0.5rem;
 }
 
+/* A toggle, not an action, so each state sits one rung up the ladder ButtonRound would use.
+   Figma: Button/Round XL, cells 539:2461 (off), 539:2452 (hover), 539:2455 (on).
+
+   Off is the Disabled pair - grey ground, muted glyph - because an untouched toggle should look
+   inert rather than merely un-pressed. Hovering wakes it to the library's own resting pair, and on
+   is the full brand fill. --ui-primary-lighter isn't defined yet, so this carries the same fallback
+   ButtonRound carries. */
+.button {
+  --ui-button-round-bg: var(--ui-surface-disabled);
+  --ui-button-round-icon: var(--ui-text-disabled);
+  --ui-button-round-bg-hover: var(--ui-primary-lighter, color-mix(in srgb, var(--ui-primary) 15%, var(--ui-white)));
+  --ui-button-round-icon-hover: var(--ui-primary);
+}
+
+.button.on {
+  --ui-button-round-bg: var(--ui-primary);
+  --ui-button-round-icon: var(--ui-text-on-primary);
+  /* On and hovered is still on: the pointer shouldn't make it look like it's about to change. */
+  --ui-button-round-bg-hover: var(--ui-primary);
+  --ui-button-round-icon-hover: var(--ui-text-on-primary);
+}
+
 /* Masks the dimension line behind the words, the way the zoom presets' own background does at the
    other end of it. */
 .label {
@@ -14,4 +36,13 @@
   color: var(--ui-text-muted);
   background: var(--ui-surface-pale);
   cursor: pointer;
+}
+
+/* On, it stops inviting and starts reporting: the brand colour, set in caps. The capitals are the
+   stylesheet's, not the text's, so nothing reads it out a letter at a time. */
+.control[data-on="true"] .label {
+  color: var(--ui-accent);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
 }
