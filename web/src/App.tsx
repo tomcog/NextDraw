@@ -855,6 +855,11 @@ export default function App() {
     });
   };
   refs.current.plotSettings = settingsFor(plotLayerId);
+  const layerInkOpacity = useMemo(
+    () => Object.fromEntries(layerViews.map((l) => [l.id, (usesSecond(l.id) ? secondPreset : active)?.settings.ink_opacity])),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [layerViews, secondTool, secondToolLayers, secondPreset, active],
+  );
   const layerPenWidths = useMemo(
     () => Object.fromEntries(layerViews.map((l) => [l.id, (usesSecond(l.id) ? secondPreset : active)?.settings.pen_width])),
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -1012,6 +1017,8 @@ export default function App() {
               layerLooks={layerLooks}
               layerOrder={layerOrder}
               penWidthMm={active?.settings.pen_width ?? settings.pen_width}
+              inkOpacity={active?.settings.ink_opacity ?? settings.ink_opacity}
+              layerInkOpacity={secondTool ? layerInkOpacity : undefined}
               layerPenWidths={secondTool ? layerPenWidths : undefined}
               plotPaths={shownPlotPaths}
               hairlines={layerMode === "work"}

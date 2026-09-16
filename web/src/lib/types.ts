@@ -10,6 +10,7 @@ export interface Settings {
   pen_pos_up: number;
   pen_setup: number;
   pen_width?: number; // mm; the drawing tool's line width, for the preview (app-only)
+  ink_opacity?: number; // app-only: how solid this tool's ink is, so the preview darkens where strokes cross
   drag_only?: boolean; // app-only: cut and turn the paths so a soft tip is always pulled
   pen_rate_lower: number;
   pen_rate_raise: number;

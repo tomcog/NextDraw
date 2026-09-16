@@ -94,13 +94,14 @@ NUMERIC_SETTINGS = {
 }
 BOOL_SETTINGS = {"auto_rotate", "random_start", "hiding", "drag_only"}
 # App-only settings with fractional values: the pen's line width in mm, for drawing the preview.
-FLOAT_SETTINGS = {"pen_width": (0.05, 10.0)}
-APP_ONLY_SETTINGS = {"pen_setup", "pen_width", "drag_only"}  # not NextDraw options
+FLOAT_SETTINGS = {"pen_width": (0.05, 10.0), "ink_opacity": (0.05, 1.0)}
+APP_ONLY_SETTINGS = {"pen_setup", "pen_width", "ink_opacity", "drag_only"}  # not NextDraw options
 
-# What a pen preset remembers. Paper size is chosen separately and isn't part of a preset.
+# What a pen preset remembers (ink_opacity is how much the paper shows through a stroke, for the
+# preview). Paper size is chosen separately and isn't part of a preset.
 PRESET_NUMERIC = {
     "pen_pos_down", "pen_pos_up", "pen_setup", "pen_rate_lower", "pen_rate_raise",
-    "speed_pendown", "speed_penup", "accel", "handling", "pen_width",
+    "speed_pendown", "speed_penup", "accel", "handling", "pen_width", "ink_opacity",
 }
 
 # Walk commands in the NextDraw software don't check the carriage's range of motion.

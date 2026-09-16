@@ -45,6 +45,8 @@
   .pv-artwork:not(.pv-colored) :is(path, rect, circle, ellipse, line, polyline, polygon) {
     fill: none !important;
     stroke: var(--nd-ink) !important;
+    stroke-opacity: var(--ink-opacity, 1);
+    mix-blend-mode: multiply;
     stroke-width: 1.4px !important;
     vector-effect: non-scaling-stroke;
   }
@@ -55,11 +57,14 @@
   .pv-colored .pv-down { display: none; }
   /* Layers not being plotted arrive hidden (display:none) from the server; show them anyway.
      Layers hidden in the Layers card stay out of the preview. */
-  .pv-colored .pv-layer { opacity: 1; display: inline !important; }
+  /* The tool's ink decides how solid a stroke is, not the transparency the file was exported with. */
+  .pv-colored .pv-layer { opacity: 1 !important; display: inline !important; }
   .pv-colored .pv-layer[data-hidden="true"] { display: none !important; }
   .pv-colored .pv-layer :is(path, rect, circle, ellipse, line, polyline, polygon) {
     fill: none !important;
     stroke: var(--layer-color, var(--nd-ink)) !important;
+    stroke-opacity: var(--ink-opacity, 1);
+    mix-blend-mode: multiply;
     stroke-width: 1.4px !important;
     stroke-dasharray: none !important;
     vector-effect: non-scaling-stroke;
