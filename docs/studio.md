@@ -78,18 +78,37 @@ another app"). On reload, take the fast `/api/artwork` path and debounce the slo
 Suppress reload entirely while `job.busy()` or a resume record exists. Hash the content rather than
 trusting mtime — the drawings live in iCloud, so sync alone can touch it.
 
+**Spacing is stored as what it should measure on paper**, in millimetres, not in document units.
+
+*Why:* the number worth keeping is the one a pen has to live with, and that comes from the tool, not
+from the drawing — 1.711 mm for the Faber-Castell Brush. Stored that way it means the same thing in
+every file, so a tool's `hatch` entry in `presets.json` can seed a fill with no conversion at all.
+
+*What follows:* Plot applies scale at plot time — `svg_input` multiplies the document's width and
+height while the viewBox keeps the artwork filling the page — so generating a fill means dividing.
+For spacing `s` on paper at scale `p`, the lines go `s / (p/100)` apart in document units: 1.711 mm
+at 30% is drawn 5.70 mm apart in the file. Studio therefore has to read `plot.scale` out of the same
+drawing before it generates anything.
+
+The cost of getting this wrong is quiet. A fill generated at 0.7 mm and plotted at 30% lands at
+**0.21 mm** under a 0.7 mm pen: solid ink where an open fill was designed, and the preview scales
+identically, so it looks right until it's on paper.
+
+Rotation is harmless by comparison — it's in 90° steps and doesn't scale anything — but note a fill's
+angle is relative to the artwork, not the paper.
+
 ## Open
 
-**Spacing is probably stored as what it should measure on paper**, not in document units, with
-regeneration reading Plot's `plot.scale` from the same file.
+**What happens to a fill when Plot's scale changes.** Storing spacing in plotted millimetres means a
+fill's generated lines are only correct at the scale they were made for. Change a drawing from 30% to
+60% in Plot and every fill in it is silently half as dense as intended. Either Studio regenerates
+every fill when it opens a drawing, or fills carry the scale they were generated at so Plot can say
+one has gone stale, or both. Whichever way it goes, **the scale a fill was generated at has to be
+stored next to its spacing** — that's what makes the staleness detectable at all, and it's cheap to
+write now and impossible to recover later.
 
-Plot applies scale at plot time — `svg_input` multiplies the document's width and height while the
-viewBox keeps the artwork filling the page — so it scales hatch spacing along with everything else.
-At 30%, a fill generated at 0.7 mm lands at **0.21 mm** under a 0.7 mm pen: solid ink where an open
-fill was designed, and the preview scales identically so nothing warns you. What's not settled is
-whether the parameters carry the intended scale, or whether Plot warns that a fill is stale.
-
-Rotation is harmless by comparison, but note a fill's angle is relative to the artwork, not the paper.
+Worth remembering that a stale fill still plots. It's a quality problem, not an error, which argues
+for a warning rather than a refusal.
 
 ## Changes Plot needs
 
