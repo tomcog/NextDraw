@@ -712,9 +712,9 @@ def limit_drag(svg_text, settings):
         parent = path.getparent()
         at = list(parent).index(path)
         for i, piece in enumerate(drag_pieces(points)):
-            part = etree.Element(svg + "polyline")
-            for key, value in path.items():
-                part.set(key, f"{value}-{i + 1}" if key == "id" else value)
+            part = copy.deepcopy(path)  # a copy keeps the plob's own tag and attributes intact
+            if path.get("id"):
+                part.set("id", f"{path.get('id')}-{i + 1}")
             part.set("points", " ".join(f"{x:.6f},{y:.6f}" for x, y in piece))
             parent.insert(at + i, part)
         parent.remove(path)
