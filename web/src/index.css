@@ -50,6 +50,11 @@
     stroke-width: 1.4px !important;
     vector-effect: non-scaling-stroke;
   }
+  .pv-artwork[data-builds="false"] :is(path, rect, circle, ellipse, line, polyline, polygon) {
+    stroke-opacity: 1;
+    mix-blend-mode: normal;
+  }
+  .pv-artwork[data-builds="false"] { isolation: isolate; opacity: var(--ink-opacity, 1); }
   .pv-artwork :is(text, image) { display: none; }
 
   /* Drawings with layers: show each layer's own lines in its color instead of the single-color
@@ -60,6 +65,9 @@
   /* The tool's ink decides how solid a stroke is, not the transparency the file was exported with. */
   .pv-colored .pv-layer { opacity: 1 !important; display: inline !important; }
   .pv-colored .pv-layer[data-hidden="true"] { display: none !important; }
+  /* Ink that builds up (a brush): every stroke is translucent in itself, so it darkens whatever it
+     crosses, its own color included. This is the default; a tool whose ink saturates the paper says
+     so below. */
   .pv-colored .pv-layer :is(path, rect, circle, ellipse, line, polyline, polygon) {
     fill: none !important;
     stroke: var(--layer-color, var(--nd-ink)) !important;
@@ -68,6 +76,19 @@
     stroke-width: 1.4px !important;
     stroke-dasharray: none !important;
     vector-effect: non-scaling-stroke;
+  }
+  /* Ink that doesn't build (gel): the layer is drawn solid and flattened first, then blended into
+     what's under it. More of the same ink over itself adds nothing, while other colors still blend. */
+  .pv-colored .pv-layer[data-builds="false"] {
+    isolation: isolate;
+    opacity: var(--ink-opacity, 1) !important;
+    /* darken, not multiply: this ink over the same color leaves it exactly as it was, however many
+       layers of it go down, while a different color still takes whichever is darker. */
+    mix-blend-mode: darken;
+  }
+  .pv-colored .pv-layer[data-builds="false"] :is(path, rect, circle, ellipse, line, polyline, polygon) {
+    stroke-opacity: 1;
+    mix-blend-mode: normal;
   }
   .pv-colored .pv-layer :is(text, image) { display: none; }
   .pv-colored .pv-layer[data-skipped="true"] { display: none !important; }

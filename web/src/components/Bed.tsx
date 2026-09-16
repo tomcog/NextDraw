@@ -34,6 +34,8 @@ interface Props {
   layerOrder?: string[]; // ids bottom-first: the order they plot, and so the order they stack
   inkOpacity?: number; // how solid the tool's ink is; strokes multiply, so crossings darken
   layerInkOpacity?: Record<string, number | undefined>; // layers drawn with the second tool
+  inkBuilds?: boolean; // more of the same ink darkens (a brush); gel ink saturates and adds nothing
+  layerInkBuilds?: Record<string, boolean | undefined>;
   penWidthMm?: number; // draw lines at the pen's real width; undefined keeps a hairline
   plotPaths?: PlotPaths | null; // show the plot in progress, drawn and left to draw, instead of the preview
   plotFraction?: number; // how much of it is drawn, 0-1
@@ -120,17 +122,22 @@ export function Bed(props: Props) {
 
   // How solid the ink is. The strokes multiply where they cross, so overlaps darken the way ink
   // does on paper, whatever transparency the file itself was exported with.
-  const { inkOpacity, layerInkOpacity } = props;
+  // Ink that builds up blends stroke by stroke, so its own crossings darken. Ink that doesn't is
+  // flattened a color at a time and only then blended, so laying more of it down adds nothing.
+  const { inkOpacity, layerInkOpacity, inkBuilds, layerInkBuilds } = props;
   useLayoutEffect(() => {
     if (!preview) return;
     const node = preview.node;
     node.style.setProperty("--ink-opacity", String(inkOpacity && inkOpacity > 0 ? inkOpacity : 1));
+    node.dataset.builds = String(inkBuilds !== false);
     node.querySelectorAll<SVGGElement>(".pv-layer").forEach((g) => {
       const o = layerInkOpacity?.[g.id];
       if (o && o > 0) g.style.setProperty("--ink-opacity", String(o));
       else g.style.removeProperty("--ink-opacity");
+      const builds = layerInkBuilds?.[g.id];
+      g.dataset.builds = String(builds === undefined ? inkBuilds !== false : builds);
     });
-  }, [preview, inkOpacity, layerInkOpacity]);
+  }, [preview, inkOpacity, layerInkOpacity, inkBuilds, layerInkBuilds]);
 
   // Stack the artwork layers the way they'll be plotted: the first layer at the bottom, later ones
   // over it. Reordering the Layers card moves them here too, so the preview shows what opaque ink
