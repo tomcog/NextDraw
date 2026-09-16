@@ -193,5 +193,12 @@ hands over to select, because what you want next is nearly always to nudge the t
 A move is limited as a whole rather than corner by corner: clamping each point on its own would
 squash a shape against the edge of the page instead of stopping it there.
 
-What it deliberately doesn't do yet: undo, choose a pen, or fill anything. Fills are the next
-feature, and the decisions above are about them.
+**Undo and redo**, on the buttons and on the usual keys, except while typing in the name field where
+those keys belong to the text. History keeps whole copies of the drawing rather than a list of
+changes: a drawing is a handful of shapes, so a copy costs nothing and no replayed change can go
+wrong. The one thing that needs care is that a drag makes hundreds of updates and has to undo as a
+single step, so the canvas says when a gesture *starts* and history records once, there. Opening a
+drawing clears the history - that's a new document, not a change to this one.
+
+What it deliberately doesn't do yet: choose a pen, or fill anything. Fills are the next feature, and
+the decisions above are about them.

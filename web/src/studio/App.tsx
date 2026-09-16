@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Button, ButtonRound, Card, InputSelect, InputText } from "@tomcoggia/ui";
-import { Circle, FolderOpen, Minus, MousePointer2, Ratio, Square, Trash2 } from "lucide-react";
+import { Circle, FolderOpen, Minus, MousePointer2, Ratio, Redo2, Square, Trash2, Undo2 } from "lucide-react";
 import { FileBrowser, type OpenResult } from "../components/FileBrowser";
 import { Section } from "../components/controls/Section";
 import controls from "../components/controls/controls.module.css";
@@ -39,6 +39,14 @@ const LAYER_NAME = "Black";
 // the same as losing it. Its own key: Plot's keys share this origin and still carry the old name.
 const LAST_FILE_KEY = "studio-last-file";
 
+// Undo keeps whole copies of the drawing rather than a list of changes: a drawing is a handful of
+// shapes, so a copy costs nothing, and there's no way for a replayed change to go wrong.
+interface Snapshot {
+  shapes: Shape[];
+  page: Page;
+}
+const HISTORY_LIMIT = 60;
+
 type Saved = { path: string; folder: string } | null;
 
 export default function App() {
@@ -52,6 +60,8 @@ export default function App() {
   const [browserOpen, setBrowserOpen] = useState(false);
   // Marks in the drawing on disk that Studio can't redraw, and the name it was opened under. Saving
   // rewrites a file from the shapes Studio holds, so overwriting that file would delete them.
+  const [past, setPast] = useState<Snapshot[]>([]);
+  const [future, setFuture] = useState<Snapshot[]>([]);
   const [foreign, setForeign] = useState(0);
   const [openedAs, setOpenedAs] = useState<string | null>(null);
   const [message, setMessage] = useState<{ text: string; ok: boolean }>({
@@ -74,17 +84,55 @@ export default function App() {
     return match?.id ?? "";
   }, [page]);
 
+  // Called just before a change, never during one: a drag records once, when it starts.
+  const record = useCallback(() => {
+    setPast((p) => [...p.slice(-(HISTORY_LIMIT - 1)), { shapes, page }]);
+    setFuture([]);
+  }, [shapes, page]);
+
+  const step = useCallback(
+    (from: Snapshot[], to: Snapshot[], setFrom: typeof setPast, setTo: typeof setFuture, take: "last" | "first") => {
+      if (!from.length) return;
+      const next = take === "last" ? from[from.length - 1] : from[0];
+      setFrom(take === "last" ? from.slice(0, -1) : from.slice(1));
+      setTo([{ shapes, page }, ...to].slice(0, HISTORY_LIMIT));
+      setShapes(next.shapes);
+      setPage(next.page);
+      // A shape that isn't there any more can't stay selected, or its handles would hang in the air.
+      setSelected((id) => (next.shapes.some((s) => s.id === id) ? id : null));
+    },
+    [shapes, page],
+  );
+
+  const undo = useCallback(() => step(past, future, setPast, setFuture, "last"), [step, past, future]);
+  const redo = useCallback(() => step(future, past, setFuture, setPast, "first"), [step, future, past]);
+
+  // The usual keys, except while typing: in the name field they belong to the text.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (!(e.metaKey || e.ctrlKey) || e.key.toLowerCase() !== "z") return;
+      const el = document.activeElement;
+      if (el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement) return;
+      e.preventDefault();
+      (e.shiftKey ? redo : undo)();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [undo, redo]);
+
   const addShape = useCallback((shape: Shape) => {
+    record();
     setShapes((list) => [...list, shape]);
     setSelected(shape.id);
     setTool("select"); // what you want next is nearly always to nudge the thing you just drew
-  }, []);
+  }, [record]);
 
   const updateShape = useCallback((shape: Shape) => {
     setShapes((list) => list.map((s) => (s.id === shape.id ? shape : s)));
   }, []);
 
   const removeShape = (id: string) => {
+    record();
     setShapes((list) => list.filter((s) => s.id !== id));
     setSelected((current) => (current === id ? null : current));
   };
@@ -149,6 +197,8 @@ export default function App() {
     setPage(drawing.page);
     setShapes(drawing.shapes);
     setSelected(null);
+    setPast([]);
+    setFuture([]);
     setName(res.name.replace(/\.svg$/i, ""));
     setSaved({ path: res.path, folder: res.folder });
     setForeign(drawing.unsupported);
@@ -201,6 +251,7 @@ export default function App() {
   const setSize = (id: string) => {
     const size = SIZES.find((s) => s.id === id);
     if (!size) return;
+    record();
     // Keep the orientation the page is already in, so choosing a size doesn't also turn it.
     const landscape = page.w >= page.h;
     setPage(landscape ? { w: Math.max(size.w, size.h), h: Math.min(size.w, size.h) } : { w: Math.min(size.w, size.h), h: Math.max(size.w, size.h) });
@@ -226,6 +277,7 @@ export default function App() {
             onSelect={setSelected}
             onAdd={addShape}
             onUpdate={updateShape}
+            onEditStart={record}
           />
         </section>
 
@@ -272,7 +324,24 @@ export default function App() {
               <Section
                 title="Shapes"
                 action={
-                  shapes.length ? (
+                  <span className={styles.headerTools}>
+                    <ButtonRound
+                      size="sm"
+                      icon={<Undo2 />}
+                      aria-label="Undo"
+                      title="Undo the last change"
+                      disabled={busy || !past.length}
+                      onClick={undo}
+                    />
+                    <ButtonRound
+                      size="sm"
+                      icon={<Redo2 />}
+                      aria-label="Redo"
+                      title="Redo the change just undone"
+                      disabled={busy || !future.length}
+                      onClick={redo}
+                    />
+                  {shapes.length ? (
                     <ButtonRound
                       size="sm"
                       icon={<Trash2 />}
@@ -280,11 +349,13 @@ export default function App() {
                       title="Delete every shape on the page"
                       disabled={busy}
                       onClick={() => {
+                        record();
                         setShapes([]);
                         setSelected(null);
                       }}
                     />
-                  ) : undefined
+                  ) : null}
+                  </span>
                 }
               >
                 <div className={styles.tools} role="group" aria-label="Shape to draw">
@@ -350,7 +421,10 @@ export default function App() {
                     icon={<Ratio />}
                     aria-label="Turn the page"
                     title="Turn the page: swap its width and height"
-                    onClick={() => setPage((p) => ({ w: p.h, h: p.w }))}
+                    onClick={() => {
+                      record();
+                      setPage((p) => ({ w: p.h, h: p.w }));
+                    }}
                   />
                 }
               >

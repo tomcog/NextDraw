@@ -18,6 +18,9 @@ interface Props {
   onSelect: (id: string | null) => void;
   onAdd: (shape: Shape) => void;
   onUpdate: (shape: Shape) => void;
+  /** A move or reshape is about to start. One call per gesture, before anything changes, so undo
+   *  steps back over the whole drag rather than over each of the hundreds of updates it makes. */
+  onEditStart: () => void;
 }
 
 // One drag at a time, and what it means depends on where it started: on the page it draws a new
@@ -32,7 +35,7 @@ type Drag =
 // The page at true proportions, with a one-inch grid. It keeps the page's own proportions and is
 // sized to them (--canvas-aspect), so the drawing gets as large as the space allows - the same way
 // Plot's preview fills its column.
-export function Canvas({ page, shapes, tool, selected, onSelect, onAdd, onUpdate }: Props) {
+export function Canvas({ page, shapes, tool, selected, onSelect, onAdd, onUpdate, onEditStart }: Props) {
   const svgRef = useRef<SVGSVGElement>(null);
   const [drag, setDrag] = useState<Drag | null>(null);
   const pointer = useRef<number | null>(null);
@@ -85,6 +88,7 @@ export function Canvas({ page, shapes, tool, selected, onSelect, onAdd, onUpdate
     const p = pointAt(e);
     if (!p) return;
     onSelect(shape.id);
+    onEditStart();
     begin(e, { mode: "move", id: shape.id, from: p, origin: shape });
   };
 
@@ -92,6 +96,7 @@ export function Canvas({ page, shapes, tool, selected, onSelect, onAdd, onUpdate
   const onHandleDown = (e: ReactPointerEvent, shape: Shape, handle: Handle) => {
     if (e.button !== 0) return;
     e.stopPropagation();
+    onEditStart();
     begin(e, { mode: "handle", id: shape.id, handle, origin: shape });
   };
 

@@ -52,6 +52,13 @@
 
 .actions > * { flex: 1; }
 
+/* The card's actions, laid out like Plot's Layers card header. */
+.headerTools {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+
 .tools {
   display: flex;
   gap: 0.375rem;
