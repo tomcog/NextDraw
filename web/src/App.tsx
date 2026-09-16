@@ -4,6 +4,7 @@ import styles from "./App.module.css";
 import { api, postJSON } from "./lib/api";
 import { BUSY_STATES, DEFAULT_SETTINGS, DEFAULT_TOOL, PAPER_SIZES, PLOTTING_STATES, PRESET_FIELDS, STEPS, STORAGE } from "./lib/constants";
 import { cleanNote } from "./lib/format";
+import { lightness } from "./lib/color";
 import { fitsOnBed, fitsOnPaper, footprint } from "./lib/geometry";
 import { parsePlotPaths, type PlotPaths } from "./lib/progressPaths";
 import { parsePreview, type Preview } from "./lib/preview";
@@ -76,6 +77,10 @@ export default function App() {
   // A layer named after one of its tool's pens is SHOWN in that pen's color, so editing a palette
   // updates the preview. Display only: the color in the file stays whatever Studio put there.
   const [penColors, setPenColors] = useState<Record<string, string>>({});
+  // The order to plot the layers in, bottom first, when it isn't the drawing's own. Which ink goes
+  // down before which is a plotting decision, so it's kept in Plot's block and the file keeps its
+  // order - the same bargain as the ink colors below.
+  const [plotOrder, setPlotOrder] = useState<string[] | null>(null);
   // The ink a layer is being plotted in today, when the operator has chosen one. Swapping a pen to
   // see how the drawing looks in it is a decision about this plot, so it's kept in Plot's own block
   // and the drawing's colors are left alone - which is what lets "the drawing's own" put it back.
@@ -91,7 +96,14 @@ export default function App() {
   // its own two things: whether it is holding the layer back today, and the pen color to show it in.
   const layerViews: LayerView[] = useMemo(() => {
     if (!fileLayers) return [];
-    return fileLayers.map((layer) => ({
+    // A saved order only applies while it's still this drawing's layers; otherwise the file's own
+    // order stands, rather than half an order applied to a drawing that has changed underneath it.
+    const fits = plotOrder
+      && plotOrder.length === fileLayers.length
+      && new Set(plotOrder).size === fileLayers.length
+      && plotOrder.every((id) => fileLayers.some((l) => l.id === id));
+    const ordered = fits ? plotOrder!.map((id) => fileLayers.find((l) => l.id === id)!) : fileLayers;
+    return ordered.map((layer) => ({
       ...layer,
       color: inkColors[layer.id] || penColors[layer.id] || layer.color,
       // What the drawing itself says, so a swapped ink can be told from the planned one and undone.
@@ -99,7 +111,20 @@ export default function App() {
       hidden: hiddenLayers.includes(layer.id) || layer.hidden,
       skipped: layer.name.startsWith("%"),
     }));
-  }, [fileLayers, hiddenLayers, penColors, inkColors]);
+  }, [fileLayers, hiddenLayers, penColors, inkColors, plotOrder]);
+  // Lightest at the bottom: layer 1 is plotted first and everything darker goes over it, which is how
+  // the inks build on paper. Layers whose color can't be read stay at the bottom, under the ones that
+  // can; ties keep the order they already had.
+  const sortLayersByLightness = () => {
+    const ranked = layerViews.map((l, i) => ({ id: l.id, i, light: lightness(l.color) }));
+    ranked.sort((a, b) => {
+      if (a.light === null || b.light === null) {
+        return a.light === null && b.light === null ? a.i - b.i : a.light === null ? -1 : 1;
+      }
+      return b.light - a.light || a.i - b.i;
+    });
+    setPlotOrder(ranked.map((r) => r.id));
+  };
   // Picking a pen shows the layer in that ink. Picking "the drawing's own" hands it back.
   const colorLayer = (id: string, color: string | null) =>
     setInkColors((all) => {
@@ -236,6 +261,7 @@ export default function App() {
     setRotation(nextRotation);
     setHiddenLayers(plot?.hidden_layers ?? []);
     setInkColors(plot?.layer_colors ?? {});
+    setPlotOrder(plot?.layer_order ?? null);
     setPenColors({});
     setPrintLayer(null);
     setLayerMode("preview");
@@ -272,6 +298,7 @@ export default function App() {
     ...(secondTool ? { second_tool: secondTool, second_tool_layers: secondToolLayers } : {}),
     ...(hiddenLayers.length ? { hidden_layers: hiddenLayers } : {}),
     ...(Object.keys(inkColors).length ? { layer_colors: inkColors } : {}),
+    ...(plotOrder?.length ? { layer_order: plotOrder } : {}),
     paper: { paper_size: settings.paper_size, paper_w: settings.paper_w, paper_h: settings.paper_h, paper_x: settings.paper_x, paper_y: settings.paper_y, paper_color: settings.paper_color },
   };
   const saveKey = JSON.stringify(drawingNow);
@@ -338,6 +365,7 @@ export default function App() {
     setRotation(0);
     setHiddenLayers([]);
     setInkColors({});
+    setPlotOrder(null);
     setPenColors({});
     setPrintLayer(null);
     setLoadedFile(null);
@@ -1130,6 +1158,7 @@ export default function App() {
                   onVisible={setLayerVisible}
                   paletteFor={paletteFor}
                   onColor={colorLayer}
+                  onSort={sortLayersByLightness}
                   disabled={plotting}
                 />
               </div>

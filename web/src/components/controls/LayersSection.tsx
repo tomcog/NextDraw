@@ -1,6 +1,6 @@
 import { useRef, useState } from "react";
-import { LayerController, Segment, SegmentedControl } from "@tomcoggia/ui";
-import { Eye, PenTool } from "lucide-react";
+import { ButtonRound, LayerController, Segment, SegmentedControl } from "@tomcoggia/ui";
+import { Eye, LayersArrowUp, PenTool } from "lucide-react";
 import styles from "./LayersSection.module.css";
 import { Section } from "./Section";
 import { PaletteMenu } from "./PaletteMenu";
@@ -19,6 +19,8 @@ interface Props {
   paletteFor: (id: string) => PenColor[];
   /** The ink to plot this layer in, or null to hand it back to the color the drawing gives it. */
   onColor: (id: string, color: string | null) => void;
+  /** Restack lightest-first, so the darks go over them. */
+  onSort: () => void;
 }
 
 // The drawing's layers, listed like Illustrator's Layers panel: the top layer at the top and layer 1,
@@ -28,7 +30,7 @@ interface Props {
 //
 // No grip on a row, either: the order is the drawing's. A grip that can be grabbed and does nothing
 // reads as a broken drag rather than as an absent feature.
-export function LayersSection({ mode, onMode, layers, target, printed, disabled, onTarget, onVisible, paletteFor, onColor }: Props) {
+export function LayersSection({ mode, onMode, layers, target, printed, disabled, onTarget, onVisible, paletteFor, onColor, onSort }: Props) {
   // A tool with no palette still lets a layer be recolored: the dot opens the system color picker.
   const pickerRef = useRef<HTMLInputElement>(null);
   const [picking, setPicking] = useState<LayerView | null>(null);
@@ -43,10 +45,22 @@ export function LayersSection({ mode, onMode, layers, target, printed, disabled,
     <Section
       title="Layers"
       action={
+        <span className={styles.headerTools}>
+        {mode === "preview" && layers.length > 1 && (
+          <ButtonRound
+            size="sm"
+            icon={<LayersArrowUp />}
+            aria-label="Sort layers by darkness"
+            title="Sort by darkness: the lightest ink is layer 1 and plots first, with darker inks over it"
+            disabled={disabled}
+            onClick={onSort}
+          />
+        )}
         <SegmentedControl size="sm" aria-label="Layers view">
           <Segment selected={mode === "preview"} onClick={() => onMode("preview")} icon={<Eye />} aria-label="Preview" title="Preview: the whole drawing, and which layers to leave out" />
           <Segment selected={mode === "work"} onClick={() => onMode("work")} icon={<PenTool />} aria-label="Plot" title="Plot: layer by layer - only the layer to print is drawn" />
         </SegmentedControl>
+        </span>
       }
     >
       <ol className={styles.list}>
@@ -101,7 +115,14 @@ export function LayersSection({ mode, onMode, layers, target, printed, disabled,
         className={styles.hiddenPicker}
         tabIndex={-1}
         aria-hidden
-        onChange={(e) => { if (picking) onColor(picking.id, e.target.value); }}
+        onChange={(e) => {
+          // Landing back on the drawing's own colour means there's no choice to record, the same as
+          // picking "The drawing's own" from the palette - otherwise the file carries an override
+          // that says nothing.
+          if (!picking) return;
+          const chosen = e.target.value.toLowerCase();
+          onColor(picking.id, chosen === picking.ownColor?.toLowerCase() ? null : chosen);
+        }}
       />
       {colorMenu && menuLayer && (
         <PaletteMenu

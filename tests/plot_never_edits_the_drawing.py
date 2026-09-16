@@ -113,8 +113,20 @@ DAMAGE = {
     "a recolour written onto a shape": lambda s: s.replace(
         '<rect id="shape-a"', '<rect style="stroke:#912474" id="shape-a"'),
     "a deleted shape": lambda s: s.replace('<rect id="shape-a" x="1" y="1" width="3" height="2"/>', ""),
+    "the file's layers reordered": lambda s: _swap_layers(s),
     "a rewritten design block": lambda s: s.replace('"angle":45', '"angle":90'),
 }
+
+
+def _swap_layers(svg):
+    """The two <g> layers exchanged, which is what reordering by rewriting the file would look like."""
+    # By index, not by regex: a layer holds a nested fill group, so a non-greedy match for </g>
+    # stops at the wrong one.
+    starts = [m.start() for m in re.finditer(r'<g inkscape:groupmode="layer"', svg)]
+    assert len(starts) == 2, starts
+    end = svg.index("</svg>")
+    first, second = svg[starts[0]:starts[1]], svg[starts[1]:end]
+    return svg[:starts[0]] + second + first + svg[end:]
 
 
 def comparison_works():
@@ -161,6 +173,7 @@ def main():
                 "tool": "EnerGel",
                 "hidden_layers": ["studio-sources"],
                 "layer_colors": {"studio-layer-1": "#912474"},
+                "layer_order": ["studio-sources", "studio-layer-1"],
                 "paper": {"paper_size": "a4", "paper_w": 210.0, "paper_h": 297.0,
                           "paper_x": 5.0, "paper_y": 5.0, "paper_color": "#fffbea"},
             },
@@ -194,7 +207,8 @@ def main():
         # And the half that has to work: Plot's own choices really are kept.
         saved = plot_block(after) or {}
         for key, want in (("scale", 63.0), ("rotation", 90), ("hidden_layers", ["studio-sources"]),
-                          ("layer_colors", {"studio-layer-1": "#912474"})):
+                          ("layer_colors", {"studio-layer-1": "#912474"}),
+                          ("layer_order", ["studio-sources", "studio-layer-1"])):
             if saved.get(key) != want:
                 failures.append(f"Plot did not keep {key}: {saved.get(key)!r} (wanted {want!r})")
         if saved.get("placement") != {"x": 12.5, "y": 30.0}:

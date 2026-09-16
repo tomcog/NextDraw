@@ -1568,6 +1568,14 @@ def clean_plot(raw):
             out["small_paths"] = int(max(10, min(90, float(raw["small_paths"]))))
     except (TypeError, ValueError):
         pass
+    # The order to plot the layers in, bottom first, by layer id. Which ink goes down before which is
+    # a decision about the plot - lighter first, so the darks overprint them - not a change to the
+    # drawing, so the file's own layer order is left alone and this says what to do with it instead.
+    order = raw.get("layer_order")
+    if isinstance(order, list):
+        ids = [str(x)[:200] for x in order if isinstance(x, str)][:500]
+        if ids:
+            out["layer_order"] = ids
     # The ink each layer is being plotted in today, by layer id, when it isn't the color the drawing
     # was made with. The operator swaps a pen to see how the drawing looks in it; that's a choice about
     # this plot, not about the artwork, so it lives here and the drawing's own colors stay untouched -

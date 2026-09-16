@@ -75,7 +75,17 @@ editable rather than convert-or-discard; write unmodelled marks back untouched. 
 is worth remembering: the first feature should have been "open a drawing made elsewhere and hatch it",
 which forces the renderer and the model apart on day one. "Draw a rectangle" let them fuse.
 
-*What came back to Plot in the meantime:* choosing a layer's ink. Swapping a pen to see how a drawing
+*What came back to Plot in the meantime:* choosing a layer's ink, and sorting the layers lightest-first.
+Both are decisions about the plot - which ink goes in the carriage, and which goes down before which
+so the darks overprint the lights - so both live in `<nds:plot>`: `layer_colors` keyed by layer id,
+and `layer_order` as ids bottom-first. The file's own layer order is never rewritten, and a saved
+order is ignored unless it still names exactly this drawing's layers. Reordering by hand didn't come
+back; the sort is what was actually wanted.
+
+The sort ranks by the ink you're *plotting* in, not the colour in the file, which is the right way
+round: change a layer to a pale ink and it drops to the bottom.
+
+*More on choosing a layer's ink:* Swapping a pen to see how a drawing
 looks in it is a decision about this plot, not an edit, so it's `layer_colors` in `<nds:plot>` keyed
 by layer id - stored in the file, so it travels and survives a quit, but leaving the drawing's own
 colours alone. That's what lets "The drawing's own" put it back, and what keeps Plot read-only.

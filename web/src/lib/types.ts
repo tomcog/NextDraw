@@ -131,6 +131,7 @@ export interface Plot {
   second_tool_layers?: string[]; // ids of the layers that use it; every other layer uses `tool`
   hidden_layers?: string[]; // ids of the layers Plot is holding back; not a change to the drawing
   layer_colors?: Record<string, string>; // ids to the ink each is being plotted in, when not the drawing's own
+  layer_order?: string[]; // layer ids bottom-first: the order to plot them in, not the file's order
   paper?: Partial<Pick<Settings, "paper_size" | "paper_w" | "paper_h" | "paper_x" | "paper_y" | "paper_color">>;
 }
 
