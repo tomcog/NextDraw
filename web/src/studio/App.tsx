@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Button, ButtonRound, Card, Checkbox, InputSelect, InputText } from "@tomcoggia/ui";
-import { Circle, FolderOpen, Grid2x2, Minus, MousePointer2, Ratio, Redo2, Square, Trash2, Undo2 } from "lucide-react";
+import { Circle, FolderOpen, Minus, MousePointer2, Ratio, Redo2, Square, StickyNote, Trash2, Undo2 } from "lucide-react";
 import { FileBrowser, type OpenResult } from "../components/FileBrowser";
 import { Section } from "../components/controls/Section";
 import controls from "../components/controls/controls.module.css";
@@ -344,7 +344,7 @@ export default function App() {
                   <span className={styles.headerTools}>
                     <ButtonRound
                       size="sm"
-                      icon={<Grid2x2 />}
+                      icon={<StickyNote />}
                       className={pageOpen ? controls.roundActive : undefined}
                       aria-label="Page size"
                       aria-pressed={pageOpen}

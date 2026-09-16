@@ -150,6 +150,7 @@ export interface Preset {
   palette?: PenColor[]; // the drawing tool's colors, set up by hand in presets.json
   tilt?: Tilt; // angle compensation, measured when the tool was set up
   drag?: Drag; // a soft tip that may only be pulled, never pushed
+  hatch?: { angle?: number; spacing_mm?: number }; // measured by hand; what a fill starts from
 }
 
 // A brush or other soft tip splays when it is pushed, so it only travels away from home along the

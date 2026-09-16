@@ -1,4 +1,5 @@
 import { Tag } from "@tomcoggia/ui";
+import { ThemeToggle } from "../../components/ThemeToggle";
 import styles from "../../components/Header.module.css";
 
 interface Props {
@@ -12,10 +13,13 @@ export function StudioHeader({ message, ok }: Props) {
   return (
     <header className={styles.header}>
       <h1 className={styles.title}>NextDraw Studio</h1>
-      <Tag className={styles.status} data-found={ok}>
-        <span className={styles.dot} aria-hidden="true" />
-        {message}
-      </Tag>
+      <span className={styles.tools}>
+        <Tag className={styles.status} data-found={ok}>
+          <span className={styles.dot} aria-hidden="true" />
+          {message}
+        </Tag>
+        <ThemeToggle />
+      </span>
     </header>
   );
 }

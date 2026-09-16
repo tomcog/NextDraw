@@ -13,6 +13,13 @@
   letter-spacing: -0.01em;
 }
 
+/* The status line and the theme switch, together at the right. */
+.tools {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
 .status {
   gap: 0.45rem;
 }

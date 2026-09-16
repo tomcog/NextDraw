@@ -18,6 +18,12 @@ export interface Shape {
    * out of the drawing's bounds. Absent means drawn.
    */
   outline?: boolean;
+  /**
+   * The pen that draws it, by name rather than by colour. Names are the contract between the two
+   * apps: on save each pen becomes a layer named after it, and Plot colours a layer from the pen
+   * whose name it matches. Absent means the tool's default pen.
+   */
+  pen?: string;
 }
 
 export interface Page {

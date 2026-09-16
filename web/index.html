@@ -12,12 +12,12 @@
     <meta name="apple-mobile-web-app-title" content="NextDraw" />
     <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M2 14 L11 5 L13 3 L14 4 L12 6 L3 15 Z' fill='%23d6322b'/%3E%3C/svg%3E" />
     <script>
-      // Follow the system light/dark setting using the component library's data-theme switch.
+      // The theme the switch in the header last set, applied before the first paint so there is no
+      // flash of the wrong one. Light unless dark was chosen. Keep in step with src/lib/theme.ts.
       (function () {
-        var q = window.matchMedia("(prefers-color-scheme: dark)");
-        var apply = function () { document.documentElement.dataset.theme = q.matches ? "dark" : "light"; };
-        apply();
-        q.addEventListener("change", apply);
+        var chosen = "light";
+        try { if (localStorage.getItem("nextdraw-theme") === "dark") chosen = "dark"; } catch (e) {}
+        document.documentElement.dataset.theme = chosen;
       })();
     </script>
   </head>
