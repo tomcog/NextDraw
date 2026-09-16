@@ -5,7 +5,8 @@ built. This is the record of what was decided in discussion on 2026-09-16 and, m
 so that building it starts from those conclusions instead of re-deriving them.
 
 Mark the difference as you read: **Decided** is settled, **Open** is a leaning with a question still
-attached. Several Open items are cheap to answer now and expensive to answer later.
+attached. Where a decision rested on something testable, it was tested, and the result is recorded
+beside it rather than left as an assumption.
 
 Scope, in the order it's wanted: geometric shapes and hatch fills first, and editing SVGs made
 elsewhere (hatching shapes, changing colors); later, generated paths — tracing a photo or logo,
@@ -34,6 +35,14 @@ to live.
 list (`read_layers`, `server.py`). So the shapes stay in the same file, invisible and never plotted.
 Once they live there, a shape's own layer stops meaning anything — it's a boundary in a drawer, and
 the fills referencing it decide what colors it becomes.
+
+*Tested 2026-09-16, because the whole approach depended on it.* `drawing_bounds` un-hides every layer
+before measuring, so the worry was that a `%sources` layer would still inflate the drawing's footprint
+and throw off Trim to drawing. It doesn't. On a test file with art at 1–2 in and a second layer at
+5–7 in, the bounds came back `1, 1, 2, 2` — art only. The control matters: renaming that layer from
+`%sources` to `sources` moved the bounds to `1, 1, 7, 7`, so it is the `%` doing the work and not a
+quirk of the fixture. It holds whether the layer is hidden or not. The `%` geometry produced no
+polylines at all in plot-mode flattening, which is also the proof that it would never be drawn.
 
 **A per-fill bake button.** Drop the source and the parameters, keep the lines. Per fill, not per
 file — one fill settled while another is still being tuned.
@@ -81,12 +90,6 @@ fill was designed, and the preview scales identically so nothing warns you. What
 whether the parameters carry the intended scale, or whether Plot warns that a fill is stale.
 
 Rotation is harmless by comparison, but note a fill's angle is relative to the artwork, not the paper.
-
-**Does `drawing_bounds` exclude `%` layers?** It un-hides every layer before measuring (`server.py`),
-then asks the NextDraw software to flatten the document. If `%` layers survive that flattening, a
-`%sources` layer would quietly inflate the drawing's footprint and throw off Trim to drawing — which
-would undermine the whole "sources ride along in the same file" approach. **Test this before
-building anything on it**: it's ten minutes with a throwaway file, and it's load-bearing.
 
 ## Changes Plot needs
 
