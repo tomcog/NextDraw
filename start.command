@@ -1,5 +1,5 @@
 #!/bin/zsh
-# Double-click to start NextDraw Studio. Close this window to quit.
+# Double-click to start NextDraw Plot. Close this window to quit.
 #
 # Each start first brings this copy up to date with the latest version pushed to GitHub, then
 # reinstalls the Python packages or rebuilds the page only if those changed. Nothing here stops the

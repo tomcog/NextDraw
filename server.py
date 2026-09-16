@@ -1,5 +1,5 @@
 """
-NextDraw Studio: a local web GUI for the Bantam Tools NextDraw Python API.
+NextDraw Plot: a local web GUI for the Bantam Tools NextDraw Python API.
 
 Run:  .venv/bin/python server.py
 Then open http://127.0.0.1:5055
@@ -2146,7 +2146,7 @@ if __name__ == "__main__":
     logging.getLogger("werkzeug").setLevel(logging.WARNING)
     lan = "--lan" in sys.argv
     url = f"http://{HOST}:{PORT}"
-    print(f"NextDraw Studio running at {url}  (Ctrl+C to quit)")
+    print(f"NextDraw Plot running at {url}  (Ctrl+C to quit)")
     if lan:
         for name in lan_addresses():
             print(f"  On this network: http://{name}:{PORT}")

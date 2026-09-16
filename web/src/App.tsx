@@ -324,7 +324,7 @@ export default function App() {
   useEffect(() => {
     api<Info>("/api/info")
       .then(setInfo)
-      .catch(() => setLocalMessage({ text: "Couldn’t reach NextDraw Studio. Start it with server.py and reload this page.", tone: "error" }));
+      .catch(() => setLocalMessage({ text: "Couldn’t reach NextDraw Plot. Start it with server.py and reload this page.", tone: "error" }));
     api<{ presets: Preset[] }>("/api/presets")
       .then((r) => {
         setPresets(r.presets);

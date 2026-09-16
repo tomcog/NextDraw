@@ -1,4 +1,4 @@
-# NextDraw Studio
+# NextDraw Plot
 
 A local web app for plotting SVG files on a Bantam Tools NextDraw, built on
 Bantam Tools' own [NextDraw Python API](https://bantam.tools/nd_py/).
@@ -14,7 +14,7 @@ Bantam Tools' own [NextDraw Python API](https://bantam.tools/nd_py/).
 ## Presets on more than one Mac
 
 Drawing-tool presets (pen heights, speeds and color palettes) are kept in iCloud Drive, in
-`iCloud Drive/NextDraw Studio/presets.json`, so every Mac signed in to the same iCloud account
+`iCloud Drive/NextDraw Studio/presets.json` (the folder keeps the app's old name), so every Mac signed in to the same iCloud account
 shares them. The first time the app starts on a Mac with iCloud Drive, it copies `presets.json`
 from the app folder there if the shared file doesn't exist yet. Later changes go only to the
 iCloud copy; reload the page on the other Mac to pick them up. A Mac without iCloud Drive uses
@@ -33,7 +33,7 @@ To add a palette, edit the preset in that file: a `palette` list of `{"name": ..
 ## Moving the carriage
 
 The NextDraw software's own "walk" commands don't check the carriage's range of
-motion. NextDraw Studio reads the carriage position from the plotter and shortens
+motion. NextDraw Plot reads the carriage position from the plotter and shortens
 any move that would go past the edge.
 
 The app trusts the plotter's own record that it's homed, as the NextDraw software does.
@@ -55,7 +55,7 @@ where it stopped.
 ## Stopping and resuming
 
 When a plot is stopped (the Stop button, or the pause button on the plotter), the NextDraw software
-records how far it got in a copy of the SVG. NextDraw Studio saves that copy to `jobs/resume.svg`,
+records how far it got in a copy of the SVG. NextDraw Plot saves that copy to `jobs/resume.svg`,
 with the settings, placement and scale in `jobs/resume.json`, so a stopped plot can be resumed even
 after the app restarts. **Resume** puts the plot start back where it was (so the carriage can be
 sent home in between) and continues from the stopping point, using the original settings.
@@ -112,7 +112,7 @@ alongside its `InputText`. The plotter preview and progress line are app-specifi
 
 ## Deployment notes
 
-NextDraw Studio talks to the plotter over USB, so `server.py` has to run on the computer the
+NextDraw Plot talks to the plotter over USB, so `server.py` has to run on the computer the
 plotter is plugged into. The page it serves can be reached from other devices, but a copy of the
 page hosted elsewhere (for example on a static host) can't reach the plotter by itself. Any web
 deployment needs this server running next to the plotter, reachable through something like a
