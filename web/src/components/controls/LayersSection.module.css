@@ -93,7 +93,8 @@
   pointer-events: none;
 }
 
-/* Ink simulation on: the Blend icon goes black for as long as it's showing. */
-.inkOn {
-  --ui-button-round-icon: var(--ui-text-default);
+/* A round button that's switched on (ink simulation): the same pressed state the other cards use. */
+.roundActive {
+  --ui-button-round-bg: var(--ui-surface-inverse);
+  --ui-button-round-icon: var(--ui-text-on-inverse);
 }

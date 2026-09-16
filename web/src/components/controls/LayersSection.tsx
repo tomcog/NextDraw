@@ -199,7 +199,7 @@ export function LayersSection({ mode, onMode, layers, target, printed, disabled,
         <ButtonRound
           size="sm"
           icon={<Blend />}
-          className={inkSim ? styles.inkOn : undefined}
+          className={inkSim ? styles.roundActive : undefined}
           aria-label="Simulate the ink"
           aria-pressed={inkSim}
           title={inkSim ? "Showing each tool's ink: how solid it is and how it darkens where strokes cross. Turn it off on a very large drawing - blending every stroke is slow." : "Drawing each layer flat. Turn ink simulation on to see how the ink builds up."}
