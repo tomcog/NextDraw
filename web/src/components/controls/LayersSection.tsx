@@ -53,6 +53,9 @@ export function LayersSection({ mode, onMode, layers, target, printed, disabled,
   const pointerY = useRef(0);
   const [drag, setDrag] = useState<Drag | null>(null);
   const [refocus, setRefocus] = useState<string | null>(null);
+  // A tool with no palette still lets a layer be colored: the dot opens the system color picker.
+  const pickerRef = useRef<HTMLInputElement>(null);
+  const [picking, setPicking] = useState<LayerView | null>(null);
   const [colorMenu, setColorMenu] = useState<{ id: string; anchor: HTMLElement } | null>(null);
   const menuLayer = colorMenu ? layers.find((l) => l.id === colorMenu.id) : null;
   // Delete asks first, in the card: the layer to delete, or null.
@@ -251,18 +254,29 @@ export function LayersSection({ mode, onMode, layers, target, printed, disabled,
               <LayerController
                 name="print-layer"
                 number={i + 1}
-                color={layer.color ?? (paletteFor(layer.id).length ? "transparent" : undefined)}
-                swatchProps={paletteFor(layer.id).length ? {
+                color={layer.color ?? "transparent"}
+                swatchProps={{
                   "aria-label": `Pen color for ${layer.name}`,
-                  "aria-haspopup": "menu",
-                  "aria-expanded": colorMenu?.id === layer.id,
-                  title: "Choose the pen color",
+                  ...(paletteFor(layer.id).length
+                    ? { "aria-haspopup": "menu" as const, "aria-expanded": colorMenu?.id === layer.id, title: "Choose the pen color" }
+                    : { title: "Pick a color for this layer" }),
                   disabled,
                   onClick: (e) => {
-                    const anchor = e.currentTarget;
-                    setColorMenu((open) => (open?.id === layer.id ? null : { id: layer.id, anchor }));
+                    if (paletteFor(layer.id).length) {
+                      const anchor = e.currentTarget;
+                      setColorMenu((open) => (open?.id === layer.id ? null : { id: layer.id, anchor }));
+                      return;
+                    }
+                    // No palette for this tool: straight to the color picker, on the click itself so
+                    // the browser counts it as the gesture that opened it.
+                    setPicking(layer);
+                    const input = pickerRef.current;
+                    if (input) {
+                      input.value = layer.color ?? "#808080";
+                      input.click();
+                    }
                   },
-                } : undefined}
+                }}
                 checked={target === layer.id}
                 printed={printed.includes(layer.id)}
                 visible={!layer.hidden}
@@ -289,6 +303,14 @@ export function LayersSection({ mode, onMode, layers, target, printed, disabled,
           );
         })}
       </ol>
+      <input
+        ref={pickerRef}
+        type="color"
+        className={styles.hiddenPicker}
+        tabIndex={-1}
+        aria-hidden
+        onChange={(e) => { if (picking) onColor(picking.id, { name: picking.name, color: e.target.value }); }}
+      />
       {colorMenu && menuLayer && (
         <PaletteMenu
           anchor={colorMenu.anchor}

@@ -81,3 +81,14 @@
 }
 
 .matchNote[data-tone="warn"] { color: var(--ui-text-default); }
+
+/* The system color picker, opened from a layer's dot when its tool has no palette. */
+.hiddenPicker {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  border: 0;
+  opacity: 0;
+  pointer-events: none;
+}
