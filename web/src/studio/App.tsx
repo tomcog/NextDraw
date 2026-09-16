@@ -6,9 +6,11 @@ import { Section } from "../components/controls/Section";
 import controls from "../components/controls/controls.module.css";
 import { api, postJSON } from "../lib/api";
 import { load, save as remember } from "../lib/storage";
-import { PAPER_SIZES } from "../lib/constants";
-import type { PenColor, Preset } from "../lib/types";
+import { DEFAULT_SETTINGS, PAPER_SIZES } from "../lib/constants";
+import type { Info, PenColor, PlotterModel, Preset } from "../lib/types";
 import { fmtIn } from "../lib/format";
+import { ZoomControl } from "../components/ZoomControl";
+import type { Zoom } from "../components/BedCanvas";
 import { Canvas, type Tool } from "./components/Canvas";
 import { StudioHeader } from "./components/StudioHeader";
 import { canFill, newFillId, type Fill } from "./lib/hatch";
@@ -61,6 +63,9 @@ export default function App() {
   // Plot's presets rather than being invented here.
   const [defaults, setDefaults] = useState({ angle: 45, spacingMm: 1.5 });
   const [presets, setPresets] = useState<Preset[]>([]);
+  const [model, setModel] = useState<PlotterModel | undefined>();
+  // Paper to begin with: the page is what's being drawn on, and the bed is context around it.
+  const [zoom, setZoom] = useState<Zoom>("paper");
   const [toolName, setToolName] = useState<string>(() => load<string>(TOOL_KEY) ?? "");
   const [tool, setTool] = useState<Tool>("rect");
   const [selected, setSelected] = useState<string | null>(null);
@@ -244,7 +249,8 @@ export default function App() {
     let cancelled = false;
     (async () => {
       try {
-        await api("/api/info");
+        const info = await api<Info>("/api/info");
+        if (!cancelled) setModel(info.models.find((m) => m.id === DEFAULT_SETTINGS.model) ?? info.models[0]);
       } catch {
         if (!cancelled) setMessage({ text: "Can’t reach the server. Is server.py running?", ok: false });
         return;
@@ -357,6 +363,19 @@ export default function App() {
             page={page}
             shapes={shapes}
             fills={fills}
+            model={model}
+            zoom={zoom}
+            toolbar={
+              <ZoomControl
+                zoom={zoom}
+                canPaper
+                canDrawing={shapes.length > 0}
+                onZoom={setZoom}
+                updating={false}
+                showLeft={null}
+                onShowLeft={() => {}}
+              />
+            }
             colorOf={colorOf}
             defaultPen={defaultPen}
             penWidthMm={penWidthMm}

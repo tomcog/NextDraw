@@ -1,10 +1,12 @@
-import { useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent } from "react";
+import { useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
 import {
   boxOf, clampToPage, dragHandle, handlesOf, isDegenerate, moveBy, newShapeId,
   CURSOR, type Handle, type Page, type Shape, type ShapeKind,
 } from "../lib/shapes";
 import { hatchLines, type Fill } from "../lib/hatch";
-import { fmtIn } from "../../lib/format";
+import { BedCanvas, type BedCanvasHandle, type Box, type Zoom } from "../../components/BedCanvas";
+import { DEFAULT_SETTINGS, UNITS } from "../../lib/constants";
+import type { PlotterModel } from "../../lib/types";
 import styles from "./Canvas.module.css";
 
 /** Select picks shapes up; the rest draw. Without the distinction a shape covering the page would
@@ -15,6 +17,10 @@ interface Props {
   page: Page;
   shapes: Shape[];
   fills: Fill[];
+  /** The plotter the drawing is for, so the page is shown on the bed it will be drawn on. */
+  model: PlotterModel | undefined;
+  zoom: Zoom;
+  toolbar?: ReactNode;
   /** A pen's color by name, and the pen a shape falls back to. */
   colorOf: (pen: string) => string;
   defaultPen: string;
@@ -42,39 +48,37 @@ type Drag =
 // The page at true proportions, with a one-inch grid. It keeps the page's own proportions and is
 // sized to them (--canvas-aspect), so the drawing gets as large as the space allows - the same way
 // Plot's preview fills its column.
-export function Canvas({ page, shapes, fills, colorOf, defaultPen, penWidthMm, tool, selected, onSelect, onAdd, onUpdate, onEditStart }: Props) {
-  const svgRef = useRef<SVGSVGElement>(null);
+export function Canvas({ page, shapes, fills, model, zoom, toolbar, colorOf, defaultPen, penWidthMm, tool, selected, onSelect, onAdd, onUpdate, onEditStart }: Props) {
+  const bed = useRef<BedCanvasHandle>(null);
   const [drag, setDrag] = useState<Drag | null>(null);
   const pointer = useRef<number | null>(null);
 
-  // The margins around the page, sized the way Plot's preview sizes its own: a slim left one with
-  // just room for the side dimension line, and a top one with room for the width line and its label.
-  const pad = Math.max(page.w, page.h) * 0.075;
-  const LEFT = 0.8;
-  const TOP = 0.7;
-  const vb = [-pad * LEFT, -pad * TOP, page.w + pad * (LEFT + 0.4), page.h + pad * (TOP + 0.1)];
-  const viewBox = vb.join(" ");
-  // The rulers, in page units. Sized against the view rather than the page so they hold roughly the
-  // same size on screen whatever is being drawn on.
-  const tick = vb[2] * 0.008;
-  const labelFont = vb[2] * 0.026;
-  const dimY = -pad * 0.3; // the width line, above the page
-  const dimX = -pad * 0.35; // the height line, to its left
-  const dot = vb[2] * 0.008; // handle and home-marker radius in page units - real geometry, so it scales
-  // The pen's real width, in the page's inches, so the line on screen is the line on paper. Held to a
-  // visible minimum: a 0.3 mm pen on a big page would otherwise vanish rather than read as thin.
-  const penIn = Math.max(penWidthMm / 25.4, vb[2] * 0.0012);
+  // The page is the paper, sitting at the plotter's home corner - the same place Plot puts it.
+  const settings = {
+    ...DEFAULT_SETTINGS,
+    paper_w: page.w * 25.4,
+    paper_h: page.h * 25.4,
+    paper_x: 0,
+    paper_y: 0,
+    paper_color: "#ffffff",
+  };
+  const drawingBox: Box | null = shapes.length
+    ? (shapes.reduce<[number, number, number, number]>(
+        (acc, s) => {
+          const b = boxOf(s);
+          return [Math.min(acc[0], b.x0), Math.min(acc[1], b.y0), Math.max(acc[2], b.x1), Math.max(acc[3], b.y1)];
+        },
+        [Infinity, Infinity, -Infinity, -Infinity],
+      ).map((v) => v * UNITS) as Box)
+    : null;
 
   // Where a pointer is on the page, in inches from its top-left corner.
+  // The pen's real width in inches, so the line on screen is the line on paper.
+  const penIn = penWidthMm / 25.4;
+
   const pointAt = (e: ReactPointerEvent): { x: number; y: number } | null => {
-    const svg = svgRef.current;
-    if (!svg) return null;
-    const r = svg.getBoundingClientRect();
-    if (!r.width || !r.height) return null;
-    return {
-      x: vb[0] + ((e.clientX - r.left) / r.width) * vb[2],
-      y: vb[1] + ((e.clientY - r.top) / r.height) * vb[3],
-    };
+    const at = bed.current?.at(e.clientX, e.clientY);
+    return at ? { x: at.x / UNITS, y: at.y / UNITS } : null; // bed units to the page's inches
   };
 
   const begin = (e: ReactPointerEvent, next: Drag) => {
@@ -171,113 +175,75 @@ export function Canvas({ page, shapes, fills, colorOf, defaultPen, penWidthMm, t
     return <rect {...common} x={b.x0} y={b.y0} width={b.x1 - b.x0} height={b.y1 - b.y0} />;
   };
 
-  const lines = (count: number, axis: "x" | "y") =>
-    Array.from({ length: Math.max(0, Math.ceil(count) - 1) }, (_, i) =>
-      axis === "x" ? (
-        <line key={`x${i}`} x1={i + 1} y1={0} x2={i + 1} y2={page.h} />
-      ) : (
-        <line key={`y${i}`} x1={0} y1={i + 1} x2={page.w} y2={i + 1} />
-      ),
-    );
-
   const chosen = shapes.find((s) => s.id === selected) ?? null;
   const showHandles = chosen && drag?.mode !== "new" && drag?.mode !== "move";
 
   return (
-    <div className={styles.wrap} style={{ "--canvas-aspect": vb[2] / vb[3] } as CSSProperties}>
-      <svg
-        ref={svgRef}
-        className={styles.canvas}
-        data-drag={drag?.mode}
-        data-tool={tool}
-        viewBox={viewBox}
-        role="img"
-        aria-label={`Drawing page, ${fmtIn(page.w)} by ${fmtIn(page.h)}`}
-        onPointerDown={onPointerDown}
-        onPointerMove={onPointerMove}
-        onPointerUp={onPointerUp}
-        onPointerCancel={onPointerUp}
-      >
-        <rect className={styles.page} x={0} y={0} width={page.w} height={page.h} />
-        <g className={styles.grid}>
-          {lines(page.w, "x")}
-          {lines(page.h, "y")}
-        </g>
-        <rect className={styles.pageEdge} x={0} y={0} width={page.w} height={page.h} />
+    <BedCanvas
+      zoom={zoom}
+      model={model}
+      settings={settings}
+      drawingBox={drawingBox}
+      handle={bed}
+      toolbar={toolbar}
+      wrapClassName={styles.wrap}
+      wrapData={{ "data-tool": tool, "data-drag": drag?.mode }}
+      onPointerDown={onPointerDown}
+      onPointerMove={onPointerMove}
+      onPointerUp={onPointerUp}
+      overlay={
+        shapes.length === 0 && !drag ? (
+          <div className={styles.hint} aria-hidden="true">
+            <strong>Drag on the page to draw</strong>
+            <span>Then save it and open it in Plot</span>
+          </div>
+        ) : undefined
+      }
+    >
+      {({ mark }) => {
+        // Everything below is in the page's inches; the bed counts in UNITS per inch.
+        const handleR = (mark * 0.28) / UNITS;
+        return (
+          <g transform={`scale(${UNITS})`}>
+            {/* Hatch lines, drawn from each fill's parameters rather than stored, so they follow the
+                shape as it moves. Not clickable: the shape underneath is what you grab. */}
+            <g className={styles.fills}>
+              {fills.map((fill) => {
+                const shape = shapes.find((sh) => sh.id === fill.shapeId);
+                if (!shape) return null;
+                return (
+                  <g
+                    key={fill.id}
+                    style={{ stroke: colorOf(shape.pen || defaultPen), strokeWidth: penIn } as CSSProperties}
+                  >
+                    {hatchLines(shape, fill).map((l, i) => (
+                      <line key={i} x1={l.x1} y1={l.y1} x2={l.x2} y2={l.y2} />
+                    ))}
+                  </g>
+                );
+              })}
+            </g>
 
-        {/* How big the paper is, measured along the top and down the left, the way Plot measures the
-            plotter's travel. Ticks at each end so it reads as a dimension rather than as a border. */}
-        <g className={styles.dim} aria-hidden="true">
-          <line x1={0} y1={dimY} x2={page.w} y2={dimY} />
-          <line x1={0} y1={dimY - tick} x2={0} y2={dimY + tick} />
-          <line x1={page.w} y1={dimY - tick} x2={page.w} y2={dimY + tick} />
-          <text x={page.w / 2} y={dimY - tick * 1.3} textAnchor="middle" fontSize={labelFont}>
-            {fmtIn(page.w)}
-          </text>
+            {shapes.map((sh) => render(sh, sh.id, "shape"))}
+            {drag?.mode === "new" && render(drag.shape, "draft", "draft")}
 
-          <line x1={dimX} y1={0} x2={dimX} y2={page.h} />
-          <line x1={dimX - tick} y1={0} x2={dimX + tick} y2={0} />
-          <line x1={dimX - tick} y1={page.h} x2={dimX + tick} y2={page.h} />
-          <text
-            x={dimX - tick * 1.3}
-            y={page.h / 2}
-            textAnchor="middle"
-            fontSize={labelFont}
-            transform={`rotate(-90 ${dimX - tick * 1.3} ${page.h / 2})`}
-          >
-            {fmtIn(page.h)}
-          </text>
-        </g>
-
-        {/* Hatch lines, drawn from the fill's parameters rather than stored, so they follow the shape
-            as it's moved or resized. They aren't clickable: the shape underneath is what you grab. */}
-        <g className={styles.fills}>
-          {fills.map((fill) => {
-            const shape = shapes.find((s) => s.id === fill.shapeId);
-            if (!shape) return null;
-            return (
-              <g
-                key={fill.id}
-                style={{ stroke: colorOf(shape.pen || defaultPen), strokeWidth: penIn } as CSSProperties}
-              >
-                {hatchLines(shape, fill).map((l, i) => (
-                  <line key={i} x1={l.x1} y1={l.y1} x2={l.x2} y2={l.y2} />
+            {showHandles && (
+              <g className={styles.handles}>
+                {handlesOf(chosen).map((h) => (
+                  <circle
+                    key={h.id}
+                    cx={h.x}
+                    cy={h.y}
+                    r={handleR}
+                    style={{ cursor: CURSOR[h.id] }}
+                    onPointerDown={(e) => onHandleDown(e, chosen, h.id)}
+                  />
                 ))}
               </g>
-            );
-          })}
-        </g>
-
-        {shapes.map((s) => render(s, s.id, "shape"))}
-        {drag?.mode === "new" && render(drag.shape, "draft", "draft")}
-
-        {/* The chosen shape's corners, to drag it into shape. Out of the way while it's being moved,
-            so the handles aren't chasing the pointer at the same time as the shape is. */}
-        {showHandles && (
-          <g className={styles.handles}>
-            {handlesOf(chosen).map((h) => (
-              <circle
-                key={h.id}
-                cx={h.x}
-                cy={h.y}
-                r={dot}
-                style={{ cursor: CURSOR[h.id] }}
-                onPointerDown={(e) => onHandleDown(e, chosen, h.id)}
-              />
-            ))}
+            )}
           </g>
-        )}
-
-        {/* Home, where the plotter starts, in the corner Plot puts it. */}
-        <circle className={styles.home} cx={0} cy={0} r={dot} />
-      </svg>
-
-      {shapes.length === 0 && !drag && (
-        <div className={styles.hint} aria-hidden="true">
-          <strong>Drag on the page to draw</strong>
-          <span>Then save it and open it in Plot</span>
-        </div>
-      )}
-    </div>
+        );
+      }}
+    </BedCanvas>
   );
 }

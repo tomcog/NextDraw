@@ -1,16 +1,14 @@
 import { useLayoutEffect, useRef, useState } from "react";
-import type { CSSProperties, PointerEvent as ReactPointerEvent, ReactNode } from "react";
+import type { PointerEvent as ReactPointerEvent, ReactNode } from "react";
 import styles from "./Bed.module.css";
+import { BedCanvas, type Box, type Zoom } from "./BedCanvas";
 import { MM, UNITS } from "../lib/constants";
-import { fmtIn } from "../lib/format";
 import { maxPlacement, type Footprint } from "../lib/geometry";
 import type { Preview } from "../lib/preview";
 import { showProgress, type PlotPaths } from "../lib/progressPaths";
 import type { Carriage, Placement, PlotterModel, Settings } from "../lib/types";
 
-export type Zoom = "plotter" | "paper" | "drawing";
-
-type Box = [number, number, number, number]; // x0, y0, x1, y1 in drawing units
+export type { Zoom };
 
 interface Props {
   zoom: Zoom;
@@ -210,71 +208,12 @@ export function Bed(props: Props) {
     });
   }, [preview, layerLooks]);
 
-  if (!model) return <div className={styles.wrap} />;
-
-  const [tx, ty] = model.travel_in;
-  const W = tx * UNITS;
-  const H = ty * UNITS;
-  const hasPaper = s.paper_w > 0 && s.paper_h > 0;
-
-  const travelBox: Box = [0, 0, W, H];
-  const paperBox: Box | null = hasPaper
-    ? [s.paper_x * MM, s.paper_y * MM, (s.paper_x + s.paper_w) * MM, (s.paper_y + s.paper_h) * MM]
+  // The frame, the paper, the grid, the dimension lines and home are BedCanvas's - shared with
+  // Studio so the two previews cannot drift apart. What's left here is Plot's own: the drawing where
+  // it will plot, the carriage, the plot in progress and dragging the drawing into place.
+  const drawingBox: Box | null = fp
+    ? [fp.x * UNITS, fp.y * UNITS, (fp.x + fp.w) * UNITS, (fp.y + fp.h) * UNITS]
     : null;
-  const drawingBox: Box | null = fp ? [fp.x * UNITS, fp.y * UNITS, (fp.x + fp.w) * UNITS, (fp.y + fp.h) * UNITS] : null;
-
-  // What to frame: the whole plotter (plus the paper and drawing, if they stick out), the paper,
-  // or the drawing. The dimension lines measure the same thing (the travel area in the plotter view).
-  const zoomBox = props.zoom === "paper" ? paperBox : props.zoom === "drawing" ? drawingBox : null;
-  const frame: Box = zoomBox ?? [travelBox, paperBox, drawingBox]
-    .filter((b): b is Box => Boolean(b))
-    .reduce((a, b) => [Math.min(a[0], b[0]), Math.min(a[1], b[1]), Math.max(a[2], b[2]), Math.max(a[3], b[3])]);
-  const dimBox = zoomBox ?? travelBox;
-
-  const frameW = frame[2] - frame[0];
-  const frameH = frame[3] - frame[1];
-  const span = Math.max(frameW, frameH);
-  const font = span * 0.024; // sizes the home dot, carriage marker and paper shadow
-
-  // Margins around what's framed, in pads (7.5% of its longer side): a slim left one with just room
-  // for the side dimension line, and a top one with just room for the width line and its label.
-  const LEFT = 0.8;
-  const TOP = 0.7;
-  const fit = (box: Box) => {
-    const pad = Math.max(box[2] - box[0], box[3] - box[1]) * 0.075;
-    return {
-      pad,
-      vb: [box[0] - pad * LEFT, box[1] - pad * TOP, box[2] - box[0] + pad * (LEFT + 0.4), box[3] - box[1] + pad * (TOP + 0.1)],
-    };
-  };
-  // The plotter view. The dimension lines, their labels and the toolbar are measured against it, so
-  // they stay the same size and sit in the same place whichever zoom is showing.
-  const base = fit(travelBox);
-  // Each zoom keeps its own proportions: the preview is sized to them (--bed-aspect, below), so what
-  // is framed grows to the largest it fits in the space beside the panel instead of being padded out
-  // to the plotter's shape.
-  const { vb } = fit(frame);
-  const viewBox = drag?.viewBox ?? vb.join(" ");
-
-  // Where the dimension lines sit in the plotter view, carried into this view at the same screen spot.
-  const [vx, vy, vw, vh] = viewBox.split(" ").map(Number);
-  const k = vw / base.vb[2]; // this view's units per plotter-view unit
-  const baseDy = -base.pad * 0.3;
-  const baseDx = -base.pad * 0.35;
-  const dy = vy + (baseDy - base.vb[1]) * k;
-  const dx = vx + (baseDx - base.vb[0]) * k;
-  const tick = base.pad * 0.14 * k;
-  // Axis labels: about 15px on screen at a typical preview width (the preview scales with the window).
-  const labelFont = Math.max(W, H) * 0.0156 * k;
-  const [dimX0, dimY0, dimX1, dimY1] = dimBox;
-  const dimMidX = (dimX0 + dimX1) / 2;
-  const dimMidY = (dimY0 + dimY1) / 2;
-  // The toolbar is HTML over the SVG, placed in percentages of the view so it lands on the width
-  // dimension line, ending just short of its right tick.
-  const toolbarStyle = {
-    "--toolbar-top": `${((dy - vy) / vh) * 100}%`,
-    "--toolbar-right": `${((vx + vw - dimX1) / vw) * 100}%`,
-  } as CSSProperties;
 
   const snap = (mm: number) => {
     const step = s.units === "in" ? 25.4 / 20 : 1; // 0.05 in or 1 mm
@@ -292,7 +231,9 @@ export function Bed(props: Props) {
       start: new DOMPoint(e.clientX, e.clientY).matrixTransform(ctm),
       startPlacement: placement,
       ctm,
-      viewBox,
+      // Freeze the view for the length of the drag, so the frame doesn't chase the drawing while
+      // it's being moved. BedCanvas is showing it, so read it back off the element.
+      viewBox: svgRef.current.getAttribute("viewBox") ?? "",
     });
   };
 
@@ -318,93 +259,57 @@ export function Bed(props: Props) {
     : undefined;
 
   return (
-    <div className={styles.wrap} style={{ "--bed-aspect": vw / vh } as CSSProperties} data-loaded={props.hasFile} data-dragging-file={props.draggingFile}>
-      <svg
-        ref={svgRef}
-        className={styles.bed}
-        viewBox={viewBox}
-        role="img"
-        aria-label={`Drawing area of the ${model.name}: ${fmtIn(tx)} by ${fmtIn(ty)}`}
-        onPointerDown={onPointerDown}
-        onPointerMove={onPointerMove}
-        onPointerUp={onPointerUp}
-        onPointerCancel={onPointerUp}
-      >
-        <rect className={styles.travel} x={0} y={0} width={W} height={H} />
-        <g className={styles.grid}>
-          {Array.from({ length: Math.max(0, Math.ceil(tx) - 1) }, (_, i) => (
-            <line key={`x${i}`} x1={(i + 1) * UNITS} y1={1} x2={(i + 1) * UNITS} y2={H - 1} />
-          ))}
-          {Array.from({ length: Math.max(0, Math.ceil(ty) - 1) }, (_, i) => (
-            <line key={`y${i}`} x1={1} y1={(i + 1) * UNITS} x2={W - 1} y2={(i + 1) * UNITS} />
-          ))}
-        </g>
-
-        {hasPaper && (
-          <>
-            <rect className={styles.paperShadow} x={s.paper_x * MM + font * 0.18} y={s.paper_y * MM + font * 0.18} width={s.paper_w * MM} height={s.paper_h * MM} />
-            <rect className={styles.paper} style={{ fill: s.paper_color || "#ffffff" }} x={s.paper_x * MM} y={s.paper_y * MM} width={s.paper_w * MM} height={s.paper_h * MM} />
-          </>
+    <BedCanvas
+      zoom={props.zoom}
+      model={model}
+      settings={s}
+      drawingBox={drawingBox}
+      viewBoxOverride={drag?.viewBox}
+      svgRef={svgRef}
+      wrapClassName={styles.bedWrap}
+      wrapData={{ "data-loaded": props.hasFile, "data-dragging-file": props.draggingFile }}
+      toolbar={props.toolbar}
+      onPointerDown={onPointerDown}
+      onPointerMove={onPointerMove}
+      onPointerUp={onPointerUp}
+      overlay={
+        <button type="button" className={styles.dropzone} onClick={props.onOpenBrowser}>
+          <strong>Drop an SVG here</strong>
+          <span>or click to open a drawing</span>
+        </button>
+      }
+    >
+      {({ mark: carriageSize }) => (<>
+      <g className={styles.placed} data-drag="" data-dragging={Boolean(drag)} style={fp ? undefined : { display: "none" }}>
+        {fp && <rect className={styles.dragTarget} x={fp.x * UNITS} y={fp.y * UNITS} width={fp.w * UNITS} height={fp.h * UNITS} />}
+        <g ref={artRef} transform={artTransform} className={showPenUp ? undefined : "hide-pen-up"} style={plotPaths ? { display: "none" } : undefined} />
+        {fp && (
+          <rect
+            className={styles.sheetEdge}
+            data-over={!(props.fitsOnBed && props.fitsOnPaper)}
+            x={fp.x * UNITS}
+            y={fp.y * UNITS}
+            width={fp.w * UNITS}
+            height={fp.h * UNITS}
+          />
         )}
+      </g>
 
-        <g className={styles.dim}>
-          <line x1={dimX0} y1={dy} x2={dimX1} y2={dy} />
-          <line x1={dimX0} y1={dy - tick} x2={dimX0} y2={dy + tick} />
-          <line x1={dimX1} y1={dy - tick} x2={dimX1} y2={dy + tick} />
-          <text className={styles.axisLabel} x={dimMidX} y={dy - tick * 1.3} textAnchor="middle" fontSize={labelFont}>
-            {fmtIn((dimX1 - dimX0) / UNITS)}
-          </text>
-          <line x1={dx} y1={dimY0} x2={dx} y2={dimY1} />
-          <line x1={dx - tick} y1={dimY0} x2={dx + tick} y2={dimY0} />
-          <line x1={dx - tick} y1={dimY1} x2={dx + tick} y2={dimY1} />
-          <text className={styles.axisLabel} x={dx - tick * 1.3} y={dimMidY} textAnchor="middle" fontSize={labelFont} transform={`rotate(-90 ${dx - tick * 1.3} ${dimMidY})`}>
-            {fmtIn((dimY1 - dimY0) / UNITS)}
-          </text>
+      <g
+        ref={progressRef}
+        className="pv-progress"
+        transform={plotPaths ? `translate(${plotPaths.xMm * MM} ${plotPaths.yMm * MM})` : undefined}
+        style={plotPaths ? undefined : { display: "none" }}
+      />
+
+      {carriage?.known && (
+        <g className={styles.carriage} data-pen-down={carriage.pen_up === false}>
+          <line x1={carriage.x * MM - carriageSize} y1={carriage.y * MM} x2={carriage.x * MM + carriageSize} y2={carriage.y * MM} />
+          <line x1={carriage.x * MM} y1={carriage.y * MM - carriageSize} x2={carriage.x * MM} y2={carriage.y * MM + carriageSize} />
+          <circle cx={carriage.x * MM} cy={carriage.y * MM} r={carriageSize * 0.55} />
         </g>
-
-        <g className={styles.placed} data-drag="" data-dragging={Boolean(drag)} style={fp ? undefined : { display: "none" }}>
-          {fp && <rect className={styles.dragTarget} x={fp.x * UNITS} y={fp.y * UNITS} width={fp.w * UNITS} height={fp.h * UNITS} />}
-          <g ref={artRef} transform={artTransform} className={showPenUp ? undefined : "hide-pen-up"} style={plotPaths ? { display: "none" } : undefined} />
-          {fp && (
-            <rect
-              className={styles.sheetEdge}
-              data-over={!(props.fitsOnBed && props.fitsOnPaper)}
-              x={fp.x * UNITS}
-              y={fp.y * UNITS}
-              width={fp.w * UNITS}
-              height={fp.h * UNITS}
-            />
-          )}
-        </g>
-
-        <g
-          ref={progressRef}
-          className="pv-progress"
-          transform={plotPaths ? `translate(${plotPaths.xMm * MM} ${plotPaths.yMm * MM})` : undefined}
-          style={plotPaths ? undefined : { display: "none" }}
-        />
-
-        <circle className={styles.home} cx={0} cy={0} r={font * 0.28} />
-
-        {carriage?.known && (
-          <g className={styles.carriage} data-pen-down={carriage.pen_up === false}>
-            <line x1={carriage.x * MM - font} y1={carriage.y * MM} x2={carriage.x * MM + font} y2={carriage.y * MM} />
-            <line x1={carriage.x * MM} y1={carriage.y * MM - font} x2={carriage.x * MM} y2={carriage.y * MM + font} />
-            <circle cx={carriage.x * MM} cy={carriage.y * MM} r={font * 0.55} />
-          </g>
-        )}
-      </svg>
-
-      <button type="button" className={styles.dropzone} onClick={props.onOpenBrowser}>
-        <strong>Drop an SVG here</strong>
-        <span>or click to open a drawing</span>
-      </button>
-
-      {props.toolbar && (
-        <div className={styles.toolbar} style={toolbarStyle}>
-          {props.toolbar}
-        </div>
       )}
-    </div>
+      </>)}
+    </BedCanvas>
   );
 }

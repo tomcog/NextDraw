@@ -38,7 +38,7 @@
 .progress[data-state="empty"] .pct { color: var(--ui-text-faint); }
 
 .pct {
-  font-size: 1.5rem;
+  font-size: 1rem; /* 16px */
   font-weight: 600;
   line-height: 1;
   color: var(--ui-text-default);

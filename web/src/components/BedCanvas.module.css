@@ -1,0 +1,93 @@
+/* The chrome both apps share: the plotter bed, the paper on it, the grid, the dimension lines and
+   home. Lifted out of Bed.module.css so Plot and Studio cannot drift apart - one set of margins, one
+   text size, one look. Bed.module.css keeps what is Plot's alone. */
+
+.wrap {
+  position: relative;
+  width: 100%;
+}
+
+/* Beside the panel, the preview fits the window's height too: it's only as wide as lets the whole of
+   what's zoomed show without scrolling (5rem: the header above it and the page's bottom padding).
+   The collapsed sections under it are allowed to fall below the fold - they're rarely opened, and
+   scrolling to them costs less than the height they'd take off every preview.
+   Bed.tsx sets --bed-aspect to the preview's width over its height, which changes with the zoom, so
+   whatever is framed ends up as large as the space allows. */
+@media (min-width: 861px) {
+  .wrap { max-width: calc((100dvh - 5rem) * var(--bed-aspect, 1.4)); }
+}
+
+.bed {
+  display: block;
+  width: 100%;
+  height: auto;
+  overflow: hidden; /* zoomed views crop to the preview */
+}
+
+.wrap[data-loaded="true"] .bed { touch-action: none; }
+
+.travel {
+  fill: var(--nd-bed);
+  stroke: var(--ui-border-default);
+  stroke-width: 1;
+  vector-effect: non-scaling-stroke;
+}
+
+.grid line {
+  stroke: var(--nd-grid);
+  stroke-width: 1;
+  vector-effect: non-scaling-stroke;
+}
+
+.paper {
+  fill: var(--nd-sheet);
+  stroke: var(--ui-border-default);
+  stroke-width: 1;
+  vector-effect: non-scaling-stroke;
+}
+
+.paperShadow {
+  fill: var(--ui-text-default);
+  opacity: 0.06;
+}
+
+.dim line {
+  stroke: var(--ui-text-muted);
+  stroke-width: 1;
+  vector-effect: non-scaling-stroke;
+}
+
+.dim text {
+  fill: var(--ui-text-muted);
+  font-family: var(--ui-font-primary), var(--ui-font-fallback);
+  font-weight: 500;
+}
+
+.dim .axisLabel {
+  letter-spacing: 0.05em;
+  fill: var(--ui-text-faint);
+}
+
+.home { fill: var(--ui-text-default); }
+
+/* The zoom presets sit on the width dimension line, centred on it and ending just short of its
+   right tick. Bed.tsx sets the two variables to the line's position. */
+.toolbar {
+  position: absolute;
+  top: var(--toolbar-top);
+  right: var(--toolbar-right);
+  z-index: 2;
+  transform: translateY(-50%);
+  margin-right: 1rem;
+}
+
+/* On a phone the line is too short to hold them without covering its label, so they go below. */
+@media (max-width: 520px) {
+  .toolbar {
+    position: static;
+    display: flex;
+    justify-content: flex-end;
+    transform: none;
+    margin: 0.25rem 0 0;
+  }
+}

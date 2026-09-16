@@ -1,62 +1,11 @@
-.wrap {
-  position: relative;
-  width: 100%;
-}
+/* What Studio adds on top of the shared BedCanvas: the shapes being edited, their hatching and their
+   handles. The page, the grid, the dimension lines and home belong to the bed itself. */
 
-/* Beside the panel, the page fits the window's height too: it's only as wide as lets the whole page
-   show without scrolling (5rem: the header above it and the page's bottom padding). Canvas.tsx sets
-   --canvas-aspect to the view's width over its height. The same rule Plot's preview uses. */
-@media (min-width: 861px) {
-  .wrap { max-width: calc((100dvh - 5rem) * var(--canvas-aspect, 1.3)); }
-}
+.wrap { cursor: crosshair; }
+.wrap[data-tool="select"] { cursor: default; }
 
-.canvas {
-  display: block;
-  width: 100%;
-  height: auto;
-  touch-action: none; /* dragging draws, it doesn't scroll the page */
-  cursor: crosshair;
-}
-
-.page {
-  fill: var(--nd-sheet);
-  stroke: var(--ui-border-default);
-  stroke-width: 1;
-  vector-effect: non-scaling-stroke;
-}
-
-/* Stroke widths here are screen pixels, not page units: non-scaling-stroke measures them that way,
-   so the grid stays a hairline and the ink stays legible however far the page is zoomed. */
-.grid line {
-  /* Not Plot's --nd-grid: that one is drawn on the plotter's dark bed and turns near-black in the
-     dark theme, whereas this grid is always on white paper. One on-white grey suits both themes. */
-  stroke: var(--studio-grid, #d6dbd9);
-  stroke-width: 1;
-  vector-effect: non-scaling-stroke;
-}
-
-.pageEdge {
-  fill: none;
-  stroke: var(--ui-border-default);
-  stroke-width: 1;
-  vector-effect: non-scaling-stroke;
-}
-
-.home { fill: var(--ui-text-default); }
-
-/* The paper's measurements, in Plot's own dimension-line styling so the two previews read alike. */
-.dim line {
-  stroke: var(--ui-text-muted);
-  stroke-width: 1;
-  vector-effect: non-scaling-stroke;
-}
-
-.dim text {
-  fill: var(--ui-text-faint);
-  font-family: var(--ui-font-primary), var(--ui-font-fallback);
-  font-weight: 500;
-  letter-spacing: 0.05em;
-}
+/* Dragging draws; it must not scroll the page under the finger. */
+.wrap svg { touch-action: none; }
 
 /* A fill's hatch lines: the same ink as the shape, and never in the way of grabbing it. */
 .fills line {
@@ -90,8 +39,10 @@
    you can't draw in. In select mode the whole shape is the grip, interior included - these have no
    fill, so without pointer-events: all only the outline itself would catch the pointer. */
 .shape { pointer-events: none; }
-.canvas[data-tool="select"] .shape { pointer-events: all; cursor: grab; }
-.canvas[data-tool="select"][data-drag="move"] .shape { cursor: grabbing; }
+
+.wrap[data-tool="select"] .shape { pointer-events: all; cursor: grab; }
+
+.wrap[data-tool="select"][data-drag="move"] .shape { cursor: grabbing; }
 
 /* Corner handles: filled so they read as grips rather than as part of the drawing. */
 .handles circle {
