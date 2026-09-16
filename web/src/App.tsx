@@ -9,7 +9,7 @@ import { fitsOnBed, fitsOnPaper, footprint } from "./lib/geometry";
 import { parsePlotPaths, type PlotPaths } from "./lib/progressPaths";
 import { parsePreview, type Preview } from "./lib/preview";
 import { load, save } from "./lib/storage";
-import type { Confirmation, Estimate, Info, Layer, LayerEdits, PenColor, LayerNote, LayerView, Message, Placement, Preset, Settings, Status, Studio } from "./lib/types";
+import type { Confirmation, Estimate, Info, Layer, LayerEdits, PenColor, LayerNote, LayerView, Message, Placement, Preset, Settings, Status, Plot } from "./lib/types";
 import { Header } from "./components/Header";
 import { Bed, type Zoom } from "./components/Bed";
 import { PaletteEditor } from "./components/PaletteEditor";
@@ -243,23 +243,23 @@ export default function App() {
   // watch for changes from there. Returns the scale to estimate at.
   const [loadedFile, setLoadedFile] = useState<string | null>(null);
   const savedKey = useRef<string | null>(null);
-  const applyStudio = useCallback((name: string, studio: Studio | null) => {
-    setPlacementState(studio?.placement ?? { x: 0, y: 0 });
-    const nextScale = studio?.scale ?? 100;
+  const applyPlot = useCallback((name: string, plot: Plot | null) => {
+    setPlacementState(plot?.placement ?? { x: 0, y: 0 });
+    const nextScale = plot?.scale ?? 100;
     refs.current.scale = nextScale;
     setScaleState(nextScale);
-    const nextRotation = ((Math.round((studio?.rotation ?? 0) / 90) % 4) + 4) % 4 * 90;
+    const nextRotation = ((Math.round((plot?.rotation ?? 0) / 90) % 4) + 4) % 4 * 90;
     refs.current.rotation = nextRotation;
     setRotation(nextRotation);
     setLayerEdits(null);
     setPrintLayer(null);
     setLayerMode("preview");
-    setSmallPaths(studio?.small_paths ?? null);
-    setSecondTool(studio?.second_tool ?? null);
-    setSecondToolLayers(studio?.second_tool_layers ?? []);
-    const tool = studio?.tool ? refs.current.presets.find((p) => p.name === studio.tool) : undefined;
+    setSmallPaths(plot?.small_paths ?? null);
+    setSecondTool(plot?.second_tool ?? null);
+    setSecondToolLayers(plot?.second_tool_layers ?? []);
+    const tool = plot?.tool ? refs.current.presets.find((p) => p.name === plot.tool) : undefined;
     if (tool) setActivePreset(tool.name);
-    const patch = { ...(tool?.settings ?? {}), ...(studio?.paper ?? {}) };
+    const patch = { ...(tool?.settings ?? {}), ...(plot?.paper ?? {}) };
     if (Object.keys(patch).length) {
       refs.current.settings = { ...refs.current.settings, ...patch };
       setSettings((prev) => ({ ...prev, ...patch }));
@@ -276,7 +276,7 @@ export default function App() {
 
   // Changes to the drawing (layer names and order, placement, scale, drawing tool, paper) are written
   // into the SVG shortly after they're made. Saves run one at a time, and wait while the plotter is busy.
-  const studioNow: Studio = {
+  const drawingNow: Plot = {
     placement,
     scale,
     rotation,
@@ -288,7 +288,7 @@ export default function App() {
   const layersNow = layerEdits
     ? layerViews.map((l) => ({ id: l.id, name: l.name, hidden: l.hidden, ...(layerEdits.colors[l.id] ? { color: l.color } : {}) }))
     : null;
-  const saveKey = JSON.stringify([studioNow, layersNow]);
+  const saveKey = JSON.stringify([drawingNow, layersNow]);
   const saveChain = useRef(Promise.resolve());
   const holdSaves = useRef(false); // while deleting a layer: that request carries the layers itself
   useEffect(() => {
@@ -299,7 +299,7 @@ export default function App() {
     }
     if (saveKey === savedKey.current || busy) return;
     const key = saveKey;
-    const body = { file: fileName, studio: studioNow, ...(layersNow ? { layers: layersNow } : {}) };
+    const body = { file: fileName, plot: drawingNow, ...(layersNow ? { layers: layersNow } : {}) };
     const timer = window.setTimeout(() => {
       saveChain.current = saveChain.current.then(async () => {
         if (refs.current.fileName !== fileName || holdSaves.current) return;
@@ -372,9 +372,9 @@ export default function App() {
         if (next.file && !currentFile) {
           // The page was reloaded with a drawing loaded: pick up the choices saved in it.
           refs.current.fileName = next.file;
-          const drawing = await api<{ studio: Studio | null }>("/api/drawing").catch(() => ({ studio: null }));
+          const drawing = await api<{ plot: Plot | null }>("/api/drawing").catch(() => ({ plot: null }));
           if (cancelled) return;
-          applyStudio(next.file, drawing.studio);
+          applyPlot(next.file, drawing.plot);
           setFileName(next.file);
         }
         if (isBusy(prev) && !isBusy(next) && action === "plot") setLocalMessage(null);
@@ -470,13 +470,13 @@ export default function App() {
   /* ---------- Actions ---------- */
 
   // A drawing was just loaded (opened, imported or uploaded): start it at home, at full size.
-  const startNewDrawing = async (name: string, studio: Studio | null) => {
+  const startNewDrawing = async (name: string, plot: Plot | null) => {
     estimateSeq.current++;
     setEstimate(null);
     setPreview(null);
     setDrawingLayers(null);
     refs.current.fileName = name;
-    applyStudio(name, studio);
+    applyPlot(name, plot);
     setStatus((s) => (s ? { ...s, resume: null } : s));
     setFileName(name);
     setDrawingVersion((v) => v + 1); // reloading the same name still redraws and re-estimates
@@ -494,8 +494,8 @@ export default function App() {
     form.append("file", file);
     setLocalMessage({ text: `Loading ${file.name}…` });
     try {
-      const res = await api<{ name: string; studio: Studio | null }>("/api/upload", { method: "POST", body: form });
-      await startNewDrawing(res.name, res.studio);
+      const res = await api<{ name: string; plot: Plot | null }>("/api/upload", { method: "POST", body: form });
+      await startNewDrawing(res.name, res.plot);
     } catch (err) {
       setLocalMessage({ text: (err as Error).message, tone: "error" });
     }
@@ -527,7 +527,7 @@ export default function App() {
     if (!busy) setBrowserOpen(true);
   };
   const onOpened = (res: OpenResult) => {
-    startNewDrawing(res.name, res.studio);
+    startNewDrawing(res.name, res.plot);
   };
 
 

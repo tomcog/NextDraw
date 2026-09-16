@@ -1,4 +1,4 @@
-import type { Studio } from "../lib/types";
+import type { Plot } from "../lib/types";
 import { useEffect, useRef, useState } from "react";
 import { Button, ButtonRound, Segment, SegmentedControl, Spinner } from "@tomcoggia/ui";
 import { ArrowUp, FileImage, Folder, PenTool } from "lucide-react";
@@ -28,7 +28,7 @@ export interface OpenResult {
   name: string;
   path: string;
   folder: string;
-  studio: Studio | null;
+  plot: Plot | null;
 }
 
 interface Props {

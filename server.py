@@ -1508,10 +1508,10 @@ def open_file():
             svg_path = existing if (existing.exists() and mode == "existing") else import_from_illustrator(path)
         else:
             return jsonify(error="Choose an SVG or Illustrator (.ai) file."), 400
-        studio = load_drawing(svg_path)
+        plot = load_drawing(svg_path)
     except (OSError, ValueError, RuntimeError) as exc:
         return jsonify(error=str(exc)), 400
-    return jsonify(name=svg_path.name, path=str(svg_path), folder=display_path(svg_path.parent), studio=studio)
+    return jsonify(name=svg_path.name, path=str(svg_path), folder=display_path(svg_path.parent), plot=plot)
 
 
 @app.get("/api/drawing")
@@ -1519,12 +1519,12 @@ def get_drawing():
     if not CURRENT_SVG.exists():
         return jsonify(error="Load an SVG first."), 400
     try:
-        return jsonify(studio=read_plot(parse_svg(CURRENT_SVG).getroot()))
+        return jsonify(plot=read_plot(parse_svg(CURRENT_SVG).getroot()))
     except Exception as exc:  # noqa: BLE001
         return jsonify(error=f"Couldn't read that SVG: {exc}"), 400
 
 
-def clean_studio(raw):
+def clean_plot(raw):
     """Only the choices the page saves into a drawing, with sane values."""
     out = {}
     placement = raw.get("placement")
@@ -1584,12 +1584,12 @@ def save_drawing():
         wanted = body.get("layers")
         if isinstance(wanted, list) and not apply_layers(root, wanted):
             return jsonify(error="The drawing's layers changed. Open it again."), 409
-        if isinstance(body.get("studio"), dict):
-            studio = clean_studio(body["studio"])
+        if isinstance(body.get("plot"), dict):
+            plot = clean_plot(body["plot"])
             kept = (read_plot(root) or {}).get("original_page")
             if kept:
-                studio["original_page"] = kept  # set by Trim to drawing, not by the page's choices
-            write_plot(root, studio)
+                plot["original_page"] = kept  # set by Trim to drawing, not by the page's choices
+            write_plot(root, plot)
     except Exception as exc:  # noqa: BLE001
         return jsonify(error=f"Couldn't save the drawing: {exc}"), 400
     problem = commit_drawing(tree, disk_path)
@@ -1781,8 +1781,8 @@ def trim_to_drawing():
     try:
         tree = parse_svg(CURRENT_SVG)
         root = tree.getroot()
-        studio = read_plot(root) or {}
-        if studio.get("original_page"):
+        plot = read_plot(root) or {}
+        if plot.get("original_page"):
             return jsonify(error="The page is already trimmed to the drawing."), 409
         bounds = drawing_bounds(clean_settings(body))
         if not bounds:
@@ -1793,11 +1793,11 @@ def trim_to_drawing():
         vb = sized.get("viewBox")
         vx, vy, vw, vh = [float(v) for v in re.split(r"[\s,]+", vb.strip())] if vb else (0, 0, page_w * 96, page_h * 96)
         ux, uy = vw / page_w, vh / page_h  # user units per inch
-        studio["original_page"] = {k: root.get(k) for k in ("width", "height", "viewBox")}
+        plot["original_page"] = {k: root.get(k) for k in ("width", "height", "viewBox")}
         root.set("viewBox", f"{vx + x0 * ux:g} {vy + y0 * uy:g} {(x1 - x0) * ux:g} {(y1 - y0) * uy:g}")
         root.set("width", f"{x1 - x0:g}in")
         root.set("height", f"{y1 - y0:g}in")
-        write_plot(root, studio)
+        write_plot(root, plot)
         dx, dy = turned_offset((x0, y0, x1, y1), page_w, page_h, clean_rotation(body))
     except Exception as exc:  # noqa: BLE001
         return jsonify(error=f"Couldn't trim the drawing: {exc}"), 400
@@ -1818,8 +1818,8 @@ def restore_page():
     try:
         tree = parse_svg(CURRENT_SVG)
         root = tree.getroot()
-        studio = read_plot(root) or {}
-        original = studio.pop("original_page", None)
+        plot = read_plot(root) or {}
+        original = plot.pop("original_page", None)
         if not original:
             return jsonify(error="This drawing's page hasn't been trimmed."), 409
         trimmed = parse_svg(CURRENT_SVG).getroot()
@@ -1829,7 +1829,7 @@ def restore_page():
                 root.attrib.pop(key, None)
             else:
                 root.set(key, original[key])
-        write_plot(root, studio)
+        write_plot(root, plot)
         # Work out where the trimmed page sat on the restored one. A copy of the whole document, so
         # the Illustrator comment before <svg> still tells normalize_size the units are points.
         import copy
@@ -1873,16 +1873,16 @@ def upload():
     CURRENT_SVG.write_bytes(data)
     try:
         ensure_layer_ids(CURRENT_SVG)
-        studio = read_plot(parse_svg(CURRENT_SVG).getroot())
+        plot = read_plot(parse_svg(CURRENT_SVG).getroot())
     except Exception:  # noqa: BLE001 - an unreadable SVG is reported by the estimate
-        studio = None
+        plot = None
     (JOBS / "current.name").write_text(file.filename)
     CURRENT_PATH.unlink(missing_ok=True)  # an uploaded copy isn't linked to a file on disk
     CURRENT_MTIME.unlink(missing_ok=True)
     with job.lock:
         if not job.busy():
             job.reset("idle")
-    return jsonify(name=file.filename, studio=studio)
+    return jsonify(name=file.filename, plot=plot)
 
 
 @app.delete("/api/file")

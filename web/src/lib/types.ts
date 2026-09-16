@@ -133,7 +133,7 @@ export interface LayerEdits {
 }
 
 // The page's choices saved inside a drawing file, restored when it's opened again.
-export interface Studio {
+export interface Plot {
   placement?: Placement;
   scale?: number;
   rotation?: number; // quarter turns clockwise, in degrees
