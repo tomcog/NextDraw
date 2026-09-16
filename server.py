@@ -1910,6 +1910,25 @@ def studio_file_name(raw):
     return f"{base}.svg" if base else None
 
 
+@app.get("/api/studio/read")
+def studio_read():
+    """
+    Hand a drawing's SVG to Studio so it can be edited again. Read-only on purpose: unlike /api/open
+    this doesn't make the file the loaded drawing, so picking something to edit in Studio can't change
+    what Plot is about to print.
+    """
+    path = allowed_path(request.args.get("path", ""))
+    if path is None or not path.is_file() or path.suffix.lower() != ".svg":
+        return jsonify(error="That isn't an SVG the app can open."), 403
+    if path.stat().st_size > MAX_STUDIO_SVG:
+        return jsonify(error=f"{path.name} is too big to edit here."), 413
+    try:
+        svg = path.read_text(encoding="utf-8", errors="replace")
+    except OSError as exc:
+        return jsonify(error=f"Couldn't read {path.name}: {exc.strerror or exc}"), 500
+    return jsonify(name=path.name, path=str(path), folder=display_path(path.parent), svg=svg)
+
+
 @app.post("/api/studio/save")
 def studio_save():
     """

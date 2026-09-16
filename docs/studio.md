@@ -166,6 +166,22 @@ on-white grey for the grid rather than `--nd-grid`, which is drawn on Plot's dar
 near-black; and shapes are drawn in the pen's own ink rather than `--nd-ink`, which is the blue Plot
 uses for paths whose pen isn't known yet.
 
-What it deliberately doesn't do yet: move or resize a shape once drawn, undo, open an existing
-drawing for editing, choose a pen, or fill anything. Fills are the next feature, and the decisions
-above are about them.
+**Opening a drawing again**, so handing one to Plot isn't the same as losing it. `GET
+/api/studio/read` hands back a file's SVG without loading it, which matters: picking something to
+edit can't change what Plot is about to print. Studio reads back the shapes it writes - rectangles,
+ellipses, lines - converting from the drawing's own units. Plot's file browser does the picking,
+given an endpoint to use, rather than Studio growing one of its own.
+
+Studio also remembers the drawing it was last on, so coming back from Plot picks it up rather than
+landing on a blank page. If that fails it says so and keeps the pointer: the file may be fine and the
+server merely unreachable, and discarding the only record of what you were working on is the one
+move you can't undo.
+
+**A drawing Studio only partly understands can't be overwritten.** Saving rewrites a file from the
+shapes Studio holds, so a drawing with 100 hatch paths in it would come back with none. Opening one
+counts what it can't redraw and says so, and saving over that same name is refused - a different name
+saves a copy and leaves the original alone. Studio owning the files it makes was never a licence to
+gut someone else's artwork.
+
+What it deliberately doesn't do yet: move or resize a shape once drawn, undo, choose a pen, or fill
+anything. Fills are the next feature, and the decisions above are about them.

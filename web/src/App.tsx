@@ -495,7 +495,7 @@ export default function App() {
     setLocalMessage({ text: `Loading ${file.name}…` });
     try {
       const res = await api<{ name: string; plot: Plot | null }>("/api/upload", { method: "POST", body: form });
-      await startNewDrawing(res.name, res.plot);
+      await startNewDrawing(res.name, res.plot ?? null);
     } catch (err) {
       setLocalMessage({ text: (err as Error).message, tone: "error" });
     }
@@ -527,7 +527,7 @@ export default function App() {
     if (!busy) setBrowserOpen(true);
   };
   const onOpened = (res: OpenResult) => {
-    startNewDrawing(res.name, res.plot);
+    startNewDrawing(res.name, res.plot ?? null);
   };
 
 

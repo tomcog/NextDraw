@@ -1,13 +1,16 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Button, ButtonRound, Card, InputSelect, InputText } from "@tomcoggia/ui";
-import { Circle, Minus, Ratio, Square, Trash2 } from "lucide-react";
+import { Circle, FolderOpen, Minus, Ratio, Square, Trash2 } from "lucide-react";
+import { FileBrowser, type OpenResult } from "../components/FileBrowser";
 import { Section } from "../components/controls/Section";
 import controls from "../components/controls/controls.module.css";
 import { api, postJSON } from "../lib/api";
+import { load, save as remember } from "../lib/storage";
 import { PAPER_SIZES } from "../lib/constants";
 import { fmtIn } from "../lib/format";
 import { Canvas } from "./components/Canvas";
 import { StudioHeader } from "./components/StudioHeader";
+import { parseDrawing } from "./lib/parse";
 import { boxOf, shapeName, type Page, type Shape, type ShapeKind } from "./lib/shapes";
 import { buildSvg, cleanFileName } from "./lib/svg";
 import styles from "./App.module.css";
@@ -31,6 +34,10 @@ const TOOLS: { kind: ShapeKind; label: string; icon: JSX.Element }[] = [
 // a tool's pens takes that pen's color when the drawing is opened in Plot (see docs/studio.md).
 const LAYER_NAME = "Black";
 
+// The drawing being worked on, remembered so that handing one to Plot - which navigates away - isn't
+// the same as losing it. Its own key: Plot's keys share this origin and still carry the old name.
+const LAST_FILE_KEY = "studio-last-file";
+
 type Saved = { path: string; folder: string } | null;
 
 export default function App() {
@@ -41,6 +48,11 @@ export default function App() {
   const [name, setName] = useState("Untitled");
   const [saved, setSaved] = useState<Saved>(null);
   const [busy, setBusy] = useState(false);
+  const [browserOpen, setBrowserOpen] = useState(false);
+  // Marks in the drawing on disk that Studio can't redraw, and the name it was opened under. Saving
+  // rewrites a file from the shapes Studio holds, so overwriting that file would delete them.
+  const [foreign, setForeign] = useState(0);
+  const [openedAs, setOpenedAs] = useState<string | null>(null);
   const [message, setMessage] = useState<{ text: string; ok: boolean }>({
     text: "Nothing saved yet",
     ok: false,
@@ -77,6 +89,15 @@ export default function App() {
       setMessage({ text: "Draw something first", ok: false });
       return null;
     }
+    // A drawing Studio only partly understands is written back from the shapes it holds, which would
+    // drop the rest. Saving a copy is allowed; overwriting the original is not.
+    if (foreign > 0 && cleanFileName(name) === openedAs) {
+      setMessage({
+        text: `${openedAs} has ${foreign} ${foreign === 1 ? "mark" : "marks"} Studio can’t redraw. Give it another name to save a copy.`,
+        ok: false,
+      });
+      return null;
+    }
     setBusy(true);
     try {
       const svg = buildSvg(shapes, page, LAYER_NAME, sizeId);
@@ -87,6 +108,10 @@ export default function App() {
       const where = { path: res.path, folder: res.folder };
       setName(res.name.replace(/\.svg$/i, ""));
       setSaved(where);
+      // What's on disk now is exactly what Studio holds, whatever the file used to contain.
+      setForeign(0);
+      setOpenedAs(res.name);
+      remember(LAST_FILE_KEY, res.path);
       dirty.current = false;
       setMessage({ text: `Saved to ${res.folder}`, ok: true });
       return where;
@@ -113,12 +138,59 @@ export default function App() {
     }
   };
 
-  // Say so if the server isn't there, rather than only failing at the moment of saving.
-  useEffect(() => {
-    api("/api/info").catch(() =>
-      setMessage({ text: "Can’t reach the server. Is server.py running?", ok: false }),
+  const openDrawing = useCallback((res: OpenResult, note: (n: number) => string) => {
+    const drawing = parseDrawing(res.svg ?? "");
+    setPage(drawing.page);
+    setShapes(drawing.shapes);
+    setSelected(null);
+    setName(res.name.replace(/\.svg$/i, ""));
+    setSaved({ path: res.path, folder: res.folder });
+    setForeign(drawing.unsupported);
+    setOpenedAs(res.name);
+    remember(LAST_FILE_KEY, res.path);
+    // Saving would write only what Studio can draw, so anything else in the file has to be said out
+    // loud before it's overwritten rather than discovered missing afterwards.
+    setMessage(
+      drawing.unsupported
+        ? {
+            text: `${note(drawing.shapes.length)} - ${drawing.unsupported} other ${drawing.unsupported === 1 ? "mark" : "marks"} can’t be edited here and saving would drop ${drawing.unsupported === 1 ? "it" : "them"}`,
+            ok: false,
+          }
+        : { text: note(drawing.shapes.length), ok: true },
     );
+    // What's on screen is what's in the file, so there's nothing new to write yet.
+    window.setTimeout(() => {
+      dirty.current = false;
+    }, 0);
   }, []);
+
+  // Say so if the server isn't there, rather than only failing at the moment of saving. Then pick up
+  // the drawing this browser was last working on, so coming back from Plot lands where you left off.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        await api("/api/info");
+      } catch {
+        if (!cancelled) setMessage({ text: "Can’t reach the server. Is server.py running?", ok: false });
+        return;
+      }
+      const last = load<string>(LAST_FILE_KEY);
+      if (!last || cancelled) return;
+      try {
+        const res = await api<OpenResult>(`/api/studio/read?path=${encodeURIComponent(last)}`);
+        if (!cancelled) openDrawing(res, (n) => `Picked up ${res.name} - ${n} ${n === 1 ? "shape" : "shapes"}`);
+      } catch {
+        // Start clean but keep the pointer: the file may be fine and the server merely unreachable,
+        // and throwing the only record of what was being worked on is the one unrecoverable move.
+        // Opening or saving anything else replaces it anyway.
+        if (!cancelled) setMessage({ text: `Couldn’t reopen the last drawing. Use Open… to pick it up.`, ok: false });
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [openDrawing]);
 
   const setSize = (id: string) => {
     const size = SIZES.find((s) => s.id === id);
@@ -130,6 +202,12 @@ export default function App() {
 
   return (
     <div className={styles.app}>
+      <FileBrowser
+        open={browserOpen}
+        endpoint="/api/studio/read"
+        onClose={() => setBrowserOpen(false)}
+        onOpened={(res) => openDrawing(res, (n) => `Opened ${res.name} - ${n} ${n === 1 ? "shape" : "shapes"}`)}
+      />
       <StudioHeader message={message.text} ok={message.ok} />
 
       <main className={styles.layout}>
@@ -147,7 +225,19 @@ export default function App() {
         <div className={styles.side}>
           <Card variant="flat" className={styles.controls}>
             <div className={styles.cardBody}>
-              <Section title="Drawing">
+              <Section
+                title="Drawing"
+                action={
+                  <ButtonRound
+                    size="sm"
+                    icon={<FolderOpen />}
+                    aria-label="Open a drawing"
+                    title="Open a drawing to carry on with"
+                    disabled={busy}
+                    onClick={() => setBrowserOpen(true)}
+                  />
+                }
+              >
                 <InputText
                   size="md"
                   label="Name"

@@ -28,13 +28,16 @@ export interface OpenResult {
   name: string;
   path: string;
   folder: string;
-  plot: Plot | null;
+  plot?: Plot | null; // Plot's own route loads the drawing and answers with its settings
+  svg?: string; // Studio's route reads the file instead, so picking one to edit doesn't load it
 }
 
 interface Props {
   open: boolean;
   onClose: () => void;
   onOpened: (result: OpenResult) => void;
+  /** What picking a file means. Plot loads it; Studio reads it for editing. */
+  endpoint?: string;
 }
 
 const LAST_FOLDER_KEY = "nextdraw-studio-last-folder";
@@ -46,7 +49,7 @@ const fmtDate = (seconds = 0) =>
   new Date(seconds * 1000).toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
 
 // Browse the folders the server allows and open an SVG, or import an Illustrator file as SVG.
-export function FileBrowser({ open, onClose, onOpened }: Props) {
+export function FileBrowser({ open, onClose, onOpened, endpoint = "/api/open" }: Props) {
   const dialog = useRef<HTMLDialogElement>(null);
   const [listing, setListing] = useState<Listing | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -86,7 +89,12 @@ export function FileBrowser({ open, onClose, onOpened }: Props) {
     const importing = file.kind === "ai" && mode !== "existing";
     setWorking(importing ? `Importing ${file.name} from Illustrator… This can take a few seconds.` : `Opening ${file.name}…`);
     try {
-      const res = await postJSON<OpenResult & { choice?: boolean; svg_name?: string }>("/api/open", { path: file.path, mode });
+      // Plot posts, because opening can import an Illustrator file and ask which copy to use.
+      // Studio just reads the file back, so a GET is enough and there's nothing to choose.
+      type Opened = OpenResult & { choice?: boolean; svg_name?: string };
+      const res: Opened = endpoint === "/api/open"
+        ? await postJSON<Opened>(endpoint, { path: file.path, mode })
+        : await api<Opened>(`${endpoint}?path=${encodeURIComponent(file.path)}`);
       if (res.choice) {
         setChoice({ file, svgName: res.svg_name ?? "" });
         return;
