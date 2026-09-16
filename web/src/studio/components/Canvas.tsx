@@ -15,6 +15,11 @@ interface Props {
   page: Page;
   shapes: Shape[];
   fills: Fill[];
+  /** A pen's color by name, and the pen a shape falls back to. */
+  colorOf: (pen: string) => string;
+  defaultPen: string;
+  /** The tool's line width in millimetres, drawn at true size so the weight is honest. */
+  penWidthMm: number;
   tool: Tool;
   selected: string | null;
   onSelect: (id: string | null) => void;
@@ -37,7 +42,7 @@ type Drag =
 // The page at true proportions, with a one-inch grid. It keeps the page's own proportions and is
 // sized to them (--canvas-aspect), so the drawing gets as large as the space allows - the same way
 // Plot's preview fills its column.
-export function Canvas({ page, shapes, fills, tool, selected, onSelect, onAdd, onUpdate, onEditStart }: Props) {
+export function Canvas({ page, shapes, fills, colorOf, defaultPen, penWidthMm, tool, selected, onSelect, onAdd, onUpdate, onEditStart }: Props) {
   const svgRef = useRef<SVGSVGElement>(null);
   const [drag, setDrag] = useState<Drag | null>(null);
   const pointer = useRef<number | null>(null);
@@ -46,6 +51,9 @@ export function Canvas({ page, shapes, fills, tool, selected, onSelect, onAdd, o
   const vb = [-pad, -pad, page.w + pad * 2, page.h + pad * 2];
   const viewBox = vb.join(" ");
   const dot = vb[2] * 0.008; // handle and home-marker radius in page units - real geometry, so it scales
+  // The pen's real width, in the page's inches, so the line on screen is the line on paper. Held to a
+  // visible minimum: a 0.3 mm pen on a big page would otherwise vanish rather than read as thin.
+  const penIn = Math.max(penWidthMm / 25.4, vb[2] * 0.0012);
 
   // Where a pointer is on the page, in inches from its top-left corner.
   const pointAt = (e: ReactPointerEvent): { x: number; y: number } | null => {
@@ -133,6 +141,9 @@ export function Canvas({ page, shapes, fills, tool, selected, onSelect, onAdd, o
       className: kind === "draft" ? styles.draft : styles.shape,
       "data-guide": guide ? "true" : undefined,
       "data-selected": kind === "shape" && s.id === selected ? "true" : undefined,
+      style: kind === "shape" && !guide
+        ? ({ stroke: colorOf(s.pen || defaultPen), strokeWidth: penIn } as CSSProperties)
+        : undefined,
       onPointerDown: kind === "shape" ? (e: ReactPointerEvent) => onShapeDown(e, s) : undefined,
     };
     if (s.kind === "line") return <line {...common} x1={s.x} y1={s.y} x2={s.x2} y2={s.y2} />;
@@ -191,7 +202,10 @@ export function Canvas({ page, shapes, fills, tool, selected, onSelect, onAdd, o
             const shape = shapes.find((s) => s.id === fill.shapeId);
             if (!shape) return null;
             return (
-              <g key={fill.shapeId}>
+              <g
+                key={fill.id}
+                style={{ stroke: colorOf(shape.pen || defaultPen), strokeWidth: penIn } as CSSProperties}
+              >
                 {hatchLines(shape, fill).map((l, i) => (
                   <line key={i} x1={l.x1} y1={l.y1} x2={l.x2} y2={l.y2} />
                 ))}

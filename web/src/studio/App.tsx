@@ -7,6 +7,7 @@ import controls from "../components/controls/controls.module.css";
 import { api, postJSON } from "../lib/api";
 import { load, save as remember } from "../lib/storage";
 import { PAPER_SIZES } from "../lib/constants";
+import type { PenColor, Preset } from "../lib/types";
 import { fmtIn } from "../lib/format";
 import { Canvas, type Tool } from "./components/Canvas";
 import { StudioHeader } from "./components/StudioHeader";
@@ -32,9 +33,9 @@ const TOOLS: { kind: Tool; label: string; hint: string; icon: JSX.Element }[] = 
   { kind: "line", label: "Line", hint: "Draw a line: drag on the page", icon: <Minus /> },
 ];
 
-// The layer the shapes are written into. Named after a pen, because a layer whose name matches one of
-// a tool's pens takes that pen's color when the drawing is opened in Plot (see docs/studio.md).
-const LAYER_NAME = "Black";
+// Used when a tool has no palette of its own, so there is always a pen to draw with.
+const PLAIN_PEN: PenColor = { name: "Black", color: "#262626" };
+const TOOL_KEY = "studio-tool";
 
 // The drawing being worked on, remembered so that handing one to Plot - which navigates away - isn't
 // the same as losing it. Its own key: Plot's keys share this origin and still carry the old name.
@@ -59,6 +60,8 @@ export default function App() {
   // A tool's measured hatch numbers are the sensible starting point for a new fill, and they live in
   // Plot's presets rather than being invented here.
   const [defaults, setDefaults] = useState({ angle: 45, spacingMm: 1.5 });
+  const [presets, setPresets] = useState<Preset[]>([]);
+  const [toolName, setToolName] = useState<string>(() => load<string>(TOOL_KEY) ?? "");
   const [tool, setTool] = useState<Tool>("rect");
   const [selected, setSelected] = useState<string | null>(null);
   const [name, setName] = useState("Untitled");
@@ -163,7 +166,12 @@ export default function App() {
     }
     setBusy(true);
     try {
-      const svg = buildSvg(shapes, fills, page, LAYER_NAME, sizeId);
+      const svg = buildSvg(shapes, fills, page, {
+        paperSizeId: sizeId,
+        toolName,
+        defaultPen,
+        colorOf,
+      });
       const res = await postJSON<{ name: string; path: string; folder: string }>("/api/studio/save", {
         name: cleanFileName(name),
         svg,
@@ -258,16 +266,33 @@ export default function App() {
     };
   }, [openDrawing]);
 
+  // Plot's drawing tools, so a drawing is made with the pens it will actually be drawn with.
   useEffect(() => {
-    api<{ presets: { hatch?: { angle?: number; spacing_mm?: number } }[] }>("/api/presets")
-      .then(({ presets }) => {
-        const measured = presets.find((t) => t.hatch?.spacing_mm);
-        if (measured?.hatch) {
-          setDefaults({ angle: measured.hatch.angle ?? 45, spacingMm: measured.hatch.spacing_mm! });
-        }
+    api<{ presets: Preset[] }>("/api/presets")
+      .then(({ presets: list }) => {
+        setPresets(list);
+        setToolName((current) => (list.some((t) => t.name === current) ? current : list[0]?.name ?? ""));
       })
-      .catch(() => {}); // no presets is not a reason to stop; the fallback numbers stand
+      .catch(() => {}); // no presets is not a reason to stop; the fallbacks below stand
   }, []);
+
+  const tool2 = presets.find((t) => t.name === toolName) ?? null;
+  const palette: PenColor[] = tool2?.palette?.length ? tool2.palette : [PLAIN_PEN];
+  // Darkest last in the list, so the default pen is the one you'd reach for first.
+  const defaultPen = palette[palette.length - 1].name;
+  const colorOf = (pen: string) => palette.find((p) => p.name === pen)?.color ?? PLAIN_PEN.color;
+  // The real line the pen lays down, so the drawing shows its true weight against the hatch spacing.
+  const penWidthMm = tool2?.settings.pen_width ?? 0.7;
+
+  // A fill starts from the chosen tool's own measured numbers when it has them.
+  useEffect(() => {
+    const hatch = tool2?.hatch;
+    if (hatch?.spacing_mm) setDefaults({ angle: hatch.angle ?? 45, spacingMm: hatch.spacing_mm });
+  }, [tool2]);
+
+  useEffect(() => {
+    if (toolName) remember(TOOL_KEY, toolName);
+  }, [toolName]);
 
   const chosen = shapes.find((s) => s.id === selected) ?? null;
   // In order, so the first is the hatch and the second is the cross-hatch laid over it.
@@ -293,6 +318,12 @@ export default function App() {
       else updated.splice(at, 1);
       return [...others, ...updated.filter(Boolean)];
     });
+  };
+
+  const setPen = (pen: string) => {
+    if (!chosen) return;
+    record();
+    setShapes((list) => list.map((s) => (s.id === chosen.id ? { ...s, pen } : s)));
   };
 
   const setOutline = (on: boolean) => {
@@ -326,6 +357,9 @@ export default function App() {
             page={page}
             shapes={shapes}
             fills={fills}
+            colorOf={colorOf}
+            defaultPen={defaultPen}
+            penWidthMm={penWidthMm}
             tool={tool}
             selected={selected}
             onSelect={setSelected}
@@ -429,6 +463,30 @@ export default function App() {
 
           <Card variant="flat" className={styles.controls}>
             <div className={styles.cardBody}>
+              <Section title="Drawing tool">
+                <InputSelect
+                  size="md"
+                  label="Tool"
+                  hideLabel
+                  value={toolName}
+                  disabled={busy || !presets.length}
+                  onChange={(e) => setToolName(e.target.value)}
+                >
+                  {presets.map((t) => (
+                    <option key={t.name} value={t.name}>
+                      {t.name}
+                    </option>
+                  ))}
+                </InputSelect>
+                <p className={styles.empty}>
+                  {`Draws a ${penWidthMm} mm line${palette.length > 1 ? ` in ${palette.length} colors` : ""}`}
+                </p>
+              </Section>
+            </div>
+          </Card>
+
+          <Card variant="flat" className={styles.controls}>
+            <div className={styles.cardBody}>
               <Section
                 title="Layers"
                 action={
@@ -500,6 +558,40 @@ export default function App() {
               </Section>
             </div>
           </Card>
+
+          {chosen && (
+            <Card variant="flat" className={styles.controls}>
+              <div className={styles.cardBody}>
+                <Section title="Pen">
+                  <div className={styles.pens} role="group" aria-label="Pen for this shape">
+                    {palette.map((pen) => {
+                      const on = (chosen.pen || defaultPen) === pen.name;
+                      return (
+                        <button
+                          key={pen.name}
+                          type="button"
+                          className={styles.pen}
+                          data-on={on}
+                          style={{ background: pen.color }}
+                          aria-label={pen.name}
+                          aria-pressed={on}
+                          title={pen.name}
+                          onClick={() => setPen(pen.name)}
+                        />
+                      );
+                    })}
+                  </div>
+                  <p className={styles.empty}>
+                    {palette.some((pen) => pen.name === (chosen.pen || defaultPen))
+                      ? chosen.pen || defaultPen
+                      : // Kept rather than reassigned: the name is the drawing's, and switching back
+                        // to a tool that has this pen brings its color back with it.
+                        `${chosen.pen} — not a pen on this tool`}
+                  </p>
+                </Section>
+              </div>
+            </Card>
+          )}
 
           {chosen && canFill(chosen) && (
             <Card variant="flat" className={styles.controls}>

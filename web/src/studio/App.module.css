@@ -69,6 +69,26 @@
 .pageRow > :first-child,
 .fillRow > * { flex: 1; min-width: 0; }
 
+/* The tool's pens, as swatches. Round like Plot's color dots, and the chosen one wears a ring. */
+.pens {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.375rem;
+}
+
+.pen {
+  width: 1.25rem;
+  height: 1.25rem;
+  padding: 0;
+  border: 1px solid var(--ui-border-default);
+  border-radius: 50%;
+  cursor: pointer;
+}
+
+.pen[data-on="true"] {
+  box-shadow: 0 0 0 2px var(--ui-surface-raised), 0 0 0 4px var(--ui-primary);
+}
+
 .tools {
   display: flex;
   gap: 0.375rem;

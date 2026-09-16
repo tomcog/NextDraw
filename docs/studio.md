@@ -240,5 +240,28 @@ Adding it moved one thing: whether the outline is drawn is a property of the *sh
 With two fills there was no sensible owner for it. Reading a drawing back still takes that setting
 from the layer the shape sits on, so nothing about the format changed.
 
-What it deliberately doesn't do yet: choose a pen per fill - which is the next thing worth having,
-since two passes in two colours is most of what cross-hatching is for.
+**Plot's drawing tools are Studio's too.** The tool is chosen from `/api/presets` rather than
+duplicated, which is what the single-server decision was for. Three things follow from it:
+
+- **A shape is drawn with a pen from the tool's palette.** The pen is kept by *name*, not by colour,
+  because names are the contract: on save each pen becomes a layer named after it, and Plot colours a
+  layer from the pen whose name it matches. Layers come out lightest first, so Plot's "sort by
+  darkness" has nothing to do. The chosen tool goes in the `<nds:plot>` block too, so Plot opens the
+  drawing with the same one.
+- **Lines are drawn at the pen's real width.** A 0.7 mm EnerGel and a 1.41 mm brush are visibly
+  different on the page, which is the only way to see whether a hatch spacing will read as lines or
+  close up into a solid. That width is in the page's units, not screen pixels - the point is the true
+  weight - while the interface drawn over it (guides, the shape being dragged out, handles) stays a
+  screen hairline.
+- **A fill starts from the chosen tool's own measured hatch numbers.**
+
+A pen a shape refers to that the current tool doesn't have is kept rather than reassigned, and the
+Pen card says so: the name belongs to the drawing, and switching back to a tool that has that pen
+brings its colour back with it.
+
+A shape whose outline isn't drawn sits on `%sources`, which can't be named after a pen - it has to
+keep the name NextDraw skips. Its pen is recorded in the `<nds:design>` block instead. The layer
+still wins where there is one, since that is what decides the colour when plotting.
+
+What it deliberately doesn't do yet: give the two passes of a cross-hatch different pens, which is
+most of what two colours of cross-hatching would be for.

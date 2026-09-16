@@ -1,3 +1,4 @@
+import { lightness } from "../../lib/color";
 import { hatchLines, type Fill } from "./hatch";
 import { boxOf, type Page, type Shape } from "./shapes";
 
@@ -5,8 +6,9 @@ import { boxOf, type Page, type Shape } from "./shapes";
 //
 // - the document is sized in inches with a matching viewBox, so `normalize_size` on the server has
 //   nothing to correct and the drawing arrives at the size it was drawn at;
-// - the shapes sit in an Inkscape layer with a label, because that's what `read_layers` looks for,
-//   and a layer named after one of a tool's pens takes that pen's color in Plot (see docs/studio.md);
+// - each pen becomes an Inkscape layer named after it, because that's what `read_layers` looks for
+//   and a layer named after one of a tool's pens takes that pen's color in Plot: the name is the
+//   contract between the two apps, and it survives Studio regenerating the geometry underneath it;
 // - an <nds:plot> block naming the paper the drawing was made for, so opening it in Plot doesn't land
 //   an 11 x 8.5 drawing on whatever paper Plot happened to be set to last.
 //
@@ -65,25 +67,34 @@ function fillMarkup(shapes: Shape[], fills: Fill[]): string {
 }
 
 /** What Plot reads out of a drawing: the paper it was made for, at home, at full size. */
-function plotBlock(page: Page, paperSizeId: string): string {
+function plotBlock(page: Page, opts: SaveOptions): string {
   const settings = {
     placement: { x: 0, y: 0 },
     scale: 100,
     rotation: 0,
+    tool: opts.toolName,
     paper: {
       paper_w: Number((page.w * 25.4).toFixed(2)),
       paper_h: Number((page.h * 25.4).toFixed(2)),
       paper_x: 0,
       paper_y: 0,
-      paper_size: paperSizeId || "custom",
+      paper_size: opts.paperSizeId || "custom",
     },
   };
   return `  <metadata id="nextdraw-plot"><nds:plot>${escapeText(JSON.stringify(settings))}</nds:plot></metadata>`;
 }
 
-/** Studio's own parameters. Plot never reads or rewrites this, so it round-trips untouched. */
-function designBlock(fills: Fill[]): string {
+/**
+ * Studio's own parameters. Plot never reads or rewrites this, so it round-trips untouched.
+ *
+ * Pens are recorded here as well as being the layer names, because a shape whose outline isn't drawn
+ * sits on %sources, and that layer can't be named after a pen - it has to keep the name NextDraw
+ * skips. The layer still wins when there is one; this is what covers the shapes that have no layer
+ * of their own to be named by.
+ */
+function designBlock(fills: Fill[], shapes: Shape[], defaultPen: string): string {
   const data = {
+    pens: Object.fromEntries(shapes.map((s) => [s.id, s.pen || defaultPen])),
     fills: fills.map((f) => ({
       id: f.id,
       shape: f.shapeId,
@@ -95,24 +106,52 @@ function designBlock(fills: Fill[]): string {
   return `  <metadata id="nextdraw-studio"><nds:design>${escapeText(JSON.stringify(data))}</nds:design></metadata>`;
 }
 
-export function buildSvg(shapes: Shape[], fills: Fill[], page: Page, layerName: string, paperSizeId: string): string {
+export interface SaveOptions {
+  paperSizeId: string;
+  /** The drawing tool, so Plot opens the drawing with the same one chosen. */
+  toolName: string;
+  /** The pen every shape falls back to when it hasn't been given one. */
+  defaultPen: string;
+  /** A pen's color by name, for the stroke on its layer. */
+  colorOf: (pen: string) => string;
+}
+
+export function buildSvg(shapes: Shape[], fills: Fill[], page: Page, opts: SaveOptions): string {
+  const penOf = (s: Shape) => s.pen || opts.defaultPen;
   const drawn = shapes.filter((s) => s.outline !== false);
   const sources = shapes.filter((s) => s.outline === false);
-  const body = [
-    drawn.map((s) => `      ${shapeMarkup(s)}`).join("\n"),
-    fillMarkup(shapes, fills),
-  ].filter(Boolean).join("\n");
+
+  // One layer per pen, lightest first: Plot stacks darker colors over lighter ones, and a drawing
+  // that arrives in that order needs no sorting when it gets there.
+  const pens = [...new Set([...drawn.map(penOf), ...fills.map((f) => {
+    const shape = shapes.find((s) => s.id === f.shapeId);
+    return shape ? penOf(shape) : opts.defaultPen;
+  })])].sort((a, b) => (lightness(opts.colorOf(b)) ?? 0) - (lightness(opts.colorOf(a)) ?? 0));
+
+  const layers = pens.map((pen, i) => {
+    const mine = drawn.filter((s) => penOf(s) === pen);
+    const myFills = fills.filter((f) => {
+      const shape = shapes.find((s) => s.id === f.shapeId);
+      return shape ? penOf(shape) === pen : false;
+    });
+    const body = [
+      mine.map((s) => `      ${shapeMarkup(s)}`).join("\n"),
+      fillMarkup(shapes, myFills),
+    ].filter(Boolean).join("\n");
+    if (!body) return "";
+    return `  <g inkscape:groupmode="layer" inkscape:label="${escapeAttr(pen)}" id="studio-layer-${i + 1}"
+     fill="none" stroke="${escapeAttr(opts.colorOf(pen))}" stroke-width="${STROKE_IN}">
+${body}
+  </g>
+`;
+  }).filter(Boolean).join("");
   return `<?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="${SVG_NS}" xmlns:inkscape="${INKSCAPE_NS}" xmlns:nds="${PLOT_NS}"
      width="${num(page.w)}in" height="${num(page.h)}in"
      viewBox="0 0 ${num(page.w)} ${num(page.h)}">
-${plotBlock(page, paperSizeId)}
-${designBlock(fills)}
-  <g inkscape:groupmode="layer" inkscape:label="${escapeAttr(layerName)}" id="studio-layer-1"
-     fill="none" stroke="#000000" stroke-width="${STROKE_IN}">
-${body}
-  </g>
-${sourceLayer(sources)}</svg>
+${plotBlock(page, opts)}
+${designBlock(fills, shapes, opts.defaultPen)}
+${layers}${sourceLayer(sources)}</svg>
 `;
 }
 

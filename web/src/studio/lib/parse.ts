@@ -78,15 +78,29 @@ export function parseDrawing(text: string): Opened {
     return false;
   };
 
+  // The layer a shape sits in names the pen that draws it - that's the whole point of naming layers
+  // after pens, and it means the file says which pen without depending on Studio's own parameters.
+  const layerName = (el: Element) => {
+    for (let up = el.parentElement; up; up = up.parentElement) {
+      const label = (up.getAttribute("inkscape:label") ?? up.getAttribute("label"))?.trim();
+      if (label) return label;
+    }
+    return null;
+  };
+  const pens = new Map<string, string>();
   const noteSource = (el: Element) => {
     const id = idOf(el);
     if (onSkippedLayer(el)) sources.add(id);
+    const label = layerName(el);
+    if (label && !label.startsWith("%")) pens.set(id, label);
     return id;
   };
   // Applied once every shape is read, since the flag belongs to the shape rather than to its fills.
   const markOutlines = () =>
     shapes.forEach((s) => {
       if (sources.has(s.id)) s.outline = false;
+      const pen = pens.get(s.id);
+      if (pen) s.pen = pen;
     });
 
   for (const el of Array.from(svg.querySelectorAll("*"))) {
@@ -142,7 +156,14 @@ export function parseDrawing(text: string): Opened {
   const design = svg.getElementsByTagName("nds:design")[0] ?? svg.querySelector("design");
   if (design?.textContent) {
     try {
-      const raw = JSON.parse(design.textContent) as { fills?: unknown };
+      const raw = JSON.parse(design.textContent) as { fills?: unknown; pens?: Record<string, string> };
+      // The layer a shape sits in wins, since that is what decides its color when plotted. This
+      // catches the rest: a shape on %sources has no layer that could be named after its pen.
+      if (raw.pens) {
+        shapes.forEach((s) => {
+          if (!s.pen && typeof raw.pens?.[s.id] === "string") s.pen = raw.pens[s.id];
+        });
+      }
       if (Array.isArray(raw.fills)) {
         fills = raw.fills
           .map((f) => f as Record<string, unknown>)
