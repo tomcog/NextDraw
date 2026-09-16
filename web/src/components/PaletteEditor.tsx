@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { Button, ButtonRound, Card, InputText } from "@tomcoggia/ui";
 import { Plus, Trash2 } from "lucide-react";
 import styles from "./PaletteEditor.module.css";
+import { lightness } from "../lib/color";
 import type { PenColor, Preset } from "../lib/types";
 
 interface Props {
@@ -14,14 +15,20 @@ interface Props {
 
 const NEW_COLOR = "#7a7a7a";
 
+// Darkest first, so the lightest ends up at the bottom, as everywhere else colors are listed.
+const byDarkness = (pens: PenColor[]) =>
+  [...pens].sort((a, b) => (lightness(a.color) ?? Infinity) - (lightness(b.color) ?? Infinity));
+
 // The pen colors of the chosen drawing tool, in place of the drawing preview: the colors a palette
 // menu offers and Match to pens picks from. Edits save themselves; there's nothing to press.
 export function PaletteEditor({ tool, disabled, saving, error, onChange }: Props) {
-  // Edits live here while they're being typed, so a save on its way doesn't fight the fields.
-  const [colors, setColors] = useState<PenColor[]>(tool?.palette ?? []);
+  // Edits live here while they're being typed, so a save on its way doesn't fight the fields. The
+  // order settles when the palette opens: re-sorting mid-edit would slide a card out from under the
+  // cursor as its color changed. A color added now waits at the end until the palette is opened again.
+  const [colors, setColors] = useState<PenColor[]>(() => byDarkness(tool?.palette ?? []));
   const editing = useRef(false);
   useEffect(() => {
-    if (!editing.current) setColors(tool?.palette ?? []);
+    if (!editing.current) setColors(byDarkness(tool?.palette ?? []));
   }, [tool?.name, tool?.palette]);
 
   const edit = (next: PenColor[]) => {
