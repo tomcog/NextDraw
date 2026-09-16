@@ -1,4 +1,5 @@
 import { Tag } from "@tomcoggia/ui";
+import { PenTool } from "lucide-react";
 import { ThemeToggle } from "../../components/ThemeToggle";
 import styles from "../../components/Header.module.css";
 
@@ -12,7 +13,14 @@ interface Props {
 export function StudioHeader({ message, ok }: Props) {
   return (
     <header className={styles.header}>
-      <h1 className={styles.title}>NextDraw Studio</h1>
+      {/* The mark replaces the space, so the name needs saying in full for anything reading it. */}
+      <h1 className={styles.title} aria-label="NextDraw Studio">
+        NextDraw
+        {/* The nib stands in for the space, so the name carries the tool it is about. It's decorative:
+            the heading still reads "NextDraw Studio" to anything listening. */}
+        <PenTool className={styles.titleMark} aria-hidden="true" />
+        <span className={styles.titleApp}>Studio</span>
+      </h1>
       <span className={styles.tools}>
         <Tag className={styles.status} data-found={ok}>
           <span className={styles.dot} aria-hidden="true" />

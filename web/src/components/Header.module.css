@@ -20,6 +20,24 @@
   gap: 0.5rem;
 }
 
+/* A mark standing in for the space in each app's name - a nib for Studio, waypoints for Plot. Sized
+   to the cap height so it sits on the line rather than pushing it around. */
+.titleMark {
+  width: 0.8em;
+  height: 0.8em;
+  margin: 0 0.28em;
+  vertical-align: -0.04em;
+  color: var(--ui-text-muted);
+}
+
+.title {
+  display: flex;
+  align-items: center;
+}
+
+/* Which app this is, in the brand colour: "NextDraw" is the family, the second word is the tool. */
+.titleApp { color: var(--ui-accent); }
+
 .status {
   gap: 0.45rem;
 }

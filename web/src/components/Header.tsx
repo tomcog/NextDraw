@@ -1,4 +1,5 @@
 import { Tag } from "@tomcoggia/ui";
+import { Waypoints } from "lucide-react";
 import { ThemeToggle } from "./ThemeToggle";
 import styles from "./Header.module.css";
 
@@ -13,7 +14,14 @@ export function Header({ plotterFound, lostContact }: Props) {
     : plotterFound ? "Plotter connected" : "No plotter found on USB";
   return (
     <header className={styles.header}>
-      <h1 className={styles.title}>NextDraw Plot</h1>
+      {/* The mark replaces the space, so the name needs saying in full for anything reading it. */}
+      <h1 className={styles.title} aria-label="NextDraw Plot">
+        NextDraw
+        {/* Waypoints stands in for the space: the path the pen is sent along. Decorative - the
+            heading still reads "NextDraw Plot" to anything listening. */}
+        <Waypoints className={styles.titleMark} aria-hidden="true" />
+        <span className={styles.titleApp}>Plot</span>
+      </h1>
       <span className={styles.tools}>
         <Tag className={styles.status} data-found={plotterFound && !lostContact}>
           <span className={styles.dot} aria-hidden="true" />
