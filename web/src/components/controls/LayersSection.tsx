@@ -24,7 +24,7 @@ interface Props {
   note: LayerNote | null; // after Match to pens or Delete layer, with Undo
   onUndo: () => void;
   onDismissNote: () => void;
-  onDelete: (id: string) => void; // delete a layer from the drawing (asked here first)
+  onDelete: (id: string) => void; // delete a layer from the drawing; undone from the note it leaves
   onVisible: (id: string, visible: boolean) => void;
   onRename: (id: string, name: string) => void;
   onMove: (id: string, to: number) => void; // to: a position in the chosen order, 0 = bottom
@@ -60,13 +60,6 @@ export function LayersSection({ mode, onMode, layers, target, printed, disabled,
   const [picking, setPicking] = useState<LayerView | null>(null);
   const [colorMenu, setColorMenu] = useState<{ id: string; anchor: HTMLElement } | null>(null);
   const menuLayer = colorMenu ? layers.find((l) => l.id === colorMenu.id) : null;
-  // Delete asks first, in the card: the layer to delete, or null.
-  const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
-  // Delete is part of Plot mode, where one layer is chosen; leaving it drops the question.
-  useEffect(() => setConfirmDelete(null), [mode]);
-  const deleting = confirmDelete ? layers.find((l) => l.id === confirmDelete) : null;
-  const targetLayer = layers.find((l) => l.id === target);
-
   // Where the dragged row should sit, in list coordinates: under the pointer, kept inside the list.
   const dragTop = (d: Drag) => {
     const list = listRef.current!;
@@ -176,16 +169,6 @@ export function LayersSection({ mode, onMode, layers, target, printed, disabled,
       title="Layers"
       action={
         <span className={styles.headerTools}>
-        {mode === "work" && count > 1 && (
-          <ButtonRound
-            size="sm"
-            icon={<Trash2 />}
-            aria-label={targetLayer ? `Delete layer ${targetLayer.name}` : "Delete layer"}
-            title={targetLayer ? `Delete “${targetLayer.name}” from the drawing` : "Delete layer: select a layer first"}
-            disabled={disabled || !targetLayer}
-            onClick={() => targetLayer && setConfirmDelete(targetLayer.id)}
-          />
-        )}
         {mode === "preview" && onMatch && (
           <ButtonRound
             size="sm"
@@ -222,18 +205,7 @@ export function LayersSection({ mode, onMode, layers, target, printed, disabled,
         </span>
       }
     >
-      {deleting ? (
-        <div className={styles.match} role="alertdialog" aria-label={`Delete layer ${deleting.name}?`}>
-          <div className={styles.matchHead}>
-            <span>{`Delete layer ${numberOf.get(deleting.id)}, “${deleting.name}”, from the drawing?`}</span>
-          </div>
-          <div className={styles.confirmRow}>
-            <button type="button" className={styles.matchUndo} data-tone="plain" onClick={() => setConfirmDelete(null)}>Cancel</button>
-            <button type="button" className={styles.matchUndo} data-tone="danger" disabled={disabled} autoFocus
-              onClick={() => { setConfirmDelete(null); onDelete(deleting.id); }}>Delete</button>
-          </div>
-        </div>
-      ) : note && (
+      {note && (
         <div className={styles.match} role="status">
           <div className={styles.matchHead}>
             <span>{note.title}</span>
@@ -310,6 +282,17 @@ export function LayersSection({ mode, onMode, layers, target, printed, disabled,
                   onPointerMove,
                 } as React.ButtonHTMLAttributes<HTMLButtonElement>}
               />
+              {count > 1 && (
+                <ButtonRound
+                  size="sm"
+                  variant="ghost"
+                  icon={<Trash2 />}
+                  aria-label={`Delete layer ${layer.name}`}
+                  title={`Delete “${layer.name}” from the drawing`}
+                  disabled={disabled}
+                  onClick={() => onDelete(layer.id)}
+                />
+              )}
             </li>
           );
         })}

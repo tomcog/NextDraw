@@ -16,9 +16,15 @@
 
 .row {
   position: relative;
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
   border-radius: 4px;
   background: var(--ui-surface-raised);
 }
+
+/* The controller takes the row; the bin after it keeps its own width. */
+.row > :first-child { flex: 1; min-width: 0; }
 
 /* The row being dragged: lifted above the others and following the pointer. The shadow is only
    there while it's held. */
