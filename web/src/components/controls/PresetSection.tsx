@@ -111,7 +111,8 @@ export function PresetSection({
         disabled={disabled || !presets.length}
         onChange={(e) => onApply(e.target.value)}
       >
-        <option value="">{presets.length ? "Choose a preset" : "No presets saved yet"}</option>
+        {/* A tool is always chosen once presets load, so the empty choice only shows if none is. */}
+        {!active && <option value="">{presets.length ? "Choose a preset" : "No presets saved yet"}</option>}
         {presets.map((p) => (
           <option key={p.name} value={p.name}>
             {p.name === active?.name && changed ? `${p.name} (changed)` : p.name}
