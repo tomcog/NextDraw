@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Button, ButtonRound, Card, Checkbox, InputSelect, InputText } from "@tomcoggia/ui";
-import { Circle, FolderOpen, Minus, MousePointer2, Ratio, Redo2, Square, StickyNote, Trash2, Undo2 } from "lucide-react";
+import { Button, ButtonRound, Card, Checkbox, InputSelect, InputText, LayerController } from "@tomcoggia/ui";
+import { Circle, FolderOpen, Minus, MousePointer2, Plus, Ratio, Redo2, Square, StickyNote, Trash2, Undo2 } from "lucide-react";
 import { FileBrowser, type OpenResult } from "../components/FileBrowser";
 import { Section } from "../components/controls/Section";
 import controls from "../components/controls/controls.module.css";
@@ -15,7 +15,8 @@ import { Canvas, type Tool } from "./components/Canvas";
 import { StudioHeader } from "./components/StudioHeader";
 import { canFill, newFillId, type Fill } from "./lib/hatch";
 import { parseDrawing } from "./lib/parse";
-import { boxOf, shapeName, type Page, type Shape } from "./lib/shapes";
+import { PaletteMenu } from "../components/controls/PaletteMenu";
+import { boxOf, newLayerId, shapeName, type Layer, type Page, type Shape } from "./lib/shapes";
 import { buildSvg, cleanFileName } from "./lib/svg";
 import styles from "./App.module.css";
 
@@ -48,6 +49,7 @@ const LAST_FILE_KEY = "studio-last-file";
 interface Snapshot {
   shapes: Shape[];
   fills: Fill[];
+  layers: Layer[];
   page: Page;
 }
 const HISTORY_LIMIT = 60;
@@ -58,6 +60,9 @@ export default function App() {
   const [page, setPage] = useState<Page>({ w: 11, h: 8.5 });
   const [shapes, setShapes] = useState<Shape[]>([]);
   const [fills, setFills] = useState<Fill[]>([]);
+  const [layers, setLayers] = useState<Layer[]>(() => [{ id: newLayerId(), name: "Black", color: "#262626" }]);
+  const [activeLayer, setActiveLayer] = useState<string>("");
+  const [colorMenu, setColorMenu] = useState<{ id: string; anchor: HTMLElement } | null>(null);
   const [pageOpen, setPageOpen] = useState(false);
   // A tool's measured hatch numbers are the sensible starting point for a new fill, and they live in
   // Plot's presets rather than being invented here.
@@ -101,23 +106,24 @@ export default function App() {
 
   // Called just before a change, never during one: a drag records once, when it starts.
   const record = useCallback(() => {
-    setPast((p) => [...p.slice(-(HISTORY_LIMIT - 1)), { shapes, fills, page }]);
+    setPast((p) => [...p.slice(-(HISTORY_LIMIT - 1)), { shapes, fills, layers, page }]);
     setFuture([]);
-  }, [shapes, fills, page]);
+  }, [shapes, fills, layers, page]);
 
   const step = useCallback(
     (from: Snapshot[], to: Snapshot[], setFrom: typeof setPast, setTo: typeof setFuture, take: "last" | "first") => {
       if (!from.length) return;
       const next = take === "last" ? from[from.length - 1] : from[0];
       setFrom(take === "last" ? from.slice(0, -1) : from.slice(1));
-      setTo([{ shapes, fills, page }, ...to].slice(0, HISTORY_LIMIT));
+      setTo([{ shapes, fills, layers, page }, ...to].slice(0, HISTORY_LIMIT));
       setShapes(next.shapes);
       setFills(next.fills);
+      setLayers(next.layers);
       setPage(next.page);
       // A shape that isn't there any more can't stay selected, or its handles would hang in the air.
       setSelected((id) => (next.shapes.some((s) => s.id === id) ? id : null));
     },
-    [shapes, fills, page],
+    [shapes, fills, layers, page],
   );
 
   const undo = useCallback(() => step(past, future, setPast, setFuture, "last"), [step, past, future]);
@@ -171,12 +177,7 @@ export default function App() {
     }
     setBusy(true);
     try {
-      const svg = buildSvg(shapes, fills, page, {
-        paperSizeId: sizeId,
-        toolName,
-        defaultPen,
-        colorOf,
-      });
+      const svg = buildSvg(shapes, fills, layers, page, { paperSizeId: sizeId, toolName });
       const res = await postJSON<{ name: string; path: string; folder: string }>("/api/studio/save", {
         name: cleanFileName(name),
         svg,
@@ -219,6 +220,8 @@ export default function App() {
     setPage(drawing.page);
     setShapes(drawing.shapes);
     setFills(drawing.fills);
+    setLayers(drawing.layers);
+    setActiveLayer(drawing.layers[0]?.id ?? "");
     setSelected(null);
     setPast([]);
     setFuture([]);
@@ -285,8 +288,6 @@ export default function App() {
   const tool2 = presets.find((t) => t.name === toolName) ?? null;
   const palette: PenColor[] = tool2?.palette?.length ? tool2.palette : [PLAIN_PEN];
   // Darkest last in the list, so the default pen is the one you'd reach for first.
-  const defaultPen = palette[palette.length - 1].name;
-  const colorOf = (pen: string) => palette.find((p) => p.name === pen)?.color ?? PLAIN_PEN.color;
   // The real line the pen lays down, so the drawing shows its true weight against the hatch spacing.
   const penWidthMm = tool2?.settings.pen_width ?? 0.7;
 
@@ -301,8 +302,11 @@ export default function App() {
   }, [toolName]);
 
   const chosen = shapes.find((s) => s.id === selected) ?? null;
-  // In order, so the first is the hatch and the second is the cross-hatch laid over it.
   const chosenFills = chosen ? fills.filter((f) => f.shapeId === chosen.id) : [];
+
+  // The layer new shapes land on, and the one the Shapes card lists. Always a real layer.
+  const active = layers.find((l) => l.id === activeLayer) ?? layers[0];
+  const onActive = shapes.filter((sh) => sh.layerId === active?.id);
 
   const newFill = (angle: number): Fill => ({
     id: newFillId(),
@@ -326,16 +330,36 @@ export default function App() {
     });
   };
 
-  const setPen = (pen: string) => {
-    if (!chosen) return;
-    record();
-    setShapes((list) => list.map((s) => (s.id === chosen.id ? { ...s, pen } : s)));
-  };
-
   const setOutline = (on: boolean) => {
     if (!chosen) return;
     record();
-    setShapes((list) => list.map((s) => (s.id === chosen.id ? { ...s, outline: on } : s)));
+    setShapes((list) => list.map((sh) => (sh.id === chosen.id ? { ...sh, outline: on } : sh)));
+  };
+
+  const patchLayer = (id: string, patch: Partial<Layer>) => {
+    record();
+    setLayers((list) => list.map((l) => (l.id === id ? { ...l, ...patch } : l)));
+  };
+
+  const addLayer = () => {
+    record();
+    // The next pen along in the palette, so a new layer doesn't arrive the same colour as the last.
+    const used = new Set(layers.map((l) => l.name));
+    const pen = palette.find((p) => !used.has(p.name)) ?? palette[palette.length - 1];
+    const layer: Layer = { id: newLayerId(), name: pen.name, color: pen.color };
+    setLayers((list) => [...list, layer]);
+    setActiveLayer(layer.id);
+  };
+
+  const removeLayer = (id: string) => {
+    if (layers.length < 2) return; // there is always somewhere to draw
+    record();
+    const gone = shapes.filter((sh) => sh.layerId === id).map((sh) => sh.id);
+    setShapes((list) => list.filter((sh) => sh.layerId !== id));
+    setFills((list) => list.filter((f) => !gone.includes(f.shapeId)));
+    setLayers((list) => list.filter((l) => l.id !== id));
+    setActiveLayer((current) => (current === id ? layers.find((l) => l.id !== id)!.id : current));
+    setSelected((current) => (gone.includes(current ?? "") ? null : current));
   };
 
   const setSize = (id: string) => {
@@ -356,6 +380,19 @@ export default function App() {
         onOpened={(res) => openDrawing(res, (n) => `Opened ${res.name} - ${n} ${n === 1 ? "shape" : "shapes"}`)}
       />
       <StudioHeader message={message.text} ok={message.ok} />
+      {colorMenu && layers.some((l) => l.id === colorMenu.id) && (
+        <PaletteMenu
+          anchor={colorMenu.anchor}
+          palette={palette}
+          current={layers.find((l) => l.id === colorMenu.id)?.color ?? null}
+          onPick={(pen) => {
+            // The name travels with the colour: Plot colours a layer from the pen its name matches.
+            patchLayer(colorMenu.id, { name: pen.name, color: pen.color });
+            setColorMenu(null);
+          }}
+          onClose={() => setColorMenu(null)}
+        />
+      )}
 
       <main className={styles.layout}>
         <section className={styles.stage} aria-label="Drawing page">
@@ -376,8 +413,8 @@ export default function App() {
                 onShowLeft={() => {}}
               />
             }
-            colorOf={colorOf}
-            defaultPen={defaultPen}
+            layers={layers}
+            activeLayer={active?.id ?? ""}
             penWidthMm={penWidthMm}
             tool={tool}
             selected={selected}
@@ -461,7 +498,7 @@ export default function App() {
 
           <Card variant="flat" className={styles.controls}>
             <div className={styles.cardBody}>
-              <Section title="Shapes">
+              <Section title="Shapes" collapsibleKey="tools">
                 <div className={styles.tools} role="group" aria-label="Shape to draw">
                   {TOOLS.map((t) => (
                     <ButtonRound
@@ -482,7 +519,7 @@ export default function App() {
 
           <Card variant="flat" className={styles.controls}>
             <div className={styles.cardBody}>
-              <Section title="Drawing tool">
+              <Section title="Drawing tool" collapsibleKey="tool">
                 <InputSelect
                   size="md"
                   label="Tool"
@@ -508,105 +545,98 @@ export default function App() {
             <div className={styles.cardBody}>
               <Section
                 title="Layers"
+                collapsibleKey="layers"
                 action={
                   <span className={styles.headerTools}>
-                    <ButtonRound
-                      size="sm"
-                      icon={<Undo2 />}
-                      aria-label="Undo"
-                      title="Undo the last change"
-                      disabled={busy || !past.length}
-                      onClick={undo}
-                    />
-                    <ButtonRound
-                      size="sm"
-                      icon={<Redo2 />}
-                      aria-label="Redo"
-                      title="Redo the change just undone"
-                      disabled={busy || !future.length}
-                      onClick={redo}
-                    />
-                    {shapes.length ? (
-                      <ButtonRound
-                        size="sm"
-                        icon={<Trash2 />}
-                        aria-label="Delete every shape"
-                        title="Delete every shape on the page"
-                        disabled={busy}
-                        onClick={() => {
-                          record();
-                          setShapes([]);
-                          setFills([]);
-                          setSelected(null);
-                        }}
-                      />
-                    ) : null}
+                    <ButtonRound size="sm" icon={<Undo2 />} aria-label="Undo" title="Undo the last change"
+                      disabled={busy || !past.length} onClick={undo} />
+                    <ButtonRound size="sm" icon={<Redo2 />} aria-label="Redo" title="Redo the change just undone"
+                      disabled={busy || !future.length} onClick={redo} />
+                    <ButtonRound size="sm" icon={<Plus />} aria-label="Add a layer"
+                      title="Add a layer: one more pen to draw with" disabled={busy} onClick={addLayer} />
                   </span>
                 }
               >
-                {shapes.length === 0 ? (
-                  <p className={styles.empty}>Drag on the page to draw one.</p>
-                ) : (
-                  <ul className={styles.shapeList}>
-                    {shapes.map((s, i) => {
-                      const b = boxOf(s);
-                      return (
-                        <li key={s.id} className={styles.shapeRow} data-selected={s.id === selected}>
-                          <button
-                            type="button"
-                            className={styles.shapePick}
-                            onClick={() => setSelected(s.id)}
-                          >
-                            <span>{shapeName(s, i)}</span>
-                            <span className={styles.shapeSize}>
-                              {`${fmtIn(b.x1 - b.x0)} × ${fmtIn(b.y1 - b.y0)}`}
-                            </span>
-                          </button>
-                          <ButtonRound
-                            size="sm"
-                            variant="ghost"
-                            icon={<Trash2 />}
-                            aria-label={`Delete ${shapeName(s, i)}`}
-                            onClick={() => removeShape(s.id)}
-                          />
-                        </li>
-                      );
-                    })}
-                  </ul>
-                )}
+                <ul className={styles.layerList}>
+                  {layers.map((layer, i) => (
+                    <li key={layer.id} className={styles.layerRow}>
+                      <LayerController
+                        name="studio-layer"
+                        number={i + 1}
+                        color={layer.color}
+                        swatchProps={{
+                          "aria-label": `Pen color for ${layer.name}`,
+                          "aria-haspopup": "menu",
+                          "aria-expanded": colorMenu?.id === layer.id,
+                          title: "Choose the pen this layer draws with",
+                          disabled: busy,
+                          onClick: (e) => {
+                            const anchor = e.currentTarget;
+                            setColorMenu((open) => (open?.id === layer.id ? null : { id: layer.id, anchor }));
+                          },
+                        }}
+                        checked={active?.id === layer.id}
+                        visible={!layer.hidden}
+                        onVisibleChange={(visible) => patchLayer(layer.id, { hidden: !visible })}
+                        disabled={busy}
+                        onChange={() => setActiveLayer(layer.id)}
+                        aria-label={`Draw on layer ${i + 1}, ${layer.name}`}
+                        label={layer.name}
+                      />
+                      {layers.length > 1 && (
+                        <ButtonRound size="sm" variant="ghost" icon={<Trash2 />}
+                          aria-label={`Delete layer ${layer.name}`}
+                          title={`Delete ${layer.name} and everything on it`}
+                          disabled={busy} onClick={() => removeLayer(layer.id)} />
+                      )}
+                    </li>
+                  ))}
+                </ul>
               </Section>
             </div>
           </Card>
 
-          {chosen && (
+          {active && (
             <Card variant="flat" className={styles.controls}>
               <div className={styles.cardBody}>
-                <Section title="Pen">
-                  <div className={styles.pens} role="group" aria-label="Pen for this shape">
-                    {palette.map((pen) => {
-                      const on = (chosen.pen || defaultPen) === pen.name;
-                      return (
-                        <button
-                          key={pen.name}
-                          type="button"
-                          className={styles.pen}
-                          data-on={on}
-                          style={{ background: pen.color }}
-                          aria-label={pen.name}
-                          aria-pressed={on}
-                          title={pen.name}
-                          onClick={() => setPen(pen.name)}
-                        />
-                      );
-                    })}
-                  </div>
-                  <p className={styles.empty}>
-                    {palette.some((pen) => pen.name === (chosen.pen || defaultPen))
-                      ? chosen.pen || defaultPen
-                      : // Kept rather than reassigned: the name is the drawing's, and switching back
-                        // to a tool that has this pen brings its color back with it.
-                        `${chosen.pen} — not a pen on this tool`}
-                  </p>
+                <Section
+                  title={`On ${active.name}`}
+                  collapsibleKey="shapes-on-layer"
+                  action={
+                    onActive.length ? (
+                      <ButtonRound size="sm" icon={<Trash2 />} aria-label="Delete everything on this layer"
+                        title="Delete every shape on this layer" disabled={busy}
+                        onClick={() => {
+                          record();
+                          const gone = onActive.map((sh) => sh.id);
+                          setShapes((list) => list.filter((sh) => !gone.includes(sh.id)));
+                          setFills((list) => list.filter((f) => !gone.includes(f.shapeId)));
+                          setSelected(null);
+                        }} />
+                    ) : undefined
+                  }
+                >
+                  {onActive.length === 0 ? (
+                    <p className={styles.empty}>Drag on the page to draw one.</p>
+                  ) : (
+                    <ul className={styles.shapeList}>
+                      {onActive.map((sh, i) => {
+                        const b = boxOf(sh);
+                        return (
+                          <li key={sh.id} className={styles.shapeRow} data-selected={sh.id === selected}>
+                            <button type="button" className={styles.shapePick} onClick={() => setSelected(sh.id)}>
+                              <span>{shapeName(sh, i)}</span>
+                              <span className={styles.shapeSize}>
+                                {`${fmtIn(b.x1 - b.x0)} × ${fmtIn(b.y1 - b.y0)}`}
+                              </span>
+                            </button>
+                            <ButtonRound size="sm" variant="ghost" icon={<Trash2 />}
+                              aria-label={`Delete ${shapeName(sh, i)}`} onClick={() => removeShape(sh.id)} />
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  )}
                 </Section>
               </div>
             </Card>
@@ -615,7 +645,7 @@ export default function App() {
           {chosen && canFill(chosen) && (
             <Card variant="flat" className={styles.controls}>
               <div className={styles.cardBody}>
-                <Section title="Fill">
+                <Section title="Fill" collapsibleKey="fill">
                   <Checkbox
                     checked={chosenFills.length > 0}
                     label="Hatch this shape"

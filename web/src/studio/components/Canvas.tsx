@@ -4,6 +4,7 @@ import {
   CURSOR, type Handle, type Page, type Shape, type ShapeKind,
 } from "../lib/shapes";
 import { hatchLines, type Fill } from "../lib/hatch";
+import type { Layer } from "../lib/shapes";
 import { BedCanvas, type BedCanvasHandle, type Box, type Zoom } from "../../components/BedCanvas";
 import { DEFAULT_SETTINGS, UNITS } from "../../lib/constants";
 import type { PlotterModel } from "../../lib/types";
@@ -21,9 +22,10 @@ interface Props {
   model: PlotterModel | undefined;
   zoom: Zoom;
   toolbar?: ReactNode;
-  /** A pen's color by name, and the pen a shape falls back to. */
-  colorOf: (pen: string) => string;
-  defaultPen: string;
+  /** The layers, which own the colours: everything on a layer draws in its one colour. */
+  layers: Layer[];
+  /** The layer new shapes are drawn onto. */
+  activeLayer: string;
   /** The tool's line width in millimetres, drawn at true size so the weight is honest. */
   penWidthMm: number;
   tool: Tool;
@@ -48,7 +50,7 @@ type Drag =
 // The page at true proportions, with a one-inch grid. It keeps the page's own proportions and is
 // sized to them (--canvas-aspect), so the drawing gets as large as the space allows - the same way
 // Plot's preview fills its column.
-export function Canvas({ page, shapes, fills, model, zoom, toolbar, colorOf, defaultPen, penWidthMm, tool, selected, onSelect, onAdd, onUpdate, onEditStart }: Props) {
+export function Canvas({ page, shapes, fills, layers, activeLayer, model, zoom, toolbar, penWidthMm, tool, selected, onSelect, onAdd, onUpdate, onEditStart }: Props) {
   const bed = useRef<BedCanvasHandle>(null);
   const [drag, setDrag] = useState<Drag | null>(null);
   const pointer = useRef<number | null>(null);
@@ -75,6 +77,9 @@ export function Canvas({ page, shapes, fills, model, zoom, toolbar, colorOf, def
   // Where a pointer is on the page, in inches from its top-left corner.
   // The pen's real width in inches, so the line on screen is the line on paper.
   const penIn = penWidthMm / 25.4;
+  const layerOf = (id: string) => layers.find((l) => l.id === id);
+  const colorOf = (sh: Shape) => layerOf(sh.layerId)?.color ?? "#262626";
+  const shown = shapes.filter((sh) => !layerOf(sh.layerId)?.hidden);
 
   const pointAt = (e: ReactPointerEvent): { x: number; y: number } | null => {
     const at = bed.current?.at(e.clientX, e.clientY);
@@ -100,7 +105,7 @@ export function Canvas({ page, shapes, fills, model, zoom, toolbar, colorOf, def
     if (tool === "select") return;
     begin(e, {
       mode: "new",
-      shape: clampToPage({ id: newShapeId(), kind: tool, x: p.x, y: p.y, x2: p.x, y2: p.y }, page),
+      shape: clampToPage({ id: newShapeId(), layerId: activeLayer, kind: tool, x: p.x, y: p.y, x2: p.x, y2: p.y }, page),
     });
   };
 
@@ -156,7 +161,7 @@ export function Canvas({ page, shapes, fills, model, zoom, toolbar, colorOf, def
       "data-guide": guide ? "true" : undefined,
       "data-selected": kind === "shape" && s.id === selected ? "true" : undefined,
       style: kind === "shape" && !guide
-        ? ({ stroke: colorOf(s.pen || defaultPen), strokeWidth: penIn } as CSSProperties)
+        ? ({ stroke: colorOf(s), strokeWidth: penIn } as CSSProperties)
         : undefined,
       onPointerDown: kind === "shape" ? (e: ReactPointerEvent) => onShapeDown(e, s) : undefined,
     };
@@ -209,12 +214,12 @@ export function Canvas({ page, shapes, fills, model, zoom, toolbar, colorOf, def
                 shape as it moves. Not clickable: the shape underneath is what you grab. */}
             <g className={styles.fills}>
               {fills.map((fill) => {
-                const shape = shapes.find((sh) => sh.id === fill.shapeId);
+                const shape = shown.find((sh) => sh.id === fill.shapeId);
                 if (!shape) return null;
                 return (
                   <g
                     key={fill.id}
-                    style={{ stroke: colorOf(shape.pen || defaultPen), strokeWidth: penIn } as CSSProperties}
+                    style={{ stroke: colorOf(shape), strokeWidth: penIn } as CSSProperties}
                   >
                     {hatchLines(shape, fill).map((l, i) => (
                       <line key={i} x1={l.x1} y1={l.y1} x2={l.x2} y2={l.y2} />
@@ -224,7 +229,7 @@ export function Canvas({ page, shapes, fills, model, zoom, toolbar, colorOf, def
               })}
             </g>
 
-            {shapes.map((sh) => render(sh, sh.id, "shape"))}
+            {shown.map((sh) => render(sh, sh.id, "shape"))}
             {drag?.mode === "new" && render(drag.shape, "draft", "draft")}
 
             {showHandles && (

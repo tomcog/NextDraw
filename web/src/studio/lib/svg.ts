@@ -1,6 +1,5 @@
-import { lightness } from "../../lib/color";
 import { hatchLines, type Fill } from "./hatch";
-import { boxOf, type Page, type Shape } from "./shapes";
+import { boxOf, type Layer, type Page, type Shape } from "./shapes";
 
 // The drawing Studio writes out. Two things matter to Plot at the other end:
 //
@@ -92,9 +91,14 @@ function plotBlock(page: Page, opts: SaveOptions): string {
  * skips. The layer still wins when there is one; this is what covers the shapes that have no layer
  * of their own to be named by.
  */
-function designBlock(fills: Fill[], shapes: Shape[], defaultPen: string): string {
+function designBlock(fills: Fill[], shapes: Shape[], layers: Layer[]): string {
+  // Which layer each shape belongs to, by NAME. The SVG layer it sits in says this already, except
+  // for the ones on %sources - that layer has to keep the name NextDraw skips, so it can't be the
+  // pen's. Names, not Studio's internal ids: the ids mean nothing once the file is reopened, and
+  // matching them up by position gets it wrong the moment shapes and layers are in different orders.
+  const nameOf = new Map(layers.map((l) => [l.id, l.name]));
   const data = {
-    pens: Object.fromEntries(shapes.map((s) => [s.id, s.pen || defaultPen])),
+    on: Object.fromEntries(shapes.map((s) => [s.id, nameOf.get(s.layerId) ?? ""])),
     fills: fills.map((f) => ({
       id: f.id,
       shape: f.shapeId,
@@ -110,48 +114,45 @@ export interface SaveOptions {
   paperSizeId: string;
   /** The drawing tool, so Plot opens the drawing with the same one chosen. */
   toolName: string;
-  /** The pen every shape falls back to when it hasn't been given one. */
-  defaultPen: string;
-  /** A pen's color by name, for the stroke on its layer. */
-  colorOf: (pen: string) => string;
 }
 
-export function buildSvg(shapes: Shape[], fills: Fill[], page: Page, opts: SaveOptions): string {
-  const penOf = (s: Shape) => s.pen || opts.defaultPen;
-  const drawn = shapes.filter((s) => s.outline !== false);
-  const sources = shapes.filter((s) => s.outline === false);
-
-  // One layer per pen, lightest first: Plot stacks darker colors over lighter ones, and a drawing
-  // that arrives in that order needs no sorting when it gets there.
-  const pens = [...new Set([...drawn.map(penOf), ...fills.map((f) => {
-    const shape = shapes.find((s) => s.id === f.shapeId);
-    return shape ? penOf(shape) : opts.defaultPen;
-  })])].sort((a, b) => (lightness(opts.colorOf(b)) ?? 0) - (lightness(opts.colorOf(a)) ?? 0));
-
-  const layers = pens.map((pen, i) => {
-    const mine = drawn.filter((s) => penOf(s) === pen);
-    const myFills = fills.filter((f) => {
-      const shape = shapes.find((s) => s.id === f.shapeId);
-      return shape ? penOf(shape) === pen : false;
-    });
-    const body = [
-      mine.map((s) => `      ${shapeMarkup(s)}`).join("\n"),
-      fillMarkup(shapes, myFills),
-    ].filter(Boolean).join("\n");
-    if (!body) return "";
-    return `  <g inkscape:groupmode="layer" inkscape:label="${escapeAttr(pen)}" id="studio-layer-${i + 1}"
-     fill="none" stroke="${escapeAttr(opts.colorOf(pen))}" stroke-width="${STROKE_IN}">
-${body}
+export function buildSvg(
+  shapes: Shape[],
+  fills: Fill[],
+  layers: Layer[],
+  page: Page,
+  opts: SaveOptions,
+): string {
+  // One SVG layer per Studio layer, in the order they're stacked. A layer is one pen, so everything
+  // on it - outlines and hatching alike - carries that one colour.
+  const body = layers
+    .map((layer, i) => {
+      const mine = shapes.filter((sh) => sh.layerId === layer.id);
+      const drawn = mine.filter((sh) => sh.outline !== false);
+      const myFills = fills.filter((f) => mine.some((sh) => sh.id === f.shapeId));
+      const inner = [
+        drawn.map((sh) => `      ${shapeMarkup(sh)}`).join("\n"),
+        fillMarkup(shapes, myFills),
+      ].filter(Boolean).join("\n");
+      if (!inner) return "";
+      return `  <g inkscape:groupmode="layer" inkscape:label="${escapeAttr(layer.name)}" id="studio-layer-${i + 1}"
+     fill="none" stroke="${escapeAttr(layer.color)}" stroke-width="${STROKE_IN}">
+${inner}
   </g>
 `;
-  }).filter(Boolean).join("");
+    })
+    .filter(Boolean)
+    .join("");
+
+  const sources = shapes.filter((sh) => sh.outline === false);
+
   return `<?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="${SVG_NS}" xmlns:inkscape="${INKSCAPE_NS}" xmlns:nds="${PLOT_NS}"
      width="${num(page.w)}in" height="${num(page.h)}in"
      viewBox="0 0 ${num(page.w)} ${num(page.h)}">
 ${plotBlock(page, opts)}
-${designBlock(fills, shapes, opts.defaultPen)}
-${layers}${sourceLayer(sources)}</svg>
+${designBlock(fills, shapes, layers)}
+${body}${sourceLayer(sources)}</svg>
 `;
 }
 

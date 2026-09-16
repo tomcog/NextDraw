@@ -245,14 +245,24 @@ Adding it moved one thing: whether the outline is drawn is a property of the *sh
 With two fills there was no sensible owner for it. Reading a drawing back still takes that setting
 from the layer the shape sits on, so nothing about the format changed.
 
+**Colour belongs to the layer, never to the shape.** A layer is one pen: it holds as many shapes as
+you like and every one of them plots in that single colour, because plotting a layer is exactly what
+a pen change is for. This is the model Plot has and the model the machine has.
+
+*Worth stating because the first attempt got it backwards*: a pen was put on each shape and layers
+were derived at save time by grouping shapes of the same colour. That produces a similar-looking file
+but it isn't the same thing — it makes "the colour of this shape" the real state and the layer an
+artifact, so there is no way to say "these twelve shapes are one pen" and nothing for Plot's Layers
+card to correspond to.
+
 **Plot's drawing tools are Studio's too.** The tool is chosen from `/api/presets` rather than
 duplicated, which is what the single-server decision was for. Three things follow from it:
 
-- **A shape is drawn with a pen from the tool's palette.** The pen is kept by *name*, not by colour,
-  because names are the contract: on save each pen becomes a layer named after it, and Plot colours a
-  layer from the pen whose name it matches. Layers come out lightest first, so Plot's "sort by
-  darkness" has nothing to do. The chosen tool goes in the `<nds:plot>` block too, so Plot opens the
-  drawing with the same one.
+- **A layer is named after the pen that draws it**, and choosing a pen from the swatch renames the
+  layer with it. Names are the contract: Plot colours a layer from the pen whose name it matches, so
+  a drawing arrives already coloured. The Layers card is the library's own `LayerController`, the
+  same row Plot's Layers card is built from. The chosen tool goes in the `<nds:plot>` block too, so
+  Plot opens the drawing with the same one.
 - **Lines are drawn at the pen's real width.** A 0.7 mm EnerGel and a 1.41 mm brush are visibly
   different on the page, which is the only way to see whether a hatch spacing will read as lines or
   close up into a solid. That width is in the page's units, not screen pixels - the point is the true
@@ -260,13 +270,18 @@ duplicated, which is what the single-server decision was for. Three things follo
   screen hairline.
 - **A fill starts from the chosen tool's own measured hatch numbers.**
 
-A pen a shape refers to that the current tool doesn't have is kept rather than reassigned, and the
-Pen card says so: the name belongs to the drawing, and switching back to a tool that has that pen
-brings its colour back with it.
-
 A shape whose outline isn't drawn sits on `%sources`, which can't be named after a pen - it has to
-keep the name NextDraw skips. Its pen is recorded in the `<nds:design>` block instead. The layer
-still wins where there is one, since that is what decides the colour when plotting.
+keep the name NextDraw skips. Which layer it belongs to is recorded in the `<nds:design>` block
+instead, **by layer name rather than by Studio's internal id**: those ids mean nothing once a file is
+reopened, and an earlier version matched them up by position, which came out wrong the moment the
+shapes and the layers were in different orders.
+
+Layers are read back from the groups themselves rather than from the shapes inside them. A layer
+holding nothing but a hatch fill has no shape to be found by - the generated lines are skipped on the
+way past - so building the list from shapes loses that layer entirely.
+
+Cards in the panel fold away, and remember whether they were folded. A panel of six cards is mostly
+things you aren't using at this moment.
 
 What it deliberately doesn't do yet: give the two passes of a cross-hatch different pens, which is
 most of what two colours of cross-hatching would be for.

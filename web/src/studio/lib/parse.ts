@@ -1,5 +1,5 @@
 import { newFillId, type Fill } from "./hatch";
-import { newShapeId, type Page, type Shape } from "./shapes";
+import { newLayerId, newShapeId, type Layer, type Page, type Shape } from "./shapes";
 import { FILL_GROUP_PREFIX } from "./svg";
 
 // Reading a drawing back in, so work can be picked up again after it's been handed to Plot.
@@ -12,6 +12,7 @@ import { FILL_GROUP_PREFIX } from "./svg";
 export interface Opened {
   page: Page;
   shapes: Shape[];
+  layers: Layer[];
   fills: Fill[];
   /** Drawable elements Studio has no way to represent. Saving over the file would lose them. */
   unsupported: number;
@@ -80,27 +81,48 @@ export function parseDrawing(text: string): Opened {
 
   // The layer a shape sits in names the pen that draws it - that's the whole point of naming layers
   // after pens, and it means the file says which pen without depending on Studio's own parameters.
-  const layerName = (el: Element) => {
-    for (let up = el.parentElement; up; up = up.parentElement) {
-      const label = (up.getAttribute("inkscape:label") ?? up.getAttribute("label"))?.trim();
-      if (label) return label;
+  // A layer's colour comes off the group that holds it, since that's where buildSvg puts it.
+  const strokeOf = (el: Element) => {
+    for (let up: Element | null = el; up; up = up.parentElement) {
+      const stroke = up.getAttribute("stroke");
+      if (stroke && stroke !== "none") return stroke;
     }
     return null;
   };
-  const pens = new Map<string, string>();
+
+  // Layers come from the groups themselves, in the order the file stacks them - not from the shapes
+  // inside them. A layer holding nothing but a hatch fill has no shapes to be found by, and those
+  // are skipped on the way past, so building layers from shapes would lose it entirely.
+  const layers: Layer[] = [];
+  const byGroup = new Map<Element, string>();
+  for (const g of Array.from(svg.querySelectorAll("g"))) {
+    const label = (g.getAttribute("inkscape:label") ?? g.getAttribute("label"))?.trim();
+    if (!label || label.startsWith("%")) continue;
+    const id = newLayerId();
+    byGroup.set(g, id);
+    layers.push({ id, name: label, color: g.getAttribute("stroke") || strokeOf(g) || "#262626" });
+  }
+  const layerOf = new Map<string, string>(); // shape id -> layer id
+  const layerFor = (el: Element) => {
+    for (let up = el.parentElement; up; up = up.parentElement) {
+      const id = byGroup.get(up);
+      if (id) return id;
+    }
+    return null;
+  };
   const noteSource = (el: Element) => {
     const id = idOf(el);
     if (onSkippedLayer(el)) sources.add(id);
-    const label = layerName(el);
-    if (label && !label.startsWith("%")) pens.set(id, label);
+    const layer = layerFor(el);
+    if (layer) layerOf.set(id, layer);
     return id;
   };
   // Applied once every shape is read, since the flag belongs to the shape rather than to its fills.
   const markOutlines = () =>
     shapes.forEach((s) => {
       if (sources.has(s.id)) s.outline = false;
-      const pen = pens.get(s.id);
-      if (pen) s.pen = pen;
+      const layer = layerOf.get(s.id);
+      if (layer) s.layerId = layer;
     });
 
   for (const el of Array.from(svg.querySelectorAll("*"))) {
@@ -110,7 +132,7 @@ export function parseDrawing(text: string): Opened {
         const x = attr(el, "x");
         const y = attr(el, "y");
         shapes.push({
-          id: noteSource(el), kind: "rect",
+          id: noteSource(el), layerId: "", kind: "rect",
           x: toX(x), y: toY(y),
           x2: toX(x + attr(el, "width")), y2: toY(y + attr(el, "height")),
         });
@@ -123,14 +145,14 @@ export function parseDrawing(text: string): Opened {
         const rx = el.nodeName.toLowerCase() === "circle" ? attr(el, "r") : attr(el, "rx");
         const ry = el.nodeName.toLowerCase() === "circle" ? attr(el, "r") : attr(el, "ry");
         shapes.push({
-          id: noteSource(el), kind: "ellipse",
+          id: noteSource(el), layerId: "", kind: "ellipse",
           x: toX(cx - rx), y: toY(cy - ry), x2: toX(cx + rx), y2: toY(cy + ry),
         });
         break;
       }
       case "line":
         shapes.push({
-          id: noteSource(el), kind: "line",
+          id: noteSource(el), layerId: "", kind: "line",
           x: toX(attr(el, "x1")), y: toY(attr(el, "y1")),
           x2: toX(attr(el, "x2")), y2: toY(attr(el, "y2")),
         });
@@ -156,12 +178,13 @@ export function parseDrawing(text: string): Opened {
   const design = svg.getElementsByTagName("nds:design")[0] ?? svg.querySelector("design");
   if (design?.textContent) {
     try {
-      const raw = JSON.parse(design.textContent) as { fills?: unknown; pens?: Record<string, string> };
-      // The layer a shape sits in wins, since that is what decides its color when plotted. This
-      // catches the rest: a shape on %sources has no layer that could be named after its pen.
-      if (raw.pens) {
+      const raw = JSON.parse(design.textContent) as { fills?: unknown; on?: Record<string, string> };
+      // A shape on %sources has no layer of its own to belong to, so the block names the one it is
+      // on. Names survive the trip; Studio's internal ids don't.
+      if (raw.on) {
         shapes.forEach((s) => {
-          if (!s.pen && typeof raw.pens?.[s.id] === "string") s.pen = raw.pens[s.id];
+          if (s.layerId) return;
+          s.layerId = layers.find((l) => l.name === raw.on?.[s.id])?.id ?? "";
         });
       }
       if (Array.isArray(raw.fills)) {
@@ -181,5 +204,11 @@ export function parseDrawing(text: string): Opened {
     }
   }
 
-  return { page, shapes, fills, unsupported };
+  // A drawing with nothing Studio recognises still needs somewhere to draw.
+  if (!layers.length) layers.push({ id: newLayerId(), name: "Black", color: "#262626" });
+  shapes.forEach((s) => {
+    if (!s.layerId) s.layerId = layers[0].id;
+  });
+
+  return { page, shapes, layers, fills, unsupported };
 }

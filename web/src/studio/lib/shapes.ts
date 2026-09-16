@@ -19,12 +19,26 @@ export interface Shape {
    */
   outline?: boolean;
   /**
-   * The pen that draws it, by name rather than by colour. Names are the contract between the two
-   * apps: on save each pen becomes a layer named after it, and Plot colours a layer from the pen
-   * whose name it matches. Absent means the tool's default pen.
+   * The layer it sits on, which is what decides the colour it's drawn in. A layer is one pen:
+   * everything on it plots in that one colour, because plotting a layer is what a pen change is for.
+   * Colour is never a property of a shape.
    */
-  pen?: string;
+  layerId: string;
 }
+
+/**
+ * One pen's worth of drawing. The name is also the pen's name, which is the contract with Plot: it
+ * colours a layer from the pen whose name it matches, so a drawing arrives already coloured.
+ */
+export interface Layer {
+  id: string;
+  name: string;
+  color: string;
+  hidden?: boolean;
+}
+
+let layerCounter = 0;
+export const newLayerId = () => `layer-${++layerCounter}-${Date.now().toString(36)}`;
 
 export interface Page {
   w: number; // inches

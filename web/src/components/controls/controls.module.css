@@ -8,6 +8,32 @@
   min-width: 0;
 }
 
+/* A foldable card title: the chevron turns, the body goes, the row stays where it was. */
+.sectionToggle {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  margin-left: -1.125rem; /* the chevron hangs outside, so the title itself doesn't shift */
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+}
+
+.sectionChevron {
+  width: 0.875rem;
+  height: 0.875rem;
+  color: var(--ui-text-muted);
+  transition: transform var(--ui-motion-fast) ease;
+}
+
+.sectionChevron[data-open="true"] { transform: rotate(90deg); }
+
+/* Folded, the card is just its title: no gap left behind by the body that isn't there. */
+.section[data-collapsed="true"] { gap: 0; padding-bottom: 0; }
+
 .legend {
   float: left;
   width: 100%;
