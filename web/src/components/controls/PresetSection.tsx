@@ -1,6 +1,6 @@
 import { useRef, useState } from "react";
 import { Button, ButtonRound, Checkbox, InputSelect, InputText } from "@tomcoggia/ui";
-import { Angle, LineSquiggle, PenTool, X } from "lucide-react";
+import { Angle, LineSquiggle, PencilSparkles, X } from "lucide-react";
 import styles from "./controls.module.css";
 import { Section } from "./Section";
 import { Slider } from "./Slider";
@@ -112,7 +112,7 @@ export function PresetSection({
     <Section
       title="Drawing tool"
       action={!mixed ? (
-        <ButtonRound size="sm" icon={<PenTool />} aria-label="Add a second drawing tool" title="Add another preset, for a drawing that mixes pens" disabled={disabled || !presets.length} onClick={onAddSecond} />
+        <ButtonRound size="sm" icon={<PencilSparkles />} aria-label="Add a second drawing tool" title="Add another preset, for a drawing that mixes pens" disabled={disabled || !presets.length} onClick={onAddSecond} />
       ) : undefined}
     >
       <div className={styles.toolBlock} data-in-use={inUse === "first"}>
