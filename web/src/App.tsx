@@ -1087,8 +1087,6 @@ export default function App() {
             onTestPen={() => manual("pen_test")}
             showPenUp={showPenUp}
             onShowPenUp={setShowPenUp}
-            inkSim={inkSim}
-            onInkSim={setInkSim}
           />
           </>}
 
