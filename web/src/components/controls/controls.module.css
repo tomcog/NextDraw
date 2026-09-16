@@ -446,8 +446,11 @@
 
 
 
-/* The fixed tilt of a tool that is only ever used tilted: a note, not a setting. */
+/* How a tool is always set up - its clip angle and one-way strokes: a note, not a setting. */
 .tiltNote {
+  display: flex;
+  align-items: center;
+  gap: 4px;
   margin: 0;
   font-size: 11px;
   color: var(--ui-text-muted);

@@ -712,7 +712,8 @@ export default function App() {
     Boolean(tool?.tilt && (tool.tilt.fixed || (tiltChoice[tool.name] ?? tool.tilt.on)));
   // One-way strokes: on or off per tool, starting from its preset. Only soft tips have it.
   const [dragChoice, setDragChoice] = useState<Record<string, boolean>>({});
-  const dragOn = (tool: Preset | undefined) => Boolean(tool?.drag && (dragChoice[tool.name] ?? tool.drag.on));
+  const dragOn = (tool: Preset | undefined) =>
+    Boolean(tool?.drag && (tool.drag.fixed || (dragChoice[tool.name] ?? tool.drag.on)));
   const paletteFor = (id: string | null) => (usesSecond(id) ? secondPreset : active)?.palette ?? [];
 
   // Match to pens: each layer with a color gets the pen from its tool's palette that looks most like

@@ -1,6 +1,6 @@
 import { useRef, useState } from "react";
 import { Button, ButtonRound, Checkbox, InputSelect, InputText } from "@tomcoggia/ui";
-import { PenTool, X } from "lucide-react";
+import { Angle, PenTool, X } from "lucide-react";
 import styles from "./controls.module.css";
 import { Section } from "./Section";
 import { Slider } from "./Slider";
@@ -38,10 +38,25 @@ export function PresetSection({
   secondTool, secondLayers, layers, inUse, onAddSecond, onSecondTool, onRemoveSecond, onAssign,
   smallPaths, onSmallPaths, tiltOn, onTilt, dragOn, onDrag,
 }: Props) {
-  // A tool that is only ever used tilted has nothing to switch: it says the angle to set the clip to.
-  const tiltSwitch = (tool: Preset | undefined) => tool?.tilt?.fixed ? (
-      <p className={styles.tiltNote} title={`This tool is always tilted: set the clip to ${tool.tilt.angle}°`}>{`Tilt ${tool.tilt.angle}°`}</p>
-  ) : tool?.tilt && (
+  // What a tool is always set up for, with nothing to switch: the clip angle, and one-way strokes.
+  const toolNote = (tool: Preset | undefined) => {
+    const parts = [
+      ...(tool?.tilt?.fixed ? [`Tilt ${tool.tilt.angle}°`] : []),
+      ...(tool?.drag?.fixed ? ["one-way strokes"] : []),
+    ];
+    const why = [
+      ...(tool?.tilt?.fixed ? [`always tilted: set the clip to ${tool.tilt.angle}°`] : []),
+      ...(tool?.drag?.fixed ? ["only ever pulled, so strokes that would push it are cut and turned around"] : []),
+    ];
+    return parts.length ? (
+      <p className={styles.tiltNote} title={`This tool is ${why.join("; ")}`}>
+        {tool?.tilt?.fixed && <Angle size={12} aria-hidden />}
+        {parts.join(" · ")}
+      </p>
+    ) : null;
+  };
+  // A tool used at more than one angle keeps its switch. The label gives the angle to set.
+  const tiltSwitch = (tool: Preset | undefined) => tool?.tilt && !tool.tilt.fixed && (
       <Checkbox
         size="md"
         label={`Angle compensation ${tool.tilt.angle}°`}
@@ -52,7 +67,7 @@ export function PresetSection({
       />
   );
   // A soft tip that splays when pushed: keep every stroke going away from home along the width.
-  const dragSwitch = (tool: Preset | undefined) => tool?.drag && (
+  const dragSwitch = (tool: Preset | undefined) => tool?.drag && !tool.drag.fixed && (
       <Checkbox
         size="md"
         label="One-way strokes"
@@ -121,6 +136,7 @@ export function PresetSection({
           </option>
         ))}
       </InputSelect>
+      {toolNote(active)}
       {tiltSwitch(active)}
       {dragSwitch(active)}
       {mixed && layers.length > 0 && chips(false)}
@@ -145,6 +161,7 @@ export function PresetSection({
             </InputSelect>
             <ButtonRound size="sm" variant="ghost" icon={<X />} aria-label="Remove the second drawing tool" title="Remove the second tool; its layers go back to the first" disabled={disabled} onClick={onRemoveSecond} />
           </div>
+          {toolNote(presets.find((p) => p.name === secondTool))}
           {tiltSwitch(presets.find((p) => p.name === secondTool))}
           {dragSwitch(presets.find((p) => p.name === secondTool))}
           {layers.length > 0 && chips(true)}

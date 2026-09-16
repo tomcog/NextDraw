@@ -153,6 +153,7 @@ export interface Preset {
 // width. Paths that turn back are cut and each piece is plotted the safe way, costing pen lifts.
 export interface Drag {
   on: boolean; // limiting is on unless turned off for this tool
+  fixed?: boolean; // a tool that may never be pushed: no switch, limiting always on
 }
 
 // A tilted clip puts the tool's tip offset_mm toward home from the carriage, along the width.
