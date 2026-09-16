@@ -3,6 +3,7 @@ import {
   boxOf, clampToPage, dragHandle, handlesOf, isDegenerate, moveBy, newShapeId,
   CURSOR, type Handle, type Page, type Shape, type ShapeKind,
 } from "../lib/shapes";
+import { hatchLines, type Fill } from "../lib/hatch";
 import { fmtIn } from "../../lib/format";
 import styles from "./Canvas.module.css";
 
@@ -13,6 +14,7 @@ export type Tool = ShapeKind | "select";
 interface Props {
   page: Page;
   shapes: Shape[];
+  fills: Fill[];
   tool: Tool;
   selected: string | null;
   onSelect: (id: string | null) => void;
@@ -35,7 +37,7 @@ type Drag =
 // The page at true proportions, with a one-inch grid. It keeps the page's own proportions and is
 // sized to them (--canvas-aspect), so the drawing gets as large as the space allows - the same way
 // Plot's preview fills its column.
-export function Canvas({ page, shapes, tool, selected, onSelect, onAdd, onUpdate, onEditStart }: Props) {
+export function Canvas({ page, shapes, fills, tool, selected, onSelect, onAdd, onUpdate, onEditStart }: Props) {
   const svgRef = useRef<SVGSVGElement>(null);
   const [drag, setDrag] = useState<Drag | null>(null);
   const pointer = useRef<number | null>(null);
@@ -176,6 +178,23 @@ export function Canvas({ page, shapes, tool, selected, onSelect, onAdd, onUpdate
           {lines(page.h, "y")}
         </g>
         <rect className={styles.pageEdge} x={0} y={0} width={page.w} height={page.h} />
+
+        {/* Hatch lines, drawn from the fill's parameters rather than stored, so they follow the shape
+            as it's moved or resized. They aren't clickable: the shape underneath is what you grab. */}
+        <g className={styles.fills}>
+          {fills.map((fill) => {
+            const shape = shapes.find((s) => s.id === fill.shapeId);
+            if (!shape) return null;
+            return (
+              <g key={fill.shapeId}>
+                {hatchLines(shape, fill).map((l, i) => (
+                  <line key={i} x1={l.x1} y1={l.y1} x2={l.x2} y2={l.y2} />
+                ))}
+              </g>
+            );
+          })}
+        </g>
+
         {shapes.map((s) => render(s, s.id, "shape"))}
         {drag?.mode === "new" && render(drag.shape, "draft", "draft")}
 

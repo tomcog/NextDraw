@@ -44,6 +44,15 @@
 
 .home { fill: var(--ui-text-default); }
 
+/* A fill's hatch lines: the same ink as the shape, and never in the way of grabbing it. */
+.fills line {
+  stroke: var(--studio-ink, #262626);
+  stroke-width: 1;
+  stroke-linecap: round;
+  pointer-events: none;
+  vector-effect: non-scaling-stroke;
+}
+
 /* Drawn lines in the pen's own color, which is what Plot will show: the shapes go on a layer named
    after a pen, and Plot colors a layer from the pen its name matches. Plot's --nd-ink blue is for
    paths whose pen isn't known yet, which isn't the case here. The page is white in both themes, so

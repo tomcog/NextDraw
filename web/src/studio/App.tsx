@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Button, ButtonRound, Card, InputSelect, InputText } from "@tomcoggia/ui";
-import { Circle, FolderOpen, Minus, MousePointer2, Ratio, Redo2, Square, Trash2, Undo2 } from "lucide-react";
+import { Button, ButtonRound, Card, Checkbox, InputSelect, InputText } from "@tomcoggia/ui";
+import { Circle, FolderOpen, Grid2x2, Minus, MousePointer2, Ratio, Redo2, Square, Trash2, Undo2 } from "lucide-react";
 import { FileBrowser, type OpenResult } from "../components/FileBrowser";
 import { Section } from "../components/controls/Section";
 import controls from "../components/controls/controls.module.css";
@@ -10,6 +10,7 @@ import { PAPER_SIZES } from "../lib/constants";
 import { fmtIn } from "../lib/format";
 import { Canvas, type Tool } from "./components/Canvas";
 import { StudioHeader } from "./components/StudioHeader";
+import { canFill, type Fill } from "./lib/hatch";
 import { parseDrawing } from "./lib/parse";
 import { boxOf, shapeName, type Page, type Shape } from "./lib/shapes";
 import { buildSvg, cleanFileName } from "./lib/svg";
@@ -43,6 +44,7 @@ const LAST_FILE_KEY = "studio-last-file";
 // shapes, so a copy costs nothing, and there's no way for a replayed change to go wrong.
 interface Snapshot {
   shapes: Shape[];
+  fills: Fill[];
   page: Page;
 }
 const HISTORY_LIMIT = 60;
@@ -52,6 +54,11 @@ type Saved = { path: string; folder: string } | null;
 export default function App() {
   const [page, setPage] = useState<Page>({ w: 11, h: 8.5 });
   const [shapes, setShapes] = useState<Shape[]>([]);
+  const [fills, setFills] = useState<Fill[]>([]);
+  const [pageOpen, setPageOpen] = useState(false);
+  // A tool's measured hatch numbers are the sensible starting point for a new fill, and they live in
+  // Plot's presets rather than being invented here.
+  const [defaults, setDefaults] = useState({ angle: 45, spacingMm: 1.5 });
   const [tool, setTool] = useState<Tool>("rect");
   const [selected, setSelected] = useState<string | null>(null);
   const [name, setName] = useState("Untitled");
@@ -86,22 +93,23 @@ export default function App() {
 
   // Called just before a change, never during one: a drag records once, when it starts.
   const record = useCallback(() => {
-    setPast((p) => [...p.slice(-(HISTORY_LIMIT - 1)), { shapes, page }]);
+    setPast((p) => [...p.slice(-(HISTORY_LIMIT - 1)), { shapes, fills, page }]);
     setFuture([]);
-  }, [shapes, page]);
+  }, [shapes, fills, page]);
 
   const step = useCallback(
     (from: Snapshot[], to: Snapshot[], setFrom: typeof setPast, setTo: typeof setFuture, take: "last" | "first") => {
       if (!from.length) return;
       const next = take === "last" ? from[from.length - 1] : from[0];
       setFrom(take === "last" ? from.slice(0, -1) : from.slice(1));
-      setTo([{ shapes, page }, ...to].slice(0, HISTORY_LIMIT));
+      setTo([{ shapes, fills, page }, ...to].slice(0, HISTORY_LIMIT));
       setShapes(next.shapes);
+      setFills(next.fills);
       setPage(next.page);
       // A shape that isn't there any more can't stay selected, or its handles would hang in the air.
       setSelected((id) => (next.shapes.some((s) => s.id === id) ? id : null));
     },
-    [shapes, page],
+    [shapes, fills, page],
   );
 
   const undo = useCallback(() => step(past, future, setPast, setFuture, "last"), [step, past, future]);
@@ -134,6 +142,7 @@ export default function App() {
   const removeShape = (id: string) => {
     record();
     setShapes((list) => list.filter((s) => s.id !== id));
+    setFills((list) => list.filter((f) => f.shapeId !== id));
     setSelected((current) => (current === id ? null : current));
   };
 
@@ -154,7 +163,7 @@ export default function App() {
     }
     setBusy(true);
     try {
-      const svg = buildSvg(shapes, page, LAYER_NAME, sizeId);
+      const svg = buildSvg(shapes, fills, page, LAYER_NAME, sizeId);
       const res = await postJSON<{ name: string; path: string; folder: string }>("/api/studio/save", {
         name: cleanFileName(name),
         svg,
@@ -196,6 +205,7 @@ export default function App() {
     const drawing = parseDrawing(res.svg ?? "");
     setPage(drawing.page);
     setShapes(drawing.shapes);
+    setFills(drawing.fills);
     setSelected(null);
     setPast([]);
     setFuture([]);
@@ -248,6 +258,29 @@ export default function App() {
     };
   }, [openDrawing]);
 
+  useEffect(() => {
+    api<{ presets: { hatch?: { angle?: number; spacing_mm?: number } }[] }>("/api/presets")
+      .then(({ presets }) => {
+        const measured = presets.find((t) => t.hatch?.spacing_mm);
+        if (measured?.hatch) {
+          setDefaults({ angle: measured.hatch.angle ?? 45, spacingMm: measured.hatch.spacing_mm! });
+        }
+      })
+      .catch(() => {}); // no presets is not a reason to stop; the fallback numbers stand
+  }, []);
+
+  const chosen = shapes.find((s) => s.id === selected) ?? null;
+  const chosenFill = chosen ? fills.find((f) => f.shapeId === chosen.id) ?? null : null;
+
+  const setFill = (next: Fill | null) => {
+    if (!chosen) return;
+    record();
+    setFills((list) => {
+      const rest = list.filter((f) => f.shapeId !== chosen.id);
+      return next ? [...rest, next] : rest;
+    });
+  };
+
   const setSize = (id: string) => {
     const size = SIZES.find((s) => s.id === id);
     if (!size) return;
@@ -272,6 +305,7 @@ export default function App() {
           <Canvas
             page={page}
             shapes={shapes}
+            fills={fills}
             tool={tool}
             selected={selected}
             onSelect={setSelected}
@@ -287,14 +321,25 @@ export default function App() {
               <Section
                 title="Drawing"
                 action={
-                  <ButtonRound
-                    size="sm"
-                    icon={<FolderOpen />}
-                    aria-label="Open a drawing"
-                    title="Open a drawing to carry on with"
-                    disabled={busy}
-                    onClick={() => setBrowserOpen(true)}
-                  />
+                  <span className={styles.headerTools}>
+                    <ButtonRound
+                      size="sm"
+                      icon={<Grid2x2 />}
+                      className={pageOpen ? controls.roundActive : undefined}
+                      aria-label="Page size"
+                      aria-pressed={pageOpen}
+                      title={`Page size: ${fmtIn(page.w)} × ${fmtIn(page.h)}`}
+                      onClick={() => setPageOpen((v) => !v)}
+                    />
+                    <ButtonRound
+                      size="sm"
+                      icon={<FolderOpen />}
+                      aria-label="Open a drawing"
+                      title="Open a drawing to carry on with"
+                      disabled={busy}
+                      onClick={() => setBrowserOpen(true)}
+                    />
+                  </span>
                 }
               >
                 <InputText
@@ -315,6 +360,28 @@ export default function App() {
                 <p className={controls.fileWhere} title={saved?.path ?? undefined}>
                   {saved ? `In ${saved.folder}` : "Not saved yet"}
                 </p>
+
+                {pageOpen && (
+                  <div className={styles.pageRow}>
+                    <InputSelect size="md" label="Page size" value={sizeId} onChange={(e) => setSize(e.target.value)}>
+                      {SIZES.map((size) => (
+                        <option key={size.id} value={size.id}>
+                          {size.name}
+                        </option>
+                      ))}
+                    </InputSelect>
+                    <ButtonRound
+                      size="sm"
+                      icon={<Ratio />}
+                      aria-label="Turn the page"
+                      title="Turn the page: swap its width and height"
+                      onClick={() => {
+                        record();
+                        setPage((p) => ({ w: p.h, h: p.w }));
+                      }}
+                    />
+                  </div>
+                )}
               </Section>
             </div>
           </Card>
@@ -351,6 +418,7 @@ export default function App() {
                       onClick={() => {
                         record();
                         setShapes([]);
+                        setFills([]);
                         setSelected(null);
                       }}
                     />
@@ -411,41 +479,53 @@ export default function App() {
             </div>
           </Card>
 
-          <Card variant="flat" className={styles.controls}>
-            <div className={styles.cardBody}>
-              <Section
-                title="Page"
-                action={
-                  <ButtonRound
-                    size="sm"
-                    icon={<Ratio />}
-                    aria-label="Turn the page"
-                    title="Turn the page: swap its width and height"
-                    onClick={() => {
-                      record();
-                      setPage((p) => ({ w: p.h, h: p.w }));
-                    }}
+          {chosen && canFill(chosen) && (
+            <Card variant="flat" className={styles.controls}>
+              <div className={styles.cardBody}>
+                <Section title="Fill">
+                  <Checkbox
+                    checked={Boolean(chosenFill)}
+                    label="Hatch this shape"
+                    onChange={(e) =>
+                      setFill(
+                        e.target.checked
+                          ? { shapeId: chosen.id, angle: defaults.angle, spacingMm: defaults.spacingMm, scale: 100 }
+                          : null,
+                      )
+                    }
                   />
-                }
-              >
-                <InputSelect
-                  size="md"
-                  label="Size"
-                  value={sizeId}
-                  onChange={(e) => setSize(e.target.value)}
-                >
-                  {SIZES.map((s) => (
-                    <option key={s.id} value={s.id}>
-                      {s.name}
-                    </option>
-                  ))}
-                </InputSelect>
-                <p className={controls.dimensions}>
-                  {`${fmtIn(page.w)} × ${fmtIn(page.h)}`}
-                </p>
-              </Section>
-            </div>
-          </Card>
+                  {chosenFill && (
+                    <>
+                      <div className={styles.fillRow}>
+                        <InputText
+                          size="md"
+                          label="Angle (°)"
+                          type="number"
+                          step={5}
+                          value={String(chosenFill.angle)}
+                          onChange={(e) => setFill({ ...chosenFill, angle: Number(e.target.value) || 0 })}
+                        />
+                        <InputText
+                          size="md"
+                          label="Spacing (mm)"
+                          type="number"
+                          step={0.1}
+                          min={0.05}
+                          value={String(chosenFill.spacingMm)}
+                          onChange={(e) =>
+                            setFill({ ...chosenFill, spacingMm: Math.max(0.05, Number(e.target.value) || 0.05) })
+                          }
+                        />
+                      </div>
+                      <p className={styles.empty}>
+                        Spacing is what it measures on the paper, so it holds at any plot size.
+                      </p>
+                    </>
+                  )}
+                </Section>
+              </div>
+            </Card>
+          )}
         </div>
       </main>
     </div>

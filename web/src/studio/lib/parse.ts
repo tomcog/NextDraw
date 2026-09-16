@@ -1,4 +1,6 @@
+import type { Fill } from "./hatch";
 import { newShapeId, type Page, type Shape } from "./shapes";
+import { FILL_GROUP_PREFIX } from "./svg";
 
 // Reading a drawing back in, so work can be picked up again after it's been handed to Plot.
 //
@@ -10,6 +12,7 @@ import { newShapeId, type Page, type Shape } from "./shapes";
 export interface Opened {
   page: Page;
   shapes: Shape[];
+  fills: Fill[];
   /** Drawable elements Studio has no way to represent. Saving over the file would lose them. */
   unsupported: number;
 }
@@ -59,13 +62,19 @@ export function parseDrawing(text: string): Opened {
   const shapes: Shape[] = [];
   let unsupported = 0;
 
+  // A fill's lines are regenerated from its parameters, so reading them back as hundreds of separate
+  // line shapes would both double the drawing and cut it loose from the fill that made it.
+  const generated = (el: Element) => Boolean(el.closest(`[id^="${FILL_GROUP_PREFIX}"]`));
+  const idOf = (el: Element) => el.getAttribute("id") || newShapeId();
+
   for (const el of Array.from(svg.querySelectorAll("*"))) {
+    if (generated(el)) continue;
     switch (el.nodeName.toLowerCase()) {
       case "rect": {
         const x = attr(el, "x");
         const y = attr(el, "y");
         shapes.push({
-          id: newShapeId(), kind: "rect",
+          id: idOf(el), kind: "rect",
           x: toX(x), y: toY(y),
           x2: toX(x + attr(el, "width")), y2: toY(y + attr(el, "height")),
         });
@@ -78,14 +87,14 @@ export function parseDrawing(text: string): Opened {
         const rx = el.nodeName.toLowerCase() === "circle" ? attr(el, "r") : attr(el, "rx");
         const ry = el.nodeName.toLowerCase() === "circle" ? attr(el, "r") : attr(el, "ry");
         shapes.push({
-          id: newShapeId(), kind: "ellipse",
+          id: idOf(el), kind: "ellipse",
           x: toX(cx - rx), y: toY(cy - ry), x2: toX(cx + rx), y2: toY(cy + ry),
         });
         break;
       }
       case "line":
         shapes.push({
-          id: newShapeId(), kind: "line",
+          id: idOf(el), kind: "line",
           x: toX(attr(el, "x1")), y: toY(attr(el, "y1")),
           x2: toX(attr(el, "x2")), y2: toY(attr(el, "y2")),
         });
@@ -103,5 +112,28 @@ export function parseDrawing(text: string): Opened {
     }
   }
 
-  return { page, shapes, unsupported };
+  // Studio's own parameters, if the drawing was made here. A fill whose shape has gone is dropped.
+  const ids = new Set(shapes.map((s) => s.id));
+  let fills: Fill[] = [];
+  const design = svg.getElementsByTagName("nds:design")[0] ?? svg.querySelector("design");
+  if (design?.textContent) {
+    try {
+      const raw = JSON.parse(design.textContent) as { fills?: unknown };
+      if (Array.isArray(raw.fills)) {
+        fills = raw.fills
+          .map((f) => f as Record<string, unknown>)
+          .filter((f) => typeof f.shape === "string" && ids.has(f.shape as string))
+          .map((f) => ({
+            shapeId: f.shape as string,
+            angle: Number(f.angle) || 0,
+            spacingMm: Number(f.spacing_mm) || 1.5,
+            scale: Number(f.scale) || 100,
+          }));
+      }
+    } catch {
+      // unreadable parameters: the drawing still opens, just without its fills
+    }
+  }
+
+  return { page, shapes, fills, unsupported };
 }

@@ -200,5 +200,24 @@ wrong. The one thing that needs care is that a drag makes hundreds of updates an
 single step, so the canvas says when a gesture *starts* and history records once, there. Opening a
 drawing clears the history - that's a new document, not a change to this one.
 
-What it deliberately doesn't do yet: choose a pen, or fill anything. Fills are the next feature, and
-the decisions above are about them.
+**Parametric hatch fills**, built to the decisions above. A shape can be given a fill with an angle
+and a spacing; the lines are generated from those, so they follow the shape as it's moved or resized
+and they change the moment a number does. Rectangles and ellipses can be filled - a line has no
+interior. The lines are clipped to the shape properly: a box by its slabs, an ellipse by squashing it
+to a circle and solving.
+
+A new fill starts from the measured numbers in Plot's presets rather than something invented here, so
+a fill opens at the Faber-Castell Brush's 45° and 1.711 mm. Spacing is stored as what it measures on
+paper, with the plot scale it was generated for beside it, which is the part that lets a fill be
+regenerated rather than merely redrawn.
+
+Saving writes a fill twice over: as the lines the pen will draw, in a group named after the shape
+they fill, and as the parameters that made them in an `<nds:design>` block. Reading it back skips the
+generated lines - otherwise a fill would come back as hundreds of separate line shapes, cut loose
+from the fill that made them - and regenerates from the parameters. Plot rewrites its own
+`<nds:plot>` block on save and leaves `<nds:design>` alone, so the numbers survive a trip through it.
+
+Page size lives behind an icon in the Drawing card rather than taking a card of its own.
+
+What it deliberately doesn't do yet: choose a pen per fill, cross-hatch (a second fill on the same
+shape), or hatch without also drawing the outline.
