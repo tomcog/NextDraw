@@ -11,6 +11,7 @@ import type { Info, PenColor, PlotterModel, Preset } from "../lib/types";
 import { fmtIn } from "../lib/format";
 import { ZoomControl } from "../components/ZoomControl";
 import type { Zoom } from "../components/BedCanvas";
+import { useRowDrag } from "../lib/useRowDrag";
 import { Canvas, type Tool } from "./components/Canvas";
 import { StudioHeader } from "./components/StudioHeader";
 import { canFill, newFillId, type Fill } from "./lib/hatch";
@@ -339,45 +340,24 @@ export default function App() {
   // Restacking. The list is shown top-down but `layers` is bottom-first, like Plot's, so a row moved
   // n places down the list moves n places up the stack.
   const layerList = useRef<HTMLUListElement>(null);
-  const layerRows = useRef(new Map<string, HTMLLIElement>());
-  const [layerDrag, setLayerDrag] = useState<string | null>(null);
-
-  const startLayerDrag = (e: React.PointerEvent, id: string) => {
-    if (busy || layers.length < 2) return;
-    e.preventDefault();
-    try {
-      (e.currentTarget as Element).setPointerCapture(e.pointerId);
-    } catch {
-      // not a live pointer; the drag still works while it's over the list
-    }
-    record();
-    setLayerDrag(id);
-    const move = (ev: PointerEvent) => {
-      const shown = [...layers].reverse();
-      const rows = shown.map((l) => layerRows.current.get(l.id)).filter(Boolean) as HTMLLIElement[];
-      if (rows.length < 2) return;
-      const pitch = rows[1].offsetTop - rows[0].offsetTop || rows[0].offsetHeight;
-      const top = rows[0].getBoundingClientRect().top;
-      const to = Math.max(0, Math.min(shown.length - 1, Math.round((ev.clientY - top) / pitch)));
-      const from = shown.findIndex((l) => l.id === id);
-      if (to === from) return;
+  const layerRows = useRef(new Map<string, HTMLElement>());
+  // Layers are shown top-first, the way they stack on the paper; the array holds them bottom-first,
+  // the order they're drawn in. So a drop at display position `to` is a move to the mirrored index.
+  const { dragging: layerDrag, start: startLayerDrag } = useRowDrag({
+    rows: [...layers].reverse().map((l) => l.id),
+    rowRefs: layerRows,
+    listRef: layerList,
+    disabled: busy,
+    onStart: record,
+    onMove: (id, to) =>
       setLayers((list) => {
+        const from = list.length - 1 - list.findIndex((l) => l.id === id);
+        if (to === from) return list;
         const next = [...list];
-        // Back into bottom-first order to do the move.
-        const a = next.length - 1 - from;
-        const b = next.length - 1 - to;
-        next.splice(b, 0, next.splice(a, 1)[0]);
+        next.splice(next.length - 1 - to, 0, next.splice(next.length - 1 - from, 1)[0]);
         return next;
-      });
-    };
-    const up = () => {
-      setLayerDrag(null);
-      window.removeEventListener("pointermove", move);
-      window.removeEventListener("pointerup", up);
-    };
-    window.addEventListener("pointermove", move);
-    window.addEventListener("pointerup", up);
-  };
+      }),
+  });
 
   const patchLayer = (id: string, patch: Partial<Layer>) => {
     record();

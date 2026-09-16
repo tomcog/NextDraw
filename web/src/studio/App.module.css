@@ -71,6 +71,7 @@
 
 /* Layers: the library's own row, with a bin after it. */
 .layerList {
+  position: relative; /* rows measure their offsetTop against the list */
   list-style: none;
   margin: 0;
   padding: 0;
@@ -80,10 +81,22 @@
 }
 
 .layerRow {
+  position: relative;
   display: flex;
   align-items: center;
   gap: 0.25rem;
+  border-radius: 4px;
 }
+
+/* The row being carried: lifted above the ones sliding out of its way. The shadow is only there
+   while it's held, so the list settles flat as soon as it's dropped. */
+.layerRow[data-dragging="true"] {
+  z-index: 2;
+  box-shadow: var(--ui-shadow-float-2);
+  cursor: grabbing;
+}
+
+.layerList:has(> [data-dragging="true"]) { user-select: none; }
 
 .layerRow > :first-child { flex: 1; min-width: 0; }
 
