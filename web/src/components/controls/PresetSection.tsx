@@ -38,8 +38,10 @@ export function PresetSection({
   secondTool, secondLayers, layers, inUse, onAddSecond, onSecondTool, onRemoveSecond, onAssign,
   smallPaths, onSmallPaths, tiltOn, onTilt, dragOn, onDrag,
 }: Props) {
-  // A tool set up for a tilted clip: switch its compensation on or off. The label gives the angle to set.
-  const tiltSwitch = (tool: Preset | undefined) => tool?.tilt && (
+  // A tool that is only ever used tilted has nothing to switch: it says the angle to set the clip to.
+  const tiltSwitch = (tool: Preset | undefined) => tool?.tilt?.fixed ? (
+      <p className={styles.hint}>{`Set the clip to ${tool.tilt.angle}°. This tool is always tilted.`}</p>
+  ) : tool?.tilt && (
       <Checkbox
         size="md"
         label={`Angle compensation ${tool.tilt.angle}°`}

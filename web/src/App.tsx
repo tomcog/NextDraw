@@ -707,7 +707,9 @@ export default function App() {
   const usesSecond = (id: string | null) => Boolean(secondTool && id && secondToolLayers.includes(id));
   // Angle compensation: on or off per tool, starting from its preset. Only tools set up tilted have it.
   const [tiltChoice, setTiltChoice] = useState<Record<string, boolean>>({});
-  const tiltOn = (tool: Preset | undefined) => Boolean(tool?.tilt && (tiltChoice[tool.name] ?? tool.tilt.on));
+  // A tool that is only ever used tilted keeps its compensation whatever the page remembers.
+  const tiltOn = (tool: Preset | undefined) =>
+    Boolean(tool?.tilt && (tool.tilt.fixed || (tiltChoice[tool.name] ?? tool.tilt.on)));
   // One-way strokes: on or off per tool, starting from its preset. Only soft tips have it.
   const [dragChoice, setDragChoice] = useState<Record<string, boolean>>({});
   const dragOn = (tool: Preset | undefined) => Boolean(tool?.drag && (dragChoice[tool.name] ?? tool.drag.on));

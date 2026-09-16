@@ -160,6 +160,7 @@ export interface Tilt {
   angle: number; // degrees to set the clip to
   offset_mm: number;
   on: boolean; // compensation is on unless turned off for this tool
+  fixed?: boolean; // a tool that is only ever used tilted: no switch, compensation always on
 }
 
 export interface PenColor {
