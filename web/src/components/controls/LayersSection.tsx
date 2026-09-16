@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { KeyboardEvent, PointerEvent as ReactPointerEvent } from "react";
 import { ButtonRound, LayerController, Segment, SegmentedControl } from "@tomcoggia/ui";
-import { Eye, LayersArrowUp, SwatchBook, Trash2, Waypoints, X } from "lucide-react";
+import { Eye, LayersArrowUp, PenTool, SwatchBook, Trash2, X } from "lucide-react";
 import styles from "./LayersSection.module.css";
 import { Section } from "./Section";
 import { PaletteMenu } from "./PaletteMenu";
@@ -203,7 +203,7 @@ export function LayersSection({ mode, onMode, layers, target, printed, disabled,
         )}
         <SegmentedControl size="sm" aria-label="Layers view">
           <Segment selected={mode === "preview"} onClick={() => onMode("preview")} icon={<Eye />} aria-label="Preview" title="Preview: arrange the drawing - show, hide and reorder layers" />
-          <Segment selected={mode === "work"} onClick={() => onMode("work")} icon={<Waypoints />} aria-label="Plot" title="Plot: layer by layer - only the layer to print is drawn" />
+          <Segment selected={mode === "work"} onClick={() => onMode("work")} icon={<PenTool />} aria-label="Plot" title="Plot: layer by layer - only the layer to print is drawn" />
         </SegmentedControl>
         </span>
       }
