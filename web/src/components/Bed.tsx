@@ -31,6 +31,7 @@ interface Props {
   onOpenBrowser: () => void;
   toolbar?: ReactNode; // sits on the width dimension line, at its right end
   layerLooks: Record<string, { color: string | null; skipped: boolean; hidden: boolean }> | null;
+  layerOrder?: string[]; // ids bottom-first: the order they plot, and so the order they stack
   penWidthMm?: number; // draw lines at the pen's real width; undefined keeps a hairline
   plotPaths?: PlotPaths | null; // show the plot in progress, drawn and left to draw, instead of the preview
   plotFraction?: number; // how much of it is drawn, 0-1
@@ -114,6 +115,19 @@ export function Bed(props: Props) {
       else g.style.removeProperty("--pen-art");
     });
   }, [preview, penWidthMm, layerPenWidths, hairlines]);
+
+  // Stack the artwork layers the way they'll be plotted: the first layer at the bottom, later ones
+  // over it. Reordering the Layers card moves them here too, so the preview shows what opaque ink
+  // will actually cover.
+  const { layerOrder } = props;
+  useLayoutEffect(() => {
+    if (!preview || !layerOrder?.length) return;
+    const groups = new Map([...preview.node.querySelectorAll<SVGGElement>(".pv-layer")].map((g) => [g.id, g]));
+    for (const id of layerOrder) {
+      const g = groups.get(id);
+      if (g) g.parentNode?.appendChild(g); // last appended draws on top
+    }
+  }, [preview, layerOrder]);
 
   // Color each artwork layer. Runs after the preview is mounted, and again when colors change.
   const { layerLooks } = props;

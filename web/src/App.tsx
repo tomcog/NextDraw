@@ -153,6 +153,8 @@ export default function App() {
       : null),
     [layerViews, layerMode, printTarget],
   );
+  // Layer ids bottom-first, so the preview stacks them the way the plot draws them.
+  const layerOrder = useMemo(() => layerViews.map((l) => l.id), [layerViews]);
   // The drawing itself, straight from the file (instant), and the plot simulation's picture with pen
   // paths (seconds on a big drawing). Preview mode shows the drawing; Work mode and drawings without
   // layers show the simulation once it's ready.
@@ -1008,6 +1010,7 @@ export default function App() {
               canDrag={!busy}
               onOpenBrowser={openBrowser}
               layerLooks={layerLooks}
+              layerOrder={layerOrder}
               penWidthMm={active?.settings.pen_width ?? settings.pen_width}
               layerPenWidths={secondTool ? layerPenWidths : undefined}
               plotPaths={shownPlotPaths}
