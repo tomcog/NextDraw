@@ -191,9 +191,9 @@ export default function App() {
   const [showPenUp, setShowPenUp] = useState(() => load<boolean>(STORAGE.penUpMoves) ?? false);
   useEffect(() => save(STORAGE.penUpMoves, showPenUp), [showPenUp]);
   // Ink simulation: how solid each tool's ink is and how it builds up where strokes cross. Blending
-  // every stroke costs the browser real work on a drawing of many thousands of paths, so it can be
-  // switched off, which draws each layer flat in its own color.
-  const [inkSim, setInkSim] = useState(() => load<boolean>(STORAGE.inkSim) ?? true);
+  // every stroke costs the browser real work on a drawing of many thousands of paths, so it's off
+  // until asked for (the Blend button on the Layers card); flat means each layer in its own color.
+  const [inkSim, setInkSim] = useState(() => load<boolean>(STORAGE.inkSim) ?? false);
   useEffect(() => save(STORAGE.inkSim, inkSim), [inkSim]);
   const [zoomChoice, setZoomChoice] = useState<Zoom>(() => load<Zoom>(STORAGE.zoom) ?? "plotter");
   useEffect(() => save(STORAGE.zoom, zoomChoice), [zoomChoice]);
@@ -1153,6 +1153,8 @@ export default function App() {
                   printed={status?.printed_layers ?? []}
                   onTarget={setPrintLayer}
                   paletteFor={paletteFor}
+                inkSim={inkSim}
+                onInkSim={setInkSim}
                   onColor={colorLayer}
                   onMatch={layerViews.some((l) => l.color && paletteFor(l.id).length) ? matchPens : null}
                   note={layerNote}

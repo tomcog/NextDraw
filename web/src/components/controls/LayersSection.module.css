@@ -92,3 +92,8 @@
   opacity: 0;
   pointer-events: none;
 }
+
+/* Ink simulation on: the Blend icon goes black for as long as it's showing. */
+.inkOn {
+  --ui-button-round-icon: var(--ui-text-default);
+}

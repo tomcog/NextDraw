@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { KeyboardEvent, PointerEvent as ReactPointerEvent } from "react";
 import { ButtonRound, LayerController, Segment, SegmentedControl } from "@tomcoggia/ui";
-import { Eye, LayersArrowUp, PenTool, SwatchBook, Trash2, X } from "lucide-react";
+import { Blend, Eye, LayersArrowUp, PenTool, SwatchBook, Trash2, X } from "lucide-react";
 import styles from "./LayersSection.module.css";
 import { Section } from "./Section";
 import { PaletteMenu } from "./PaletteMenu";
@@ -16,6 +16,8 @@ interface Props {
   disabled: boolean;
   onTarget: (id: string) => void;
   paletteFor: (id: string) => PenColor[]; // the colors of the layer's drawing tool; empty: the dot opens nothing
+  inkSim: boolean; // simulate each tool's ink on the preview, or draw it flat
+  onInkSim: (on: boolean) => void;
   onColor: (id: string, pen: PenColor) => void;
   onSort: () => void; // reorder lightest (layer 1) to darkest
   onMatch: (() => void) | null; // give each layer its closest pen; null when no layer has a palette to match
@@ -40,7 +42,7 @@ const reducedMotion = () => window.matchMedia?.("(prefers-reduced-motion: reduce
 // The drawing's layers, listed like Illustrator's Layers panel: the top layer at the top and
 // layer 1, the bottom layer, last. The box picks the one layer to print; names are edited in
 // place; rows are dragged by their grip (or moved with the arrow keys on it) to reorder.
-export function LayersSection({ mode, onMode, layers, target, printed, disabled, onTarget, paletteFor, onColor, onSort, onMatch, note, onUndo, onDismissNote, onDelete, onVisible, onRename, onMove }: Props) {
+export function LayersSection({ mode, onMode, layers, target, printed, disabled, onTarget, paletteFor, onColor, onSort, onMatch, note, onUndo, onDismissNote, onDelete, onVisible, onRename, onMove, inkSim, onInkSim }: Props) {
   // In Plot mode the layers hidden in Preview mode leave the list, and the eye goes. Numbers stay the
   // plot-order numbers from the full list.
   const numberOf = new Map(layers.map((l, i) => [l.id, i + 1]));
@@ -194,6 +196,15 @@ export function LayersSection({ mode, onMode, layers, target, printed, disabled,
             onClick={onMatch}
           />
         )}
+        <ButtonRound
+          size="sm"
+          icon={<Blend />}
+          className={inkSim ? styles.inkOn : undefined}
+          aria-label="Simulate the ink"
+          aria-pressed={inkSim}
+          title={inkSim ? "Showing each tool's ink: how solid it is and how it darkens where strokes cross. Turn it off on a very large drawing - blending every stroke is slow." : "Drawing each layer flat. Turn ink simulation on to see how the ink builds up."}
+          onClick={() => onInkSim(!inkSim)}
+        />
         {mode === "preview" && count > 1 && (
           <ButtonRound
             size="sm"
