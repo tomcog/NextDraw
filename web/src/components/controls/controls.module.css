@@ -157,6 +157,20 @@
 }
 
 .fileWhere[data-tone="error"] { color: var(--ui-danger); }
+/* Clear-the-drawing keeps the destructive hover that ButtonRound's tone="danger"
+   gave it before @tomcoggia/ui 0.36.0 split the confirmation button out into
+   ConfirmButton and dropped the prop. It stays a ButtonRound rather than
+   becoming a ConfirmButton: it sits in a toolbar row beside Open..., and
+   ConfirmButton wears its colour AT REST, which would make a small X the
+   loudest thing in the row while nothing is about to happen.
+
+   Naming --ui-danger rather than letting the hover fall through to
+   --ui-primary is the point - the two resolve to the same red today and would
+   diverge the moment the app splits the roles. */
+.clearFile {
+  --ui-button-round-bg-hover: var(--ui-danger);
+  --ui-button-round-icon-hover: var(--ui-text-on-danger);
+}
 
 .fileName {
   flex: 1;
@@ -450,7 +464,7 @@
 }
 
 .status[data-tone="error"] { color: var(--ui-danger); }
-.status[data-tone="ok"] { color: var(--ui-confirm); }
+.status[data-tone="ok"] { color: var(--ui-safety); }
 
 
 

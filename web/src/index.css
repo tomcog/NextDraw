@@ -39,7 +39,7 @@
     stroke-linejoin: round;
     vector-effect: non-scaling-stroke;
   }
-  .pv-progress .pv-down path.pv-drawn { stroke: var(--ui-confirm) !important; }
+  .pv-progress .pv-down path.pv-drawn { stroke: var(--ui-safety) !important; }
 
   /* The drawing on its own, shown at once while the plot simulation runs: its lines in ink. */
   .pv-artwork:not(.pv-colored) :is(path, rect, circle, ellipse, line, polyline, polygon) {

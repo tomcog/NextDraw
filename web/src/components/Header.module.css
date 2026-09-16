@@ -26,6 +26,6 @@
 }
 
 .status[data-found="true"] .dot {
-  background: var(--ui-confirm);
-  border-color: var(--ui-confirm);
+  background: var(--ui-safety);
+  border-color: var(--ui-safety);
 }

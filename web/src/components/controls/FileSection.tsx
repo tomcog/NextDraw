@@ -66,7 +66,7 @@ export function FileSection({
           <ButtonRound
             size="sm"
             variant="ghost"
-            tone="danger"
+            className={styles.clearFile}
             icon={<X />}
             aria-label="Clear the drawing"
             title="Clear the drawing"
