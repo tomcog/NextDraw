@@ -124,33 +124,64 @@ export function Bed(props: Props) {
 
   // How solid the ink is. The strokes multiply where they cross, so overlaps darken the way ink
   // does on paper, whatever transparency the file itself was exported with.
-  // Ink that builds up blends stroke by stroke, so its own crossings darken. Ink that doesn't is
-  // flattened a color at a time and only then blended, so laying more of it down adds nothing.
-  const { inkOpacity, layerInkOpacity, inkBuilds, layerInkBuilds, inkBuild, inkSim } = props;
+  // Ink that builds up gets two passes: the ink itself, drawn solid, and a copy over it that only
+  // multiplies. Where two strokes cross, the copy multiplies twice, so the crossing darkens while a
+  // single pass doesn't - which is how the build slider can run from nothing to full without the
+  // density moving. The copy dims one pass a little too, so the base color is lightened to cancel
+  // exactly that. Ink that doesn't build, and no build at all, need neither: solid color, one pass.
+  const { inkOpacity, layerInkOpacity, inkBuilds, layerInkBuilds, inkBuild, inkSim, layerLooks } = props;
   useLayoutEffect(() => {
     if (!preview) return;
     const node = preview.node;
     node.classList.toggle("pv-flat", inkSim === false);
-    node.style.setProperty("--ink-opacity", String(inkOpacity && inkOpacity > 0 ? inkOpacity : 1));
-    // Building ink: strokes multiply inside the layer, which is then faded back to the ink's own
-    // density, so density stays put whatever the build is. The stroke's own alpha is what decides how
-    // much a crossing darkens - the more solid it is in there, the more it multiplies. At no build at
-    // all the strokes don't multiply: solid color, and a crossing looks like anywhere else.
-    const density = inkOpacity && inkOpacity > 0 ? inkOpacity : 1;
     const build = Math.min(1, Math.max(0, inkBuild ?? 1));
-    const alpha = build === 0 ? 1 : density + (1 - density) * build;
-    node.style.setProperty("--ink-stroke-alpha", String(alpha));
-    node.style.setProperty("--ink-layer-opacity", String(build === 0 ? density : Math.min(1, density / alpha)));
-    node.dataset.build = build === 0 ? "none" : "some";
+    node.style.setProperty("--ink-build-alpha", String(build));
+    node.style.setProperty("--ink-opacity", String(inkOpacity && inkOpacity > 0 ? inkOpacity : 1));
     node.dataset.builds = String(inkBuilds !== false);
+
+    // A stroke of this color over one of its own, at this build: what the crossing comes out as.
+    const dim = (hex: string, at: number) => {
+      const parts = [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16) / 255);
+      return parts.map((c) => (1 - at) + at * c);
+    };
+    const lighten = (hex: string, by: number[]) => {
+      const parts = [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16) / 255);
+      const out = parts.map((c, i) => Math.round(Math.min(1, c / by[i]) * 255));
+      return `#${out.map((v) => v.toString(16).padStart(2, "0")).join("")}`;
+    };
+
     node.querySelectorAll<SVGGElement>(".pv-layer").forEach((g) => {
       const o = layerInkOpacity?.[g.id];
       if (o && o > 0) g.style.setProperty("--ink-opacity", String(o));
       else g.style.removeProperty("--ink-opacity");
       const builds = layerInkBuilds?.[g.id];
-      g.dataset.builds = String(builds === undefined ? inkBuilds !== false : builds);
+      const buildsHere = builds === undefined ? inkBuilds !== false : builds;
+      g.dataset.builds = String(buildsHere);
+
+      // The second pass, made once and kept in step with the build and the layer's color.
+      const wanted = buildsHere && build > 0 && inkSim !== false;
+      const existing = g.querySelector<SVGGElement>(":scope > .pv-build");
+      if (!wanted) {
+        existing?.remove();
+        const color = layerLooks?.[g.id]?.color;
+        if (color) g.style.setProperty("--layer-color", color);
+        return;
+      }
+      if (!existing) {
+        const copy = document.createElementNS("http://www.w3.org/2000/svg", "g");
+        copy.setAttribute("class", "pv-build");
+        for (const child of [...g.children]) copy.appendChild(child.cloneNode(true));
+        copy.querySelectorAll("[id]").forEach((el) => el.removeAttribute("id"));
+        g.appendChild(copy);
+      }
+      const color = layerLooks?.[g.id]?.color;
+      if (color) {
+        const factor = dim(color, build);
+        g.style.setProperty("--layer-color", lighten(color, factor)); // the base, pre-dimmed
+        g.querySelector<SVGGElement>(":scope > .pv-build")?.style.setProperty("--layer-color", color);
+      }
     });
-  }, [preview, inkOpacity, layerInkOpacity, inkBuilds, layerInkBuilds, inkBuild, inkSim]);
+  }, [preview, inkOpacity, layerInkOpacity, inkBuilds, layerInkBuilds, inkBuild, inkSim, layerLooks]);
 
   // Stack the artwork layers the way they'll be plotted: the first layer at the bottom, later ones
   // over it. Reordering the Layers card moves them here too, so the preview shows what opaque ink
@@ -166,15 +197,14 @@ export function Bed(props: Props) {
   }, [preview, layerOrder]);
 
   // Color each artwork layer. Runs after the preview is mounted, and again when colors change.
-  const { layerLooks } = props;
+  // The color itself is set by the ink effect above, which may lighten it to pay for a build pass.
   useLayoutEffect(() => {
     if (!preview) return;
     const colored = Boolean(layerLooks && preview.layers > 0);
     preview.node.classList.toggle("pv-colored", colored);
     preview.node.querySelectorAll<SVGGElement>(".pv-layer").forEach((g) => {
       const look = colored ? layerLooks![g.id] : undefined;
-      if (look?.color) g.style.setProperty("--layer-color", look.color);
-      else g.style.removeProperty("--layer-color");
+      if (!look?.color) g.style.removeProperty("--layer-color");
       g.dataset.skipped = String(Boolean(look?.skipped));
       g.dataset.hidden = String(Boolean(look?.hidden));
     });

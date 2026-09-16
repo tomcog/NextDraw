@@ -70,11 +70,17 @@
      so below. */
   .pv-colored .pv-layer[data-builds="true"] {
     isolation: isolate;
+    opacity: var(--ink-opacity, 1) !important;
     mix-blend-mode: multiply;
   }
-  /* No build at all: the strokes lie over each other in solid color, so a crossing is just ink. */
-  [data-build="none"] .pv-layer[data-builds="true"] :is(path, rect, circle, ellipse, line, polyline, polygon) {
+  /* The ink itself is solid; the copy over it is what darkens a crossing. */
+  .pv-colored .pv-layer[data-builds="true"] :is(path, rect, circle, ellipse, line, polyline, polygon) {
+    stroke-opacity: 1;
     mix-blend-mode: normal;
+  }
+  .pv-colored .pv-layer[data-builds="true"] .pv-build :is(path, rect, circle, ellipse, line, polyline, polygon) {
+    stroke-opacity: var(--ink-build-alpha, 0);
+    mix-blend-mode: multiply;
   }
   .pv-colored .pv-layer :is(path, rect, circle, ellipse, line, polyline, polygon) {
     fill: none !important;
