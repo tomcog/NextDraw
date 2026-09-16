@@ -149,16 +149,6 @@ export function PresetSection({
       {mixed && layers.length > 0 && chips(false)}
       </div>
 
-      {!mixed && (
-        <ButtonRound
-          size="sm"
-          icon={<CirclePlus />}
-          aria-label="Add a second drawing tool"
-          title="Add another preset, for a drawing that mixes pens"
-          disabled={disabled || !presets.length}
-          onClick={onAddSecond}
-        />
-      )}
 
       {mixed && (
         <div className={styles.toolBlock} data-in-use={inUse === "second"}>
@@ -186,6 +176,7 @@ export function PresetSection({
         </div>
       )}
       <div className={styles.smallPaths}>
+        <div className={styles.smallPathsRow}>
         <Checkbox
           size="md"
           label="Chill mode"
@@ -194,6 +185,17 @@ export function PresetSection({
           title="For drawings full of tiny marks: slows acceleration, travel and drawing speed, and pen lifts, so the plotter doesn't shake"
           onChange={(e) => onSmallPaths(e.target.checked ? lastSlow.current : null)}
         />
+        {!mixed && (
+          <ButtonRound
+            size="sm"
+            icon={<CirclePlus />}
+            aria-label="Add a second drawing tool"
+            title="Add another preset, for a drawing that mixes pens"
+            disabled={disabled || !presets.length}
+            onClick={onAddSecond}
+          />
+        )}
+        </div>
         {smallPaths !== null && (
           // Shown as the share of the tool's speed that's kept (right is faster); stored as how much slower.
           <Slider

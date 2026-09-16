@@ -294,6 +294,14 @@
   min-height: 2.875rem;
 }
 
+/* Chill mode on the left, Add another drawing tool on the right, under the card's palette button. */
+.smallPathsRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
 .unitsGroup {
   display: flex;
   align-items: center;
