@@ -57,9 +57,15 @@ PRESETS_FILE = ICLOUD_DRIVE / "NextDraw Studio" / "presets.json" if ICLOUD_DRIVE
 ICLOUD_DRAWINGS = ICLOUD_DRIVE / "NextDraw Studio" / "Drawings"
 if ICLOUD_DRIVE.is_dir():
     ICLOUD_DRAWINGS.mkdir(parents=True, exist_ok=True)
+# Drawing folders of your own in iCloud Drive, named as they are there. A folder that isn't on this
+# Mac (or hasn't synced yet) is simply left out of the list.
+ICLOUD_FOLDERS = ("ROBOT DRAWING MACHINE", "BANTAM SHARE")
 FOLDER_NAMES = {Path.home() / "Desktop": "Desktop"}
 if ICLOUD_DRAWINGS.is_dir():
     FOLDER_NAMES[ICLOUD_DRAWINGS] = "iCloud Drawings"
+for folder in ICLOUD_FOLDERS:
+    if (ICLOUD_DRIVE / folder).is_dir():
+        FOLDER_NAMES[ICLOUD_DRIVE / folder] = folder.title()
 ALLOWED_FOLDERS = list(FOLDER_NAMES)
 # A stopped plot's progress: the NextDraw software writes where it stopped into its output SVG,
 # which is what its res_plot mode resumes from. The JSON keeps what this app needs to resume it.
