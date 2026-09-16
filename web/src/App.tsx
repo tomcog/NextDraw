@@ -724,6 +724,25 @@ export default function App() {
     Boolean(tool?.drag && (tool.drag.fixed || (dragChoice[tool.name] ?? tool.drag.on)));
   const paletteFor = (id: string | null) => (usesSecond(id) ? secondPreset : active)?.palette ?? [];
 
+  // A layer named after one of its tool's pens follows that pen: edit a color in the palette and
+  // every layer drawn with it catches up, here and in the file.
+  useEffect(() => {
+    if (!layerViews.length) return;
+    const colors = { ...layerColors() };
+    let changed = false;
+    for (const layer of layerViews) {
+      const pen = paletteFor(layer.id).find((p) => p.name.trim().toLowerCase() === layer.name.trim().toLowerCase());
+      if (pen && layer.color?.toLowerCase() !== pen.color.toLowerCase()) {
+        colors[layer.id] = pen.color;
+        changed = true;
+      }
+    }
+    if (changed) {
+      setLayerEdits({ order: layerViews.map((l) => l.id), names: layerNames(), hidden: layerHidden(), colors });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [presets, layerViews]);
+
   // The ink sliders on the Drawing tool card: the preview follows at once, and the tool keeps the
   // values a moment after the slider stops moving.
   const inkTimer = useRef<number>();
