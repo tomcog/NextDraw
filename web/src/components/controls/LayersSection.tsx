@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { KeyboardEvent, PointerEvent as ReactPointerEvent } from "react";
 import { ButtonRound, LayerController, Segment, SegmentedControl } from "@tomcoggia/ui";
-import { ArrowDownWideNarrow, Eye, SwatchBook, Trash2, Waypoints, X } from "lucide-react";
+import { Eye, LayersArrowUp, SwatchBook, Trash2, Waypoints, X } from "lucide-react";
 import styles from "./LayersSection.module.css";
 import { Section } from "./Section";
 import { PaletteMenu } from "./PaletteMenu";
@@ -194,7 +194,7 @@ export function LayersSection({ mode, onMode, layers, target, printed, disabled,
         {mode === "preview" && count > 1 && (
           <ButtonRound
             size="sm"
-            icon={<ArrowDownWideNarrow />}
+            icon={<LayersArrowUp />}
             aria-label="Sort layers by darkness"
             title="Sort by darkness: lightest color is layer 1, darker colors stack on top"
             disabled={disabled}
