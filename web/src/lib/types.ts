@@ -10,6 +10,7 @@ export interface Settings {
   pen_pos_up: number;
   pen_setup: number;
   pen_width?: number; // mm; the drawing tool's line width, for the preview (app-only)
+  drag_only?: boolean; // app-only: cut and turn the paths so a soft tip is always pulled
   pen_rate_lower: number;
   pen_rate_raise: number;
   copies: number;
@@ -145,6 +146,13 @@ export interface Preset {
   settings: Partial<Settings>;
   palette?: PenColor[]; // the drawing tool's colors, set up by hand in presets.json
   tilt?: Tilt; // angle compensation, measured when the tool was set up
+  drag?: Drag; // a soft tip that may only be pulled, never pushed
+}
+
+// A brush or other soft tip splays when it is pushed, so it only travels away from home along the
+// width. Paths that turn back are cut and each piece is plotted the safe way, costing pen lifts.
+export interface Drag {
+  on: boolean; // limiting is on unless turned off for this tool
 }
 
 // A tilted clip puts the tool's tip offset_mm toward home from the carriage, along the width.

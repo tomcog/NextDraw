@@ -1,0 +1,32 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="100mm" height="100mm" viewBox="0 0 100 100">
+<!-- Brush direction test: 24 strokes, each drawn outward from the middle, one every 15 degrees.
+     A stroke points the way the brush travelled, so the ones that splay show the directions to avoid.
+     Place it with the paper corner at home: 0 degrees (rightward) is away from home along the width. -->
+<g fill="none" stroke="black" stroke-width="0.8" stroke-linecap="round">
+<path d="M62.00 50.00 L95.00 50.00"/>  <!-- 0 deg -->
+<path d="M61.59 53.11 L93.47 61.65"/>  <!-- 15 deg -->
+<path d="M60.39 56.00 L88.97 72.50"/>  <!-- 30 deg -->
+<path d="M58.49 58.49 L81.82 81.82"/>  <!-- 45 deg -->
+<path d="M56.00 60.39 L72.50 88.97"/>  <!-- 60 deg -->
+<path d="M53.11 61.59 L61.65 93.47"/>  <!-- 75 deg -->
+<path d="M50.00 62.00 L50.00 95.00"/>  <!-- 90 deg -->
+<path d="M46.89 61.59 L38.35 93.47"/>  <!-- 105 deg -->
+<path d="M44.00 60.39 L27.50 88.97"/>  <!-- 120 deg -->
+<path d="M41.51 58.49 L18.18 81.82"/>  <!-- 135 deg -->
+<path d="M39.61 56.00 L11.03 72.50"/>  <!-- 150 deg -->
+<path d="M38.41 53.11 L6.53 61.65"/>  <!-- 165 deg -->
+<path d="M38.00 50.00 L5.00 50.00"/>  <!-- 180 deg -->
+<path d="M38.41 46.89 L6.53 38.35"/>  <!-- 195 deg -->
+<path d="M39.61 44.00 L11.03 27.50"/>  <!-- 210 deg -->
+<path d="M41.51 41.51 L18.18 18.18"/>  <!-- 225 deg -->
+<path d="M44.00 39.61 L27.50 11.03"/>  <!-- 240 deg -->
+<path d="M46.89 38.41 L38.35 6.53"/>  <!-- 255 deg -->
+<path d="M50.00 38.00 L50.00 5.00"/>  <!-- 270 deg -->
+<path d="M53.11 38.41 L61.65 6.53"/>  <!-- 285 deg -->
+<path d="M56.00 39.61 L72.50 11.03"/>  <!-- 300 deg -->
+<path d="M58.49 41.51 L81.82 18.18"/>  <!-- 315 deg -->
+<path d="M60.39 44.00 L88.97 27.50"/>  <!-- 330 deg -->
+<path d="M61.59 46.89 L93.47 38.35"/>  <!-- 345 deg -->
+<path d="M62.00 47.00 L74.00 47.00"/>  <!-- index: beside 0 deg -->
+</g>
+</svg>

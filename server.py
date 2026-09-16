@@ -11,6 +11,7 @@ import copy
 import inspect
 import json
 import logging
+import math
 import mimetypes
 import os
 import re
@@ -85,10 +86,10 @@ NUMERIC_SETTINGS = {
     "page_delay": (0, 3600),
     "reordering": (0, 4),
 }
-BOOL_SETTINGS = {"auto_rotate", "random_start", "hiding"}
+BOOL_SETTINGS = {"auto_rotate", "random_start", "hiding", "drag_only"}
 # App-only settings with fractional values: the pen's line width in mm, for drawing the preview.
 FLOAT_SETTINGS = {"pen_width": (0.05, 10.0)}
-APP_ONLY_SETTINGS = {"pen_setup", "pen_width"}  # not NextDraw options
+APP_ONLY_SETTINGS = {"pen_setup", "pen_width", "drag_only"}  # not NextDraw options
 
 # What a pen preset remembers. Paper size is chosen separately and isn't part of a preset.
 PRESET_NUMERIC = {
@@ -634,7 +635,7 @@ def dry_run(settings, render, scale=100.0, source=None, mode="plot", layer=None,
     """Simulate the plot without the machine. Returns stats and (optionally) the path preview SVG."""
     log = []
     nd = make_nextdraw(log)
-    nd.plot_setup(source if source is not None else svg_input(scale, layer, rotation))
+    nd.plot_setup(source if source is not None else prepared_svg(settings, scale, layer, rotation))
     size_note = None
     if source is None and CURRENT_SVG.exists():
         from lxml import etree
@@ -654,6 +655,76 @@ def dry_run(settings, render, scale=100.0, source=None, mode="plot", layer=None,
         "warnings": ([size_note] if size_note else []) + log,
         "preview_svg": output if render else None,
     }
+
+
+# A soft tip - a brush - splays when it is pushed instead of pulled, so a tool set up that way travels
+# only one way along the width: away from home. Each path is cut where it turns back, and every piece
+# is plotted in the safe direction. The drawing comes out the same; it costs pen lifts and travel.
+DRAG_FLAT_IN = 0.004    # ~0.1 mm: a step moving less than this across the width picks no direction
+DRAG_MIN_RUN_IN = 0.04  # ~1 mm: a shorter run joins the piece before it rather than cost two pen lifts
+
+
+def drag_runs(points):
+    """The path split into runs that each travel one way along the width, as (way, points)."""
+    runs, run, way = [], [points[0]], 0
+    for a, b in zip(points, points[1:]):
+        across = b[0] - a[0]
+        step = 0 if abs(across) <= DRAG_FLAT_IN else (1 if across > 0 else -1)
+        if step and way and step != way:  # it turns back here, so the path is cut
+            runs.append((way, run))
+            run, way = [a], step
+        else:
+            way = way or step  # straight up or down keeps whichever way the run was already going
+        run.append(b)
+    runs.append((way or 1, run))
+    return runs
+
+
+def drag_pieces(points):
+    """The path as pieces that all drag safely: runs too short to matter merged, backwards ones turned."""
+    merged = []
+    for way, run in drag_runs(points):
+        if merged and sum(math.dist(a, b) for a, b in zip(run, run[1:])) < DRAG_MIN_RUN_IN:
+            merged[-1][1].extend(run[1:])
+        else:
+            merged.append([way, list(run)])
+    return [list(reversed(run)) if way < 0 else run for way, run in merged]
+
+
+def limit_drag(svg_text, settings):
+    """
+    Rewrite the drawing so the tool is always pulled, never pushed. The NextDraw software flattens it
+    to polylines for us (its digest), which it can also plot back as it stands, skipping the
+    optimizations that would otherwise reorder or reverse what we just decided.
+    """
+    from lxml import etree
+    nd = make_nextdraw([])
+    nd.plot_setup(svg_text)
+    apply_settings(nd, settings)
+    nd.options.digest = 2  # flatten the drawing instead of plotting it
+    nd.options.preview = True
+    root = etree.fromstring(nd.plot_run(output=True).encode())
+    svg = "{http://www.w3.org/2000/svg}"
+    for path in list(root.iter(svg + "polyline")):
+        points = [tuple(float(n) for n in point.split(",")) for point in (path.get("points") or "").split()]
+        if len(points) < 2:
+            continue
+        parent = path.getparent()
+        at = list(parent).index(path)
+        for i, piece in enumerate(drag_pieces(points)):
+            part = etree.Element(svg + "polyline")
+            for key, value in path.items():
+                part.set(key, f"{value}-{i + 1}" if key == "id" else value)
+            part.set("points", " ".join(f"{x:.6f},{y:.6f}" for x, y in piece))
+            parent.insert(at + i, part)
+        parent.remove(path)
+    return etree.tostring(root, encoding="unicode")
+
+
+def prepared_svg(settings, scale, layer=None, rotation=0):
+    """The loaded drawing ready to plot: placed and scaled, and drag-limited for a one-way tool."""
+    svg = svg_input(scale, layer, rotation)
+    return limit_drag(svg, settings) if settings.get("drag_only") else svg
 
 
 def carriage_start(placement):
@@ -854,7 +925,8 @@ def run_plot(settings, placement, resume=None):
             source, mode = resume_source(settings), "res_plot"
         else:
             clear_resume()  # a new plot replaces any stopped one
-            source, mode = svg_input(placement["scale"], placement.get("layer"), placement.get("rotation", 0)), "plot"
+            source = prepared_svg(settings, placement["scale"], placement.get("layer"), placement.get("rotation", 0))
+            mode = "plot"
 
         # A new plot's simulation also draws its paths; a resumed plot keeps the ones saved when it began.
         estimate = dry_run(scaled_speeds(settings, job.speed_pct), render=not resume, source=source, mode=mode)
@@ -2001,6 +2073,8 @@ def put_preset(name):
         entry["palette"] = previous["palette"]  # the tool's colors, set up by hand in presets.json
     if previous.get("tilt"):
         entry["tilt"] = previous["tilt"]  # angle compensation, measured when the tool was set up
+    if previous.get("drag"):
+        entry["drag"] = previous["drag"]  # a soft tip that may only be pulled, never pushed
     presets.append(entry)
     presets.sort(key=lambda p: p["name"].lower())
     save_presets(presets)

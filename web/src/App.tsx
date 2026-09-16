@@ -708,6 +708,9 @@ export default function App() {
   // Angle compensation: on or off per tool, starting from its preset. Only tools set up tilted have it.
   const [tiltChoice, setTiltChoice] = useState<Record<string, boolean>>({});
   const tiltOn = (tool: Preset | undefined) => Boolean(tool?.tilt && (tiltChoice[tool.name] ?? tool.tilt.on));
+  // One-way strokes: on or off per tool, starting from its preset. Only soft tips have it.
+  const [dragChoice, setDragChoice] = useState<Record<string, boolean>>({});
+  const dragOn = (tool: Preset | undefined) => Boolean(tool?.drag && (dragChoice[tool.name] ?? tool.drag.on));
   const paletteFor = (id: string | null) => (usesSecond(id) ? secondPreset : active)?.palette ?? [];
 
   // Match to pens: each layer with a color gets the pen from its tool's palette that looks most like
@@ -810,8 +813,13 @@ export default function App() {
       pen_rate_lower: slow(s.pen_rate_lower),
     };
   };
-  const settingsFor = (id: string | null): Settings =>
-    slowForSmallPaths(usesSecond(id) && secondPreset ? { ...settings, ...secondPreset.settings } : settings);
+  const settingsFor = (id: string | null): Settings => {
+    const tool = usesSecond(id) ? secondPreset : active;
+    return slowForSmallPaths({
+      ...(usesSecond(id) && secondPreset ? { ...settings, ...secondPreset.settings } : settings),
+      drag_only: dragOn(tool),
+    });
+  };
   refs.current.plotSettings = settingsFor(plotLayerId);
   const layerPenWidths = useMemo(
     () => Object.fromEntries(layerViews.map((l) => [l.id, (usesSecond(l.id) ? secondPreset : active)?.settings.pen_width])),
@@ -1109,6 +1117,8 @@ export default function App() {
                 onSmallPaths={setSmallPaths}
                 tiltOn={tiltOn}
                 onTilt={(name, on) => setTiltChoice((c) => ({ ...c, [name]: on }))}
+                dragOn={dragOn}
+                onDrag={(name, on) => setDragChoice((c) => ({ ...c, [name]: on }))}
                 changed={presetChanged}
                 disabled={plotting}
                 onApply={applyPreset}

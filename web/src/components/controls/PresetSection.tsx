@@ -26,6 +26,8 @@ interface Props {
   onSmallPaths: (percent: number | null) => void;
   tiltOn: (tool: Preset | undefined) => boolean;
   onTilt: (toolName: string, on: boolean) => void;
+  dragOn: (tool: Preset | undefined) => boolean;
+  onDrag: (toolName: string, on: boolean) => void;
 }
 
 // Save / Update / Delete are hidden for now; presets can still be chosen.
@@ -34,7 +36,7 @@ const SHOW_PRESET_ACTIONS = false;
 export function PresetSection({
   presets, active, changed, disabled, onApply, onSave, onDelete,
   secondTool, secondLayers, layers, inUse, onAddSecond, onSecondTool, onRemoveSecond, onAssign,
-  smallPaths, onSmallPaths, tiltOn, onTilt,
+  smallPaths, onSmallPaths, tiltOn, onTilt, dragOn, onDrag,
 }: Props) {
   // A tool set up for a tilted clip: switch its compensation on or off. The label gives the angle to set.
   const tiltSwitch = (tool: Preset | undefined) => tool?.tilt && (
@@ -45,6 +47,17 @@ export function PresetSection({
         disabled={disabled}
         title={`The tip of a tilted ${tool.name} lands ${Math.round(tool.tilt.offset_mm * 10) / 10} mm toward home from the carriage; the plot starts that much further out`}
         onChange={(e) => onTilt(tool.name, e.target.checked)}
+      />
+  );
+  // A soft tip that splays when pushed: keep every stroke going away from home along the width.
+  const dragSwitch = (tool: Preset | undefined) => tool?.drag && (
+      <Checkbox
+        size="md"
+        label="One-way strokes"
+        checked={dragOn(tool)}
+        disabled={disabled}
+        title={`A ${tool.name} is only ever pulled: strokes that would push it are cut and turned around, which adds pen lifts`}
+        onChange={(e) => onDrag(tool.name, e.target.checked)}
       />
   );
   // Turning Chill-out mode back on returns to the last amount chosen.
@@ -106,6 +119,7 @@ export function PresetSection({
         ))}
       </InputSelect>
       {tiltSwitch(active)}
+      {dragSwitch(active)}
       {mixed && layers.length > 0 && chips(false)}
       </div>
 
@@ -129,6 +143,7 @@ export function PresetSection({
             <ButtonRound size="sm" variant="ghost" icon={<X />} aria-label="Remove the second drawing tool" title="Remove the second tool; its layers go back to the first" disabled={disabled} onClick={onRemoveSecond} />
           </div>
           {tiltSwitch(presets.find((p) => p.name === secondTool))}
+          {dragSwitch(presets.find((p) => p.name === secondTool))}
           {layers.length > 0 && chips(true)}
         </div>
       )}
