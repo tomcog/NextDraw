@@ -81,6 +81,14 @@
   margin-right: 1rem;
 }
 
+/* The other end of the same line, starting at its left tick. */
+.toolbarLeft {
+  right: auto;
+  left: var(--toolbar-left);
+  margin-right: 0;
+  margin-left: 1rem;
+}
+
 /* On a phone the line is too short to hold them without covering its label, so they go below. */
 @media (max-width: 520px) {
   .toolbar {
@@ -90,4 +98,6 @@
     transform: none;
     margin: 0.25rem 0 0;
   }
+
+  .toolbarLeft { justify-content: flex-start; margin: 0.25rem 0 0; }
 }

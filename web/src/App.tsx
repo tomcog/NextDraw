@@ -18,6 +18,7 @@ import { FileBrowser, type OpenResult } from "./components/FileBrowser";
 import { MachinePanel } from "./components/MachinePanel";
 import { Disclosure } from "./components/Disclosure";
 import { DrawingNotes } from "./components/DrawingNotes";
+import { InkSimControl } from "./components/InkSimControl";
 import { PlotSummary } from "./components/PlotSummary";
 import { PlotProgress } from "./components/PlotProgress";
 import { FileSection } from "./components/controls/FileSection";
@@ -1079,6 +1080,7 @@ export default function App() {
               plotPaths={shownPlotPaths}
               hairlines={layerMode === "work"}
               plotFraction={plotFraction}
+              toolbarLeft={<InkSimControl on={inkSim} onChange={setInkSim} />}
               toolbar={
                 <ZoomControl
                   zoom={zoom}
@@ -1193,8 +1195,6 @@ export default function App() {
                   printed={status?.printed_layers ?? []}
                   onTarget={setPrintLayer}
                   paletteFor={paletteFor}
-                inkSim={inkSim}
-                onInkSim={setInkSim}
                   onColor={colorLayer}
                   onMatch={layerViews.some((l) => l.color && paletteFor(l.id).length) ? matchPens : null}
                   note={layerNote}

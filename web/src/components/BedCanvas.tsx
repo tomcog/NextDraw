@@ -30,6 +30,8 @@ interface Props {
   drawingBox: Box | null;
   /** Sits on the width dimension line, at its right end. */
   toolbar?: ReactNode;
+  /** The same line, at its left end. */
+  toolbarLeft?: ReactNode;
   /**
    * Drawn inside the bed, in bed units. Given the frame's own measurements, so anything that has to
    * hold its size against what's being looked at - a carriage cross, a handle - scales with the zoom
@@ -126,6 +128,7 @@ export function BedCanvas(props: Props) {
   const toolbarStyle = {
     "--toolbar-top": `${((dy - vy) / vh) * 100}%`,
     "--toolbar-right": `${((vx + vw - dimX1) / vw) * 100}%`,
+    "--toolbar-left": `${((dimX0 - vx) / vw) * 100}%`,
   } as CSSProperties;
 
   const gridLines = (count: number, axis: "x" | "y") =>
@@ -212,6 +215,12 @@ export function BedCanvas(props: Props) {
       </svg>
 
       {props.overlay}
+
+      {props.toolbarLeft && (
+        <div className={`${styles.toolbar} ${styles.toolbarLeft}`} style={toolbarStyle}>
+          {props.toolbarLeft}
+        </div>
+      )}
 
       {props.toolbar && (
         <div className={styles.toolbar} style={toolbarStyle}>

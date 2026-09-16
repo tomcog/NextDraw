@@ -28,6 +28,7 @@ interface Props {
   canDrag: boolean;
   onOpenBrowser: () => void;
   toolbar?: ReactNode; // sits on the width dimension line, at its right end
+  toolbarLeft?: ReactNode; // the same line, at its left end
   layerLooks: Record<string, { color: string | null; skipped: boolean; hidden: boolean }> | null;
   layerOrder?: string[]; // ids bottom-first: the order they plot, and so the order they stack
   inkOpacity?: number; // how solid the tool's ink is; strokes multiply, so crossings darken
@@ -269,6 +270,7 @@ export function Bed(props: Props) {
       wrapClassName={styles.bedWrap}
       wrapData={{ "data-loaded": props.hasFile, "data-dragging-file": props.draggingFile }}
       toolbar={props.toolbar}
+      toolbarLeft={props.toolbarLeft}
       onPointerDown={onPointerDown}
       onPointerMove={onPointerMove}
       onPointerUp={onPointerUp}
