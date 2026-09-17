@@ -101,8 +101,14 @@ NUMERIC_SETTINGS = {
 }
 BOOL_SETTINGS = {"auto_rotate", "random_start", "hiding", "drag_only", "ink_builds"}
 # App-only settings with fractional values: the pen's line width in mm, for drawing the preview.
-FLOAT_SETTINGS = {"pen_width": (0.05, 10.0), "ink_opacity": (0.05, 1.0), "ink_build": (0.0, 1.0)}
-APP_ONLY_SETTINGS = {"pen_setup", "pen_width", "ink_opacity", "ink_builds", "ink_build", "drag_only"}  # not NextDraw options
+# join_gap is the NextDraw software's own path joining: two path ends closer than this are drawn as
+# one stroke instead of two, saving the lift between them. It is kept in mm like every other length
+# the operator sees, and handed to the software in inches as params.min_gap (its default is 0.006 in,
+# 0.15 mm). Zero joins only ends that meet exactly.
+FLOAT_SETTINGS = {"pen_width": (0.05, 10.0), "ink_opacity": (0.05, 1.0), "ink_build": (0.0, 1.0),
+                  "join_gap": (0.0, 5.0)}
+# Not NextDraw options: either the app's own, or set somewhere other than nd.options (join_gap).
+APP_ONLY_SETTINGS = {"pen_setup", "pen_width", "ink_opacity", "ink_builds", "ink_build", "drag_only", "join_gap"}
 
 # What a pen preset remembers (ink_opacity is how much the paper shows through a stroke, and
 # ink_builds whether more of the same ink darkens what's already there, and ink_build how much a
@@ -111,6 +117,7 @@ APP_ONLY_SETTINGS = {"pen_setup", "pen_width", "ink_opacity", "ink_builds", "ink
 PRESET_NUMERIC = {
     "pen_pos_down", "pen_pos_up", "pen_setup", "pen_rate_lower", "pen_rate_raise",
     "speed_pendown", "speed_penup", "accel", "handling", "pen_width", "ink_opacity", "ink_builds", "ink_build",
+    "join_gap",
 }
 
 # Walk commands in the NextDraw software don't check the carriage's range of motion.
@@ -639,6 +646,11 @@ def apply_settings(nd, settings):
     for key, value in settings.items():
         if key not in APP_ONLY_SETTINGS:
             setattr(nd.options, key, value)
+    # Path joining lives on params, not options: the software joins two path ends that are closer
+    # together than this, which is what turns a fill's separate lines into one stroke without a lift
+    # between them. Left alone when the setting isn't given, so the software's own default stands.
+    if "join_gap" in settings:
+        nd.params.min_gap = settings["join_gap"] / 25.4
 
 
 def dry_run(settings, render, scale=100.0, source=None, mode="plot", layer=None, rotation=0):

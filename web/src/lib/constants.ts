@@ -19,6 +19,7 @@ export const DEFAULT_SETTINGS: Settings = {
   copies: 1,
   page_delay: 15,
   reordering: 0,
+  join_gap: 0.15, // the NextDraw software's own default, 0.006 in
   auto_rotate: true,
   hiding: false,
   random_start: false,
@@ -34,7 +35,7 @@ export const DEFAULT_SETTINGS: Settings = {
 
 // Settings saved in a pen preset (must match PRESET_NUMERIC in server.py). Paper isn't included.
 export const PRESET_FIELDS = [
-  "pen_pos_down", "pen_pos_up", "pen_setup", "pen_width", "pen_rate_lower", "pen_rate_raise",
+  "pen_pos_down", "pen_pos_up", "pen_setup", "pen_width", "pen_rate_lower", "pen_rate_raise", "join_gap",
   "speed_pendown", "speed_penup", "accel", "handling",
 ] as const satisfies readonly (keyof Settings)[];
 

@@ -37,6 +37,7 @@ import { ActionBar } from "./components/controls/ActionBar";
 const ESTIMATE_KEYS: (keyof Settings)[] = [
   "model", "handling", "speed_pendown", "speed_penup", "accel", "pen_pos_down", "pen_pos_up",
   "pen_rate_lower", "pen_rate_raise", "copies", "page_delay", "reordering", "auto_rotate", "hiding", "random_start",
+  "join_gap",  // joining paths changes both the pen lifts and the time, so the estimate has to rerun
 ];
 
 // Pen and Speed settings belong to a future "Create new preset" mode; hidden until that's designed.

@@ -9,19 +9,22 @@ interface Props {
   max?: number;
   step?: number;
   format?: (value: number) => string; // show the value this way beside the label, instead of a number box
+  /** Decimal places to keep. Whole numbers by default, which is what most of these settings are. */
+  decimals?: number;
   disabled?: boolean;
   onChange: (value: number) => void;
 }
 
 // A range slider with a number box. The component library has no slider, so the range is native,
 // styled with the library's tokens; the number box is the library's InputText.
-export function Slider({ label, value, min = 0, max = 100, step = 1, format, disabled, onChange }: Props) {
+export function Slider({ label, value, min = 0, max = 100, step = 1, format, decimals = 0, disabled, onChange }: Props) {
   const id = useId();
   const [draft, setDraft] = useState(String(value));
   useEffect(() => setDraft(String(value)), [value]);
 
   const commit = (text: string) => {
-    const n = Math.min(max, Math.max(min, Math.round(Number(text) || 0)));
+    const round = (v: number) => Number(v.toFixed(decimals));
+    const n = Math.min(max, Math.max(min, round(Number(text) || 0)));
     setDraft(String(n));
     if (n !== value) onChange(n);
   };
@@ -41,7 +44,7 @@ export function Slider({ label, value, min = 0, max = 100, step = 1, format, dis
         value={value}
         disabled={disabled}
         style={{ ["--fill" as string]: `${((value - min) / (max - min)) * 100}%` }}
-        onChange={(e) => onChange(Number(e.target.value))}
+        onChange={(e) => onChange(Number(Number(e.target.value).toFixed(decimals)))}
       />
       {!format && <InputText
         size="md"

@@ -19,6 +19,7 @@ export interface Settings {
   copies: number;
   page_delay: number;
   reordering: number;
+  join_gap: number; // mm; path ends closer than this are drawn as one stroke (app-side: params.min_gap)
   auto_rotate: boolean;
   hiding: boolean;
   random_start: boolean;

@@ -1,4 +1,5 @@
 import { Checkbox, InputSelect, InputText } from "@tomcoggia/ui";
+import { Slider } from "./Slider";
 import styles from "./controls.module.css";
 import type { Settings } from "../../lib/types";
 
@@ -51,6 +52,19 @@ export function PlotOptionsSection({ settings: s, disabled, onChange, handling }
         <option value={1}>Reorder paths to save time</option>
         <option value={2}>Reorder and reverse paths</option>
       </InputSelect>
+      {/* What "join paths that touch" counts as touching. A fill drawn as separate lines joins into one
+          stroke once this passes the line spacing, which saves a pen lift per line; too far and paths
+          that were meant to be apart get connected. */}
+      <Slider
+        label="Join gap (mm)"
+        value={s.join_gap}
+        min={0}
+        max={2}
+        step={0.05}
+        decimals={2}
+        disabled={disabled || s.reordering === 4}
+        onChange={(join_gap) => onChange({ join_gap })}
+      />
       <Checkbox size="md" label="Return home when finished" checked={s.return_home} disabled={disabled} onChange={(e) => onChange({ return_home: e.target.checked })} />
       <Checkbox size="md" label="Remove hidden lines" checked={s.hiding} disabled={disabled} onChange={(e) => onChange({ hiding: e.target.checked })} />
       <Checkbox size="md" label="Randomize where closed shapes start" checked={s.random_start} disabled={disabled} onChange={(e) => onChange({ random_start: e.target.checked })} />
