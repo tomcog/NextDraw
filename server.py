@@ -73,6 +73,9 @@ ALLOWED_FOLDERS = list(FOLDER_NAMES)
 # other Mac like every other drawing, and otherwise whichever folder the browser lists first.
 DRAWINGS_FOLDER = ICLOUD_DRAWINGS if ICLOUD_DRAWINGS.is_dir() else ALLOWED_FOLDERS[0]
 MAX_STUDIO_SVG = 20 * 1024 * 1024  # generous: hatch fills will make these big
+# What "Trim to drawing" leaves around the drawing, in inches. Small enough to be invisible on
+# paper and to cost nothing in placement; large enough that nothing sits on the page's edge.
+TRIM_MARGIN_IN = 0.01
 # A stopped plot's progress: the NextDraw software writes where it stopped into its output SVG,
 # which is what its res_plot mode resumes from. The JSON keeps what this app needs to resume it.
 RESUME_SVG = JOBS / "resume.svg"
@@ -1785,6 +1788,14 @@ def trim_to_drawing():
         if not bounds:
             return jsonify(error="There are no lines in this drawing to trim to."), 400
         x0, y0, x1, y1, page_w, page_h = bounds
+        # A hair of page around the drawing, never a page that hugs it exactly. The NextDraw software
+        # clips at the page edge, and a line lying ON that edge is the one thing a trim to the bounds
+        # guarantees: a hatch fill drawn as one path runs its connectors along the shape's outline, so
+        # trimming used to cut every connector and hand back the separate lines the fill was joined to
+        # avoid - 33 pen lifts where there should have been 3. Kept inside the old page, so the drawing
+        # never has to move to a negative position to stay where it is.
+        x0, y0 = max(0.0, x0 - TRIM_MARGIN_IN), max(0.0, y0 - TRIM_MARGIN_IN)
+        x1, y1 = min(page_w, x1 + TRIM_MARGIN_IN), min(page_h, y1 + TRIM_MARGIN_IN)
         sized = parse_svg(CURRENT_SVG).getroot()
         normalize_size(sized)
         vb = sized.get("viewBox")
