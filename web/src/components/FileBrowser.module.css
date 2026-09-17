@@ -138,3 +138,23 @@
   .row { grid-template-columns: 1.25rem minmax(0, 1fr); }
   .meta { display: none; }
 }
+
+/* The folder chooser and the buttons for adding one or dropping the one you are in. */
+.roots {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  flex-wrap: wrap;
+}
+
+/* Typing a path, rather than browsing to it: the browser can only show what is already allowed. */
+.addFolder {
+  display: flex;
+  align-items: flex-end;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.addFolder > :first-child {
+  flex: 1 1 16rem;
+}

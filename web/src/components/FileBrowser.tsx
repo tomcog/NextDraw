@@ -1,7 +1,7 @@
 import type { Plot } from "../lib/types";
 import { useEffect, useRef, useState } from "react";
-import { Button, ButtonRound, Segment, SegmentedControl, Spinner } from "@tomcoggia/ui";
-import { ArrowUp, FileImage, Folder, PenTool } from "lucide-react";
+import { Button, ButtonRound, InputText, Segment, SegmentedControl, Spinner } from "@tomcoggia/ui";
+import { ArrowUp, FileImage, Folder, FolderPlus, PenTool, X } from "lucide-react";
 import styles from "./FileBrowser.module.css";
 import { api, postJSON } from "../lib/api";
 import { load, save } from "../lib/storage";
@@ -19,7 +19,8 @@ interface Listing {
   path: string;
   display: string;
   parent: string | null;
-  roots: { name: string; path: string }[]; // the top-level folders drawings can come from
+  // The top-level folders drawings can come from. "added" ones were typed in by hand and can go again.
+  roots: { name: string; path: string; added?: boolean }[];
   folders: Entry[];
   files: Entry[];
 }
@@ -55,6 +56,8 @@ export function FileBrowser({ open, onClose, onOpened, endpoint = "/api/open" }:
   const [error, setError] = useState<string | null>(null);
   const [working, setWorking] = useState<string | null>(null); // what's happening, while busy
   const [choice, setChoice] = useState<{ file: Entry; svgName: string } | null>(null);
+  const [adding, setAdding] = useState(false); // the "add a folder" row is open
+  const [newFolder, setNewFolder] = useState("");
 
   const browse = async (path?: string) => {
     setError(null);
@@ -82,6 +85,43 @@ export function FileBrowser({ open, onClose, onOpened, endpoint = "/api/open" }:
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
+
+  // Which root the listing is inside, so an added one can be dropped from where you are standing.
+  const here = listing?.roots.find(
+    (root) => listing.path === root.path || listing.path.startsWith(root.path + "/"),
+  );
+
+  const addFolder = async () => {
+    setError(null);
+    setWorking(`Adding ${newFolder.trim()}…`);
+    try {
+      const res = await postJSON<{ folders: { path: string }[] }>("/api/folders", { path: newFolder.trim() });
+      setAdding(false);
+      setNewFolder("");
+      await browse(res.folders[res.folders.length - 1]?.path); // show what was just added
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setWorking(null);
+    }
+  };
+
+  const forgetFolder = async (path: string) => {
+    setError(null);
+    setWorking("Forgetting that folder…");
+    try {
+      await api("/api/folders", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ path }),
+      });
+      await browse(); // back to the first folder, since this one is no longer listed
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setWorking(null);
+    }
+  };
 
   const openFile = async (file: Entry, mode?: "existing" | "import") => {
     setError(null);
@@ -114,19 +154,64 @@ export function FileBrowser({ open, onClose, onOpened, endpoint = "/api/open" }:
     <dialog ref={dialog} className={styles.dialog} onClose={onClose} onCancel={(e) => { if (working) e.preventDefault(); }}>
       <div className={styles.header}>
         <h2 className={styles.title}>Open drawing</h2>
-        {listing && listing.roots.length > 1 && (
-          <SegmentedControl size="sm" aria-label="Folder">
-            {listing.roots.map((root) => (
-              <Segment
-                key={root.path}
-                selected={listing.path === root.path || listing.path.startsWith(root.path + "/")}
+        {listing && (
+          <div className={styles.roots}>
+            <SegmentedControl size="sm" aria-label="Folder">
+              {listing.roots.map((root) => (
+                <Segment
+                  key={root.path}
+                  selected={listing.path === root.path || listing.path.startsWith(root.path + "/")}
+                  disabled={Boolean(working)}
+                  onClick={() => browse(root.path)}
+                >
+                  {root.name}
+                </Segment>
+              ))}
+            </SegmentedControl>
+            <ButtonRound
+              size="sm"
+              icon={<FolderPlus />}
+              aria-label="Add a folder"
+              title="Add a folder to open drawings from"
+              disabled={Boolean(working)}
+              onClick={() => { setAdding((was) => !was); setError(null); }}
+            />
+            {here?.added && (
+              <ButtonRound
+                size="sm"
+                icon={<X />}
+                aria-label={`Stop opening drawings from ${here.name}`}
+                title={`Stop opening drawings from ${here.name}`}
                 disabled={Boolean(working)}
-                onClick={() => browse(root.path)}
-              >
-                {root.name}
-              </Segment>
-            ))}
-          </SegmentedControl>
+                onClick={() => forgetFolder(here.path)}
+              />
+            )}
+          </div>
+        )}
+        {adding && (
+          <form
+            className={styles.addFolder}
+            onSubmit={(e) => { e.preventDefault(); addFolder(); }}
+          >
+            <InputText
+              size="md"
+              autoFocus
+              label="Folder to add"
+              placeholder="~/Documents/Drawings"
+              value={newFolder}
+              disabled={Boolean(working)}
+              onChange={(e) => setNewFolder(e.target.value)}
+              onKeyDown={(e) => {
+                // The dialog swallows the form's implicit submit, so Enter is wired up by hand.
+                if (e.key === "Enter" && newFolder.trim() && !working) {
+                  e.preventDefault();
+                  addFolder();
+                }
+              }}
+            />
+            <Button size="sm" variant="primary" type="submit" disabled={Boolean(working) || !newFolder.trim()}>Add</Button>
+            <Button size="sm" variant="ghost" type="button" disabled={Boolean(working)} onClick={() => { setAdding(false); setNewFolder(""); }}>Cancel</Button>
+          </form>
         )}
         <div className={styles.location}>
           <ButtonRound

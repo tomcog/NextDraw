@@ -63,16 +63,57 @@ if ICLOUD_DRIVE.is_dir():
 # Drawing folders of your own in iCloud Drive, named as they are there. A folder that isn't on this
 # Mac (or hasn't synced yet) is simply left out of the list.
 ICLOUD_FOLDERS = ("ROBOT DRAWING MACHINE", "BANTAM SHARE")
-FOLDER_NAMES = {Path.home() / "Desktop": "Desktop"}
+BUILT_IN_FOLDERS = {Path.home() / "Desktop": "Desktop"}
 if ICLOUD_DRAWINGS.is_dir():
-    FOLDER_NAMES[ICLOUD_DRAWINGS] = "iCloud Drawings"
+    BUILT_IN_FOLDERS[ICLOUD_DRAWINGS] = "iCloud Drawings"
 for folder in ICLOUD_FOLDERS:
     if (ICLOUD_DRIVE / folder).is_dir():
-        FOLDER_NAMES[ICLOUD_DRIVE / folder] = folder.title()
-ALLOWED_FOLDERS = list(FOLDER_NAMES)
+        BUILT_IN_FOLDERS[ICLOUD_DRIVE / folder] = folder.title()
+# Folders added by hand, kept beside the presets so they reach the other Mac too. A saved folder that
+# isn't on this Mac is left out of the list, the same way a missing iCloud folder is.
+FOLDERS_FILE = (ICLOUD_DRIVE / "NextDraw Studio" / "folders.json") if ICLOUD_DRIVE.is_dir() else (ROOT / "folders.json")
+
+
+def saved_folders():
+    """The folders added by hand, in the order they were added. Unreadable file means none."""
+    try:
+        raw = json.loads(FOLDERS_FILE.read_text())
+    except (OSError, ValueError):
+        return []
+    out = []
+    for item in raw if isinstance(raw, list) else []:
+        if not isinstance(item, str):
+            continue
+        try:
+            path = Path(os.path.expanduser(item)).resolve()
+        except (OSError, RuntimeError, ValueError):
+            continue
+        if path not in out:
+            out.append(path)
+    return out
+
+
+def write_saved_folders(paths):
+    FOLDERS_FILE.parent.mkdir(parents=True, exist_ok=True)
+    FOLDERS_FILE.write_text(json.dumps([str(p) for p in paths], indent=2) + "\n")
+
+
+def folder_names():
+    """Every folder drawings may be opened from, with the name the browser shows, built-ins first."""
+    names = {path: name for path, name in BUILT_IN_FOLDERS.items() if path.is_dir()}
+    for path in saved_folders():
+        if path.is_dir() and path not in names:
+            names[path] = path.name or str(path)
+    return names or {Path.home(): "Home"}  # never leave the browser with nowhere to look
+
+
+def allowed_folders():
+    return list(folder_names())
+
+
 # Where Studio writes a new drawing: the shared iCloud folder when there is one, so it syncs to the
 # other Mac like every other drawing, and otherwise whichever folder the browser lists first.
-DRAWINGS_FOLDER = ICLOUD_DRAWINGS if ICLOUD_DRAWINGS.is_dir() else ALLOWED_FOLDERS[0]
+DRAWINGS_FOLDER = ICLOUD_DRAWINGS if ICLOUD_DRAWINGS.is_dir() else next(iter(BUILT_IN_FOLDERS))
 MAX_STUDIO_SVG = 20 * 1024 * 1024  # generous: hatch fills will make these big
 # What "Trim to drawing" leaves around the drawing, in inches. Small enough to be invisible on
 # paper and to cost nothing in placement; large enough that nothing sits on the page's edge.
@@ -1418,7 +1459,7 @@ def allowed_path(raw):
         path = Path(os.path.expanduser(str(raw))).resolve()
     except (OSError, RuntimeError, ValueError):
         return None
-    for folder in ALLOWED_FOLDERS:
+    for folder in allowed_folders():
         root = folder.resolve()
         if path == root or root in path.parents:
             return path
@@ -1437,14 +1478,15 @@ def display_path(path):
 @app.get("/api/browse")
 def browse():
     """List the folders, SVG files and Illustrator files in an allowed folder."""
-    folder = allowed_path(request.args.get("path") or ALLOWED_FOLDERS[0])
+    folder = allowed_path(request.args.get("path") or allowed_folders()[0])
     if folder is None or not folder.is_dir():
         return jsonify(error="That folder isn't one the app can open drawings from."), 403
     folders, files = [], []
     try:
         entries = sorted(folder.iterdir(), key=lambda p: p.name.lower())
     except OSError as exc:
-        return jsonify(error=f"Couldn't read that folder: {exc.strerror or exc}"), 400
+        return jsonify(error=folder_unreadable(folder)
+                       or f"Couldn't read that folder: {exc.strerror or exc}"), 400
     for entry in entries:
         if entry.name.startswith("."):
             continue
@@ -1463,16 +1505,85 @@ def browse():
                 })
         except OSError:
             continue
-    roots = [folder_root.resolve() for folder_root in ALLOWED_FOLDERS]
+    names = folder_names()
+    roots = [folder_root.resolve() for folder_root in names]
     parent = folder.parent if folder not in roots else None
     return jsonify(
         path=str(folder),
         display=display_path(folder),
         parent=str(parent) if parent else None,
-        roots=[{"name": FOLDER_NAMES.get(root, root.name), "path": str(r)} for root, r in zip(ALLOWED_FOLDERS, roots)],
+        roots=[{"name": name, "path": str(resolved), "added": root not in BUILT_IN_FOLDERS}
+               for (root, name), resolved in zip(names.items(), roots)],
         folders=folders,
         files=files,
     )
+
+
+def folder_unreadable(path):
+    """
+    Why this folder can't be listed, or None if it can. macOS keeps Documents, Downloads and the like
+    behind a privacy prompt that a server started from a script never gets asked, so a folder can
+    exist and still be unreadable - better to say so when it's added than to list it and fail later.
+    """
+    try:
+        next(iter(path.iterdir()), None)
+    except PermissionError:
+        return (f"macOS won't let the app read {display_path(path)}. Give whatever you start the app "
+                "from (Terminal, or the app itself) access in System Settings > Privacy & Security > "
+                "Files and Folders, or Full Disk Access, then add it again.")
+    except OSError as exc:
+        return f"Couldn't read {display_path(path)}: {exc.strerror or exc}"
+    return None
+
+
+@app.get("/api/folders")
+def list_folders():
+    """Every folder drawings may be opened from, and which of them were added by hand."""
+    return jsonify(folders=[
+        {"name": name, "path": str(path), "display": display_path(path),
+         "added": path not in BUILT_IN_FOLDERS}
+        for path, name in folder_names().items()
+    ], file=display_path(FOLDERS_FILE))
+
+
+@app.post("/api/folders")
+def add_folder():
+    """
+    Add a folder to the ones drawings may be opened from. The path is typed rather than browsed to,
+    because the browser can only show what is already allowed - and because everything listed here is
+    readable by anyone on the network while the app is running, so widening it should be deliberate.
+    """
+    raw = (request.json or {}).get("path", "")
+    if not isinstance(raw, str) or not raw.strip():
+        return jsonify(error="Give the folder's path."), 400
+    try:
+        path = Path(os.path.expanduser(raw.strip())).resolve()
+    except (OSError, RuntimeError, ValueError):
+        return jsonify(error="That isn't a path this Mac can read."), 400
+    if not path.is_dir():
+        return jsonify(error=f"There's no folder at {display_path(path)}."), 400
+    unreadable = folder_unreadable(path)
+    if unreadable:
+        return jsonify(error=unreadable), 403
+    if allowed_path(str(path)) is not None:
+        return jsonify(error=f"{display_path(path)} is already somewhere the app can open drawings from."), 409
+    write_saved_folders(saved_folders() + [path])
+    return list_folders()
+
+
+@app.delete("/api/folders")
+def remove_folder():
+    """Drop a folder that was added by hand. The built-in ones stay."""
+    raw = (request.json or {}).get("path", "")
+    try:
+        path = Path(os.path.expanduser(str(raw))).resolve()
+    except (OSError, RuntimeError, ValueError):
+        return jsonify(error="That isn't a folder the app can forget."), 400
+    kept = [folder for folder in saved_folders() if folder != path]
+    if len(kept) == len(saved_folders()):
+        return jsonify(error="That folder isn't one that was added by hand."), 404
+    write_saved_folders(kept)
+    return list_folders()
 
 
 def load_drawing(svg_path):
