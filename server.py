@@ -34,6 +34,7 @@ from nextdraw import NextDraw  # noqa: E402
 from nextdrawcore import homing, serial_utils  # noqa: E402
 from nextdrawcore import nextdraw as nextdraw_core  # noqa: E402
 from nextdrawcore.nextdraw_options import models  # noqa: E402
+from nextdrawcore import nextdraw_conf  # noqa: E402
 from plotink import ebb_serial  # noqa: E402
 
 HOST, PORT = "127.0.0.1", 5055
@@ -1339,7 +1340,14 @@ def info():
          "auto_home": models.plotters[i].auto_home}
         for i in (8, 9, 10, 1, 2, 3, 4, 5, 6, 7)
     ]
-    handling = [{"id": i, "name": models.handlers[i].name} for i in range(1, 5)]
+    # Each handling mode carries its own speed ceiling and motor resolution, so the same speed
+    # setting means a different speed in each one. The page needs both to show a real speed.
+    handling = [{"id": i, "name": models.handlers[i].name,
+                 "speed_in_s": models.handlers[i].speed,        # pen down, at speed_pendown 100
+                 "speed_up_in_s": models.handlers[i].speed_up,  # pen up, at speed_penup 100
+                 "steps_per_in": round(nextdraw_conf.native_res_factor * math.sqrt(2)
+                                       * (2 if models.handlers[i].resolution == 1 else 1))}
+                for i in range(1, 5)]
     return jsonify(models=model_list, handling=handling, walk_supported=WALK_CLAMP_SUPPORTED,
                    presets_file=display_path(PRESETS_FILE))
 

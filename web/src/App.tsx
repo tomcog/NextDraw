@@ -20,6 +20,7 @@ import { MachinePanel } from "./components/MachinePanel";
 import { Disclosure } from "./components/Disclosure";
 import { DrawingNotes } from "./components/DrawingNotes";
 import { InkSimControl } from "./components/InkSimControl";
+import { SettingsHud } from "./components/SettingsHud";
 import { PlotSummary } from "./components/PlotSummary";
 import { PlotProgress } from "./components/PlotProgress";
 import { FileSection } from "./components/controls/FileSection";
@@ -934,7 +935,10 @@ export default function App() {
       drag_only: dragOn(tool),
     });
   };
-  refs.current.plotSettings = settingsFor(plotLayerId);
+  // What the next plot will actually be sent: the tool's preset, the second tool where one
+  // is assigned, and any small-paths slow-down already folded in. The readout shows these.
+  const plotSettings = settingsFor(plotLayerId);
+  refs.current.plotSettings = plotSettings;
   const layerInkBuilds = useMemo(
     () => Object.fromEntries(layerViews.map((l) => [l.id, (usesSecond(l.id) ? secondPreset : active)?.settings.ink_builds])),
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -1126,6 +1130,15 @@ export default function App() {
                 />
               }
             />
+            )}
+            {!paletteOpen && (
+              <SettingsHud
+                settings={plotSettings}
+                handling={info?.handling ?? []}
+                tool={usesSecond(plotLayerId) ? secondTool : activePreset}
+                secondTool={usesSecond(plotLayerId) ? null : secondTool}
+                smallPaths={smallPaths}
+              />
             )}
           </div>
 

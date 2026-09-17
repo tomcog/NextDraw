@@ -43,6 +43,9 @@ export interface PlotterModel {
 export interface Handling {
   id: number;
   name: string;
+  speed_in_s: number;     // pen-down ceiling, at a drawing speed of 100
+  speed_up_in_s: number;  // pen-up ceiling, at a travel speed of 100
+  steps_per_in: number;   // motor resolution this mode plots at
 }
 
 export interface Info {

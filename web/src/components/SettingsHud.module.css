@@ -1,0 +1,48 @@
+/* A readout of what the next plot will actually use, over the bottom right of the bed. The bed is
+   empty there at every zoom, and the panel is small enough to leave the drawing readable. */
+.hud {
+  position: absolute;
+  right: 0.75rem;
+  bottom: 0.75rem;
+  z-index: 2;
+  margin: 0;
+  padding: 0.5rem 0.65rem;
+  display: grid;
+  gap: 0.15rem;
+  background: var(--ui-surface-raised);
+  border: 1px solid var(--ui-border-default);
+  border-radius: 6px;
+  box-shadow: var(--ui-shadow-float-2);
+  font-size: 0.75rem;
+  line-height: 1.35;
+  pointer-events: none; /* never in the way of dragging the drawing around the bed */
+}
+
+.row {
+  display: grid;
+  grid-template-columns: 5.5rem auto;
+  gap: 0.5rem;
+  align-items: baseline;
+}
+
+.label {
+  color: var(--ui-text-muted);
+}
+
+.value {
+  margin: 0;
+  color: var(--ui-text-default);
+  font-variant-numeric: tabular-nums;
+}
+
+/* The same speed in the other unit, or the resolution behind the motion mode: the detail that
+   explains the number in front of it. */
+.note {
+  margin-left: 0.4rem;
+  color: var(--ui-text-muted);
+}
+
+/* On a phone the bed fills the screen; the readout would cover the drawing. */
+@media (max-width: 520px) {
+  .hud { display: none; }
+}
