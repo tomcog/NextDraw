@@ -5,22 +5,25 @@ export const MM = UNITS / 25.4; // preview drawing units per mm
 
 export const DEFAULT_TOOL = "EnerGel"; // drawing tool preset used when none is chosen
 
+// Matched against the NextDraw Inkscape extension plotting the same drawing on the same machine:
+// its output was consistently cleaner, and copying its values across closed the gap. Acceleration is
+// the one to be careful with - the driver cubes it into jerk, so 75 is 3.4x the jerk of 50.
 export const DEFAULT_SETTINGS: Settings = {
   model: 10, // Bantam Tools NextDraw 2234
   handling: 1,
-  speed_pendown: 45,
+  speed_pendown: 50,
   speed_penup: 75,
-  accel: 75,
-  pen_pos_down: 45,
-  pen_pos_up: 70,
+  accel: 50,
+  pen_pos_down: 30,
+  pen_pos_up: 60,
   pen_setup: 60,
-  pen_rate_lower: 30,
-  pen_rate_raise: 75,
+  pen_rate_lower: 12,
+  pen_rate_raise: 100,
   copies: 1,
   page_delay: 15,
-  reordering: 2, // reorder and reverse paths
-  join_gap: 0.15, // the NextDraw software's own default, 0.006 in
-  auto_rotate: true,
+  reordering: 2,
+  join_gap: 0.152, // the NextDraw software's own default, 0.006 in
+  auto_rotate: false,
   hiding: false,
   random_start: false,
   return_home: true,
