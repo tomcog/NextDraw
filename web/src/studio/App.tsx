@@ -3,6 +3,7 @@ import { Button, ButtonRound, Card, Checkbox, InputSelect, InputText, LayerContr
 import { Circle, FilePlus, FolderOpen, Minus, MousePointer2, Plus, Ratio, Redo2, Square, StickyNote, Trash2, Undo2 } from "lucide-react";
 import { FileBrowser, type OpenResult } from "../components/FileBrowser";
 import { Section } from "../components/controls/Section";
+import { NumberField } from "../components/controls/NumberField";
 import controls from "../components/controls/controls.module.css";
 import { api, postJSON } from "../lib/api";
 import { load, save as remember } from "../lib/storage";
@@ -771,24 +772,18 @@ export default function App() {
                   />
                   {chosenFills.map((fill, i) => (
                     <div key={fill.id} className={styles.fillRow}>
-                      <InputText
-                        size="md"
+                      <NumberField
                         label={i === 0 ? "Angle (°)" : "Cross angle (°)"}
-                        type="number"
                         step={5}
-                        value={String(fill.angle)}
-                        onChange={(e) => setFillAt(i, { ...fill, angle: Number(e.target.value) || 0 })}
+                        value={fill.angle}
+                        onChange={(angle) => setFillAt(i, { ...fill, angle })}
                       />
-                      <InputText
-                        size="md"
+                      <NumberField
                         label="Spacing (mm)"
-                        type="number"
                         step={0.1}
                         min={0.05}
-                        value={String(fill.spacingMm)}
-                        onChange={(e) =>
-                          setFillAt(i, { ...fill, spacingMm: Math.max(0.05, Number(e.target.value) || 0.05) })
-                        }
+                        value={fill.spacingMm}
+                        onChange={(spacingMm) => setFillAt(i, { ...fill, spacingMm })}
                       />
                     </div>
                   ))}
