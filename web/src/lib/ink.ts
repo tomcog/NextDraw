@@ -1,3 +1,5 @@
+import type { Ink, PenColor } from "./types";
+
 // How a tool's ink is shown in the preview, shared by Plot and Studio so a drawing looks the same in
 // both. The rules themselves live in index.css (`.pv-colored .pv-layer`, `.pv-build`, `.pv-flat`),
 // which both apps load; this is the arithmetic those rules need handed to them.
@@ -47,3 +49,61 @@ export function inkLayer(color: string, build: number, builds: boolean, sim: boo
   if (!sim || !builds || amount <= 0) return { base: color, buildPass: null };
   return { base: lighten(color, dim(color, amount)), buildPass: color };
 }
+
+/**
+ * The colour to show a layer in, for an ink that names a pen.
+ *
+ * The pen is looked up by name in the tool the layer is being drawn with, so editing a colour in the
+ * palette reaches every layer using that pen. Swapping tools carries the choice across by name - a
+ * layer plotted in Sky Blue stays Sky Blue when the tool changes, in the new tool's own Sky Blue -
+ * and when the new tool has no pen by that name, the one it was picked from still answers, so the
+ * layer keeps a colour that belongs to a real pen rather than falling back to the drawing's own.
+ *
+ * `null` when nothing can answer: the tool is gone from presets.json and the ink carries no fallback.
+ */
+export function inkHex(
+  ink: Ink | undefined,
+  palette: PenColor[],
+  paletteOf: (tool: string) => PenColor[],
+): string | null {
+  if (!ink) return null;
+  if (typeof ink === "string") return ink; // a colour picked by hand, and every file written before pens
+  const named = (pens: PenColor[]) =>
+    pens.find((p) => p.name.trim().toLowerCase() === ink.pen.trim().toLowerCase())?.color ?? null;
+  return named(palette) ?? named(paletteOf(ink.tool)) ?? ink.hex ?? null;
+}
+
+/** Whether an ink is this pen of this tool, for showing which one is ticked in the palette menu. */
+export const isPen = (ink: Ink | undefined, tool: string, pen: string) =>
+  typeof ink === "object" && ink !== null
+  && ink.tool === tool
+  && ink.pen.trim().toLowerCase() === pen.trim().toLowerCase();
+
+/**
+ * The name of the pen a layer is being plotted in, for saying so beside the layer's own name.
+ *
+ * A colour picked with the colour picker has no name and answers null, as does a hex from an older
+ * file that matches nothing in the palette - there is no pen to name, and inventing one would be
+ * worse than saying nothing.
+ */
+export function penNameOf(ink: Ink | undefined, palette: PenColor[]): string | null {
+  if (!ink) return null;
+  if (typeof ink === "string") return penNameAt(ink, palette);
+  const here = palette.find((p) => p.name.trim().toLowerCase() === ink.pen.trim().toLowerCase());
+  return here?.name ?? ink.pen; // the pen as this tool spells it, or as it was picked
+}
+
+/**
+ * Whether a colour is one this tool has a pen for - which is whether there is anything to put in the
+ * holder that draws what the preview is showing. A tool with no palette answers null: it draws in
+ * whatever is clipped into it, so no colour is off it.
+ */
+export function hasPen(color: string | null, palette: PenColor[]): boolean | null {
+  if (!palette.length) return null;
+  if (!color) return false;
+  return palette.some((p) => p.color.toLowerCase() === color.toLowerCase());
+}
+
+/** The pen of this palette that draws this colour, by name. Null when no pen of it does. */
+export const penNameAt = (color: string | null, palette: PenColor[]) =>
+  (color ? palette.find((p) => p.color.toLowerCase() === color.toLowerCase())?.name ?? null : null);

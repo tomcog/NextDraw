@@ -118,6 +118,20 @@ export interface Layer {
 export interface LayerView extends Layer {
   /** The color the drawing itself gives this layer, before any ink the operator chose for today. */
   ownColor: string | null;
+  /** What the drawing calls this layer, when Plot is showing it under the name of its ink. */
+  ownName: string;
+  /**
+   * The pen it's being plotted in, when that isn't the colour the drawing gives it. Null when the
+   * layer is in its own colour, or in one picked with the colour picker, which is no pen.
+   */
+  inkPen: string | null;
+  /**
+   * Whether the colour this layer is being shown in is one the tool actually has a pen for. False
+   * means there is no pen to put in the holder that draws what the preview is showing - usually the
+   * drawing's own colour, made with another tool. Null when the tool has no palette at all, where
+   * the question doesn't arise.
+   */
+  inPalette: boolean | null;
 }
 
 // The page's choices saved inside a drawing file, restored when it's opened again.
@@ -130,10 +144,24 @@ export interface Plot {
   second_tool?: string; // a second drawing tool, for drawings that mix pens
   second_tool_layers?: string[]; // ids of the layers that use it; every other layer uses `tool`
   hidden_layers?: string[]; // ids of the layers Plot is holding back; not a change to the drawing
-  layer_colors?: Record<string, string>; // ids to the ink each is being plotted in, when not the drawing's own
+  layer_colors?: Record<string, Ink>; // ids to the ink each is being plotted in, when not the drawing's own
+  layer_names?: Record<string, string>; // ids to what Plot calls each: the ink it's going down in
   layer_order?: string[]; // layer ids bottom-first: the order to plot them in, not the file's order
   paper?: Partial<Pick<Settings, "paper_size" | "paper_w" | "paper_h" | "paper_x" | "paper_y" | "paper_color">>;
 }
+
+/**
+ * The ink a layer is being plotted in, when it isn't the colour the drawing gives it.
+ *
+ * A pen is recorded as WHICH PEN it is, not as the colour it happened to be at the time: a palette is
+ * edited, and a hex frozen into the file would go on showing a colour the tool no longer has - the
+ * Layers card and the preview drifting away from the palette with no way to tell. `hex` is only a
+ * fallback for reading the file somewhere the tool isn't set up.
+ *
+ * A bare string is a colour picked with the system colour picker, which belongs to no pen - and it is
+ * also what every file written before pens were recorded holds, so those keep working unchanged.
+ */
+export type Ink = string | { tool: string; pen: string; hex?: string };
 
 export interface Preset {
   name: string;

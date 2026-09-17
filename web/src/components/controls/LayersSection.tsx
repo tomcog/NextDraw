@@ -17,8 +17,14 @@ interface Props {
   onVisible: (id: string, visible: boolean) => void;
   /** The pens of the layer's drawing tool; empty means the dot opens the system color picker. */
   paletteFor: (id: string) => PenColor[];
-  /** The ink to plot this layer in, or null to hand it back to the color the drawing gives it. */
-  onColor: (id: string, color: string | null) => void;
+  /** The name of the drawing tool a layer is plotted with, for saying which palette a colour is off. */
+  toolFor: (id: string) => string;
+  /**
+   * The ink to plot this layer in: a pen of its tool's palette, a colour picked by hand, or null to
+   * hand the layer back to the colour the drawing gives it. A pen is reported as the pen itself, not
+   * as its colour, so the layer goes on following it when the palette is edited.
+   */
+  onColor: (id: string, pick: { pen: PenColor } | { hex: string } | null) => void;
   /** Restack lightest-first, so the darks go over them. */
   onSort: () => void;
 }
@@ -30,7 +36,7 @@ interface Props {
 //
 // No grip on a row, either: the order is the drawing's. A grip that can be grabbed and does nothing
 // reads as a broken drag rather than as an absent feature.
-export function LayersSection({ mode, onMode, layers, target, printed, disabled, onTarget, onVisible, paletteFor, onColor, onSort }: Props) {
+export function LayersSection({ mode, onMode, layers, target, printed, disabled, onTarget, onVisible, paletteFor, toolFor, onColor, onSort }: Props) {
   // A tool with no palette still lets a layer be recolored: the dot opens the system color picker.
   const pickerRef = useRef<HTMLInputElement>(null);
   const [picking, setPicking] = useState<LayerView | null>(null);
@@ -72,8 +78,14 @@ export function LayersSection({ mode, onMode, layers, target, printed, disabled,
                 name="print-layer"
                 number={i + 1}
                 color={layer.color ?? "transparent"}
+                // A colour no pen of this tool can draw is struck through on the dot itself, because
+                // the dot is the thing making the claim. Usually it's the drawing's own colour, made
+                // in Studio with another tool: the preview shows it, and nothing in the holder will.
+                swatchCut={layer.inPalette === false}
                 swatchProps={{
-                  "aria-label": `Ink for ${layer.name}`,
+                  "aria-label": layer.inPalette === false
+                    ? `Ink for ${layer.name} - no ${toolFor(layer.id)} pen draws this colour`
+                    : `Ink for ${layer.name}`,
                   ...(paletteFor(layer.id).length
                     ? { "aria-haspopup": "menu" as const, "aria-expanded": colorMenu?.id === layer.id, title: "Choose the ink to plot this layer in" }
                     : { title: "Pick the ink to plot this layer in" }),
@@ -102,6 +114,13 @@ export function LayersSection({ mode, onMode, layers, target, printed, disabled,
                 disabled={disabled}
                 onChange={() => onTarget(layer.id)}
                 aria-label={`Print layer ${i + 1}, ${layer.name}`}
+                // Choosing an ink renames the layer to it, so this list reads as the pens to load.
+                // The drawing's own name is kept on the row as its title, for telling which layer of
+                // the drawing you're looking at when the two differ.
+                title={[
+                  layer.ownName !== layer.name ? `${layer.ownName} in the drawing` : null,
+                  layer.inPalette === false ? `No ${toolFor(layer.id)} pen draws ${layer.color ?? "this colour"}` : null,
+                ].filter(Boolean).join(" · ") || undefined}
                 label={layer.name}
                 hideHandle
               />
@@ -121,7 +140,7 @@ export function LayersSection({ mode, onMode, layers, target, printed, disabled,
           // that says nothing.
           if (!picking) return;
           const chosen = e.target.value.toLowerCase();
-          onColor(picking.id, chosen === picking.ownColor?.toLowerCase() ? null : chosen);
+          onColor(picking.id, chosen === picking.ownColor?.toLowerCase() ? null : { hex: chosen });
         }}
       />
       {colorMenu && menuLayer && (
@@ -130,7 +149,7 @@ export function LayersSection({ mode, onMode, layers, target, printed, disabled,
           palette={paletteFor(menuLayer.id)}
           current={menuLayer.color}
           own={menuLayer.ownColor}
-          onPick={(pen) => onColor(menuLayer.id, pen.color === menuLayer.ownColor ? null : pen.color)}
+          onPick={(pen) => onColor(menuLayer.id, pen.color === menuLayer.ownColor ? null : { pen })}
           onClose={() => setColorMenu(null)}
         />
       )}

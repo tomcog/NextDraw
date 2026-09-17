@@ -9,7 +9,8 @@ import { fitsOnBed, fitsOnPaper, footprint } from "./lib/geometry";
 import { parsePlotPaths, type PlotPaths } from "./lib/progressPaths";
 import { parsePreview, type Preview } from "./lib/preview";
 import { load, save } from "./lib/storage";
-import type { Confirmation, Estimate, Info, Layer, PenColor, LayerView, Message, Placement, Preset, Settings, Status, Plot } from "./lib/types";
+import type { Confirmation, Estimate, Info, Ink, Layer, PenColor, LayerView, Message, Placement, Preset, Settings, Status, Plot } from "./lib/types";
+import { hasPen, inkHex, penNameAt, penNameOf } from "./lib/ink";
 import { Header } from "./components/Header";
 import { Bed, type Zoom } from "./components/Bed";
 import { PaletteEditor } from "./components/PaletteEditor";
@@ -84,7 +85,14 @@ export default function App() {
   // The ink a layer is being plotted in today, when the operator has chosen one. Swapping a pen to
   // see how the drawing looks in it is a decision about this plot, so it's kept in Plot's own block
   // and the drawing's colors are left alone - which is what lets "the drawing's own" put it back.
-  const [inkColors, setInkColors] = useState<Record<string, string>>({});
+  const [inkColors, setInkColors] = useState<Record<string, Ink>>({});
+  // What Plot calls a layer, when that isn't what the drawing calls it. Choosing an ink renames the
+  // layer to that ink: the name is how you know which pen to put in the holder, so a layer called
+  // "Sky Blue" going down in Marigold is a trap at the moment it matters most. It lives in Plot's own
+  // block - the same bargain as the ink and the order above - because the drawing's layer names are
+  // Studio's, and <nds:design> maps shapes to layers BY NAME: renaming one in the file would leave
+  // Studio unable to find the shapes on it.
+  const [layerNames, setLayerNames] = useState<Record<string, string>>({});
   // A second drawing tool (mixed media): null normally; "" once added but not yet chosen.
   const [secondTool, setSecondTool] = useState<string | null>(null);
   const [secondToolLayers, setSecondToolLayers] = useState<string[]>([]);
@@ -94,6 +102,16 @@ export default function App() {
   const [printLayer, setPrintLayer] = useState<string | null>(null);
   // The drawing's layers as they are in the file - name, order and color all Studio's. Plot adds only
   // its own two things: whether it is holding the layer back today, and the pen color to show it in.
+  // A tool's pens by name, and the tool a layer is drawn with. The drawing-tool card has richer
+  // versions of both further down; these are what the layer views need before it exists.
+  const paletteOfTool = useCallback(
+    (tool: string) => presets.find((p) => p.name === tool)?.palette ?? [],
+    [presets],
+  );
+  const toolOfLayer = useCallback(
+    (id: string) => (secondTool && secondToolLayers.includes(id) ? secondTool : activePreset) ?? "",
+    [secondTool, secondToolLayers, activePreset],
+  );
   const layerViews: LayerView[] = useMemo(() => {
     if (!fileLayers) return [];
     // A saved order only applies while it's still this drawing's layers; otherwise the file's own
@@ -103,15 +121,33 @@ export default function App() {
       && new Set(plotOrder).size === fileLayers.length
       && plotOrder.every((id) => fileLayers.some((l) => l.id === id));
     const ordered = fits ? plotOrder!.map((id) => fileLayers.find((l) => l.id === id)!) : fileLayers;
-    return ordered.map((layer) => ({
-      ...layer,
-      color: inkColors[layer.id] || penColors[layer.id] || layer.color,
-      // What the drawing itself says, so a swapped ink can be told from the planned one and undone.
-      ownColor: penColors[layer.id] || layer.color,
-      hidden: hiddenLayers.includes(layer.id) || layer.hidden,
-      skipped: layer.name.startsWith("%"),
-    }));
-  }, [fileLayers, hiddenLayers, penColors, inkColors, plotOrder]);
+    return ordered.map((layer) => {
+      const palette = paletteOfTool(toolOfLayer(layer.id));
+      // The colour this layer is going down in: an ink chosen for today, else the pen its name calls
+      // for, else the colour the drawing was made in.
+      const color = inkHex(inkColors[layer.id], palette, paletteOfTool) || penColors[layer.id] || layer.color;
+      // The pen that draws that colour - which is the pen to put in the holder. The layer is called
+      // after it, whether the ink was chosen here or came with the drawing: a layer Studio called
+      // "orange" is plotted with Tangerine, and a list that says "orange" is a list you have to
+      // translate at the moment you're loading pens. A name set by hand wins; a layer NextDraw skips
+      // keeps the "%" name that makes it skipped.
+      const pen = penNameAt(color, palette);
+      const skipped = layer.name.startsWith("%");
+      return {
+        ...layer,
+        name: skipped ? layer.name : layerNames[layer.id] || pen || layer.name,
+        // What the drawing calls it, for handing the name back and for telling the two apart.
+        ownName: layer.name,
+        color,
+        inkPen: penNameOf(inkColors[layer.id], palette),
+        inPalette: hasPen(color, palette),
+        // What the drawing itself says, so a swapped ink can be told from the planned one and undone.
+        ownColor: penColors[layer.id] || layer.color,
+        hidden: hiddenLayers.includes(layer.id) || layer.hidden,
+        skipped,
+      };
+    });
+  }, [fileLayers, hiddenLayers, penColors, inkColors, layerNames, plotOrder, paletteOfTool, toolOfLayer]);
   // Lightest at the bottom: layer 1 is plotted first and everything darker goes over it, which is how
   // the inks build on paper. Layers whose color can't be read stay at the bottom, under the ones that
   // can; ties keep the order they already had.
@@ -126,14 +162,33 @@ export default function App() {
     setPlotOrder(ranked.map((r) => r.id));
   };
   // Picking a pen shows the layer in that ink. Picking "the drawing's own" hands it back.
-  const colorLayer = (id: string, color: string | null) =>
+  //
+  // A pen is recorded as the pen it is - its tool and its name - so the layer keeps following it as
+  // the palette is edited. Only the system colour picker, which belongs to no pen, records a colour.
+  const colorLayer = (id: string, pick: { pen: PenColor } | { hex: string } | null) =>
     setInkColors((all) => {
-      if (!color) {
+      if (!pick) {
         const { [id]: _gone, ...rest } = all;
         return rest;
       }
-      return { ...all, [id]: color };
+      if (!("pen" in pick)) return { ...all, [id]: pick.hex };
+      const tool = (usesSecond(id) ? secondPreset : active)?.name;
+      // No tool to name the pen against (presets never loaded): the colour still stands on its own.
+      return { ...all, [id]: tool ? { tool, pen: pick.pen.name, hex: pick.pen.color } : pick.pen.color };
     });
+  // The ink a layer goes down in is what the layer is called, so the Layers card reads as a list of
+  // the pens to load. A colour from the colour picker is no pen and has no name to take, and handing
+  // the layer back to the drawing's own ink hands back the drawing's own name with it.
+  const nameLayer = (id: string, pick: { pen: PenColor } | { hex: string } | null) =>
+    setLayerNames((all) => {
+      if (pick && "pen" in pick) return { ...all, [id]: pick.pen.name };
+      const { [id]: _gone, ...rest } = all;
+      return rest;
+    });
+  const colorAndNameLayer = (id: string, pick: { pen: PenColor } | { hex: string } | null) => {
+    colorLayer(id, pick);
+    nameLayer(id, pick);
+  };
   // A hidden layer isn't shown or plotted, so it can't stay the layer chosen to print.
   const setLayerVisible = (id: string, visible: boolean) => {
     setHiddenLayers((list) => (visible ? list.filter((i) => i !== id) : [...list, id]));
@@ -264,6 +319,7 @@ export default function App() {
     setRotation(nextRotation);
     setHiddenLayers(plot?.hidden_layers ?? []);
     setInkColors(plot?.layer_colors ?? {});
+    setLayerNames(plot?.layer_names ?? {});
     setPlotOrder(plot?.layer_order ?? null);
     setPenColors({});
     setPrintLayer(null);
@@ -271,9 +327,12 @@ export default function App() {
     setSmallPaths(plot?.small_paths ?? null);
     setSecondTool(plot?.second_tool ?? null);
     setSecondToolLayers(plot?.second_tool_layers ?? []);
-    const tool = plot?.tool ? refs.current.presets.find((p) => p.name === plot.tool) : undefined;
-    if (tool) setActivePreset(tool.name);
-    const patch = { ...(tool?.settings ?? {}), ...(plot?.paper ?? {}) };
+    // The drawing tool is deliberately NOT taken from the file. It stands for the pen actually in the
+    // holder, and a file can arrive at any moment - saved from Studio, synced from odin - which would
+    // otherwise swap the chosen pen, and its pen positions and speeds with it, in the middle of
+    // setting up a plot. The tool the page remembers stays chosen until it's changed by hand. Plot
+    // still writes `tool` into the file, because Studio reads it to draw in the right ink.
+    const patch = { ...(plot?.paper ?? {}) };
     if (Object.keys(patch).length) {
       refs.current.settings = { ...refs.current.settings, ...patch };
       setSettings((prev) => ({ ...prev, ...patch }));
@@ -301,6 +360,7 @@ export default function App() {
     ...(secondTool ? { second_tool: secondTool, second_tool_layers: secondToolLayers } : {}),
     ...(hiddenLayers.length ? { hidden_layers: hiddenLayers } : {}),
     ...(Object.keys(inkColors).length ? { layer_colors: inkColors } : {}),
+    ...(Object.keys(layerNames).length ? { layer_names: layerNames } : {}),
     ...(plotOrder?.length ? { layer_order: plotOrder } : {}),
     paper: { paper_size: settings.paper_size, paper_w: settings.paper_w, paper_h: settings.paper_h, paper_x: settings.paper_x, paper_y: settings.paper_y, paper_color: settings.paper_color },
   };
@@ -368,6 +428,7 @@ export default function App() {
     setRotation(0);
     setHiddenLayers([]);
     setInkColors({});
+    setLayerNames({});
     setPlotOrder(null);
     setPenColors({});
     setPrintLayer(null);
@@ -1160,7 +1221,8 @@ export default function App() {
                   onTarget={setPrintLayer}
                   onVisible={setLayerVisible}
                   paletteFor={paletteFor}
-                  onColor={colorLayer}
+                  toolFor={(id) => (usesSecond(id) ? secondPreset : active)?.name ?? "this tool"}
+                  onColor={colorAndNameLayer}
                   onSort={sortLayersByLightness}
                   disabled={plotting}
                 />
