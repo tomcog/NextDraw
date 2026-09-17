@@ -951,7 +951,10 @@ def run_plot(settings, placement, resume=None):
             job.total_mm = estimate["pendown_m"] * 1000
             job.estimate_s = estimate["estimate_s"]
             job.done_mm = resume["done_mm"] if resume else 0.0
-        code = set_plot_start(settings, log, placement)
+        # Home before the first plot of a session (find_home_first returns at once once the app has
+        # homed): the plot's start is written as an offset from wherever the plotter believes it is,
+        # so a drifted step count would place the whole drawing off the paper by that much.
+        code = find_home_first(settings, log) or set_plot_start(settings, log, placement)
         if code:
             with job.lock:
                 job.state = "error"
@@ -1006,9 +1009,17 @@ def run_plot(settings, placement, resume=None):
 
         if code == 0:
             if placement["return_home"]:
-                # walk_home moves home and clears the plot-start offset.
-                code = run_setup_step(settings, log, "utility", "walk_home",
-                                      after=lambda h: read_carriage(h, pen_known=False))
+                # Clear the plot-start offset BEFORE walking home. set_plot_start wrote the drawing's
+                # start as the plotter's origin, and "home" means that origin - so returning home with
+                # it still in place parks on the last plot's start and calls it home. Every plot after
+                # that is placed from there, and nothing on screen says so.
+                code = run_setup_step(settings, log, "utility", "read_name",
+                                      after=lambda h: serial_utils.write_step_offsets(h, 0, 0))
+                with job.lock:
+                    carriage.update(origin_x=0.0, origin_y=0.0)
+                if not code:
+                    code = run_setup_step(settings, log, "utility", "walk_home",
+                                          after=lambda h: read_carriage(h, pen_known=False))
                 with job.lock:
                     job.state = "finished"
                     job.message = "Plot finished. Carriage is home." if not code else \
@@ -1130,22 +1141,18 @@ def find_home_first(settings, log, force=False):
     was pushed by hand that count (and our range check) would be wrong.
     Unless forced, this runs only until the app has homed once (or after a release).
     Returns an error code, 0 on success.
+
+    The plotter's own homed flag (var 12) is NOT taken as evidence any more. It says "homing ran at
+    some point since the plotter last lost power", which is a different claim from "the step count
+    still matches the corner": a carriage nudged by hand, a missed step, or an app restarting while
+    the machine stayed powered all leave the flag standing over a step count that has drifted. This
+    app trusted it, so it skipped homing and walked by that count - and the carriage sat half an inch
+    off the corner while the screen reported home (2026-09-17). Homing once per app start, and again
+    after a release, costs one sweep and is the only thing that actually finds the corner.
     """
     model = settings.get("model", 8)
     if not models.plotters[model].auto_home or (carriage["verified"] and not force):
         return 0
-    if not force:
-        # Trust the plotter's own homed flag, as the NextDraw software does. It's cleared when
-        # the plotter loses power, and this app clears it on "Release carriage".
-        flag = []
-        code = run_setup_step(settings, log, "utility", "read_name",
-                              after=lambda nd: flag.append(nd.machine.var_read(12)))
-        if code:
-            return code
-        if flag and flag[0]:
-            with job.lock:
-                carriage["verified"] = True
-            return 0
     with job.lock:
         job.message = "Finding home…"
     code = run_setup_step(settings, log, "find_home")
@@ -1164,9 +1171,13 @@ def run_manual(command, settings, distance_mm, axis):
         if command in ("walk", "home"):
             code = raise_pen_first(settings, log)
             if not code:
-                # Run the homing routine only if the position can't be trusted yet. Otherwise go
-                # straight home: homing from far forward sweeps the carriage across the whole width.
-                code = find_home_first(settings, log)
+                # "Return home" always runs the homing routine: its whole job is to put the carriage
+                # on the corner, and the step count it would otherwise walk by is exactly what goes
+                # wrong - a carriage pushed by hand, a missed step, an app restart that inherited the
+                # plotter's homed flag. It is the one command that must not trust that count, even
+                # though homing from far forward sweeps the carriage across the whole width.
+                # A walk still only homes when the position isn't trusted yet.
+                code = find_home_first(settings, log, force=(command == "home"))
             if code:
                 with job.lock:
                     job.state = "error"
@@ -1206,9 +1217,11 @@ def run_manual(command, settings, distance_mm, axis):
         nd.plot_run()
         code = abs(nd.errors.code or 0)
 
-        if command == "walk" and not code:
+        if command in ("walk", "home") and not code:
             # Walks shift the plotter's origin offset. Clear it so moving the carriage
             # doesn't change where the next plot starts (placement is a separate setting).
+            # Home clears it too: a plot writes the plot's start as the origin and homing is what
+            # clears that, so a home that left it behind would park on the last plot's start.
             serial_utils.write_step_offsets(nd, 0, 0)
         if command in ("walk", "home", "read", "raise_pen", "lower_pen", "pen_setup") and not code:
             # A plain read doesn't set the pen, so its pen state isn't meaningful.
@@ -1580,15 +1593,37 @@ def clean_plot(raw):
     # was made with. The operator swaps a pen to see how the drawing looks in it; that's a choice about
     # this plot, not about the artwork, so it lives here and the drawing's own colors stay untouched -
     # which is also what lets it be put back.
+    #
+    # A pen is recorded as the pen it is - {"tool", "pen"} and the colour it had as a fallback - so
+    # that editing the palette moves every layer using it. A bare hex is a colour picked with the
+    # system colour picker, and is also what every file written before pens were recorded holds; both
+    # are read, so those files keep working.
     inks = raw.get("layer_colors")
     if isinstance(inks, dict):
-        picked = {
-            str(k)[:200]: v.lower()
-            for k, v in inks.items()
-            if isinstance(v, str) and HEX_COLOR.match(v)
-        }
+        picked = {}
+        for k, v in inks.items():
+            if isinstance(v, str) and HEX_COLOR.match(v):
+                picked[str(k)[:200]] = v.lower()
+            elif isinstance(v, dict) and isinstance(v.get("tool"), str) and isinstance(v.get("pen"), str):
+                pen = {"tool": v["tool"][:40], "pen": v["pen"][:60]}
+                if isinstance(v.get("hex"), str) and HEX_COLOR.match(v["hex"]):
+                    pen["hex"] = v["hex"].lower()
+                picked[str(k)[:200]] = pen
         if picked:
             out["layer_colors"] = dict(list(picked.items())[:500])
+    # What Plot calls each layer (by layer id), when that isn't what the drawing calls it: choosing an
+    # ink renames the layer to that ink, so the Layers card reads as the list of pens to load. It is
+    # kept here, not written onto the layer, because <nds:design> maps Studio's shapes to their layer
+    # BY NAME - renaming the layer in the file would leave Studio unable to find what's on it.
+    names = raw.get("layer_names")
+    if isinstance(names, dict):
+        called = {
+            str(k)[:200]: v.strip()[:60]
+            for k, v in names.items()
+            if isinstance(v, str) and v.strip()
+        }
+        if called:
+            out["layer_names"] = dict(list(called.items())[:500])
     # Which layers Plot is holding back (by layer id). Kept here rather than as a hidden attribute on
     # the layer itself: hiding a layer is Plot deciding what to draw today, not a change to the
     # drawing, so it goes in Plot's own block where Studio will never see it.
