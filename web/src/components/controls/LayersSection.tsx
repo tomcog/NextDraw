@@ -1,6 +1,6 @@
 import { useRef, useState } from "react";
 import { ButtonRound, LayerController, Segment, SegmentedControl } from "@tomcoggia/ui";
-import { Eye, LayersArrowUp, PenTool } from "lucide-react";
+import { Eye, LayersArrowUp, PenTool, RotateCcw } from "lucide-react";
 import styles from "./LayersSection.module.css";
 import { Section } from "./Section";
 import { PaletteMenu } from "./PaletteMenu";
@@ -27,6 +27,8 @@ interface Props {
   onColor: (id: string, pick: { pen: PenColor } | { hex: string } | null) => void;
   /** Restack lightest-first, so the darks go over them. */
   onSort: () => void;
+  /** Forget which layers have been plotted - a new sheet, or a run being started over. */
+  onResetPrinted: () => void;
 }
 
 // The drawing's layers, listed like Illustrator's Layers panel: the top layer at the top and layer 1,
@@ -36,7 +38,7 @@ interface Props {
 //
 // No grip on a row, either: the order is the drawing's. A grip that can be grabbed and does nothing
 // reads as a broken drag rather than as an absent feature.
-export function LayersSection({ mode, onMode, layers, target, printed, disabled, onTarget, onVisible, paletteFor, toolFor, onColor, onSort }: Props) {
+export function LayersSection({ mode, onMode, layers, target, printed, disabled, onTarget, onVisible, paletteFor, toolFor, onColor, onSort, onResetPrinted }: Props) {
   // A tool with no palette still lets a layer be recolored: the dot opens the system color picker.
   const pickerRef = useRef<HTMLInputElement>(null);
   const [picking, setPicking] = useState<LayerView | null>(null);
@@ -52,6 +54,18 @@ export function LayersSection({ mode, onMode, layers, target, printed, disabled,
       title="Layers"
       action={
         <span className={styles.headerTools}>
+        {printed.length > 0 && (
+          // Only worth offering once something has been printed, which is also the only time it says
+          // anything: with nothing marked, a reset would be a button that does nothing visible.
+          <ButtonRound
+            size="sm"
+            icon={<RotateCcw />}
+            aria-label="Clear printed marks"
+            title="Clear the printed marks: none of these layers counts as plotted any more"
+            disabled={disabled}
+            onClick={onResetPrinted}
+          />
+        )}
         {mode === "preview" && layers.length > 1 && (
           <ButtonRound
             size="sm"

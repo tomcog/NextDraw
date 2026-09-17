@@ -189,6 +189,13 @@ export default function App() {
     colorLayer(id, pick);
     nameLayer(id, pick);
   };
+  // Forget which layers have been plotted. The marks are the page's note to itself about what is
+  // already on the paper; the paper changes without the app hearing about it.
+  const resetPrinted = () => {
+    api("/api/printed", { method: "DELETE" })
+      .then(() => setStatus((s) => (s ? { ...s, printed_layers: [] } : s)))
+      .catch(() => setLocalMessage({ text: "Couldn't clear the printed marks.", tone: "error" }));
+  };
   // A hidden layer isn't shown or plotted, so it can't stay the layer chosen to print.
   const setLayerVisible = (id: string, visible: boolean) => {
     setHiddenLayers((list) => (visible ? list.filter((i) => i !== id) : [...list, id]));
@@ -1224,6 +1231,7 @@ export default function App() {
                   toolFor={(id) => (usesSecond(id) ? secondPreset : active)?.name ?? "this tool"}
                   onColor={colorAndNameLayer}
                   onSort={sortLayersByLightness}
+                  onResetPrinted={resetPrinted}
                   disabled={plotting}
                 />
               </div>

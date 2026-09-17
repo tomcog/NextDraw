@@ -1953,6 +1953,18 @@ def studio_save():
     return jsonify(name=path.name, path=str(path), folder=display_path(folder))
 
 
+@app.delete("/api/printed")
+def clear_printed():
+    """
+    Forget which layers have been plotted. "Printed this session" is a note to the operator about
+    what has already gone on the paper, and only the operator knows when that stops being true - a
+    new sheet, a pen swapped, a plot abandoned halfway. It clears itself when a different drawing is
+    opened; this is for the times the drawing stays and the paper doesn't.
+    """
+    forget_printed()
+    return jsonify(ok=True, printed_layers=[])
+
+
 @app.delete("/api/file")
 def clear_file():
     if job.busy():
