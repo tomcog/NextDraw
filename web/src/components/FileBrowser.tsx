@@ -89,12 +89,14 @@ export function FileBrowser({ open, onClose, onOpened, endpoint = "/api/open" }:
     const importing = file.kind === "ai" && mode !== "existing";
     setWorking(importing ? `Importing ${file.name} from Illustrator… This can take a few seconds.` : `Opening ${file.name}…`);
     try {
-      // Plot posts, because opening can import an Illustrator file and ask which copy to use.
-      // Studio just reads the file back, so a GET is enough and there's nothing to choose.
+      // Plot posts, because opening makes the file the loaded drawing. Studio reads it back, so a
+      // GET is enough. Either can import an Illustrator file and ask which copy to use, so both
+      // carry the answer.
       type Opened = OpenResult & { choice?: boolean; svg_name?: string };
+      const query = `?path=${encodeURIComponent(file.path)}${mode ? `&mode=${mode}` : ""}`;
       const res: Opened = endpoint === "/api/open"
         ? await postJSON<Opened>(endpoint, { path: file.path, mode })
-        : await api<Opened>(`${endpoint}?path=${encodeURIComponent(file.path)}`);
+        : await api<Opened>(`${endpoint}${query}`);
       if (res.choice) {
         setChoice({ file, svgName: res.svg_name ?? "" });
         return;

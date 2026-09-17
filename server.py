@@ -1931,11 +1931,22 @@ def studio_read():
     """
     Hand a drawing's SVG to Studio so it can be edited again. Read-only on purpose: unlike /api/open
     this doesn't make the file the loaded drawing, so picking something to edit in Studio can't change
-    what Plot is about to print.
+    what Plot is about to print. An .ai file is imported the way Plot imports one - Illustrator exports
+    an SVG next to it - because getting a drawing that isn't plot-ready into Plot is Studio's job. The
+    file browser lists .ai files in both apps, so refusing them here only looked like a broken picker.
     """
     path = allowed_path(request.args.get("path", ""))
-    if path is None or not path.is_file() or path.suffix.lower() != ".svg":
-        return jsonify(error="That isn't an SVG the app can open."), 403
+    if path is None or not path.is_file() or path.suffix.lower() not in (".svg", ".ai"):
+        return jsonify(error="That isn't a drawing the app can open."), 403
+    if path.suffix.lower() == ".ai":
+        existing = path.with_suffix(".svg")
+        mode = request.args.get("mode")
+        if existing.exists() and mode not in ("existing", "import"):
+            return jsonify(choice=True, svg_name=existing.name)
+        try:
+            path = existing if (existing.exists() and mode == "existing") else import_from_illustrator(path)
+        except (OSError, ValueError, RuntimeError) as exc:
+            return jsonify(error=str(exc)), 400
     if path.stat().st_size > MAX_STUDIO_SVG:
         return jsonify(error=f"{path.name} is too big to edit here."), 413
     try:
