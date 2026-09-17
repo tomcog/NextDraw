@@ -36,8 +36,9 @@ interface Props {
 // Save / Update / Delete are hidden for now; presets can still be chosen.
 const SHOW_PRESET_ACTIONS = false;
 
-// Temporary: sliders for finding a tool's ink by eye. Take them out once the tools are set.
-const SHOW_INK_TUNING = true;
+// Hidden for now: sliders for finding a tool's ink by eye. The values they set still apply to the
+// preview - each tool keeps the density and build-up already saved in its preset.
+const SHOW_INK_TUNING = false;
 
 export function PresetSection({
   presets, active, changed, disabled, onApply, onSave, onDelete,
