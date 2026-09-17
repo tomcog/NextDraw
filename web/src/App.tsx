@@ -191,6 +191,9 @@ export default function App() {
   }, [printedKey]);
 
   const [lostContact, setLostContact] = useState(false);
+  // Nothing plots without a plotter on the USB, so the Plot button waits for one the same way it
+  // waits for a layer to be chosen. Losing the server counts too: the plot would have nowhere to go.
+  const plotterReady = Boolean(status?.plotter_found) && !lostContact;
   const [localMessage, setLocalMessage] = useState<Message | null>(null);
   const [machineError, setMachineError] = useState<string | null>(null);
   const [lastAction, setLastAction] = useState<"plot" | "manual" | null>(null);
@@ -1109,8 +1112,8 @@ export default function App() {
             message={actionMessage}
             plotting={plotting}
             stopping={status?.state === "stopping" || status?.state === "returning"}
-            canPlot={!busy && Boolean(fileName) && Boolean(preview) && onBed && !needsLayerChoice}
-            plotLabel={needsLayerChoice ? "Choose a layer to plot" : printTarget && plotLayerId ? `Plot ${printTarget.name}` : "Plot"}
+            canPlot={!busy && Boolean(fileName) && Boolean(preview) && onBed && plotterReady && !needsLayerChoice}
+            plotLabel={!plotterReady ? "Connect the plotter" : needsLayerChoice ? "Choose a layer to plot" : printTarget && plotLayerId ? `Plot ${printTarget.name}` : "Plot"}
             preparing={status?.state === "preparing"}
             resume={resume}
             confirmation={confirmation}
