@@ -202,11 +202,12 @@ def forget_printed():
         printed_layers.clear()
 
 
-def mark_printed(layer_id):
-    """Record a plot that ran to the end: its one layer, or every shown layer when the whole drawing plotted."""
+def mark_printed(layer_ids):
+    """Record a plot that ran to the end: its layers (one, or several linked to print together), or
+    every shown layer when the whole drawing plotted."""
     try:
         root = parse_svg(CURRENT_SVG).getroot()
-        ids = [layer_id] if layer_id else [g.get("id") for g in layer_groups(root) if g.get("id") and not layer_hidden(g)]
+        ids = list(layer_ids) if layer_ids else [g.get("id") for g in layer_groups(root) if g.get("id") and not layer_hidden(g)]
     except Exception:  # noqa: BLE001 - a missing mark is not worth failing a finished plot over
         return
     with printed_lock:
@@ -558,18 +559,29 @@ def set_layer_hidden(group, hidden):
         group.attrib.pop("style", None)
 
 
-def only_layer(root, layer_id):
-    """Hide every layer but one, so the NextDraw software plots just that layer (it skips display:none).
+def only_layers(root, layer_ids):
+    """Hide every layer but the ones to print, so the NextDraw software plots just those (it skips
+    display:none). Several are layers linked to print together: the same pen, so one pass draws them all.
     The hidden layers stay in the document, so the page size and the preview's layer ids don't change."""
     groups = layer_groups(root)
-    target = next((g for g in groups if g.get("id") == layer_id), None)
-    if target is None:
+    targets = [g for g in groups if g.get("id") in layer_ids]
+    if len(targets) != len(set(layer_ids)):
         raise RuntimeError("The layer chosen to print isn't in the drawing anymore. Choose it again.")
-    if layer_hidden(target):
+    if any(layer_hidden(g) for g in targets):
         raise RuntimeError("The layer chosen to print is hidden. Show it to plot it.")
     for group in groups:
-        if group is not target:
+        if group not in targets:
             set_layer_hidden(group, True)
+
+
+def clean_layers(raw):
+    """The layers to plot, by id: `layers` (a list, for layers linked to print together) or the older
+    single `layer`. None plots the whole drawing."""
+    ids = raw.get("layers")
+    if not isinstance(ids, list):
+        ids = [raw.get("layer")]
+    ids = list(dict.fromkeys(str(i)[:200] for i in ids if isinstance(i, str) and i))[:500]
+    return ids or None
 
 
 def clean_rotation(raw):
@@ -618,7 +630,7 @@ def rotate_document(root, rotation):
         root.set("viewBox", f"0 0 {vw:g} {vh:g}")
 
 
-def svg_input(scale, layer=None, rotation=0):
+def svg_input(scale, layers=None, rotation=0):
     """
     The loaded SVG for the NextDraw software: sized (see normalize_size) and scaled if needed. The
     software plots a document at its width/height, so scaling multiplies those while a viewBox keeps
@@ -627,8 +639,8 @@ def svg_input(scale, layer=None, rotation=0):
     from lxml import etree
     root = etree.parse(str(CURRENT_SVG), etree.XMLParser(huge_tree=True)).getroot()
     normalize_size(root)
-    if layer:
-        only_layer(root, layer)
+    if layers:
+        only_layers(root, [layers] if isinstance(layers, str) else layers)
     rotate_document(root, rotation)
     if abs(scale - 100) < 1e-9:
         return etree.tostring(root, encoding="unicode")
@@ -663,9 +675,11 @@ def clean_placement(raw):
         placement["tip_offset_x"] = max(0.0, min(100.0, float(raw.get("tip_offset_x", 0))))
     except (TypeError, ValueError):
         placement["tip_offset_x"] = 0.0
-    # The one layer to plot, by id; None plots the whole drawing.
     placement["rotation"] = clean_rotation(raw)
-    placement["layer"] = str(raw["layer"])[:200] if isinstance(raw.get("layer"), str) and raw["layer"] else None
+    # The layers to plot, by id; None plots the whole drawing. `layer` is the first of them, which is
+    # the one picked in the Layers card - its tool is the one in the holder.
+    placement["layers"] = clean_layers(raw)
+    placement["layer"] = placement["layers"][0] if placement["layers"] else None
     for key, name in (("x", "start_x"), ("y", "start_y")):
         try:
             placement[key] = max(0.0, min(2000.0, float(raw.get(name, 0))))
@@ -695,11 +709,11 @@ def apply_settings(nd, settings):
         nd.params.min_gap = settings["join_gap"] / 25.4
 
 
-def dry_run(settings, render, scale=100.0, source=None, mode="plot", layer=None, rotation=0):
+def dry_run(settings, render, scale=100.0, source=None, mode="plot", layers=None, rotation=0):
     """Simulate the plot without the machine. Returns stats and (optionally) the path preview SVG."""
     log = []
     nd = make_nextdraw(log)
-    nd.plot_setup(source if source is not None else prepared_svg(settings, scale, layer, rotation))
+    nd.plot_setup(source if source is not None else prepared_svg(settings, scale, layers, rotation))
     size_note = None
     if source is None and CURRENT_SVG.exists():
         from lxml import etree
@@ -785,10 +799,15 @@ def limit_drag(svg_text, settings):
     return etree.tostring(root, encoding="unicode")
 
 
-def prepared_svg(settings, scale, layer=None, rotation=0):
+def prepared_svg(settings, scale, layers=None, rotation=0):
     """The loaded drawing ready to plot: placed and scaled, and drag-limited for a one-way tool."""
-    svg = svg_input(scale, layer, rotation)
+    svg = svg_input(scale, layers, rotation)
     return limit_drag(svg, settings) if settings.get("drag_only") else svg
+
+
+def plot_layers(placement):
+    """The layers a placement plots. A stopped plot saved before layers could be linked has only `layer`."""
+    return placement.get("layers") or ([placement["layer"]] if placement.get("layer") else None)
 
 
 def carriage_start(placement):
@@ -989,7 +1008,7 @@ def run_plot(settings, placement, resume=None):
             source, mode = resume_source(settings), "res_plot"
         else:
             clear_resume()  # a new plot replaces any stopped one
-            source = prepared_svg(settings, placement["scale"], placement.get("layer"), placement.get("rotation", 0))
+            source = prepared_svg(settings, placement["scale"], plot_layers(placement), placement.get("rotation", 0))
             mode = "plot"
 
         # A new plot's simulation also draws its paths; a resumed plot keeps the ones saved when it began.
@@ -1054,7 +1073,7 @@ def run_plot(settings, placement, resume=None):
             job.ended = time.time()
             if code == 0:
                 job.done_mm = job.total_mm
-                mark_printed(placement.get("layer"))
+                mark_printed(plot_layers(placement))
                 job.state = "returning" if placement["return_home"] else "finished"
                 job.message = "Plot finished." if not placement["return_home"] else "Returning home…"
             elif code in (102, 103):
@@ -1758,6 +1777,19 @@ def clean_plot(raw):
         }
         if called:
             out["layer_names"] = dict(list(called.items())[:500])
+    # Layers linked to print together (groups of layer ids): layers going down in the same pen, plotted
+    # in one pass instead of one after another with the same pen reloaded. A decision about the plot,
+    # like the inks above, so it lives here.
+    links = raw.get("layer_links")
+    if isinstance(links, list):
+        groups = []
+        for group in links[:250]:
+            if isinstance(group, list):
+                ids = list(dict.fromkeys(str(x)[:200] for x in group if isinstance(x, str)))[:500]
+                if len(ids) > 1:
+                    groups.append(ids)
+        if groups:
+            out["layer_links"] = groups
     # Which layers Plot is holding back (by layer id). Kept here rather than as a hidden attribute on
     # the layer itself: hiding a layer is Plot deciding what to draw today, not a change to the
     # drawing, so it goes in Plot's own block where Studio will never see it.
@@ -2140,8 +2172,7 @@ def estimate():
             return jsonify(superseded=True)
         try:
             body = request.json or {}
-            layer = body.get("layer") if isinstance(body.get("layer"), str) and body.get("layer") else None
-            result = dry_run(clean_settings(body), render=True, scale=clean_scale(body), layer=layer, rotation=clean_rotation(body))
+            result = dry_run(clean_settings(body), render=True, scale=clean_scale(body), layers=clean_layers(body), rotation=clean_rotation(body))
             from lxml import etree
             result["layers"] = read_layers(etree.parse(str(CURRENT_SVG), etree.XMLParser(huge_tree=True)).getroot())
             return jsonify(result)

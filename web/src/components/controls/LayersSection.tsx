@@ -1,6 +1,6 @@
 import { useRef, useState } from "react";
 import { ButtonRound, LayerController, Segment, SegmentedControl } from "@tomcoggia/ui";
-import { Eye, LayersArrowUp, PenTool, RotateCcw } from "lucide-react";
+import { Eye, LayersArrowUp, Link2, Link2Off, PenTool, RotateCcw } from "lucide-react";
 import styles from "./LayersSection.module.css";
 import { Section } from "./Section";
 import { PaletteMenu } from "./PaletteMenu";
@@ -11,6 +11,12 @@ interface Props {
   onMode: (mode: "preview" | "work") => void;
   layers: LayerView[]; // bottom layer (number 1) first, in the drawing's own order
   target: string | null; // id of the layer chosen to print
+  /** The layers a layer is linked to print together with (not itself). */
+  linksOf: (id: string) => string[];
+  /** Link a layer with the others in its pen, so they print together. */
+  onLink: (id: string, others: string[]) => void;
+  /** Undo the link a layer is in: each layer of it plots on its own again. */
+  onUnlink: (id: string) => void;
   printed: string[]; // ids of layers plotted to the end this session
   disabled: boolean;
   onTarget: (id: string) => void;
@@ -38,7 +44,7 @@ interface Props {
 //
 // No grip on a row, either: the order is the drawing's. A grip that can be grabbed and does nothing
 // reads as a broken drag rather than as an absent feature.
-export function LayersSection({ mode, onMode, layers, target, printed, disabled, onTarget, onVisible, paletteFor, toolFor, onColor, onSort, onResetPrinted }: Props) {
+export function LayersSection({ mode, onMode, layers, target, linksOf, onLink, onUnlink, printed, disabled, onTarget, onVisible, paletteFor, toolFor, onColor, onSort, onResetPrinted }: Props) {
   // A tool with no palette still lets a layer be recolored: the dot opens the system color picker.
   const pickerRef = useRef<HTMLInputElement>(null);
   const [picking, setPicking] = useState<LayerView | null>(null);
@@ -48,6 +54,19 @@ export function LayersSection({ mode, onMode, layers, target, printed, disabled,
   // the plot-order numbers from the full list.
   const numberOf = new Map(layers.map((l, i) => [l.id, i + 1]));
   const rows = [...layers].reverse().filter((l) => mode === "preview" || !l.hidden);
+  // The other layers going down in the same pen of the same tool: the ones a layer can be linked with.
+  const sameInk = (layer: LayerView) => layers.filter((l) => l.id !== layer.id && l.penKey !== null && l.penKey === layer.penKey);
+  // Rows with nothing to link keep the button's room, so the eyes stay lined up down the list.
+  const anyLinkable = rows.some((l) => sameInk(l).length > 0);
+  // Linked layers next to each other in the list are drawn as one block (Figma 745:521): one print box
+  // down the side, with the printer in the top row, and no rule between the rows. Each run of them is
+  // keyed by its top row.
+  const runTop = new Map<string, string>();
+  rows.forEach((l, r) => {
+    const above = rows[r - 1];
+    runTop.set(l.id, above && linksOf(l.id).includes(above.id) ? runTop.get(above.id)! : l.id);
+  });
+  const runOf = (top: string) => rows.filter((l) => runTop.get(l.id) === top).map((l) => l.id);
 
   return (
     <Section
@@ -86,10 +105,20 @@ export function LayersSection({ mode, onMode, layers, target, printed, disabled,
       <ol className={styles.list}>
         {rows.map((layer) => {
           const i = numberOf.get(layer.id)! - 1; // position in the drawing's order
+          const links = linksOf(layer.id);
+          const partners = sameInk(layer);
+          const numbers = (ids: string[]) => ids.map((id) => numberOf.get(id)).join(", ");
+          const run = runOf(runTop.get(layer.id)!);
+          const place = run.length < 2 ? undefined : run[0] === layer.id ? "top" : run[run.length - 1] === layer.id ? "bottom" : "middle";
+          // The block has one print box, and it's the top row's: it shows the printer when any layer of
+          // the block is the one chosen, and the printed mark once all of them are down.
+          const isTop = place === undefined || place === "top";
+          // The link button is the uppermost same-pen layer's alone: the layers below it in that pen
+          // are the ones it gathers, so they show nothing.
+          const uppermost = partners.every((l) => !rows.includes(l) || rows.indexOf(l) > rows.indexOf(layer));
           return (
-            <li key={layer.id} className={styles.row} data-skipped={layer.skipped}>
+            <li key={layer.id} className={styles.row} data-skipped={layer.skipped} data-linked={place}>
               <LayerController
-                name="print-layer"
                 number={i + 1}
                 color={layer.color ?? "transparent"}
                 // A colour no pen of this tool can draw is struck through on the dot itself, because
@@ -120,8 +149,9 @@ export function LayersSection({ mode, onMode, layers, target, printed, disabled,
                     }
                   },
                 }}
-                checked={target === layer.id}
-                printed={printed.includes(layer.id)}
+                name="print-layer"
+                checked={isTop && run.includes(target ?? "")}
+                printed={isTop && run.every((id) => printed.includes(id))}
                 visible={!layer.hidden}
                 hideVisibility={mode === "work"}
                 onVisibleChange={(visible) => onVisible(layer.id, visible)}
@@ -134,10 +164,31 @@ export function LayersSection({ mode, onMode, layers, target, printed, disabled,
                 title={[
                   layer.ownName !== layer.name ? `${layer.ownName} in the drawing` : null,
                   layer.inPalette === false ? `No ${toolFor(layer.id)} pen draws ${layer.color ?? "this colour"}` : null,
+                  links.length ? `Prints together with ${numbers(links)}` : null,
                 ].filter(Boolean).join(" · ") || undefined}
                 label={layer.name}
                 hideHandle
               />
+              {partners.length > 0 && isTop && uppermost ? (
+                // Linking takes in every layer in the pen; unlinking undoes the whole link. The glyph is
+                // what a click does: a whole link to link them, and once they're linked, a broken one in
+                // Primary to unlink them.
+                <ButtonRound
+                  size="sm"
+                  variant="ghost"
+                  icon={links.length ? <Link2Off /> : <Link2 />}
+                  className={links.length ? styles.linkOn : undefined}
+                  aria-pressed={links.length > 0}
+                  aria-label={links.length ? `Unlink ${numbers([layer.id, ...links])}` : `Link ${layer.name} with ${numbers(partners.map((l) => l.id))}`}
+                  title={links.length
+                    ? `Prints together with ${numbers(links)}. Click to plot them one at a time.`
+                    : `Print together with ${numbers(partners.map((l) => l.id))}, the same pen - one plot instead of ${partners.length + 1}`}
+                  disabled={disabled}
+                  onClick={() => (links.length ? onUnlink(layer.id) : onLink(layer.id, partners.map((l) => l.id)))}
+                />
+              ) : anyLinkable ? (
+                <span className={styles.linkSpace} aria-hidden />
+              ) : null}
             </li>
           );
         })}

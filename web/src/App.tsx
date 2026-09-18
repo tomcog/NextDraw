@@ -95,6 +95,11 @@ export default function App() {
   // Studio's, and <nds:design> maps shapes to layers BY NAME: renaming one in the file would leave
   // Studio unable to find the shapes on it.
   const [layerNames, setLayerNames] = useState<Record<string, string>>({});
+  // Layers linked to print together, as groups of ids: layers going down in the same pen, plotted in
+  // one pass rather than one after another with the same pen put back in. Plot's decision, kept in its
+  // own block like the inks. A link only holds while its layers really are the same pen of the same
+  // tool - see `linksOf` - so a stale one is ignored rather than plotting two inks at once.
+  const [layerLinks, setLayerLinks] = useState<string[][]>([]);
   // A second drawing tool (mixed media): null normally; "" once added but not yet chosen.
   const [secondTool, setSecondTool] = useState<string | null>(null);
   const [secondToolLayers, setSecondToolLayers] = useState<string[]>([]);
@@ -135,6 +140,7 @@ export default function App() {
       // keeps the "%" name that makes it skipped.
       const pen = penNameAt(color, palette);
       const skipped = layer.name.startsWith("%");
+      const tool = toolOfLayer(layer.id);
       return {
         ...layer,
         name: skipped ? layer.name : layerNames[layer.id] || pen || layer.name,
@@ -143,6 +149,7 @@ export default function App() {
         color,
         inkPen: penNameOf(inkColors[layer.id], palette),
         inPalette: hasPen(color, palette),
+        penKey: pen && tool && !skipped ? `${tool}/${pen}` : null,
         // What the drawing itself says, so a swapped ink can be told from the planned one and undone.
         ownColor: penColors[layer.id] || layer.color,
         hidden: hiddenLayers.includes(layer.id) || layer.hidden,
@@ -190,7 +197,47 @@ export default function App() {
   const colorAndNameLayer = (id: string, pick: { pen: PenColor } | { hex: string } | null) => {
     colorLayer(id, pick);
     nameLayer(id, pick);
+    // A new ink is a different pen, so the layer leaves whatever it was linked with. Left in place, the
+    // link would come back to life if the ink were ever swapped back, which nobody would expect.
+    setLayerLinks((groups) => groups.map((g) => g.filter((i) => i !== id)).filter((g) => g.length > 1));
   };
+  // The layers each layer prints together with (itself not included), in plot order. Only the members
+  // of its group that go down in the very same pen of the same tool count: a palette edit or a tool
+  // change can make two linked layers different inks, and those must never go down in one pass.
+  const linksOf = useMemo(() => {
+    const byId = new Map(layerViews.map((l) => [l.id, l]));
+    const partners = new Map<string, string[]>();
+    for (const group of layerLinks) {
+      for (const id of group) {
+        const key = byId.get(id)?.penKey;
+        if (!key) continue;
+        const same = layerViews.filter((l) => l.id !== id && l.penKey === key && group.includes(l.id)).map((l) => l.id);
+        if (same.length) partners.set(id, same);
+      }
+    }
+    return partners;
+  }, [layerViews, layerLinks]);
+  // Link a layer with others in its pen, merging whatever any of them is already linked with. Linked
+  // layers are one step of the plot, so they're gathered in the order too: the others move to sit
+  // directly below this one - the link is made from the uppermost of them - which is also what lets
+  // the Layers card draw them as one block.
+  const linkLayers = (id: string, others: string[]) => {
+    setLayerLinks((groups) => {
+      const members = [id, ...others];
+      const joined = groups.filter((g) => g.some((i) => members.includes(i))).flat();
+      const rest = groups.filter((g) => !g.some((i) => members.includes(i)));
+      return [...rest, [...new Set([...joined, ...members])]];
+    });
+    const order = layerViews.map((l) => l.id);
+    const moving = order.filter((i) => others.includes(i));
+    const kept = order.filter((i) => !others.includes(i));
+    const at = kept.indexOf(id);
+    const next = [...kept.slice(0, at), ...moving, ...kept.slice(at)];
+    if (next.join("|") !== order.join("|")) setPlotOrder(next);
+  };
+  // Undo a link: every layer of the group goes back to plotting on its own, where it now stands.
+  const unlinkLayers = (id: string) =>
+    setLayerLinks((groups) => groups.filter((g) => !g.includes(id)));
   // Forget which layers have been plotted. The marks are the page's note to itself about what is
   // already on the paper; the paper changes without the app hearing about it.
   const resetPrinted = () => {
@@ -211,6 +258,14 @@ export default function App() {
   const plottableLayers = layerViews.filter((l) => !l.skipped);
   const needsLayerChoice = plottableLayers.length > 1 && !printTarget;
   const plotLayerId = plottableLayers.length > 1 ? printTarget?.id ?? null : null;
+  // Everything that goes down in this plot: the chosen layer and the shown layers linked with it, in
+  // plot order. The chosen layer comes first - its tool is the one in the holder.
+  const printIds = useMemo(() => {
+    if (!printTarget) return [];
+    const linked = new Set(linksOf.get(printTarget.id) ?? []);
+    return [printTarget.id, ...layerViews.filter((l) => linked.has(l.id) && !l.hidden).map((l) => l.id)];
+  }, [printTarget, linksOf, layerViews]);
+  const plotLayerIds = plotLayerId ? printIds : null;
   // Preview mode: arrange the drawing - every shown layer in its color, show/hide and reorder layers.
   // Plot mode ("work" in code): only the layer chosen to print is drawn; layers hidden in Preview mode leave the list.
   // Drawings always open in Preview mode.
@@ -220,10 +275,10 @@ export default function App() {
       ? Object.fromEntries(layerViews.map((l) => [l.id, {
         color: l.color,
         skipped: l.skipped,
-        hidden: layerMode === "work" ? l.id !== printTarget?.id : l.hidden,
+        hidden: layerMode === "work" ? !printIds.includes(l.id) : l.hidden,
       }]))
       : null),
-    [layerViews, layerMode, printTarget],
+    [layerViews, layerMode, printIds],
   );
   // Layer ids bottom-first, so the preview stacks them the way the plot draws them.
   const layerOrder = useMemo(() => layerViews.map((l) => l.id), [layerViews]);
@@ -274,9 +329,9 @@ export default function App() {
   useEffect(() => save(STORAGE.zoom, zoomChoice), [zoomChoice]);
 
   // Refs let the polling loop see current values without restarting.
-  const refs = useRef({ fileName, status, lastAction, settings, scale, presets, plotLayerId, rotation, readRequested: false, plotSettings: settings, activePreset });
+  const refs = useRef({ fileName, status, lastAction, settings, scale, presets, plotLayerIds, rotation, readRequested: false, plotSettings: settings, activePreset });
   refs.current.rotation = rotation;
-  refs.current.plotLayerId = plotLayerId;
+  refs.current.plotLayerIds = plotLayerIds;
   refs.current.presets = presets;
   refs.current.fileName = fileName;
   refs.current.status = status;
@@ -330,6 +385,7 @@ export default function App() {
     setInkColors(plot?.layer_colors ?? {});
     setLayerNames(plot?.layer_names ?? {});
     setPlotOrder(plot?.layer_order ?? null);
+    setLayerLinks(plot?.layer_links ?? []);
     setPenColors({});
     setPrintLayer(null);
     setLayerMode("preview");
@@ -371,6 +427,7 @@ export default function App() {
     ...(Object.keys(inkColors).length ? { layer_colors: inkColors } : {}),
     ...(Object.keys(layerNames).length ? { layer_names: layerNames } : {}),
     ...(plotOrder?.length ? { layer_order: plotOrder } : {}),
+    ...(layerLinks.length ? { layer_links: layerLinks } : {}),
     paper: { paper_size: settings.paper_size, paper_w: settings.paper_w, paper_h: settings.paper_h, paper_x: settings.paper_x, paper_y: settings.paper_y, paper_color: settings.paper_color },
   };
   const saveKey = JSON.stringify(drawingNow);
@@ -568,7 +625,7 @@ export default function App() {
     const timer = window.setTimeout(async () => {
       try {
         const result = await postJSON<Estimate>("/api/estimate", {
-          ...refs.current.plotSettings, scale: sentScale, layer: refs.current.plotLayerId, rotation: sentRotation,
+          ...refs.current.plotSettings, scale: sentScale, layers: refs.current.plotLayerIds, rotation: sentRotation,
         });
         if (seq !== estimateSeq.current || result.superseded) return; // a newer estimate is on its way
         estimatedSeq.current = seq;
@@ -586,7 +643,7 @@ export default function App() {
     }, 450);
     return () => window.clearTimeout(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [fileName, drawingVersion, simulate ? estimateKey : "", scale, simulate ? plotLayerId : "", rotation, simulate]);
+  }, [fileName, drawingVersion, simulate ? estimateKey : "", scale, simulate ? plotLayerIds?.join("|") : "", rotation, simulate]);
 
   /* ---------- Actions ---------- */
 
@@ -689,7 +746,7 @@ export default function App() {
     setLastAction("plot");
     setLocalMessage(null);
     try {
-      await postJSON("/api/plot", { ...settingsFor(plotLayerId), start_x: placement.x, start_y: placement.y, tip_offset_x: tipOffsetFor(plotLayerId), scale, layer: plotLayerId, rotation });
+      await postJSON("/api/plot", { ...settingsFor(plotLayerId), start_x: placement.x, start_y: placement.y, tip_offset_x: tipOffsetFor(plotLayerId), scale, layers: plotLayerIds, rotation });
       setStatus((s) => (s ? { ...s, state: "preparing", message: "", started: false } : s));
     } catch (err) {
       setLocalMessage({ text: (err as Error).message, tone: "error" });
@@ -1195,7 +1252,7 @@ export default function App() {
             plotting={plotting}
             stopping={status?.state === "stopping" || status?.state === "returning"}
             canPlot={!busy && Boolean(fileName) && Boolean(preview) && onBed && plotterReady && !needsLayerChoice}
-            plotLabel={!plotterReady ? "Connect the plotter" : needsLayerChoice ? "Choose a layer to plot" : printTarget && plotLayerId ? `Plot ${printTarget.name}` : "Plot"}
+            plotLabel={!plotterReady ? "Connect the plotter" : needsLayerChoice ? "Choose a layer to plot" : printTarget && plotLayerId ? `Plot ${printTarget.name}${printIds.length > 1 ? ` · ${printIds.length} layers` : ""}` : "Plot"}
             preparing={status?.state === "preparing"}
             resume={resume}
             confirmation={confirmation}
@@ -1238,6 +1295,9 @@ export default function App() {
                   onMode={setLayerMode}
                   layers={layerViews}
                   target={printLayer}
+                  linksOf={(id) => linksOf.get(id) ?? []}
+                  onLink={linkLayers}
+                  onUnlink={unlinkLayers}
                   printed={status?.printed_layers ?? []}
                   onTarget={setPrintLayer}
                   onVisible={setLayerVisible}

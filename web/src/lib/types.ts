@@ -136,6 +136,11 @@ export interface LayerView extends Layer {
    * the question doesn't arise.
    */
   inPalette: boolean | null;
+  /**
+   * The pen of its tool this layer goes down in, as "tool/pen", or null when no pen of the tool draws
+   * its colour. Layers with the same pen can be linked to print together.
+   */
+  penKey: string | null;
 }
 
 // The page's choices saved inside a drawing file, restored when it's opened again.
@@ -151,6 +156,7 @@ export interface Plot {
   layer_colors?: Record<string, Ink>; // ids to the ink each is being plotted in, when not the drawing's own
   layer_names?: Record<string, string>; // ids to what Plot calls each: the ink it's going down in
   layer_order?: string[]; // layer ids bottom-first: the order to plot them in, not the file's order
+  layer_links?: string[][]; // groups of layer ids in the same pen, plotted together in one pass
   paper?: Partial<Pick<Settings, "paper_size" | "paper_w" | "paper_h" | "paper_x" | "paper_y" | "paper_color">>;
 }
 
