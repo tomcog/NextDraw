@@ -12,6 +12,9 @@ warn() { print -P "%F{yellow}$1%f"; }
 # 1. Get the latest version.
 if [ -d .git ]; then
   echo "Checking for updates…"
+  # Only npm ever changes the lock file here, never a person, so a changed copy is thrown away
+  # instead of being left to block the update.
+  git checkout --quiet -- web/package-lock.json 2>/dev/null
   if GIT_TERMINAL_PROMPT=0 git -c http.lowSpeedLimit=1000 -c http.lowSpeedTime=20 pull --ff-only --quiet; then
     echo "Up to date: $(git log -1 --format='%h %s')"
   else
