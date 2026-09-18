@@ -3,7 +3,7 @@ import {
   boxOf, clampToPage, dragHandle, handlesOf, isDegenerate, moveBy, newShapeId,
   CURSOR, type Handle, type Page, type Shape, type ShapeKind,
 } from "../lib/shapes";
-import { hatchLines, type Fill } from "../lib/hatch";
+import { hatchLines, hatchStroke, type Fill } from "../lib/hatch";
 import type { Layer } from "../lib/shapes";
 import { BedCanvas, type BedCanvasHandle, type Box, type Zoom } from "../../components/BedCanvas";
 import { DEFAULT_SETTINGS, UNITS } from "../../lib/constants";
@@ -194,9 +194,11 @@ export function Canvas({ page, shapes, fills, layers, activeLayer, model, zoom, 
             const shape = mine.find((sh) => sh.id === fill.shapeId)!;
             return (
               <g key={fill.id}>
-                {hatchLines(shape, fill).map((l, i) => (
-                  <line key={i} x1={l.x1} y1={l.y1} x2={l.x2} y2={l.y2} />
-                ))}
+                {fill.connected ? (
+                  <polyline fill="none" points={hatchStroke(shape, fill).map((p) => `${p.x},${p.y}`).join(" ")} />
+                ) : (
+                  hatchLines(shape, fill).map((l, i) => <line key={i} x1={l.x1} y1={l.y1} x2={l.x2} y2={l.y2} />)
+                )}
               </g>
             );
           })}

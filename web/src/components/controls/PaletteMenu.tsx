@@ -13,11 +13,13 @@ interface Props {
   own?: string | null;
   onPick: (pen: PenColor) => void;
   onClose: () => void;
+  /** Offer any colour at all, from the system colour picker, after the pens. Called on the click. */
+  onCustom?: () => void;
 }
 
 // The drawing tool's pen colors, opened from a layer's color dot. Arrow keys move through the list,
 // Enter picks, Escape or a click elsewhere closes, and focus goes back to the dot.
-export function PaletteMenu({ anchor, palette: pens, current, own, onPick, onClose }: Props) {
+export function PaletteMenu({ anchor, palette: pens, current, own, onPick, onClose, onCustom }: Props) {
   // Darkest at the top, lightest at the bottom, the way the layers themselves stack. Colors that
   // can't be read keep their place at the end.
   const palette = useMemo(
@@ -64,11 +66,12 @@ export function PaletteMenu({ anchor, palette: pens, current, own, onPick, onClo
       close();
     } else if (e.key === "ArrowDown" || e.key === "ArrowUp") {
       e.preventDefault();
-      const next = (i + (e.key === "ArrowDown" ? 1 : -1) + palette.length) % palette.length;
+      const count = palette.length + (onCustom ? 1 : 0);
+      const next = (i + (e.key === "ArrowDown" ? 1 : -1) + count) % count;
       items.current[next]?.focus();
     } else if (e.key === "Home" || e.key === "End") {
       e.preventDefault();
-      items.current[e.key === "Home" ? 0 : palette.length - 1]?.focus();
+      items.current[e.key === "Home" ? 0 : palette.length - (onCustom ? 0 : 1)]?.focus();
     } else if (e.key === "Tab") {
       close();
     }
@@ -119,6 +122,21 @@ export function PaletteMenu({ anchor, palette: pens, current, own, onPick, onClo
           </button>
         );
       })}
+      {onCustom && (
+        <button
+          type="button"
+          role="menuitem"
+          ref={(el) => { items.current[palette.length] = el; }}
+          className={`${styles.item} ${styles.custom}`}
+          onClick={() => {
+            onCustom(); // first, while this click still counts as the gesture that opens the picker
+            onClose();
+          }}
+        >
+          <span className={`${styles.dot} ${styles.customDot}`} aria-hidden />
+          Other colour…
+        </button>
+      )}
     </div>,
     document.body,
   );

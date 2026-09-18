@@ -1,13 +1,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Button, ButtonRound, Card, Checkbox, InputSelect, InputText, LayerController } from "@tomcoggia/ui";
-import { Circle, FilePlus, FolderOpen, Minus, MousePointer2, Plus, Ratio, Redo2, Square, StickyNote, Trash2, Undo2 } from "lucide-react";
-import { FileBrowser, type OpenResult } from "../components/FileBrowser";
+import { ArrowDownToLine, Circle, Copy, EllipsisVertical, FilePlus, FolderOpen, Minus, MousePointer2, Plus, Ratio, Redo2, Square, StickyNote, Trash2, Undo2 } from "lucide-react";
+import { FileBrowser, LAST_FOLDER_KEY, type OpenResult } from "../components/FileBrowser";
 import { Section } from "../components/controls/Section";
 import { NumberField } from "../components/controls/NumberField";
 import controls from "../components/controls/controls.module.css";
 import { api, postJSON } from "../lib/api";
 import { load, save as remember } from "../lib/storage";
-import { DEFAULT_SETTINGS, PAPER_SIZES, STORAGE } from "../lib/constants";
+import { DEFAULT_SETTINGS, PAPER_SIZES, PLOT_CHANNEL, STORAGE } from "../lib/constants";
 import type { Info, PenColor, PlotterModel, Preset } from "../lib/types";
 import { fmtIn } from "../lib/format";
 import { ZoomControl } from "../components/ZoomControl";
@@ -19,7 +19,8 @@ import { StudioHeader } from "./components/StudioHeader";
 import { canFill, newFillId, type Fill } from "./lib/hatch";
 import { parseDrawing } from "./lib/parse";
 import { PaletteMenu } from "../components/controls/PaletteMenu";
-import { boxOf, newLayerId, shapeName, type Layer, type Page, type Shape } from "./lib/shapes";
+import { RowMenu } from "../components/controls/RowMenu";
+import { boxOf, newLayerId, newShapeId, shapeName, type Layer, type Page, type Shape } from "./lib/shapes";
 import { buildSvg, cleanFileName } from "./lib/svg";
 import styles from "./App.module.css";
 
@@ -59,6 +60,37 @@ const HISTORY_LIMIT = 60;
 
 type Saved = { path: string; folder: string } | null;
 
+/**
+ * A layer name nothing else in the drawing has. Studio finds a filled shape's layer by name when the
+ * shape's outline isn't drawn, so two layers with one name would be two layers it can't tell apart.
+ * A clash takes the next free number: "Yellow" becomes "Yellow 2", and "Yellow 2" becomes "Yellow 3".
+ */
+function uniqueName(wanted: string, taken: string[]): string {
+  if (!taken.includes(wanted)) return wanted;
+  const base = wanted.replace(/ \d+$/, "");
+  let n = 2;
+  while (taken.includes(`${base} ${n}`)) n++;
+  return `${base} ${n}`;
+}
+
+/** Whether a Plot page is open in another tab of this browser: it answers when asked (see Plot's poll). */
+function plotPageAnswers(): Promise<boolean> {
+  if (!("BroadcastChannel" in window)) return Promise.resolve(false);
+  return new Promise((resolve) => {
+    const channel = new BroadcastChannel(PLOT_CHANNEL);
+    const done = (answer: boolean) => {
+      window.clearTimeout(timer);
+      channel.close();
+      resolve(answer);
+    };
+    const timer = window.setTimeout(() => done(false), 600);
+    channel.onmessage = (e) => {
+      if (e.data?.type === "plot-here") done(true);
+    };
+    channel.postMessage({ type: "open-in-plot" });
+  });
+}
+
 export default function App() {
   const [page, setPage] = useState<Page>({ w: 11, h: 8.5 });
   const [shapes, setShapes] = useState<Shape[]>([]);
@@ -96,7 +128,7 @@ export default function App() {
   // Anything drawn since the last save has to be written again before Plot can print it.
   useEffect(() => {
     dirty.current = true;
-  }, [shapes, page, name]);
+  }, [shapes, fills, page, name]);
 
   const sizeId = useMemo(() => {
     const match = SIZES.find(
@@ -156,6 +188,19 @@ export default function App() {
     setShapes((list) => list.map((s) => (s.id === shape.id ? shape : s)));
   }, []);
 
+  // A copy of a shape and its fill, on the same layer, nudged down and to the right so it can be
+  // seen - and chosen, ready to be dragged where it's wanted.
+  const duplicateShape = (id: string) => {
+    const shape = shapes.find((s) => s.id === id);
+    if (!shape) return;
+    record();
+    const nudge = 0.25;
+    const copy: Shape = { ...shape, id: newShapeId(), x: shape.x + nudge, y: shape.y + nudge, x2: shape.x2 + nudge, y2: shape.y2 + nudge };
+    setShapes((list) => [...list, copy]);
+    setFills((list) => [...list, ...list.filter((f) => f.shapeId === id).map((f) => ({ ...f, id: newFillId(), shapeId: copy.id }))]);
+    setSelected(copy.id);
+  };
+
   const removeShape = (id: string) => {
     record();
     setShapes((list) => list.filter((s) => s.id !== id));
@@ -181,9 +226,13 @@ export default function App() {
     setBusy(true);
     try {
       const svg = buildSvg(shapes, fills, layers, page, { paperSizeId: sizeId, toolName });
+      // Next to the file that was opened, so a drawing opened from the Desktop is saved back to the
+      // Desktop - its card says "In ~/Desktop", and that is where it gets looked for. A drawing never
+      // saved goes to the server's default, the shared iCloud folder.
       const res = await postJSON<{ name: string; path: string; folder: string }>("/api/studio/save", {
         name: cleanFileName(name),
         svg,
+        ...(saved ? { folder: saved.path.slice(0, saved.path.lastIndexOf("/")) } : {}),
       });
       const where = { path: res.path, folder: res.folder };
       setName(res.name.replace(/\.svg$/i, ""));
@@ -192,6 +241,7 @@ export default function App() {
       setForeign(0);
       setOpenedAs(res.name);
       remember(LAST_FILE_KEY, res.path);
+      remember(LAST_FOLDER_KEY, res.path.slice(0, res.path.lastIndexOf("/")));
       dirty.current = false;
       setMessage({ text: `Saved to ${res.folder}`, ok: true });
       return where;
@@ -203,15 +253,22 @@ export default function App() {
     }
   };
 
-  // Save if there's anything new, then hand the drawing to Plot and go there. Plot picks up whatever
-  // drawing is loaded when its page opens, so nothing has to be passed in the URL.
+  // Save if there's anything new, then hand the drawing to Plot. A Plot page already open in another
+  // tab takes it from there - it shows whatever drawing was opened last - and Studio stays put. With no
+  // Plot page open, one opens in a new tab; only if the browser won't allow that does this tab go.
   const openInPlot = async () => {
     const where = dirty.current || !saved ? await save() : saved;
     if (!where) return;
     setBusy(true);
     try {
       await postJSON("/api/open", { path: where.path });
-      window.location.href = "/";
+      if (await plotPageAnswers()) {
+        setMessage({ text: "Opened in Plot, in its own tab", ok: true });
+        setBusy(false);
+        return;
+      }
+      if (!window.open("/", PLOT_CHANNEL)) window.location.href = "/";
+      setBusy(false);
     } catch (err) {
       setMessage({ text: (err as Error).message, ok: false });
       setBusy(false);
@@ -413,6 +470,68 @@ export default function App() {
     setActiveLayer(layer.id);
   };
 
+  // A copy of a layer, directly above it: the same colour and every shape and fill on it, in the same
+  // places, under the next free name. Plotted after the original, it's a second coat.
+  const duplicateLayer = (id: string) => {
+    const layer = layers.find((l) => l.id === id);
+    if (!layer) return;
+    record();
+    const copy: Layer = { ...layer, id: newLayerId(), name: uniqueName(layer.name, layers.map((l) => l.name)) };
+    const ids = new Map(shapes.filter((sh) => sh.layerId === id).map((sh) => [sh.id, newShapeId()]));
+    setLayers((list) => {
+      const next = [...list];
+      next.splice(next.findIndex((l) => l.id === id) + 1, 0, copy);
+      return next;
+    });
+    setShapes((list) => [...list, ...list.filter((sh) => ids.has(sh.id)).map((sh) => ({ ...sh, id: ids.get(sh.id)!, layerId: copy.id }))]);
+    setFills((list) => [...list, ...list.filter((f) => ids.has(f.shapeId)).map((f) => ({ ...f, id: newFillId(), shapeId: ids.get(f.shapeId)! }))]);
+    setActiveLayer(copy.id);
+  };
+
+  // Merge with the layer below: its shapes, and the fills on them, move up onto this layer and take on
+  // its name, colour and visibility; the layer below goes. This layer stays where it is in the stack.
+  const mergeDown = (id: string) => {
+    const at = layers.findIndex((l) => l.id === id);
+    if (at < 1) return; // the bottom layer has nothing below it
+    const below = layers[at - 1];
+    record();
+    setShapes((list) => list.map((sh) => (sh.layerId === below.id ? { ...sh, layerId: id } : sh)));
+    setLayers((list) => list.filter((l) => l.id !== below.id));
+    setActiveLayer((current) => (current === below.id ? id : current));
+  };
+
+  // Renaming in place. One undo step for the whole edit, taken as the field is entered, and the name is
+  // settled when it's left: never empty, never a name another layer already has.
+  const nameBeforeEdit = useRef<string>("");
+  const typeLayerName = (id: string, name: string) =>
+    setLayers((list) => list.map((l) => (l.id === id ? { ...l, name } : l)));
+  const settleLayerName = (id: string) =>
+    setLayers((list) => list.map((l) => {
+      if (l.id !== id) return l;
+      const wanted = l.name.trim() || nameBeforeEdit.current;
+      return { ...l, name: uniqueName(wanted, list.filter((o) => o.id !== id).map((o) => o.name)) };
+    }));
+
+  // Any colour at all for a layer, from the system colour picker - for a pen that isn't in the tool's
+  // palette. Only the colour changes; the layer keeps the name it has.
+  const colorInput = useRef<HTMLInputElement>(null);
+  const [customFor, setCustomFor] = useState<string | null>(null);
+  const pickCustomColor = (id: string, near: HTMLElement) => {
+    setCustomFor(id);
+    const input = colorInput.current;
+    if (input) {
+      // The picker opens where its input is, so the input goes to the layer's swatch first.
+      const at = near.getBoundingClientRect();
+      input.style.left = `${at.left}px`;
+      input.style.top = `${at.bottom}px`;
+      input.value = layers.find((l) => l.id === id)?.color ?? "#808080";
+      input.click();
+    }
+  };
+
+  // The kebab menu on a layer or shape row: duplicate and delete.
+  const [rowMenu, setRowMenu] = useState<{ kind: "layer" | "shape"; id: string; anchor: HTMLElement } | null>(null);
+
   const removeLayer = (id: string) => {
     if (layers.length < 2) return; // there is always somewhere to draw
     record();
@@ -449,12 +568,45 @@ export default function App() {
           current={layers.find((l) => l.id === colorMenu.id)?.color ?? null}
           onPick={(pen) => {
             // The name travels with the colour: Plot colours a layer from the pen its name matches.
-            patchLayer(colorMenu.id, { name: pen.name, color: pen.color });
+            patchLayer(colorMenu.id, { name: uniqueName(pen.name, layers.filter((l) => l.id !== colorMenu.id).map((l) => l.name)), color: pen.color });
             setColorMenu(null);
           }}
+          onCustom={() => pickCustomColor(colorMenu.id, colorMenu.anchor)}
           onClose={() => setColorMenu(null)}
         />
       )}
+      {rowMenu && (
+        <RowMenu
+          anchor={rowMenu.anchor}
+          onClose={() => setRowMenu(null)}
+          actions={rowMenu.kind === "layer"
+            ? [
+              { label: "Duplicate", icon: <Copy />, onSelect: () => duplicateLayer(rowMenu.id) },
+              {
+                label: "Merge with below",
+                icon: <ArrowDownToLine />,
+                disabled: layers.findIndex((l) => l.id === rowMenu.id) < 1,
+                onSelect: () => mergeDown(rowMenu.id),
+              },
+              // There's always somewhere to draw, so the last layer stays.
+              { label: "Delete", icon: <Trash2 />, danger: true, disabled: layers.length < 2, onSelect: () => removeLayer(rowMenu.id) },
+            ]
+            : [
+              { label: "Duplicate", icon: <Copy />, onSelect: () => duplicateShape(rowMenu.id) },
+              { label: "Delete", icon: <Trash2 />, danger: true, onSelect: () => removeShape(rowMenu.id) },
+            ]}
+        />
+      )}
+      <input
+        ref={colorInput}
+        type="color"
+        className={styles.hiddenPicker}
+        tabIndex={-1}
+        aria-hidden
+        onChange={(e) => {
+          if (customFor) patchLayer(customFor, { color: e.target.value.toLowerCase() });
+        }}
+      />
 
       <main className={styles.layout}>
         <section className={styles.stage} aria-label="Drawing page">
@@ -693,7 +845,23 @@ export default function App() {
                           disabled={busy}
                           onChange={() => setActiveLayer(layer.id)}
                           aria-label={`Draw on layer ${at + 1}, ${layer.name}`}
-                          label={layer.name}
+                          label={
+                            <input
+                              value={layer.name}
+                              aria-label={`Name of layer ${at + 1}`}
+                              title="The layer's name: click to change it"
+                              disabled={busy}
+                              onFocus={() => {
+                                nameBeforeEdit.current = layer.name;
+                                record();
+                              }}
+                              onChange={(e) => typeLayerName(layer.id, e.target.value)}
+                              onBlur={() => settleLayerName(layer.id)}
+                              onKeyDown={(e) => {
+                                if (e.key === "Enter" || e.key === "Escape") e.currentTarget.blur();
+                              }}
+                            />
+                          }
                           handleProps={{
                             "aria-label": `Move ${layer.name}`,
                             title: "Drag to restack",
@@ -701,12 +869,16 @@ export default function App() {
                             onPointerDown: (e) => startLayerDrag(e, layer.id),
                           }}
                         />
-                        {layers.length > 1 && (
-                          <ButtonRound size="sm" variant="ghost" icon={<Trash2 />}
-                            aria-label={`Delete layer ${layer.name}`}
-                            title={`Delete ${layer.name} and everything on it`}
-                            disabled={busy} onClick={() => removeLayer(layer.id)} />
-                        )}
+                        <ButtonRound size="sm" variant="ghost" icon={<EllipsisVertical />}
+                          aria-label={`More for layer ${layer.name}`}
+                          aria-haspopup="menu"
+                          aria-expanded={rowMenu?.id === layer.id}
+                          title="Duplicate, merge or delete this layer"
+                          disabled={busy}
+                          onClick={(e) => {
+                            const anchor = e.currentTarget;
+                            setRowMenu((open) => (open?.id === layer.id ? null : { kind: "layer", id: layer.id, anchor }));
+                          }} />
                       </li>
                     );
                   })}
@@ -749,8 +921,16 @@ export default function App() {
                                 {`${fmtIn(b.x1 - b.x0)} × ${fmtIn(b.y1 - b.y0)}`}
                               </span>
                             </button>
-                            <ButtonRound size="sm" variant="ghost" icon={<Trash2 />}
-                              aria-label={`Delete ${shapeName(sh, i)}`} onClick={() => removeShape(sh.id)} />
+                            <ButtonRound size="sm" variant="ghost" icon={<EllipsisVertical />}
+                              aria-label={`More for ${shapeName(sh, i)}`}
+                              aria-haspopup="menu"
+                              aria-expanded={rowMenu?.id === sh.id}
+                              title="Duplicate or delete this shape"
+                              disabled={busy}
+                              onClick={(e) => {
+                                const anchor = e.currentTarget;
+                                setRowMenu((open) => (open?.id === sh.id ? null : { kind: "shape", id: sh.id, anchor }));
+                              }} />
                           </li>
                         );
                       })}
@@ -794,8 +974,21 @@ export default function App() {
                       onChange={(e) =>
                         // A second pass square to the first, which is what makes it read as a mesh
                         // rather than as two hatchings that happen to share a shape.
-                        setFillAt(1, e.target.checked ? newFill((chosenFills[0].angle + 90) % 180) : null)
+                        setFillAt(1, e.target.checked ? { ...newFill((chosenFills[0].angle + 90) % 180), connected: chosenFills[0].connected } : null)
                       }
+                    />
+                  )}
+                  {chosenFills.length > 0 && (
+                    <Checkbox
+                      checked={chosenFills[0].connected === true}
+                      label="Connect the line ends"
+                      // Each pass becomes one zigzag stroke, joined along the shape's edge. Both passes
+                      // of a cross-hatch follow the one switch.
+                      onChange={(e) => {
+                        const connected = e.target.checked;
+                        record();
+                        setFills((list) => list.map((f) => (f.shapeId === chosen.id ? { ...f, connected } : f)));
+                      }}
                     />
                   )}
                   <Checkbox

@@ -36,7 +36,8 @@ interface Props {
   layerInkOpacity?: Record<string, number | undefined>; // layers drawn with the second tool
   inkBuilds?: boolean; // more of the same ink darkens (a brush); gel ink saturates and adds nothing
   layerInkBuilds?: Record<string, boolean | undefined>;
-  inkBuild?: number; // 0-1: how much a second pass of a building ink adds
+  inkBuild?: number; // 0-1: how much darker the ink gets where it crosses its own strokes
+  layerInkBuild?: Record<string, number | undefined>; // layers drawn with the second tool
   inkSim?: boolean; // off: flat color, no blending - much cheaper on a drawing of many thousands of paths
   penWidthMm?: number; // draw lines at the pen's real width; undefined keeps a hairline
   plotPaths?: PlotPaths | null; // show the plot in progress, drawn and left to draw, instead of the preview
@@ -54,6 +55,69 @@ interface Drag {
 
 // The plotter's drawing area at true scale, with the paper, the drawing where it will plot,
 // dimension lines, home and the carriage. The drawing can be dragged to position it.
+// The build pass darkens wherever two of its elements overlap - but a browser paints one stroke's area
+// once, however often the stroke crosses itself. A connected hatch is a single zigzag, so its lines
+// overlapping each other, and the turns doubling back along the edge, would never darken, while on paper
+// the pen goes over its own ink there. So in the build pass each straight piece of a polyline, or of a
+// path drawn only with straight lines, becomes a mark of its own. The ink pass underneath is left alone.
+function splitIntoMarks(root: SVGGElement) {
+  const NS = "http://www.w3.org/2000/svg";
+  const pointsOf = (el: Element): number[][] | null => {
+    if (el.tagName === "polyline" || el.tagName === "polygon") {
+      const n = (el.getAttribute("points") ?? "").trim().split(/[\s,]+/).map(Number);
+      const pts = [];
+      for (let i = 0; i + 1 < n.length; i += 2) pts.push([n[i], n[i + 1]]);
+      if (el.tagName === "polygon" && pts.length) pts.push(pts[0]);
+      return pts;
+    }
+    if (el.tagName === "path") {
+      // Absolute moves and lines only (M, L, H, V, Z): what hatches and plotter drawings are made of.
+      // Anything with curves or relative steps is left as one mark.
+      const d = el.getAttribute("d") ?? "";
+      if (/[^MLHVZmlhvz\d\s,.eE+-]/.test(d) || /[mlhv]/.test(d)) return null;
+      const pts: number[][] = [];
+      let start: number[] | null = null;
+      for (const [, cmd, args] of d.matchAll(/([MLHVZ])([^MLHVZ]*)/g)) {
+        const n = args.trim() ? args.trim().split(/[\s,]+/).map(Number) : [];
+        const last = pts[pts.length - 1];
+        if (cmd === "M") {
+          if (pts.length) return null; // several subpaths: keep it simple, one mark
+          for (let i = 0; i + 1 < n.length; i += 2) pts.push([n[i], n[i + 1]]);
+          start = pts[0] ?? null;
+        } else if (cmd === "L") {
+          for (let i = 0; i + 1 < n.length; i += 2) pts.push([n[i], n[i + 1]]);
+        } else if (cmd === "H" && last) {
+          n.forEach((x) => pts.push([x, pts[pts.length - 1][1]]));
+        } else if (cmd === "V" && last) {
+          n.forEach((y) => pts.push([pts[pts.length - 1][0], y]));
+        } else if (cmd === "Z" && start) {
+          pts.push(start);
+        }
+      }
+      return pts;
+    }
+    return null;
+  };
+  for (const el of [...root.querySelectorAll("polyline, polygon, path")]) {
+    const pts = pointsOf(el);
+    if (!pts || pts.length < 3 || pts.some((p) => p.some((v) => !Number.isFinite(v)))) continue;
+    const marks = document.createElementNS(NS, "g");
+    for (const attr of ["transform", "class", "style"]) {
+      const v = el.getAttribute(attr);
+      if (v) marks.setAttribute(attr, v);
+    }
+    for (let i = 1; i < pts.length; i++) {
+      const line = document.createElementNS(NS, "line");
+      line.setAttribute("x1", String(pts[i - 1][0]));
+      line.setAttribute("y1", String(pts[i - 1][1]));
+      line.setAttribute("x2", String(pts[i][0]));
+      line.setAttribute("y2", String(pts[i][1]));
+      marks.appendChild(line);
+    }
+    el.replaceWith(marks);
+  }
+}
+
 export function Bed(props: Props) {
   const { model, settings: s, preview, footprint: fp, placement, carriage, showPenUp } = props;
   const svgRef = useRef<SVGSVGElement>(null);
@@ -125,7 +189,7 @@ export function Bed(props: Props) {
   // How solid the ink is, and how it darkens where strokes cross. The two kinds of ink and the
   // arithmetic behind them are in lib/ink.ts, which Studio uses too; this mounts it onto the preview
   // the server sent, cloning the build pass into each layer that needs one.
-  const { inkOpacity, layerInkOpacity, inkBuilds, layerInkBuilds, inkBuild, inkSim, layerLooks } = props;
+  const { inkOpacity, layerInkOpacity, inkBuilds, layerInkBuilds, inkBuild, layerInkBuild, inkSim, layerLooks } = props;
   useLayoutEffect(() => {
     if (!preview) return;
     const node = preview.node;
@@ -142,10 +206,21 @@ export function Bed(props: Props) {
       const builds = layerInkBuilds?.[g.id];
       const buildsHere = builds === undefined ? inkBuilds !== false : builds;
       g.dataset.builds = String(buildsHere);
+      // How much darker this layer gets where it crosses itself. Separate from whether it builds:
+      // that decides how the layer blends with the OTHER colours (see index.css), this only what
+      // happens inside it - an outline over its own hatch, say. A building ink with no amount set
+      // builds fully, as it always has; any other ink without one doesn't darken over itself at all.
+      const own = layerInkBuild && g.id in layerInkBuild ? layerInkBuild[g.id] : inkBuild;
+      const buildHere = Math.min(1, Math.max(0, own ?? (buildsHere ? build : 0)));
+      g.style.setProperty("--ink-build-alpha", String(buildHere));
 
       // The second pass, made once and kept in step with the build and the layer's color.
-      const wanted = buildsHere && build > 0 && inkSim !== false;
-      const existing = g.querySelector<SVGGElement>(":scope > .pv-build");
+      const wanted = buildHere > 0 && inkSim !== false;
+      let existing = g.querySelector<SVGGElement>(":scope > .pv-build");
+      if (existing && existing.dataset.marks !== "split") {
+        existing.remove(); // made before strokes were split into marks: make it again
+        existing = null;
+      }
       if (!wanted) {
         existing?.remove();
         const color = layerLooks?.[g.id]?.color;
@@ -157,16 +232,18 @@ export function Bed(props: Props) {
         copy.setAttribute("class", "pv-build");
         for (const child of [...g.children]) copy.appendChild(child.cloneNode(true));
         copy.querySelectorAll("[id]").forEach((el) => el.removeAttribute("id"));
+        splitIntoMarks(copy);
+        copy.dataset.marks = "split";
         g.appendChild(copy);
       }
       const color = layerLooks?.[g.id]?.color;
       if (color) {
-        const { base, buildPass } = inkLayer(color, build, true, true); // wanted, so both are true here
+        const { base, buildPass } = inkLayer(color, buildHere, true, true); // wanted, so a build pass is due
         g.style.setProperty("--layer-color", base);
         if (buildPass) g.querySelector<SVGGElement>(":scope > .pv-build")?.style.setProperty("--layer-color", buildPass);
       }
     });
-  }, [preview, inkOpacity, layerInkOpacity, inkBuilds, layerInkBuilds, inkBuild, inkSim, layerLooks]);
+  }, [preview, inkOpacity, layerInkOpacity, inkBuilds, layerInkBuilds, inkBuild, layerInkBuild, inkSim, layerLooks]);
 
   // Stack the artwork layers the way they'll be plotted: the first layer at the bottom, later ones
   // over it. Reordering the Layers card moves them here too, so the preview shows what opaque ink

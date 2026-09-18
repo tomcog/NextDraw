@@ -31,6 +31,7 @@ export interface OpenResult {
   folder: string;
   plot?: Plot | null; // Plot's own route loads the drawing and answers with its settings
   svg?: string; // Studio's route reads the file instead, so picking one to edit doesn't load it
+  opened?: string; // which opening this is, to tell it from any other load of the same file
 }
 
 interface Props {
@@ -41,7 +42,9 @@ interface Props {
   endpoint?: string;
 }
 
-const LAST_FOLDER_KEY = "nextdraw-studio-last-folder";
+// Where the browser opens, in both apps: the last folder browsed, or the folder of the drawing last
+// saved or opened, so a file just saved in Studio is the first thing Plot's browser shows.
+export const LAST_FOLDER_KEY = "nextdraw-studio-last-folder";
 
 const fmtSize = (bytes = 0) =>
   bytes < 1024 ? `${bytes} B` : bytes < 1024 * 1024 ? `${Math.round(bytes / 1024)} KB` : `${(bytes / 1024 / 1024).toFixed(1)} MB`;

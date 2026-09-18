@@ -31,7 +31,8 @@ export function SettingsHud({ settings: s, handling, tool, secondTool, smallPath
   const mode = handling.find((h) => h.id === s.handling);
   const rows: [string, string, string?][] = [
     ["Tool", secondTool ? `${tool ?? "—"} + ${secondTool}` : tool ?? "—"],
-    ["Drawing", speedText(s.speed_pendown, mode?.speed_in_s), speedMM(s.speed_pendown, mode?.speed_in_s) ?? undefined],
+    // The setting itself too, since it's the number the Drawing speed slider moves.
+    ["Drawing", speedText(s.speed_pendown, mode?.speed_in_s), [speedMM(s.speed_pendown, mode?.speed_in_s), `speed ${s.speed_pendown}`].filter(Boolean).join(" · ")],
     ["Travel", speedText(s.speed_penup, mode?.speed_up_in_s), speedMM(s.speed_penup, mode?.speed_up_in_s) ?? undefined],
     ["Motion", mode?.name ?? `Mode ${s.handling}`, mode ? `${mode.steps_per_in} steps/in` : undefined],
     ["Acceleration", String(s.accel)],

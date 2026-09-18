@@ -1,0 +1,16 @@
+/* The pen menu's box and rows (PaletteMenu.module.css), with an icon at the start of each action. */
+.item:disabled {
+  color: var(--ui-text-disabled);
+  cursor: default;
+}
+.item:disabled:hover { background: none; }
+.item[data-danger] { color: var(--ui-danger); }
+
+.icon {
+  display: inline-flex;
+  flex: none;
+}
+.icon svg {
+  width: 12px;
+  height: 12px;
+}

@@ -19,6 +19,11 @@ export interface Fill {
   spacingMm: number;
   /** The plot scale these lines were generated for, as a percentage. */
   scale: number;
+  /**
+   * Join each line to the next along the shape's edge, so the pass is one zigzag stroke: the pen goes
+   * down once instead of once per line, and the ends of the lines don't blob where it lands.
+   */
+  connected?: boolean;
 }
 
 let fillCounter = 0;
@@ -106,4 +111,53 @@ export function hatchLines(shape: Shape, fill: Fill): Seg[] {
     if (seg && Math.hypot(seg.x2 - seg.x1, seg.y2 - seg.y1) > 1e-6) segs.push(seg);
   }
   return segs;
+}
+
+/**
+ * A connected fill as one stroke, in inches on the page: the lines taken alternately forwards and
+ * backwards, each end joined to the next line's start along the shape's own edge - round the corner
+ * of a rectangle where the two ends fall on different sides, along the curve of an ellipse - so the
+ * joins never cut across the inside of the shape.
+ */
+export function hatchStroke(shape: Shape, fill: Fill): { x: number; y: number }[] {
+  const lines = hatchLines(shape, fill);
+  const b = boxOf(shape);
+  const cx = (b.x0 + b.x1) / 2;
+  const cy = (b.y0 + b.y1) / 2;
+  const rx = (b.x1 - b.x0) / 2;
+  const ry = (b.y1 - b.y0) / 2;
+  const eps = 1e-6;
+
+  const join = (from: { x: number; y: number }, to: { x: number; y: number }) => {
+    if (shape.kind === "rect") {
+      // One end on a side (x0 or x1) and the other on the top or bottom: go by the corner they share.
+      const side = (p: { x: number; y: number }) =>
+        Math.abs(p.x - b.x0) < eps ? b.x0 : Math.abs(p.x - b.x1) < eps ? b.x1 : null;
+      const cap = (p: { x: number; y: number }) =>
+        Math.abs(p.y - b.y0) < eps ? b.y0 : Math.abs(p.y - b.y1) < eps ? b.y1 : null;
+      const [sf, cf, st, ct] = [side(from), cap(from), side(to), cap(to)];
+      if (sf !== null && ct !== null && sf !== st && cf !== ct) return [{ x: sf, y: ct }];
+      if (cf !== null && st !== null && cf !== ct && sf !== st) return [{ x: st, y: cf }];
+      return [];
+    }
+    // Ellipse: follow the rim the short way round, a point every few degrees.
+    const a0 = Math.atan2((from.y - cy) / ry, (from.x - cx) / rx);
+    let a1 = Math.atan2((to.y - cy) / ry, (to.x - cx) / rx);
+    if (a1 - a0 > Math.PI) a1 -= 2 * Math.PI;
+    if (a0 - a1 > Math.PI) a1 += 2 * Math.PI;
+    const n = Math.floor(Math.abs(a1 - a0) / (Math.PI / 60));
+    return Array.from({ length: n }, (_, k) => {
+      const a = a0 + ((a1 - a0) * (k + 1)) / (n + 1);
+      return { x: cx + rx * Math.cos(a), y: cy + ry * Math.sin(a) };
+    });
+  };
+
+  const points: { x: number; y: number }[] = [];
+  lines.forEach((l, i) => {
+    const start = i % 2 === 0 ? { x: l.x1, y: l.y1 } : { x: l.x2, y: l.y2 };
+    const end = i % 2 === 0 ? { x: l.x2, y: l.y2 } : { x: l.x1, y: l.y1 };
+    if (points.length) points.push(...join(points[points.length - 1], start));
+    points.push(start, end);
+  });
+  return points;
 }

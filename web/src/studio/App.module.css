@@ -188,3 +188,15 @@
   .stage { position: static; }
   .stage, .side { grid-column: auto; grid-row: auto; }
 }
+
+/* The system colour picker, opened from "Other colour…" in a layer's pen menu. Fixed to the window and
+   moved to the layer's swatch before it opens, because the picker opens wherever its input is. */
+.hiddenPicker {
+  position: fixed;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  border: 0;
+  opacity: 0;
+  pointer-events: none;
+}

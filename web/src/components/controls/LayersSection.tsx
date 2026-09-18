@@ -3,6 +3,7 @@ import { ButtonRound, LayerController, Segment, SegmentedControl } from "@tomcog
 import { Eye, LayersArrowUp, Link2, Link2Off, PenTool, RotateCcw } from "lucide-react";
 import styles from "./LayersSection.module.css";
 import { Section } from "./Section";
+import { Slider } from "./Slider";
 import { PaletteMenu } from "./PaletteMenu";
 import type { LayerView, PenColor } from "../../lib/types";
 
@@ -17,6 +18,10 @@ interface Props {
   onLink: (id: string, others: string[]) => void;
   /** Undo the link a layer is in: each layer of it plots on its own again. */
   onUnlink: (id: string) => void;
+  printing: string[]; // ids of the layers the next plot draws: the chosen one and those linked to it
+  hatchSpacing: Record<string, number>; // hatch spacings chosen in Plot, by layer id, in mm
+  /** Fill these layers' Studio hatches at this spacing (mm) when plotting them. */
+  onHatch: (ids: string[], mm: number) => void;
   printed: string[]; // ids of layers plotted to the end this session
   disabled: boolean;
   onTarget: (id: string) => void;
@@ -44,7 +49,7 @@ interface Props {
 //
 // No grip on a row, either: the order is the drawing's. A grip that can be grabbed and does nothing
 // reads as a broken drag rather than as an absent feature.
-export function LayersSection({ mode, onMode, layers, target, linksOf, onLink, onUnlink, printed, disabled, onTarget, onVisible, paletteFor, toolFor, onColor, onSort, onResetPrinted }: Props) {
+export function LayersSection({ mode, onMode, layers, target, linksOf, onLink, onUnlink, printing, hatchSpacing, onHatch, printed, disabled, onTarget, onVisible, paletteFor, toolFor, onColor, onSort, onResetPrinted }: Props) {
   // A tool with no palette still lets a layer be recolored: the dot opens the system color picker.
   const pickerRef = useRef<HTMLInputElement>(null);
   const [picking, setPicking] = useState<LayerView | null>(null);
@@ -67,6 +72,9 @@ export function LayersSection({ mode, onMode, layers, target, linksOf, onLink, o
     runTop.set(l.id, above && linksOf(l.id).includes(above.id) ? runTop.get(above.id)! : l.id);
   });
   const runOf = (top: string) => rows.filter((l) => runTop.get(l.id) === top).map((l) => l.id);
+  // The layers about to be plotted that hold Studio hatch fills, whose spacing can be tried out here.
+  const hatched = layers.filter((l) => printing.includes(l.id) && l.fill_spacing != null);
+  const hatchNow = hatched.length ? hatchSpacing[hatched[0].id] ?? hatched[0].fill_spacing! : null;
 
   return (
     <Section
@@ -144,6 +152,10 @@ export function LayersSection({ mode, onMode, layers, target, linksOf, onLink, o
                     setPicking(layer);
                     const input = pickerRef.current;
                     if (input) {
+                      // The picker opens where its input is: at the swatch, not the page's corner.
+                      const at = e.currentTarget.getBoundingClientRect();
+                      input.style.left = `${at.left}px`;
+                      input.style.top = `${at.bottom}px`;
                       input.value = layer.color ?? "#808080";
                       input.click();
                     }
@@ -193,6 +205,27 @@ export function LayersSection({ mode, onMode, layers, target, linksOf, onLink, o
           );
         })}
       </ol>
+      {hatchNow !== null && (
+        // For the layer chosen to print: how far apart its Studio fills go down. The best spacing
+        // depends on the ink, which only shows on paper, so it's set here, between plots. The drawing
+        // keeps its own spacing; this is Plot's, for this drawing.
+        <div className={styles.hatch}>
+          <Slider
+            label="Hatch spacing (mm)"
+            value={hatchNow}
+            min={0.3}
+            max={5}
+            step={0.1}
+            decimals={2}
+            disabled={disabled}
+            onChange={(mm) => onHatch(hatched.map((l) => l.id), mm)}
+          />
+          {Math.abs(hatchNow - hatched[0].fill_spacing!) > 1e-9 && (
+            // Typing the drawing's own number back in drops the override.
+            <p className={styles.hatchNote}>{`The drawing has ${hatched[0].fill_spacing} mm`}</p>
+          )}
+        </div>
+      )}
       <input
         ref={pickerRef}
         type="color"

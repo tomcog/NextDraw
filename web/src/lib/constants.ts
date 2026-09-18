@@ -70,3 +70,6 @@ export const STORAGE = {
   penUpMoves: "nextdraw-studio-pen-up-moves",
   inkSim: "nextdraw-studio-ink-sim",
 };
+
+// The channel Studio's "Open in Plot" uses to find a Plot page already open in another tab.
+export const PLOT_CHANNEL = "nextdraw-plot";

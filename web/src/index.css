@@ -104,6 +104,13 @@
     stroke-opacity: 1;
     mix-blend-mode: normal;
   }
+  /* A little build-up of its own all the same (the acrylic): its second pass multiplies inside the
+     layer, which is isolated, so only the layer's crossings of itself darken - an outline over its own
+     hatch - and the layer still meets the other colours with darken, as above. */
+  .pv-colored .pv-layer[data-builds="false"] .pv-build :is(path, rect, circle, ellipse, line, polyline, polygon) {
+    stroke-opacity: var(--ink-build-alpha, 0);
+    mix-blend-mode: multiply;
+  }
   /* Ink simulation off: flat color, nothing to blend.
      The [data-builds] in the first selector is only there to outrank the density rules above, which
      are themselves !important and would otherwise keep a layer at the tool's ink opacity with the

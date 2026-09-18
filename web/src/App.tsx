@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Card } from "@tomcoggia/ui";
 import styles from "./App.module.css";
 import { api, postJSON } from "./lib/api";
-import { BUSY_STATES, DEFAULT_SETTINGS, DEFAULT_TOOL, PAPER_SIZES, PLOTTING_STATES, PRESET_FIELDS, STEPS, STORAGE } from "./lib/constants";
+import { BUSY_STATES, DEFAULT_SETTINGS, DEFAULT_TOOL, PAPER_SIZES, PLOT_CHANNEL, PLOTTING_STATES, PRESET_FIELDS, STEPS, STORAGE } from "./lib/constants";
 import { cleanNote } from "./lib/format";
 import { lightness } from "./lib/color";
 import { fitsOnBed, fitsOnPaper, footprint } from "./lib/geometry";
@@ -100,6 +100,10 @@ export default function App() {
   // own block like the inks. A link only holds while its layers really are the same pen of the same
   // tool - see `linksOf` - so a stale one is ignored rather than plotting two inks at once.
   const [layerLinks, setLayerLinks] = useState<string[][]>([]);
+  // Hatch spacings found while plotting, by layer id, in mm on paper: an ink that wants its Studio
+  // fills closer together or further apart than the drawing has them. Plot regenerates the fills at
+  // this spacing for the preview and the plot; the drawing's own fills are left as Studio made them.
+  const [hatchSpacing, setHatchSpacing] = useState<Record<string, number>>({});
   // A second drawing tool (mixed media): null normally; "" once added but not yet chosen.
   const [secondTool, setSecondTool] = useState<string | null>(null);
   const [secondToolLayers, setSecondToolLayers] = useState<string[]>([]);
@@ -235,6 +239,19 @@ export default function App() {
     const next = [...kept.slice(0, at), ...moving, ...kept.slice(at)];
     if (next.join("|") !== order.join("|")) setPlotOrder(next);
   };
+  // A hatch spacing for the layers being plotted, found while plotting. Setting it back to the
+  // drawing's own spacing drops the override, so the file carries nothing that says nothing.
+  const setLayersHatch = (ids: string[], mm: number) =>
+    setHatchSpacing((all) => {
+      const next = { ...all };
+      for (const id of ids) {
+        const own = layerViews.find((l) => l.id === id)?.fill_spacing;
+        if (own == null) continue;
+        if (Math.abs(mm - own) < 1e-9) delete next[id];
+        else next[id] = mm;
+      }
+      return next;
+    });
   // Undo a link: every layer of the group goes back to plotting on its own, where it now stands.
   const unlinkLayers = (id: string) =>
     setLayerLinks((groups) => groups.filter((g) => !g.includes(id)));
@@ -329,10 +346,12 @@ export default function App() {
   useEffect(() => save(STORAGE.zoom, zoomChoice), [zoomChoice]);
 
   // Refs let the polling loop see current values without restarting.
-  const refs = useRef({ fileName, status, lastAction, settings, scale, presets, plotLayerIds, rotation, readRequested: false, plotSettings: settings, activePreset });
+  const refs = useRef({ fileName, status, lastAction, settings, scale, presets, plotLayerIds, rotation, hatchSpacing, readRequested: false, plotSettings: settings, activePreset, opened: undefined as string | null | undefined });
   refs.current.rotation = rotation;
+  refs.current.hatchSpacing = hatchSpacing;
   refs.current.plotLayerIds = plotLayerIds;
   refs.current.presets = presets;
+  refs.current.activePreset = activePreset;
   refs.current.fileName = fileName;
   refs.current.status = status;
   refs.current.lastAction = lastAction;
@@ -386,6 +405,7 @@ export default function App() {
     setLayerNames(plot?.layer_names ?? {});
     setPlotOrder(plot?.layer_order ?? null);
     setLayerLinks(plot?.layer_links ?? []);
+    setHatchSpacing(plot?.hatch_spacing ?? {});
     setPenColors({});
     setPrintLayer(null);
     setLayerMode("preview");
@@ -428,6 +448,7 @@ export default function App() {
     ...(Object.keys(layerNames).length ? { layer_names: layerNames } : {}),
     ...(plotOrder?.length ? { layer_order: plotOrder } : {}),
     ...(layerLinks.length ? { layer_links: layerLinks } : {}),
+    ...(Object.keys(hatchSpacing).length ? { hatch_spacing: hatchSpacing } : {}),
     paper: { paper_size: settings.paper_size, paper_w: settings.paper_w, paper_h: settings.paper_h, paper_x: settings.paper_x, paper_y: settings.paper_y, paper_color: settings.paper_color },
   };
   const saveKey = JSON.stringify(drawingNow);
@@ -482,6 +503,32 @@ export default function App() {
       .catch(() => setPresets([]));
   }, []);
 
+  // The presets file is shared - edited from the other Mac, from Studio, or by hand - so a change to it
+  // reaches this page without a reload: the list is read again every few seconds, and when it has
+  // changed, the chosen tool's settings are taken from it, as they are when the page opens. The page's
+  // own saves come back the same way and change nothing.
+  const presetsSeen = useRef<string | null>(null);
+  useEffect(() => {
+    const timer = window.setInterval(async () => {
+      try {
+        const r = await api<{ presets: Preset[] }>("/api/presets");
+        const text = JSON.stringify(r.presets);
+        if (presetsSeen.current === null) {
+          presetsSeen.current = text;
+          return;
+        }
+        if (text === presetsSeen.current) return;
+        presetsSeen.current = text;
+        setPresets(r.presets);
+        const chosen = r.presets.find((p) => p.name === refs.current.activePreset);
+        if (chosen) setSettings((prev) => ({ ...prev, ...chosen.settings }));
+      } catch {
+        /* the next read tries again */
+      }
+    }, 3000);
+    return () => window.clearInterval(timer);
+  }, []);
+
   const clearDrawing = useCallback(() => {
     estimateSeq.current++; // ignore any estimate still on its way
     setFileName(null);
@@ -496,6 +543,8 @@ export default function App() {
     setInkColors({});
     setLayerNames({});
     setPlotOrder(null);
+    setLayerLinks([]);
+    setHatchSpacing({});
     setPenColors({});
     setPrintLayer(null);
     setLoadedFile(null);
@@ -508,7 +557,10 @@ export default function App() {
   useEffect(() => {
     let timer: number | undefined;
     let cancelled = false;
+    let running = false;
     const poll = async () => {
+      if (running) return; // a nudge while a poll is under way: that poll carries on the loop
+      running = true;
       try {
         const next = await api<Status>("/api/status");
         if (cancelled) return;
@@ -527,10 +579,31 @@ export default function App() {
             refs.current.fileName = currentFile; // not loaded after all; the next poll tries again
           } else {
             refs.current.fileName = next.file;
+            refs.current.opened = next.file_opened;
             applyPlot(next.file, drawing.plot);
             setFileName(next.file);
           }
         }
+        // Opened again from somewhere else - Studio's "Open in Plot", another tab, the other Mac -
+        // even under the same name: this page shows that opening, with the choices saved in it. The
+        // name alone can't tell, and a Studio save followed at once by an open leaves nothing on disk
+        // for the staleness check below to catch.
+        if (next.file && currentFile && next.file_opened && refs.current.opened !== undefined
+          && next.file_opened !== refs.current.opened && !reloading.current) {
+          const seen = refs.current.opened;
+          refs.current.opened = next.file_opened;
+          const drawing = await api<{ plot: Plot | null }>("/api/drawing").catch(() => null);
+          if (cancelled) return;
+          if (!drawing) {
+            refs.current.opened = seen; // try again on the next poll
+          } else {
+            refs.current.fileName = next.file;
+            applyPlot(next.file, drawing.plot);
+            setFileName(next.file);
+            setDrawingVersion((v) => v + 1); // the artwork and its layers, fetched again
+          }
+        }
+        if (refs.current.opened === undefined) refs.current.opened = next.file_opened ?? null;
         // Changed on disk since it was opened - saved from Studio, or synced from another Mac.
         // Reopening is the same path as opening it by hand, so the drawing, its layers and the
         // choices saved in it all come back from the file rather than being patched piecemeal.
@@ -538,6 +611,7 @@ export default function App() {
           reloading.current = true;
           try {
             const res = await postJSON<OpenResult>("/api/open", { path: next.file_path });
+            refs.current.opened = res.opened; // this reopen is ours
             if (!cancelled) {
               applyPlot(res.name, res.plot ?? null);
               setFileName(res.name);
@@ -567,12 +641,26 @@ export default function App() {
       } catch {
         if (!cancelled) setLostContact(true);
       }
+      running = false;
       if (!cancelled) timer = window.setTimeout(poll, isBusy(refs.current.status) ? 500 : 2000);
     };
     poll();
+    // Studio's "Open in Plot" asks whether a Plot page is open before opening one: this page answers,
+    // and looks at the server straight away rather than on its next poll.
+    const channel = "BroadcastChannel" in window ? new BroadcastChannel(PLOT_CHANNEL) : null;
+    if (channel) {
+      channel.onmessage = (e) => {
+        if (e.data?.type !== "open-in-plot") return;
+        channel.postMessage({ type: "plot-here" });
+        window.clearTimeout(timer);
+        poll();
+        window.focus(); // most browsers won't bring a background tab forward, but some will
+      };
+    }
     return () => {
       cancelled = true;
       window.clearTimeout(timer);
+      channel?.close();
     };
   }, [clearDrawing]);
 
@@ -598,12 +686,13 @@ export default function App() {
     const seq = ++estimateSeq.current;
     const sentScale = refs.current.scale;
     const sentRotation = refs.current.rotation;
+    const sentHatch = refs.current.hatchSpacing;
 
-    const key = [fileName, drawingVersion, sentScale, sentRotation].join("|");
+    const key = [fileName, drawingVersion, sentScale, sentRotation, JSON.stringify(sentHatch)].join("|");
     if (key !== artworkKey.current) {
       artworkKey.current = key;
       setSimPreview(null); // its pen paths are for the old size or turn
-      postJSON<{ svg: string; layers: Layer[]; warnings: string[]; trimmed: boolean }>("/api/artwork", { scale: sentScale, rotation: sentRotation })
+      postJSON<{ svg: string; layers: Layer[]; warnings: string[]; trimmed: boolean }>("/api/artwork", { scale: sentScale, rotation: sentRotation, hatch_spacing: sentHatch })
         .then((art) => {
           if (key !== artworkKey.current) return; // a newer size or turn was asked for
           setArtPreview(parsePreview(art.svg));
@@ -625,7 +714,7 @@ export default function App() {
     const timer = window.setTimeout(async () => {
       try {
         const result = await postJSON<Estimate>("/api/estimate", {
-          ...refs.current.plotSettings, scale: sentScale, layers: refs.current.plotLayerIds, rotation: sentRotation,
+          ...refs.current.plotSettings, scale: sentScale, layers: refs.current.plotLayerIds, rotation: sentRotation, hatch_spacing: sentHatch,
         });
         if (seq !== estimateSeq.current || result.superseded) return; // a newer estimate is on its way
         estimatedSeq.current = seq;
@@ -643,7 +732,7 @@ export default function App() {
     }, 450);
     return () => window.clearTimeout(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [fileName, drawingVersion, simulate ? estimateKey : "", scale, simulate ? plotLayerIds?.join("|") : "", rotation, simulate]);
+  }, [fileName, drawingVersion, simulate ? estimateKey : "", scale, simulate ? plotLayerIds?.join("|") : "", rotation, simulate, JSON.stringify(hatchSpacing)]);
 
   /* ---------- Actions ---------- */
 
@@ -705,6 +794,7 @@ export default function App() {
     if (!busy) setBrowserOpen(true);
   };
   const onOpened = (res: OpenResult) => {
+    refs.current.opened = res.opened; // this page's own open: nothing for the poll to catch up on
     startNewDrawing(res.name, res.plot ?? null);
   };
 
@@ -746,7 +836,7 @@ export default function App() {
     setLastAction("plot");
     setLocalMessage(null);
     try {
-      await postJSON("/api/plot", { ...settingsFor(plotLayerId), start_x: placement.x, start_y: placement.y, tip_offset_x: tipOffsetFor(plotLayerId), scale, layers: plotLayerIds, rotation });
+      await postJSON("/api/plot", { ...settingsFor(plotLayerId), start_x: placement.x, start_y: placement.y, tip_offset_x: tipOffsetFor(plotLayerId), scale, layers: plotLayerIds, rotation, hatch_spacing: hatchSpacing });
       setStatus((s) => (s ? { ...s, state: "preparing", message: "", started: false } : s));
     } catch (err) {
       setLocalMessage({ text: (err as Error).message, tone: "error" });
@@ -938,6 +1028,25 @@ export default function App() {
     }, 500);
   };
 
+  // The drawing speed slider on the Drawing tool card: the next plot uses it at once, and the tool
+  // keeps it a moment after the slider stops moving - the same bargain as the ink sliders above.
+  const speedTimer = useRef<number>();
+  const setToolSpeed = (percent: number) => {
+    if (!active) return;
+    const name = active.name;
+    const merged = { ...active.settings, speed_pendown: percent };
+    updateSettings({ speed_pendown: percent });
+    setPresets((list) => list.map((p) => (p.name === name ? { ...p, settings: merged } : p)));
+    window.clearTimeout(speedTimer.current);
+    speedTimer.current = window.setTimeout(() => {
+      api(`/api/presets/${encodeURIComponent(name)}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(merged),
+      }).catch(() => setLocalMessage({ text: "Couldn't save the drawing speed.", tone: "error" }));
+    }, 500);
+  };
+
   // The palette view stands in for the drawing preview while the tool's colors are being worked on.
   // Edits save a moment after the last keystroke, so typing a name isn't a request per letter.
   const [paletteOpen, setPaletteOpen] = useState(false);
@@ -1003,6 +1112,11 @@ export default function App() {
   );
   const layerInkOpacity = useMemo(
     () => Object.fromEntries(layerViews.map((l) => [l.id, (usesSecond(l.id) ? secondPreset : active)?.settings.ink_opacity])),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [layerViews, secondTool, secondToolLayers, secondPreset, active],
+  );
+  const layerInkBuild = useMemo(
+    () => Object.fromEntries(layerViews.map((l) => [l.id, (usesSecond(l.id) ? secondPreset : active)?.settings.ink_build])),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [layerViews, secondTool, secondToolLayers, secondPreset, active],
   );
@@ -1167,7 +1281,10 @@ export default function App() {
               inkOpacity={active?.settings.ink_opacity ?? settings.ink_opacity}
               layerInkOpacity={secondTool ? layerInkOpacity : undefined}
               inkBuilds={active?.settings.ink_builds ?? settings.ink_builds}
-              inkBuild={active?.settings.ink_build ?? settings.ink_build}
+              // The tool's own, never one left in the page's settings by the tool chosen before it: a
+              // tool without a build-up value has none.
+              inkBuild={active ? active.settings.ink_build : settings.ink_build}
+              layerInkBuild={secondTool ? layerInkBuild : undefined}
               inkSim={inkSim}
               layerInkBuilds={secondTool ? layerInkBuilds : undefined}
               layerPenWidths={secondTool ? layerPenWidths : undefined}
@@ -1298,6 +1415,11 @@ export default function App() {
                   linksOf={(id) => linksOf.get(id) ?? []}
                   onLink={linkLayers}
                   onUnlink={unlinkLayers}
+                  // What the next plot draws: the chosen layer and its links, or - in a drawing with only
+                  // one layer to plot, where nothing has to be chosen - that layer.
+                  printing={printIds.length ? printIds : plottableLayers.length === 1 ? [plottableLayers[0].id] : []}
+                  hatchSpacing={hatchSpacing}
+                  onHatch={setLayersHatch}
                   printed={status?.printed_layers ?? []}
                   onTarget={setPrintLayer}
                   onVisible={setLayerVisible}
@@ -1336,6 +1458,7 @@ export default function App() {
                 paletteOpen={paletteOpen}
                 onPalette={() => setPaletteOpen((open) => !open)}
                 onInk={setInk}
+                onSpeed={setToolSpeed}
                 changed={presetChanged}
                 disabled={plotting}
                 onApply={applyPreset}

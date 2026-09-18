@@ -85,6 +85,7 @@ export interface Status {
   carriage: Carriage;
   plotter_found: boolean;
   file: string | null;
+  file_opened?: string | null; // changes every time a drawing is opened, from any tab or app
   file_path: string | null;
   printed_layers: string[]; // ids of layers that finished plotting since the drawing was opened // where the loaded drawing lives; null for an uploaded copy
   file_folder: string | null; // that folder, for display (e.g. "~/Desktop")
@@ -115,6 +116,7 @@ export interface Layer {
   shapes: number;
   skipped: boolean; // name starts with %, so NextDraw won't plot it
   hidden: boolean; // hidden in the file (display:none); not shown or plotted
+  fill_spacing?: number | null; // mm: the spacing Studio gave the hatch fills on this layer, if it has any
 }
 
 // A layer as shown in the Layers card. Plot adds nothing to the drawing's own layers but whether it
@@ -157,6 +159,7 @@ export interface Plot {
   layer_names?: Record<string, string>; // ids to what Plot calls each: the ink it's going down in
   layer_order?: string[]; // layer ids bottom-first: the order to plot them in, not the file's order
   layer_links?: string[][]; // groups of layer ids in the same pen, plotted together in one pass
+  hatch_spacing?: Record<string, number>; // layer ids to the hatch spacing (mm) Plot fills them at, when not Studio's
   paper?: Partial<Pick<Settings, "paper_size" | "paper_w" | "paper_h" | "paper_x" | "paper_y" | "paper_color">>;
 }
 

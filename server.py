@@ -43,6 +43,7 @@ JOBS = ROOT / "jobs"
 JOBS.mkdir(exist_ok=True)
 CURRENT_SVG = JOBS / "current.svg"
 CURRENT_MTIME = JOBS / "current.mtime"  # the file's modified time when opened or last saved, to catch outside edits
+CURRENT_OPENED = JOBS / "current.opened"  # changes each time a drawing is opened, by anyone
 CURRENT_HASH = JOBS / "current.hash"  # and a hash of its bytes, so the page can be told it changed
 CURRENT_PATH = JOBS / "current.path"  # where the loaded drawing lives on disk; absent for uploaded copies
 
@@ -195,6 +196,11 @@ def no_stale_api(response):
 # session" clears when another drawing is opened or the app restarts.
 printed_layers = set()
 printed_lock = threading.Lock()
+
+# Whether the last plot ended by being stopped. A stop leaves the motors on and the step count
+# true, so going home from there is a straight walk back - not the homing sweep, which exists for a
+# position that can't be trusted (see find_home_first). Cleared by any plot that isn't stopped.
+last_plot_stopped = False
 
 
 def forget_printed():
@@ -383,6 +389,7 @@ def read_layers(root):
     illustrator = is_illustrator_svg(root)
     groups = layer_groups(root)
     by_class = class_strokes(root)
+    fills = studio_fills(root)
     layers = []
     for index, group in enumerate(groups):
         counts = {}
@@ -409,6 +416,7 @@ def read_layers(root):
             "shapes": shapes,
             "skipped": name.startswith("%"),  # NextDraw doesn't plot layers whose names start with %
             "hidden": layer_hidden(group),  # hidden in Illustrator/Inkscape or in the app; not plotted
+            "fill_spacing": fill_spacing_of(group, fills),  # mm: Studio's hatch spacing here, or None
         })
     return layers
 
@@ -630,7 +638,197 @@ def rotate_document(root, rotation):
         root.set("viewBox", f"0 0 {vw:g} {vh:g}")
 
 
-def svg_input(scale, layers=None, rotation=0):
+# Studio's hatch fills, regenerated at plot time. Studio writes each fill twice: as the lines it drew,
+# in a group whose id is STUDIO_FILL_PREFIX + the fill's id, and as the parameters that made them, in
+# its <nds:design> block. Plot never edits the drawing, but it may plot the fill differently: at a
+# spacing found to suit the ink better (chosen per layer while plotting, kept in Plot's own block), or
+# at a scale other than the one the lines were made for. Either way the lines are made again here, in
+# the copy sent to the plotter and the preview, from the same parameters - the file is untouched.
+#
+# The geometry is a port of web/src/studio/lib/hatch.ts (hatchLines and hatchStroke) and has to stay
+# in step with it: tests/hatch_matches_studio.py compares the two.
+STUDIO_FILL_PREFIX = "studio-fill-"
+DESIGN_TAG = "{%s}design" % PLOT_NS
+
+
+def studio_fills(root):
+    """Studio's fills by id, from its design block; empty for a drawing Studio didn't make."""
+    for node in root.iter(DESIGN_TAG):
+        try:
+            data = json.loads(node.text or "{}")
+        except ValueError:
+            return {}
+        fills = data.get("fills") if isinstance(data, dict) else None
+        return {f["id"]: f for f in fills or [] if isinstance(f, dict) and isinstance(f.get("id"), str)}
+    return {}
+
+
+def fill_spacing_of(group, fills):
+    """The spacing (mm) Studio gave the fills on a layer - the first one's - or None if it has none."""
+    for g in group.iter(SVG_NS + "g"):
+        fill = fills.get((g.get("id") or "")[len(STUDIO_FILL_PREFIX):]) if (g.get("id") or "").startswith(STUDIO_FILL_PREFIX) else None
+        if fill:
+            try:
+                return float(fill.get("spacing_mm"))
+            except (TypeError, ValueError):
+                return None
+    return None
+
+
+def hatch_lines(kind, box, angle, step):
+    """hatchLines: the lines across a rect or ellipse box (x0, y0, x1, y1), `step` apart, swept out
+    from the middle. Each is (x1, y1, x2, y2), running in the direction of the angle."""
+    x0, y0, x1, y1 = box
+    w, h = x1 - x0, y1 - y0
+    if w <= 0 or h <= 0 or not step > 0.002:
+        return []
+    rad = angle * math.pi / 180
+    dx, dy = math.cos(rad), math.sin(rad)
+    nx, ny = -dy, dx
+    cx, cy = (x0 + x1) / 2, (y0 + y1) / 2
+    reach = math.hypot(w, h) / 2
+
+    def clip_box(px, py):
+        lo, hi = -math.inf, math.inf
+        for p, d, mn, mx in ((px, dx, x0, x1), (py, dy, y0, y1)):
+            if abs(d) < 1e-12:
+                if not mn <= p <= mx:
+                    return None
+                continue
+            a, z = (mn - p) / d, (mx - p) / d
+            if a > z:
+                a, z = z, a
+            lo, hi = max(lo, a), min(hi, z)
+        return None if hi <= lo else (px + dx * lo, py + dy * lo, px + dx * hi, py + dy * hi)
+
+    def clip_ellipse(px, py):
+        rx, ry = w / 2, h / 2
+        ox, oy, ux, uy = (px - cx) / rx, (py - cy) / ry, dx / rx, dy / ry
+        a = ux * ux + uy * uy
+        b = 2 * (ox * ux + oy * uy)
+        c = ox * ox + oy * oy - 1
+        disc = b * b - 4 * a * c
+        if a <= 0 or disc <= 0:
+            return None
+        root = math.sqrt(disc)
+        lo, hi = (-b - root) / (2 * a), (-b + root) / (2 * a)
+        return (px + dx * lo, py + dy * lo, px + dx * hi, py + dy * hi)
+
+    lines = []
+    n = math.ceil(reach / step)
+    for i in range(-n, n + 1):
+        t = i * step
+        seg = (clip_box if kind == "rect" else clip_ellipse)(cx + nx * t, cy + ny * t)
+        if seg and math.hypot(seg[2] - seg[0], seg[3] - seg[1]) > 1e-6:
+            lines.append(seg)
+    return lines
+
+
+def hatch_stroke(kind, box, lines):
+    """hatchStroke: the lines as one zigzag, each end joined to the next line's start along the
+    shape's edge - by the corner of a rect, along the curve of an ellipse. A list of (x, y)."""
+    x0, y0, x1, y1 = box
+    cx, cy, rx, ry = (x0 + x1) / 2, (y0 + y1) / 2, (x1 - x0) / 2, (y1 - y0) / 2
+    eps = 1e-6
+
+    def join(a, b):
+        if kind == "rect":
+            side = lambda p: x0 if abs(p[0] - x0) < eps else x1 if abs(p[0] - x1) < eps else None  # noqa: E731
+            cap = lambda p: y0 if abs(p[1] - y0) < eps else y1 if abs(p[1] - y1) < eps else None  # noqa: E731
+            sf, cf, st, ct = side(a), cap(a), side(b), cap(b)
+            if sf is not None and ct is not None and sf != st and cf != ct:
+                return [(sf, ct)]
+            if cf is not None and st is not None and cf != ct and sf != st:
+                return [(st, cf)]
+            return []
+        a0 = math.atan2((a[1] - cy) / ry, (a[0] - cx) / rx)
+        a1 = math.atan2((b[1] - cy) / ry, (b[0] - cx) / rx)
+        if a1 - a0 > math.pi:
+            a1 -= 2 * math.pi
+        if a0 - a1 > math.pi:
+            a1 += 2 * math.pi
+        n = int(abs(a1 - a0) // (math.pi / 60))
+        return [(cx + rx * math.cos(a0 + (a1 - a0) * (k + 1) / (n + 1)),
+                 cy + ry * math.sin(a0 + (a1 - a0) * (k + 1) / (n + 1))) for k in range(n)]
+
+    points = []
+    for i, (ax, ay, bx, by) in enumerate(lines):
+        start, end = ((ax, ay), (bx, by)) if i % 2 == 0 else ((bx, by), (ax, ay))
+        if points:
+            points.extend(join(points[-1], start))
+        points += [start, end]
+    return points
+
+
+def shape_box(el):
+    """The box a Studio rect or ellipse is drawn in, as (x0, y0, x1, y1), or None."""
+    try:
+        if el.tag == SVG_NS + "rect":
+            x, y = float(el.get("x", 0)), float(el.get("y", 0))
+            return x, y, x + float(el.get("width")), y + float(el.get("height"))
+        if el.tag == SVG_NS + "ellipse":
+            cx, cy, rx, ry = (float(el.get(k)) for k in ("cx", "cy", "rx", "ry"))
+            return cx - rx, cy - ry, cx + rx, cy + ry
+    except (TypeError, ValueError):
+        return None
+    return None
+
+
+def regenerate_hatches(root, spacing_by_layer, scale):
+    """Make Studio's fills again where Plot plots them differently from the file: a spacing chosen for
+    the layer, or a plot scale other than the one the lines were made for (the spacing is what the
+    fill should measure on paper, so the lines move closer as the drawing grows)."""
+    from lxml import etree
+    fills = studio_fills(root)
+    if not fills:
+        return
+    shapes = {el.get("id"): el for el in root.iter(SVG_NS + "rect", SVG_NS + "ellipse") if el.get("id")}
+    num = lambda v: f"{v:.4f}".rstrip("0").rstrip(".")  # noqa: E731 - Studio's own rounding
+    for layer in layer_groups(root):
+        override = spacing_by_layer.get(layer.get("id"))
+        for g in list(layer.iter(SVG_NS + "g")):
+            gid = g.get("id") or ""
+            fill = fills.get(gid[len(STUDIO_FILL_PREFIX):]) if gid.startswith(STUDIO_FILL_PREFIX) else None
+            shape = shapes.get(fill.get("shape")) if fill else None
+            box = shape_box(shape) if shape is not None else None
+            if box is None:
+                continue
+            try:
+                made_for = float(fill.get("scale") or 100)
+                spacing = float(override if override is not None else fill.get("spacing_mm"))
+                angle = float(fill.get("angle") or 0)
+            except (TypeError, ValueError):
+                continue
+            if override is None and abs(made_for - scale) < 1e-9:
+                continue  # the file's own lines are already right
+            kind = "rect" if shape.tag == SVG_NS + "rect" else "ellipse"
+            lines = hatch_lines(kind, box, angle, spacing / 25.4 / (scale / 100))
+            for child in list(g):
+                g.remove(child)
+            if fill.get("connected") and lines:
+                el = etree.SubElement(g, SVG_NS + "polyline")
+                el.set("points", " ".join(f"{num(x)},{num(y)}" for x, y in hatch_stroke(kind, box, lines)))
+            else:
+                for x1, y1, x2, y2 in lines:
+                    el = etree.SubElement(g, SVG_NS + "line")
+                    for k, v in (("x1", x1), ("y1", y1), ("x2", x2), ("y2", y2)):
+                        el.set(k, num(v))
+
+
+def clean_hatch(raw):
+    """Hatch spacings chosen in Plot, by layer id, in mm on paper."""
+    out = {}
+    spacings = raw.get("hatch_spacing")
+    if isinstance(spacings, dict):
+        for k, v in list(spacings.items())[:500]:
+            try:
+                out[str(k)[:200]] = round(max(0.1, min(20.0, float(v))), 3)
+            except (TypeError, ValueError):
+                pass
+    return out
+
+
+def svg_input(scale, layers=None, rotation=0, hatch=None):
     """
     The loaded SVG for the NextDraw software: sized (see normalize_size) and scaled if needed. The
     software plots a document at its width/height, so scaling multiplies those while a viewBox keeps
@@ -639,6 +837,7 @@ def svg_input(scale, layers=None, rotation=0):
     from lxml import etree
     root = etree.parse(str(CURRENT_SVG), etree.XMLParser(huge_tree=True)).getroot()
     normalize_size(root)
+    regenerate_hatches(root, hatch or {}, scale)
     if layers:
         only_layers(root, [layers] if isinstance(layers, str) else layers)
     rotate_document(root, rotation)
@@ -680,6 +879,7 @@ def clean_placement(raw):
     # the one picked in the Layers card - its tool is the one in the holder.
     placement["layers"] = clean_layers(raw)
     placement["layer"] = placement["layers"][0] if placement["layers"] else None
+    placement["hatch"] = clean_hatch(raw)
     for key, name in (("x", "start_x"), ("y", "start_y")):
         try:
             placement[key] = max(0.0, min(2000.0, float(raw.get(name, 0))))
@@ -709,11 +909,11 @@ def apply_settings(nd, settings):
         nd.params.min_gap = settings["join_gap"] / 25.4
 
 
-def dry_run(settings, render, scale=100.0, source=None, mode="plot", layers=None, rotation=0):
+def dry_run(settings, render, scale=100.0, source=None, mode="plot", layers=None, rotation=0, hatch=None):
     """Simulate the plot without the machine. Returns stats and (optionally) the path preview SVG."""
     log = []
     nd = make_nextdraw(log)
-    nd.plot_setup(source if source is not None else prepared_svg(settings, scale, layers, rotation))
+    nd.plot_setup(source if source is not None else prepared_svg(settings, scale, layers, rotation, hatch))
     size_note = None
     if source is None and CURRENT_SVG.exists():
         from lxml import etree
@@ -799,9 +999,9 @@ def limit_drag(svg_text, settings):
     return etree.tostring(root, encoding="unicode")
 
 
-def prepared_svg(settings, scale, layers=None, rotation=0):
+def prepared_svg(settings, scale, layers=None, rotation=0, hatch=None):
     """The loaded drawing ready to plot: placed and scaled, and drag-limited for a one-way tool."""
-    svg = svg_input(scale, layers, rotation)
+    svg = svg_input(scale, layers, rotation, hatch)
     return limit_drag(svg, settings) if settings.get("drag_only") else svg
 
 
@@ -1008,7 +1208,7 @@ def run_plot(settings, placement, resume=None):
             source, mode = resume_source(settings), "res_plot"
         else:
             clear_resume()  # a new plot replaces any stopped one
-            source = prepared_svg(settings, placement["scale"], plot_layers(placement), placement.get("rotation", 0))
+            source = prepared_svg(settings, placement["scale"], plot_layers(placement), placement.get("rotation", 0), placement.get("hatch"))
             mode = "plot"
 
         # A new plot's simulation also draws its paths; a resumed plot keeps the ones saved when it began.
@@ -1059,6 +1259,8 @@ def run_plot(settings, placement, resume=None):
         output = nd.plot_run(output=True)
         code = abs(nd.errors.code or 0)
 
+        global last_plot_stopped
+        last_plot_stopped = code in (102, 103)
         resumable = 0
         if code in (102, 103):
             resumable = save_resume(output, settings, placement, job.total_mm, job.speed_pct)
@@ -1246,14 +1448,21 @@ def run_manual(command, settings, distance_mm, axis):
     try:
         if command in ("walk", "home"):
             code = raise_pen_first(settings, log)
+            # "Return home" runs the homing routine: its whole job is to put the carriage on the
+            # corner, and the step count it would otherwise walk by is exactly what goes wrong - a
+            # carriage pushed by hand, a missed step, an app restart that inherited the plotter's
+            # homed flag. The exception is straight after a stopped plot: the motors never let go and
+            # this app homed before the plot, so the count is good, and a sweep across the whole
+            # width is a long, slow way to get back to where a walk would go.
+            # A walk still only homes when the position isn't trusted yet.
+            straight_back = command == "home" and last_plot_stopped and carriage["verified"]
             if not code:
-                # "Return home" always runs the homing routine: its whole job is to put the carriage
-                # on the corner, and the step count it would otherwise walk by is exactly what goes
-                # wrong - a carriage pushed by hand, a missed step, an app restart that inherited the
-                # plotter's homed flag. It is the one command that must not trust that count, even
-                # though homing from far forward sweeps the carriage across the whole width.
-                # A walk still only homes when the position isn't trusted yet.
-                code = find_home_first(settings, log, force=(command == "home"))
+                code = find_home_first(settings, log, force=(command == "home" and not straight_back))
+            if not code and straight_back:
+                # The stopped plot left its start written as the plotter's origin, and walking "home"
+                # goes to that origin. Clear it first, or the carriage parks on the plot's start.
+                code = run_setup_step(settings, log, "utility", "read_name",
+                                      after=lambda h: serial_utils.write_step_offsets(h, 0, 0))
             if code:
                 with job.lock:
                     job.state = "error"
@@ -1429,6 +1638,7 @@ def status():
     } if resume else None
     name_file = JOBS / "current.name"
     snap["file"] = name_file.read_text() if CURRENT_SVG.exists() and name_file.exists() else None
+    snap["file_opened"] = opened_token() if snap["file"] else None
     with printed_lock:
         snap["printed_layers"] = sorted(printed_layers)
     snap["file_path"] = None
@@ -1465,6 +1675,11 @@ def disk_token(path):
             return None
         _disk_seen["key"] = key
     return _disk_seen["hash"]
+
+
+def opened_token():
+    """Which opening of a drawing the loaded copy is (see load_drawing), or None with nothing loaded."""
+    return CURRENT_OPENED.read_text().strip() if CURRENT_OPENED.exists() else None
 
 
 def loaded_token():
@@ -1618,6 +1833,10 @@ def load_drawing(svg_path):
     CURRENT_PATH.write_text(str(svg_path))
     CURRENT_MTIME.write_text(str(svg_path.stat().st_mtime_ns))
     CURRENT_HASH.write_text(disk_token(svg_path) or "")
+    # Every open is new, even of the same file under the same name: Studio's "Open in Plot" saves and
+    # reopens the drawing Plot already has, and a Plot page open in another tab has to know to show
+    # the new one. The name can't say that, and the file's hash is rewritten by Plot's own saves.
+    CURRENT_OPENED.write_text(str(time.time_ns()))
     with job.lock:
         if not job.busy():
             job.reset("idle")
@@ -1700,7 +1919,8 @@ def open_file():
         plot = load_drawing(svg_path)
     except (OSError, ValueError, RuntimeError) as exc:
         return jsonify(error=str(exc)), 400
-    return jsonify(name=svg_path.name, path=str(svg_path), folder=display_path(svg_path.parent), plot=plot)
+    return jsonify(name=svg_path.name, path=str(svg_path), folder=display_path(svg_path.parent), plot=plot,
+                   opened=opened_token())
 
 
 @app.get("/api/drawing")
@@ -1777,6 +1997,12 @@ def clean_plot(raw):
         }
         if called:
             out["layer_names"] = dict(list(called.items())[:500])
+    # Hatch spacings chosen while plotting, by layer id, in mm: the ink turned out to want its Studio
+    # fills closer or further apart. Plot regenerates the fills at this spacing when it plots; the
+    # drawing's own fills, and the spacing Studio gave them, are left as they are.
+    hatch = clean_hatch(raw)
+    if hatch:
+        out["hatch_spacing"] = hatch
     # Layers linked to print together (groups of layer ids): layers going down in the same pen, plotted
     # in one pass instead of one after another with the same pen reloaded. A decision about the plot,
     # like the inks above, so it lives here.
@@ -2118,6 +2344,20 @@ def studio_save():
     if folder is None or not folder.is_dir():
         return jsonify(error="That isn't a folder the app can save drawings in."), 403
     path = folder / name
+    # Saving over a drawing keeps what Plot wrote into it. Plot's block - where the drawing sits, its
+    # scale, the inks, links and order chosen for plotting it - is Plot's, and Studio only knows the
+    # fresh defaults it writes into a new file. Replacing the block would undo every one of those
+    # choices each time the drawing was edited.
+    if path.exists():
+        try:
+            from lxml import etree
+            kept = read_plot(parse_svg(path).getroot())
+            if kept is not None:
+                root = etree.fromstring(svg.encode("utf-8"), etree.XMLParser(huge_tree=True))
+                write_plot(root, kept)
+                svg = etree.tostring(root, encoding="unicode", xml_declaration=False)
+        except Exception:  # noqa: BLE001 - an unreadable old file is simply replaced, as before
+            pass
     try:
         tmp = path.with_name(f".{path.name}.studio-saving")
         tmp.write_text(svg, encoding="utf-8")
@@ -2172,7 +2412,7 @@ def estimate():
             return jsonify(superseded=True)
         try:
             body = request.json or {}
-            result = dry_run(clean_settings(body), render=True, scale=clean_scale(body), layers=clean_layers(body), rotation=clean_rotation(body))
+            result = dry_run(clean_settings(body), render=True, scale=clean_scale(body), layers=clean_layers(body), rotation=clean_rotation(body), hatch=clean_hatch(body))
             from lxml import etree
             result["layers"] = read_layers(etree.parse(str(CURRENT_SVG), etree.XMLParser(huge_tree=True)).getroot())
             return jsonify(result)
@@ -2189,7 +2429,7 @@ def artwork():
     try:
         body = request.json or {}
         from lxml import etree
-        svg = svg_input(clean_scale(body), None, clean_rotation(body))
+        svg = svg_input(clean_scale(body), None, clean_rotation(body), clean_hatch(body))
         root = etree.parse(str(CURRENT_SVG), etree.XMLParser(huge_tree=True)).getroot()
         size_note = normalize_size(root)
         trimmed = bool((read_plot(root) or {}).get("original_page"))

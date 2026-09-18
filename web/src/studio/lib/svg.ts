@@ -1,4 +1,4 @@
-import { hatchLines, type Fill } from "./hatch";
+import { hatchLines, hatchStroke, type Fill } from "./hatch";
 import { boxOf, type Layer, type Page, type Shape } from "./shapes";
 
 // The drawing Studio writes out. Two things matter to Plot at the other end:
@@ -56,9 +56,12 @@ function fillMarkup(shapes: Shape[], fills: Fill[]): string {
       if (!shape) return "";
       const lines = hatchLines(shape, fill);
       if (!lines.length) return "";
-      const body = lines
-        .map((l) => `        <line x1="${num(l.x1)}" y1="${num(l.y1)}" x2="${num(l.x2)}" y2="${num(l.y2)}"/>`)
-        .join("\n");
+      // Connected, the pass is one stroke; otherwise every line is its own.
+      const body = fill.connected
+        ? `        <polyline points="${hatchStroke(shape, fill).map((p) => `${num(p.x)},${num(p.y)}`).join(" ")}"/>`
+        : lines
+          .map((l) => `        <line x1="${num(l.x1)}" y1="${num(l.y1)}" x2="${num(l.x2)}" y2="${num(l.y2)}"/>`)
+          .join("\n");
       return `      <g id="${FILL_GROUP_PREFIX}${escapeAttr(fill.id)}">\n${body}\n      </g>`;
     })
     .filter(Boolean)
@@ -105,6 +108,7 @@ function designBlock(fills: Fill[], shapes: Shape[], layers: Layer[]): string {
       angle: f.angle,
       spacing_mm: f.spacingMm,
       scale: f.scale,
+      ...(f.connected ? { connected: true } : {}),
     })),
   };
   return `  <metadata id="nextdraw-studio"><nds:design>${escapeText(JSON.stringify(data))}</nds:design></metadata>`;
