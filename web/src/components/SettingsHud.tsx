@@ -1,5 +1,7 @@
-import type { ReactNode } from "react";
-import { barrelOffsetMm } from "../lib/constants";
+import { useEffect, useRef, useState, type PointerEvent, type ReactNode } from "react";
+import { GripHorizontal } from "lucide-react";
+import { barrelOffsetMm, STORAGE } from "../lib/constants";
+import { load, save } from "../lib/storage";
 import { fmtIn, trimNum } from "../lib/format";
 import { NumberField } from "./controls/NumberField";
 import styles from "./SettingsHud.module.css";
@@ -40,8 +42,49 @@ const speedText = (percent: number, ceilingInS: number | undefined) =>
 const speedMM = (percent: number, ceilingInS: number | undefined) =>
   ceilingInS === undefined ? null : `${Math.round((percent / 100) * ceilingInS * 25.4)} mm/s`;
 
+type Offset = { x: number; y: number };
+
 export function SettingsHud({ settings: s, own, handling, tool, preset, secondTool, smallPaths, units, disabled, onToolValues }: Props) {
   const mode = handling.find((h) => h.id === s.handling);
+
+  // Dragged by its grip to uncover whatever it sits on. The offset is from its usual corner, kept in
+  // this browser, and held inside the bed so it can't be lost off an edge.
+  const ref = useRef<HTMLDListElement>(null);
+  const [offset, setOffset] = useState<Offset>(() => load<Offset>(STORAGE.hudOffset) ?? { x: 0, y: 0 });
+  const drag = useRef<{ px: number; py: number; from: Offset } | null>(null);
+  const clamp = (o: Offset): Offset => {
+    const el = ref.current;
+    const bed = el?.offsetParent as HTMLElement | null;
+    if (!el || !bed) return o;
+    const r = el.getBoundingClientRect();
+    const b = bed.getBoundingClientRect();
+    // Where it would sit with no offset, from where it sits now.
+    const left0 = r.left - offset.x;
+    const top0 = r.top - offset.y;
+    return {
+      x: Math.min(b.right - (left0 + r.width), Math.max(b.left - left0, o.x)),
+      y: Math.min(b.bottom - (top0 + r.height), Math.max(b.top - top0, o.y)),
+    };
+  };
+  useEffect(() => save(STORAGE.hudOffset, offset.x || offset.y ? offset : null), [offset]);
+  // A window made smaller can leave a moved panel past the bed's edge; bring it back.
+  useEffect(() => {
+    const fit = () => setOffset((o) => clamp(o));
+    window.addEventListener("resize", fit);
+    return () => window.removeEventListener("resize", fit);
+  });
+  const grip = {
+    onPointerDown: (e: PointerEvent<HTMLDivElement>) => {
+      e.currentTarget.setPointerCapture(e.pointerId);
+      drag.current = { px: e.clientX, py: e.clientY, from: offset };
+    },
+    onPointerMove: (e: PointerEvent<HTMLDivElement>) => {
+      const d = drag.current;
+      if (d) setOffset(clamp({ x: d.from.x + e.clientX - d.px, y: d.from.y + e.clientY - d.py }));
+    },
+    onPointerUp: () => { drag.current = null; },
+    onDoubleClick: () => setOffset({ x: 0, y: 0 }),
+  };
   // Chill mode slows what's sent; the field keeps the tool's own number and the note says what goes out.
   const slowed = (key: keyof Settings) => (s[key] !== own[key] ? `${s[key]} in Chill mode` : undefined);
 
@@ -115,7 +158,10 @@ export function SettingsHud({ settings: s, own, handling, tool, preset, secondTo
   if (smallPaths) rows.push(["Small paths", `${smallPaths}% slower`]);
 
   return (
-    <dl className={styles.hud} aria-label="Printing settings">
+    <dl ref={ref} className={styles.hud} aria-label="Printing settings" style={{ transform: `translate(${offset.x}px, ${offset.y}px)` }}>
+      <div className={styles.grip} title="Drag to move; double-click to put it back in the corner" {...grip}>
+        <GripHorizontal size={14} aria-hidden />
+      </div>
       {rows.map(([label, value, note]) => (
         <div className={styles.row} key={label}>
           <dt className={styles.label}>{label}</dt>

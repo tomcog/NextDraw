@@ -37,6 +37,19 @@
   font-variant-numeric: tabular-nums;
 }
 
+/* The handle the panel is dragged by. */
+.grip {
+  display: flex;
+  justify-content: center;
+  margin: -0.25rem 0 0.1rem;
+  color: var(--ui-text-muted);
+  cursor: grab;
+  pointer-events: auto;
+  touch-action: none;
+}
+
+.grip:active { cursor: grabbing; }
+
 /* A value typed straight in. The panel lets drags through to the bed; its fields take the pointer. */
 .field {
   width: 3.75rem;

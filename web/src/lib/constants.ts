@@ -79,6 +79,7 @@ export const STORAGE = {
   layers: "nextdraw-studio-layers",
   penUpMoves: "nextdraw-studio-pen-up-moves",
   inkSim: "nextdraw-studio-ink-sim",
+  hudOffset: "nextdraw-plot-hud-offset",
 };
 
 // The channel Studio's "Open in Plot" uses to find a Plot page already open in another tab.
