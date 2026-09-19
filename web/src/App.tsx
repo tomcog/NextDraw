@@ -274,6 +274,9 @@ export default function App() {
   // asking which layer to plot when only one of them can be would be asking about nothing.
   const plottableLayers = layerViews.filter((l) => !l.skipped);
   const needsLayerChoice = plottableLayers.length > 1 && !printTarget;
+  // A drawing with one plottable layer plots whole, and a layer hidden here is only hidden in Plot's
+  // own metadata - the plotter would still draw it. So with nothing shown there is nothing to plot.
+  const nothingShown = plottableLayers.length > 0 && plottableLayers.every((l) => l.hidden);
   const plotLayerId = plottableLayers.length > 1 ? printTarget?.id ?? null : null;
   // Everything that goes down in this plot: the chosen layer and the shown layers linked with it, in
   // plot order. The chosen layer comes first - its tool is the one in the holder.
@@ -1368,8 +1371,8 @@ export default function App() {
             message={actionMessage}
             plotting={plotting}
             stopping={status?.state === "stopping" || status?.state === "returning"}
-            canPlot={!busy && Boolean(fileName) && Boolean(preview) && onBed && plotterReady && !needsLayerChoice}
-            plotLabel={!plotterReady ? "Connect the plotter" : needsLayerChoice ? "Choose a layer to plot" : printTarget && plotLayerId ? `Plot ${printTarget.name}${printIds.length > 1 ? ` · ${printIds.length} layers` : ""}` : "Plot"}
+            canPlot={!busy && Boolean(fileName) && Boolean(preview) && onBed && plotterReady && !needsLayerChoice && !nothingShown}
+            plotLabel={!plotterReady ? "Connect the plotter" : nothingShown ? "Show a layer to plot" : needsLayerChoice ? "Choose a layer to plot" : printTarget && plotLayerId ? `Plot ${printTarget.name}${printIds.length > 1 ? ` · ${printIds.length} layers` : ""}` : "Plot"}
             preparing={status?.state === "preparing"}
             resume={resume}
             confirmation={confirmation}
