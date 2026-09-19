@@ -25,8 +25,6 @@ interface Props {
   paletteOpen: boolean; // the palette view stands in for the drawing preview
   onPalette: () => void;
   onInk: (patch: { ink_opacity?: number; ink_build?: number }) => void;
-  /** Change the tool's drawing speed: used at once, and kept in the preset. */
-  onSpeed: (percent: number) => void;
   smallPaths: number | null; // percent slower, or null when off
   onSmallPaths: (percent: number | null) => void;
   tiltOn: (tool: Preset | undefined) => boolean;
@@ -45,7 +43,7 @@ const SHOW_INK_TUNING = false;
 export function PresetSection({
   presets, active, changed, disabled, onApply, onSave, onDelete,
   secondTool, secondLayers, layers, inUse, onAddSecond, onSecondTool, onRemoveSecond, onAssign,
-  smallPaths, onSmallPaths, tiltOn, onTilt, dragOn, onDrag, paletteOpen, onPalette, onInk, onSpeed,
+  smallPaths, onSmallPaths, tiltOn, onTilt, dragOn, onDrag, paletteOpen, onPalette, onInk,
 }: Props) {
   // What a tool is always set up for, with nothing to switch: the clip angle, and one-way strokes.
   const toolNote = (tool: Preset | undefined) => {
@@ -153,18 +151,6 @@ export function PresetSection({
       {toolNote(active)}
       {tiltSwitch(active)}
       {dragSwitch(active)}
-      {active && (
-        // Right here rather than under Plot options, for finding a tool's speed by trying it: move,
-        // plot, look, move again. It changes the tool itself, not just today's plot.
-        <Slider
-          label="Drawing speed"
-          value={active.settings.speed_pendown ?? 50}
-          min={1}
-          max={100}
-          disabled={disabled}
-          onChange={onSpeed}
-        />
-      )}
       {mixed && layers.length > 0 && chips(false)}
       </div>
 

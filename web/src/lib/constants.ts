@@ -8,6 +8,16 @@ export const DEFAULT_TOOL = "EnerGel"; // drawing tool preset used when none is 
 // Matched against the NextDraw Inkscape extension plotting the same drawing on the same machine:
 // its output was consistently cleaner, and copying its values across closed the gap. Acceleration is
 // the one to be careful with - the driver cubes it into jerk, so 75 is 3.4x the jerk of 50.
+// The barrel the plotter and paper are lined up for: the EnerGel's, in mm. The clip centers a pen
+// across its width, so a fatter barrel puts the tip half the difference further down the page and a
+// thinner one half the difference higher. Tools run from 7.7 to 24.5 mm: -1.9 to +6.5 mm.
+export const REFERENCE_BARREL_MM = 11.44;
+
+/** How far down the page a tool's tip lands, in mm, compared with the reference pen (negative: higher).
+ *  A tool with no barrel width saved gets no correction. */
+export const barrelOffsetMm = (barrel: number | undefined) =>
+  barrel ? (barrel - REFERENCE_BARREL_MM) / 2 : 0;
+
 export const DEFAULT_SETTINGS: Settings = {
   model: 10, // Bantam Tools NextDraw 2234
   handling: 1,

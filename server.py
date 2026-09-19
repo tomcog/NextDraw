@@ -828,7 +828,7 @@ def clean_hatch(raw):
     return out
 
 
-def svg_input(scale, layers=None, rotation=0, hatch=None):
+def svg_input(scale, layers=None, rotation=0, hatch=None, raise_mm=0.0):
     """
     The loaded SVG for the NextDraw software: sized (see normalize_size) and scaled if needed. The
     software plots a document at its width/height, so scaling multiplies those while a viewBox keeps
@@ -842,6 +842,7 @@ def svg_input(scale, layers=None, rotation=0, hatch=None):
         only_layers(root, [layers] if isinstance(layers, str) else layers)
     rotate_document(root, rotation)
     if abs(scale - 100) < 1e-9:
+        raise_lines(root, raise_mm)
         return etree.tostring(root, encoding="unicode")
     factor = scale / 100
 
@@ -862,6 +863,7 @@ def svg_input(scale, layers=None, rotation=0, hatch=None):
         root.set("height", f"{vb[3] * factor:g}px")
     else:
         raise RuntimeError("This SVG has no size the drawing can be scaled from.")
+    raise_lines(root, raise_mm)
     return etree.tostring(root, encoding="unicode")
 
 
@@ -874,6 +876,13 @@ def clean_placement(raw):
         placement["tip_offset_x"] = max(0.0, min(100.0, float(raw.get("tip_offset_x", 0))))
     except (TypeError, ValueError):
         placement["tip_offset_x"] = 0.0
+    # The barrel: the clip centers the pen across its width, so a barrel wider than the one the paper
+    # is lined up for puts the tip this far further down the page, and a thinner one puts it higher
+    # (negative). REFERENCE_BARREL_MM in the page.
+    try:
+        placement["tip_offset_y"] = max(-20.0, min(20.0, float(raw.get("tip_offset_y", 0))))
+    except (TypeError, ValueError):
+        placement["tip_offset_y"] = 0.0
     placement["rotation"] = clean_rotation(raw)
     # The layers to plot, by id; None plots the whole drawing. `layer` is the first of them, which is
     # the one picked in the Layers card - its tool is the one in the holder.
@@ -999,9 +1008,9 @@ def limit_drag(svg_text, settings):
     return etree.tostring(root, encoding="unicode")
 
 
-def prepared_svg(settings, scale, layers=None, rotation=0, hatch=None):
+def prepared_svg(settings, scale, layers=None, rotation=0, hatch=None, raise_mm=0.0):
     """The loaded drawing ready to plot: placed and scaled, and drag-limited for a one-way tool."""
-    svg = svg_input(scale, layers, rotation, hatch)
+    svg = svg_input(scale, layers, rotation, hatch, raise_mm)
     return limit_drag(svg, settings) if settings.get("drag_only") else svg
 
 
@@ -1011,8 +1020,37 @@ def plot_layers(placement):
 
 
 def carriage_start(placement):
-    """Where the carriage starts the plot, in mm from home: the drawing's place plus any tip offset."""
-    return placement["x"] + placement.get("tip_offset_x", 0.0), placement["y"]
+    """Where the carriage starts the plot, in mm from home: the drawing's place plus the tilt offset
+    along the width, less the barrel offset down the page (a thin barrel's is negative, so the carriage
+    starts lower). The carriage can't start above home, so a drawing placed closer to the top than a
+    fat barrel's offset starts at home and its lines move up instead (lines_raised_mm)."""
+    return (placement["x"] + placement.get("tip_offset_x", 0.0),
+            max(0.0, placement["y"] - placement.get("tip_offset_y", 0.0)))
+
+
+def lines_raised_mm(placement):
+    """How far the drawing's lines are moved up the page because the carriage couldn't start high
+    enough to take the whole fat-barrel offset. Only lines within this of the page's top are lost,
+    and the tip couldn't reach them anyway."""
+    return max(0.0, placement.get("tip_offset_y", 0.0) - placement["y"])
+
+
+def raise_lines(root, mm):
+    """Move every drawing element up the page by `mm`, in the document's own units, the same way
+    rotate_document turns them: a transform prepended to each top-level element."""
+    if mm <= 0:
+        return
+    m = re.match(r"^\s*([0-9]*\.?[0-9]+(?:e[-+]?\d+)?)\s*([a-z]*)\s*$", root.get("height") or "", re.I)
+    if not m or m.group(2).lower() not in PX_PER_UNIT:
+        raise RuntimeError("This SVG has no size the pen's offset can be measured against.")
+    height_mm = float(m.group(1)) * PX_PER_UNIT[m.group(2).lower()] / PX_PER_UNIT["mm"]
+    vb = root.get("viewBox")
+    units_high = float(re.split(r"[\s,]+", vb.strip())[3]) if vb else float(m.group(1)) * PX_PER_UNIT[m.group(2).lower()]
+    shift = f"translate(0 {-mm * units_high / height_mm:g})"
+    for child in root:
+        if not isinstance(child.tag, str) or child.tag in NON_DRAWING_TAGS:
+            continue
+        child.set("transform", f"{shift} {child.get('transform')}" if child.get("transform") else shift)
 
 
 def placement_problem(settings, placement, estimate):
@@ -1196,7 +1234,7 @@ def save_plot_paths(preview_svg, placement):
             if group.get(label) != "Pen-down movement":
                 child.remove(group)
     root.set("data-x-mm", str(placement["x"]))
-    root.set("data-y-mm", str(placement["y"]))
+    root.set("data-y-mm", str(placement["y"] + lines_raised_mm(placement)))
     PLOT_PATHS.write_bytes(etree.tostring(root))
 
 
@@ -1208,7 +1246,8 @@ def run_plot(settings, placement, resume=None):
             source, mode = resume_source(settings), "res_plot"
         else:
             clear_resume()  # a new plot replaces any stopped one
-            source = prepared_svg(settings, placement["scale"], plot_layers(placement), placement.get("rotation", 0), placement.get("hatch"))
+            source = prepared_svg(settings, placement["scale"], plot_layers(placement), placement.get("rotation", 0),
+                                  placement.get("hatch"), lines_raised_mm(placement))
             mode = "plot"
 
         # A new plot's simulation also draws its paths; a resumed plot keeps the ones saved when it began.
@@ -1237,7 +1276,7 @@ def run_plot(settings, placement, resume=None):
                 job.message = ERRORS.get(code, f"The plotter reported error code {code}.")
             return
         with job.lock:
-            carriage.update(origin_known=True, origin_x=carriage_start(placement)[0], origin_y=placement["y"])
+            carriage.update(origin_known=True, origin_x=carriage_start(placement)[0], origin_y=carriage_start(placement)[1])
             job.message = ""
 
         nd = make_nextdraw(log)
@@ -2586,6 +2625,20 @@ def put_preset(name):
         entry["palette"] = previous["palette"]  # the tool's colors, set up by hand in presets.json
     if previous.get("tilt"):
         entry["tilt"] = previous["tilt"]  # angle compensation, measured when the tool was set up
+        # The Drawing tool card can set the measured offset; nothing else about the tilt changes there.
+        try:
+            offset = float((request.json or {})["tilt_offset_mm"])
+            entry["tilt"] = {**previous["tilt"], "offset_mm": round(max(0.0, min(100.0, offset)), 2)}
+        except (KeyError, TypeError, ValueError):
+            pass
+    # The barrel's width in mm where the clip holds it. A fat one moves the tip down the page.
+    barrel = previous.get("barrel_mm")
+    try:
+        barrel = round(max(1.0, min(60.0, float((request.json or {})["barrel_mm"]))), 2)
+    except (KeyError, TypeError, ValueError):
+        pass
+    if barrel:
+        entry["barrel_mm"] = barrel
     if previous.get("drag"):
         entry["drag"] = previous["drag"]  # a soft tip that may only be pulled, never pushed
     if previous.get("hatch"):

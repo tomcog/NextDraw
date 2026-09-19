@@ -8,6 +8,7 @@ interface Props {
   max?: number;
   step?: number;
   disabled?: boolean;
+  hideLabel?: boolean; // the label still names the field for screen readers
   onChange: (value: number) => void;
 }
 
@@ -17,7 +18,7 @@ interface Props {
 // the typing lands on top of whatever that put in the box. So the draft is free text until it's
 // committed on blur or Enter, and only then is it clamped; a draft that isn't a number at all leaves
 // the value alone. The arrow keys commit as they step, so holding one still walks the value.
-export function NumberField({ label, value, min, max, step = 1, disabled, onChange }: Props) {
+export function NumberField({ label, value, min, max, step = 1, disabled, hideLabel, onChange }: Props) {
   const [draft, setDraft] = useState(String(value));
   useEffect(() => setDraft(String(value)), [value]);
 
@@ -39,6 +40,7 @@ export function NumberField({ label, value, min, max, step = 1, disabled, onChan
     <InputText
       size="md"
       label={label}
+      hideLabel={hideLabel}
       type="number"
       inputMode="decimal"
       step={step}

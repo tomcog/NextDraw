@@ -183,6 +183,7 @@ export interface Preset {
   tilt?: Tilt; // angle compensation, measured when the tool was set up
   drag?: Drag; // a soft tip that may only be pulled, never pushed
   hatch?: { angle?: number; spacing_mm?: number }; // measured by hand; what a fill starts from
+  barrel_mm?: number; // the barrel's width where the clip holds it; a fat one moves the tip down the page
 }
 
 // A brush or other soft tip splays when it is pushed, so it only travels away from home along the

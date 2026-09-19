@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Card } from "@tomcoggia/ui";
 import styles from "./App.module.css";
 import { api, postJSON } from "./lib/api";
-import { BUSY_STATES, DEFAULT_SETTINGS, DEFAULT_TOOL, PAPER_SIZES, PLOT_CHANNEL, PLOTTING_STATES, PRESET_FIELDS, STEPS, STORAGE } from "./lib/constants";
+import { barrelOffsetMm, BUSY_STATES, DEFAULT_SETTINGS, DEFAULT_TOOL, PAPER_SIZES, PLOT_CHANNEL, PLOTTING_STATES, PRESET_FIELDS, STEPS, STORAGE } from "./lib/constants";
 import { cleanNote } from "./lib/format";
 import { lightness } from "./lib/color";
 import { fitsOnBed, fitsOnPaper, footprint } from "./lib/geometry";
@@ -839,7 +839,7 @@ export default function App() {
     setLastAction("plot");
     setLocalMessage(null);
     try {
-      await postJSON("/api/plot", { ...settingsFor(plotLayerId), start_x: placement.x, start_y: placement.y, tip_offset_x: tipOffsetFor(plotLayerId), scale, layers: plotLayerIds, rotation, hatch_spacing: hatchSpacing });
+      await postJSON("/api/plot", { ...settingsFor(plotLayerId), start_x: placement.x, start_y: placement.y, tip_offset_x: tipOffsetFor(plotLayerId), tip_offset_y: tipOffsetYFor(plotLayerId), scale, layers: plotLayerIds, rotation, hatch_spacing: hatchSpacing });
       setStatus((s) => (s ? { ...s, state: "preparing", message: "", started: false } : s));
     } catch (err) {
       setLocalMessage({ text: (err as Error).message, tone: "error" });
@@ -1031,22 +1031,26 @@ export default function App() {
     }, 500);
   };
 
-  // The drawing speed slider on the Drawing tool card: the next plot uses it at once, and the tool
-  // keeps it a moment after the slider stops moving - the same bargain as the ink sliders above.
-  const speedTimer = useRef<number>();
-  const setToolSpeed = (percent: number) => {
-    if (!active) return;
-    const name = active.name;
-    const merged = { ...active.settings, speed_pendown: percent };
-    updateSettings({ speed_pendown: percent });
-    setPresets((list) => list.map((p) => (p.name === name ? { ...p, settings: merged } : p)));
-    window.clearTimeout(speedTimer.current);
-    speedTimer.current = window.setTimeout(() => {
+  // The fields on the Drawing tool card (speed, heights, lift and lower rates, tilt offset): the next
+  // plot uses a change at once, and the tool keeps it a moment later - the same bargain as the ink
+  // sliders above. Every change goes into the tool itself, not just today's plot.
+  const toolTimer = useRef<number>();
+  const setToolValues = (tool: Preset | undefined, patch: Partial<Settings>, extra: { tiltOffset?: number; barrel?: number } = {}) => {
+    if (!tool) return;
+    const name = tool.name;
+    const merged = { ...tool.settings, ...patch };
+    const tilt = tool.tilt && extra.tiltOffset !== undefined ? { ...tool.tilt, offset_mm: extra.tiltOffset } : tool.tilt;
+    const barrel = extra.barrel ?? tool.barrel_mm;
+    // The first tool's values are the page's settings; the second tool's are read from its preset.
+    if (tool === active) updateSettings(patch);
+    setPresets((list) => list.map((p) => (p.name === name ? { ...p, settings: merged, tilt, barrel_mm: barrel } : p)));
+    window.clearTimeout(toolTimer.current);
+    toolTimer.current = window.setTimeout(() => {
       api(`/api/presets/${encodeURIComponent(name)}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(merged),
-      }).catch(() => setLocalMessage({ text: "Couldn't save the drawing speed.", tone: "error" }));
+        body: JSON.stringify({ ...merged, ...(tilt ? { tilt_offset_mm: tilt.offset_mm } : {}), ...(barrel ? { barrel_mm: barrel } : {}) }),
+      }).catch(() => setLocalMessage({ text: `Couldn't save the ${name} settings.`, tone: "error" }));
     }, 500);
   };
 
@@ -1082,6 +1086,8 @@ export default function App() {
     const tool = usesSecond(id) ? secondPreset : active;
     return tiltOn(tool) ? tool!.tilt!.offset_mm : 0;
   };
+  // A fat barrel puts the tip further down the page than the pen the paper is lined up for.
+  const tipOffsetYFor = (id: string | null) => barrelOffsetMm((usesSecond(id) ? secondPreset : active)?.barrel_mm);
   // Small paths slows everything that makes tiny marks violent: how hard the carriage starts and stops,
   // how fast it travels and draws, and how hard the pen is raised and lowered. Pen heights don't change.
   const slowForSmallPaths = (s: Settings): Settings => {
@@ -1315,6 +1321,11 @@ export default function App() {
                 tool={usesSecond(plotLayerId) ? secondTool : activePreset}
                 secondTool={usesSecond(plotLayerId) ? null : secondTool}
                 smallPaths={smallPaths}
+                own={usesSecond(plotLayerId) && secondPreset ? { ...settings, ...secondPreset.settings } : settings}
+                preset={usesSecond(plotLayerId) ? secondPreset : active}
+                units={settings.units}
+                disabled={plotting}
+                onToolValues={(patch, extra) => setToolValues(usesSecond(plotLayerId) ? secondPreset : active, patch, extra)}
               />
             )}
           </div>
@@ -1461,7 +1472,6 @@ export default function App() {
                 paletteOpen={paletteOpen}
                 onPalette={() => setPaletteOpen((open) => !open)}
                 onInk={setInk}
-                onSpeed={setToolSpeed}
                 changed={presetChanged}
                 disabled={plotting}
                 onApply={applyPreset}

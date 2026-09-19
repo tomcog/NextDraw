@@ -22,7 +22,7 @@
   display: grid;
   grid-template-columns: 5.5rem auto;
   gap: 0.5rem;
-  align-items: baseline;
+  align-items: center;
 }
 
 .label {
@@ -31,8 +31,17 @@
 
 .value {
   margin: 0;
+  display: flex;
+  align-items: center;
   color: var(--ui-text-default);
   font-variant-numeric: tabular-nums;
+}
+
+/* A value typed straight in. The panel lets drags through to the bed; its fields take the pointer. */
+.field {
+  width: 3.75rem;
+  flex: none;
+  pointer-events: auto;
 }
 
 /* The same speed in the other unit, or the resolution behind the motion mode: the detail that
