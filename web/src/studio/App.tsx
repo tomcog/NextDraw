@@ -615,15 +615,19 @@ export default function App() {
    * following its parameters becomes several things to edit by hand - which is the point, and why it
    * can't be undone except with undo.
    */
-  const bakeShape = (id: string) => {
+  const bakeShape = (id: string, keepPattern = false) => {
     const shape = shapes.find((s) => s.id === id);
     if (!shape) return;
     record();
     const centre = centerOf(shape);
     const made: Shape[] = [];
-    for (const place of placements(shape)) {
+    // Keeping the pattern bakes the shape itself and leaves the repeat - and the turn - in place, so
+    // the copies go on following it and the points that can now be dragged are the ones they follow.
+    const places = keepPattern ? [{ dx: 0, dy: 0, deg: 0 }] : placements(shape);
+    for (const place of places) {
       // The shape's own turn first, then the copy's: the same order the drawing is written in.
       const put = (p: Point) => {
+        if (keepPattern) return p; // the turn stays a setting, so the points are left as they are
         const turned = turnPoint(turnPoint(p, centre, shape.rotation ?? 0), centre, place.deg);
         return { x: turned.x + place.dx, y: turned.y + place.dy };
       };
@@ -637,7 +641,9 @@ export default function App() {
             made.push({
               ...shape, id: made.length ? newShapeId() : shape.id,
               kind: "path", points, text: undefined, font: undefined, tracking: undefined,
-              leading: undefined, repeat: undefined, rotation: undefined,
+              leading: undefined,
+              repeat: keepPattern ? shape.repeat : undefined,
+              rotation: keepPattern ? shape.rotation : undefined,
               x: b.x0, y: b.y0, x2: b.x1, y2: b.y1,
             });
           }
@@ -649,7 +655,9 @@ export default function App() {
           const b = pointsBox(points);
           made.push({
             ...shape, id: made.length ? newShapeId() : shape.id,
-            kind: "path", points, curve: undefined, repeat: undefined, rotation: undefined,
+            kind: "path", points, curve: undefined,
+            repeat: keepPattern ? shape.repeat : undefined,
+            rotation: keepPattern ? shape.rotation : undefined,
             x: b.x0, y: b.y0, x2: b.x1, y2: b.y1,
           });
         }
@@ -661,7 +669,9 @@ export default function App() {
         const b = pointsBox(points);
         made.push({
           ...shape, id: made.length ? newShapeId() : shape.id,
-          kind: "path", points, repeat: undefined, rotation: undefined,
+          kind: "path", points,
+          repeat: keepPattern ? shape.repeat : undefined,
+          rotation: keepPattern ? shape.rotation : undefined,
           x: b.x0, y: b.y0, x2: b.x1, y2: b.y1,
         });
       }
@@ -1344,12 +1354,17 @@ export default function App() {
                   />
                   {/* Baking takes the whole thing - every copy of a repeat, every letter of a text -
                       and leaves paths whose points can be pulled about one at a time. */}
+                  {chosen.repeat && chosen.kind !== "path" && (
+                    <Button size="md" variant="secondary" onClick={() => bakeShape(chosen.id, true)}>
+                      Bake the shape, keep the pattern
+                    </Button>
+                  )}
                   <Button size="md" variant="secondary" onClick={() => bakeShape(chosen.id)}>
                     {chosen.repeat ? `Bake all ${placements(chosen).length} shapes to paths` : "Bake to a path"}
                   </Button>
                   <p className={styles.empty}>
                     {chosen.repeat
-                      ? "Every copy becomes its own shape, and the numbers behind them are given up."
+                      ? "Keep the pattern and only the shape is given up: its points can be dragged, and every copy follows. Bake them all and each copy becomes a shape of its own."
                       : "The numbers behind it are given up; its points can then be dragged one by one."}
                   </p>
                 </Section>
