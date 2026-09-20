@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Button, ButtonRound, Card, Checkbox, InputSelect, InputText, LayerController } from "@tomcoggia/ui";
-import { ArrowDownToLine, Circle, Copy, EllipsisVertical, FilePlus, FolderOpen, LoaderPinwheel, Minus, MousePointer2, Pentagon, Plus, Ratio, Redo2, Spline, Square, Star, StickyNote, Trash2, Undo2 } from "lucide-react";
+import { ArrowDownToLine, Circle, Copy, EllipsisVertical, FilePlus, FolderOpen, Layers2, LoaderPinwheel, Minus, MousePointer2, Pentagon, Plus, Ratio, Redo2, Spline, Square, Star, StickyNote, Trash2, Undo2 } from "lucide-react";
 import { FileBrowser, LAST_FOLDER_KEY, type OpenResult } from "../components/FileBrowser";
 import { Section } from "../components/controls/Section";
 import { NumberField } from "../components/controls/NumberField";
@@ -205,6 +205,14 @@ export default function App() {
     setShapes((list) => [...list, copy]);
     setFills((list) => [...list, ...list.filter((f) => f.shapeId === id).map((f) => ({ ...f, id: newFillId(), shapeId: copy.id }))]);
     setSelected(copy.id);
+  };
+
+  // Move a shape to another pen. Its fills go with it, since a fill belongs to its shape, and both
+  // are drawn in whatever colour the new layer carries.
+  const moveShapeToLayer = (id: string, layerId: string) => {
+    record();
+    setShapes((list) => list.map((s) => (s.id === id ? { ...s, layerId } : s)));
+    setSelected(id);
   };
 
   const removeShape = (id: string) => {
@@ -632,6 +640,14 @@ export default function App() {
             ]
             : [
               { label: "Duplicate", icon: <Copy />, onSelect: () => duplicateShape(rowMenu.id) },
+              // One entry per other layer: a layer is a pen, so this is "draw this in that pen".
+              ...layers
+                .filter((l) => l.id !== shapes.find((s) => s.id === rowMenu.id)?.layerId)
+                .map((l) => ({
+                  label: `Move to ${l.name}`,
+                  icon: <Layers2 />,
+                  onSelect: () => moveShapeToLayer(rowMenu.id, l.id),
+                })),
               { label: "Delete", icon: <Trash2 />, danger: true, onSelect: () => removeShape(rowMenu.id) },
             ]}
         />
