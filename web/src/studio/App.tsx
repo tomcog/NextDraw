@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Button, ButtonRound, Card, Checkbox, InputSelect, InputText, LayerController } from "@tomcoggia/ui";
-import { ArrowDownToLine, Circle, Copy, EllipsisVertical, FilePlus, FolderOpen, LoaderPinwheel, Minus, MousePointer2, Plus, Ratio, Redo2, Spline, Square, StickyNote, Trash2, Undo2 } from "lucide-react";
+import { ArrowDownToLine, Circle, Copy, EllipsisVertical, FilePlus, FolderOpen, LoaderPinwheel, Minus, MousePointer2, Pentagon, Plus, Ratio, Redo2, Spline, Square, Star, StickyNote, Trash2, Undo2 } from "lucide-react";
 import { FileBrowser, LAST_FOLDER_KEY, type OpenResult } from "../components/FileBrowser";
 import { Section } from "../components/controls/Section";
 import { NumberField } from "../components/controls/NumberField";
@@ -42,6 +42,8 @@ const TOOLS: { kind: Tool; label: string; hint: string; icon: JSX.Element }[] = 
   // Parametric shapes: drawn as a box like the rest, then tuned by their numbers in the Curve card.
   { kind: "hypotrochoid", label: "Spirograph", hint: "Draw a spirograph: drag on the page, then set its circles", icon: <LoaderPinwheel /> },
   { kind: "parabolic", label: "Parabolic curve", hint: "Draw curve stitching: drag on the page, then set its strings", icon: <Spline /> },
+  { kind: "polygon", label: "Polygon", hint: "Draw a polygon: drag on the page, then set how many sides", icon: <Pentagon /> },
+  { kind: "star", label: "Star", hint: "Draw a star: drag on the page, then set its points", icon: <Star /> },
 ];
 
 // Used when a tool has no palette of its own, so there is always a pen to draw with.

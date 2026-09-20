@@ -7,7 +7,7 @@
 
 import { boxOf, type Shape } from "./shapes";
 
-export type CurveKind = "hypotrochoid" | "parabolic";
+export type CurveKind = "hypotrochoid" | "parabolic" | "polygon" | "star";
 
 /** A spirograph: a circle of radius `r` rolling inside one of radius `R`, pen `d` from its centre. */
 export interface Hypotrochoid {
@@ -25,7 +25,20 @@ export interface Parabolic {
   corners: number; // 1, 2 or 4 corners of the box
 }
 
-export type Curve = Hypotrochoid | Parabolic;
+/** A regular polygon, drawn round the box: three sides up, and as many as you like. */
+export interface Polygon {
+  kind: "polygon";
+  sides: number;
+}
+
+/** A star: `points` spikes, with the inner corners at `inner` percent of the way out. */
+export interface Star {
+  kind: "star";
+  points: number;
+  inner: number;
+}
+
+export type Curve = Hypotrochoid | Parabolic | Polygon | Star;
 
 export interface Point {
   x: number;
@@ -35,11 +48,15 @@ export interface Point {
 export const DEFAULT_CURVE: Record<CurveKind, Curve> = {
   hypotrochoid: { kind: "hypotrochoid", R: 5, r: 3, d: 5, turns: 3 },
   parabolic: { kind: "parabolic", strings: 12, corners: 4 },
+  polygon: { kind: "polygon", sides: 6 },
+  star: { kind: "star", points: 5, inner: 40 },
 };
 
 export const CURVE_LABEL: Record<CurveKind, string> = {
   hypotrochoid: "Spirograph",
   parabolic: "Parabolic curve",
+  polygon: "Polygon",
+  star: "Star",
 };
 
 /** The numbers a curve shows in the panel: what to call each one and how far it may go. */
@@ -53,6 +70,11 @@ export const CURVE_FIELDS: Record<CurveKind, { key: string; label: string; min: 
   parabolic: [
     { key: "strings", label: "Strings", min: 1, max: 200, step: 1 },
     { key: "corners", label: "Corners", min: 1, max: 4, step: 1 },
+  ],
+  polygon: [{ key: "sides", label: "Sides", min: 3, max: 100, step: 1 }],
+  star: [
+    { key: "points", label: "Points", min: 2, max: 100, step: 1 },
+    { key: "inner", label: "Inner (%)", min: 1, max: 99, step: 5 },
   ],
 };
 
@@ -87,21 +109,43 @@ function hypotrochoidPoints(c: Hypotrochoid): Point[] {
   return points;
 }
 
+/**
+ * Corners round the box, starting straight up: a polygon's, or a star's alternating out and in. The
+ * box is the circle they sit on, so dragging a wide box gives a wide shape.
+ */
+function cornerPoints(c: Polygon | Star): Point[] {
+  const n = Math.max(c.kind === "polygon" ? 3 : 2, Math.round(c.kind === "polygon" ? c.sides : c.points));
+  const inner = c.kind === "star" ? Math.max(1, Math.min(99, c.inner)) / 100 : 1;
+  const steps = c.kind === "polygon" ? n : n * 2;
+  const points: Point[] = [];
+  for (let i = 0; i < steps; i++) {
+    const a = -Math.PI / 2 + (i / steps) * 2 * Math.PI;
+    const r = i % 2 && c.kind === "star" ? inner : 1;
+    points.push({ x: r * Math.cos(a), y: r * Math.sin(a) });
+  }
+  points.push(points[0]); // closed, so the pen finishes where it started
+  return points;
+}
+
 /** Scale and shift points so they just fill the box, keeping their proportions. */
-function fitToBox(points: Point[], b: ReturnType<typeof boxOf>): Point[] {
+function fitToBox(points: Point[], b: ReturnType<typeof boxOf>, stretch = false): Point[] {
   if (!points.length) return points;
   const xs = points.map((p) => p.x);
   const ys = points.map((p) => p.y);
   const w = Math.max(...xs) - Math.min(...xs);
   const h = Math.max(...ys) - Math.min(...ys);
-  const scale = Math.min(w > 0 ? (b.x1 - b.x0) / w : Infinity, h > 0 ? (b.y1 - b.y0) / h : Infinity);
-  const k = Number.isFinite(scale) ? scale : 1;
+  const across = w > 0 ? (b.x1 - b.x0) / w : Infinity;
+  const down = h > 0 ? (b.y1 - b.y0) / h : Infinity;
+  // Proportional by default: a spirograph's shape is the point of it. Stretched where the box is
+  // meant to be the shape's own outline, as it is for a polygon or a star.
+  const scale = stretch ? { x: across, y: down } : { x: Math.min(across, down), y: Math.min(across, down) };
+  const k = { x: Number.isFinite(scale.x) ? scale.x : 1, y: Number.isFinite(scale.y) ? scale.y : 1 };
   // Centred in the box, so a curve that isn't square doesn't sit against one edge.
   const cx = (Math.min(...xs) + Math.max(...xs)) / 2;
   const cy = (Math.min(...ys) + Math.max(...ys)) / 2;
   return points.map((p) => ({
-    x: (b.x0 + b.x1) / 2 + (p.x - cx) * k,
-    y: (b.y0 + b.y1) / 2 + (p.y - cy) * k,
+    x: (b.x0 + b.x1) / 2 + (p.x - cx) * k.x,
+    y: (b.y0 + b.y1) / 2 + (p.y - cy) * k.y,
   }));
 }
 
@@ -144,6 +188,7 @@ export function curveStrokes(shape: Shape): Point[][] {
   if (!curve) return [];
   const b = boxOf(shape);
   if (curve.kind === "parabolic") return parabolicPoints(curve, b);
+  if (curve.kind === "polygon" || curve.kind === "star") return [fitToBox(cornerPoints(curve), b, true)];
   return [fitToBox(hypotrochoidPoints(curve), b)];
 }
 
@@ -162,5 +207,7 @@ export function curveFromData(raw: unknown): Curve | null {
   if (d.kind === "parabolic") {
     return { kind: "parabolic", strings: n("strings", 12), corners: n("corners", 4) };
   }
+  if (d.kind === "polygon") return { kind: "polygon", sides: n("sides", 6) };
+  if (d.kind === "star") return { kind: "star", points: n("points", 5), inner: n("inner", 40) };
   return null;
 }
