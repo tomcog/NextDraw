@@ -2,7 +2,7 @@ import { hatchLines, hatchStroke, type Fill } from "./hatch";
 import { curveStrokes, pointsAttr } from "./parametric";
 import { textRuns, type StrokeFont } from "./text";
 import { placementAttr, placements } from "./repeat";
-import { boxOf, turnAttr, type Layer, type Page, type Shape } from "./shapes";
+import { boxOf, pathRuns, turnAttr, type Layer, type Page, type Shape } from "./shapes";
 
 // The drawing Studio writes out. Two things matter to Plot at the other end:
 //
@@ -28,6 +28,7 @@ const PLOT_NS = "https://github.com/tomcog/NextDraw";
 const STROKE_IN = 0.008;
 
 const num = (n: number) => Number(n.toFixed(4)).toString();
+const trim = (n: number) => Number(n.toFixed(4));
 
 /** Every copy of a shape, each in its own turn of the page. One copy for a shape that isn't repeated. */
 function allCopies(s: Shape, one: (copy: number) => string): string {
@@ -50,7 +51,14 @@ function shapeMarkup(s: Shape, fonts: Record<string, StrokeFont> = {}): string {
   // they are copies rather than shapes of their own.
   if (s.repeat) return allCopies(s, (i) => shapeMarkup({ ...s, repeat: undefined, id: i ? `${s.id}-r${i + 1}` : s.id }, fonts));
   if (s.kind === "path") {
-    return `<polyline id="${escapeAttr(s.id)}" points="${pointsAttr(s.points ?? [])}"/>`;
+    const runs = pathRuns(s);
+    if (runs.length === 1) return `<polyline id="${escapeAttr(s.id)}" points="${pointsAttr(runs[0])}"/>`;
+    // Several runs in one element: a path with a move at the start of each, which is what makes the
+    // whole of it one shape again when the drawing is opened.
+    const d = runs
+      .map((run) => `M ${run.map((p) => `${trim(p.x)} ${trim(p.y)}`).join(" L ")}`)
+      .join(" ");
+    return `<path id="${escapeAttr(s.id)}" d="${escapeAttr(d)}"/>`;
   }
   if (s.kind === "text") {
     // One path per letter, drawn where it is set. The words themselves are in the design block, so

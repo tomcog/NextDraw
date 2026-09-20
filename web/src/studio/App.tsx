@@ -24,7 +24,7 @@ import { defaultRepeat, placements, REPEAT_FIELDS, type Repeat, type RepeatKind 
 import { parseDrawing } from "./lib/parse";
 import { PaletteMenu } from "../components/controls/PaletteMenu";
 import { RowMenu } from "../components/controls/RowMenu";
-import { boxOf, centerOf, clampToPage, moveBy, newLayerId, newShapeId, outlinePoints, pointsBox, resizeTo, shapeName, turnPoint, type Layer, type Page, type Shape } from "./lib/shapes";
+import { boxOf, centerOf, clampToPage, moveBy, newLayerId, newShapeId, outlinePoints, pathRuns, pointsBox, resizeTo, shapeName, turnPoint, type Layer, type Page, type Shape } from "./lib/shapes";
 import { buildSvg, cleanFileName } from "./lib/svg";
 import styles from "./App.module.css";
 
@@ -686,6 +686,69 @@ export default function App() {
     pick(made[0].id);
   };
 
+  /** Every run of marks a shape makes, in inches on the page: its copies, its turn and all. */
+  const runsOf = (shape: Shape): Point[][] => {
+    const centre = centerOf(shape);
+    const runs: Point[][] = [];
+    for (const place of placements(shape)) {
+      const put = (p: Point) => {
+        const turned = turnPoint(turnPoint(p, centre, shape.rotation ?? 0), centre, place.deg);
+        return { x: turned.x + place.dx, y: turned.y + place.dy };
+      };
+      const own = shape.kind === "text"
+        ? textRuns(shape, fonts[shape.font ?? ""]).flatMap((g) => flattenPath(g.d))
+        : shape.curve ? curveStrokes(shape)
+        : shape.kind === "path" ? pathRuns(shape)
+        : [outlinePoints(shape)];
+      for (const run of own) {
+        if (run.length > 1) runs.push(run.map(put));
+      }
+    }
+    return runs;
+  };
+
+  /**
+   * Join what's picked into one shape: every mark of every one of them becomes a run of a single
+   * path, which then moves, scales and turns as one thing. A fill on the first of them is kept, and
+   * with several runs to count against, a ring inside a ring leaves a hole.
+   */
+  const joinShapes = () => {
+    const picked = shapes.filter((s) => selected.includes(s.id));
+    if (picked.length < 2) return;
+    const runs = picked.flatMap(runsOf);
+    if (!runs.length) return;
+    record();
+    const first = picked[0];
+    const b = pointsBox(runs.flat());
+    const joined: Shape = {
+      ...first, kind: "path", runs, points: undefined,
+      curve: undefined, repeat: undefined, rotation: undefined,
+      text: undefined, font: undefined, tracking: undefined, leading: undefined,
+      x: b.x0, y: b.y0, x2: b.x1, y2: b.y1,
+    };
+    const gone = picked.slice(1).map((s) => s.id);
+    setShapes((list) => list.flatMap((s) => (s.id === first.id ? [joined] : gone.includes(s.id) ? [] : [s])));
+    setFills((list) => list.filter((f) => !gone.includes(f.shapeId)));
+    setSelected([first.id]);
+  };
+
+  /** Take a joined shape apart again: each run becomes a shape of its own. */
+  const splitShape = (id: string) => {
+    const shape = shapes.find((s) => s.id === id);
+    const runs = shape ? pathRuns(shape) : [];
+    if (!shape || runs.length < 2) return;
+    record();
+    const made = runs.map((run, i) => {
+      const b = pointsBox(run);
+      return {
+        ...shape, id: i ? newShapeId() : shape.id, kind: "path" as const,
+        runs: undefined, points: run, x: b.x0, y: b.y0, x2: b.x1, y2: b.y1,
+      };
+    });
+    setShapes((list) => list.flatMap((s) => (s.id === id ? made : [s])));
+    setSelected(made.map((s) => s.id));
+  };
+
   /** Repeat the chosen shape, or stop repeating it. Every copy follows the shape itself. */
   const setRepeat = (repeat: Repeat | undefined) => {
     if (!chosen) return;
@@ -1298,6 +1361,20 @@ export default function App() {
             </Card>
           )}
 
+          {selected.length > 1 && (
+            <Card variant="flat" className={styles.controls}>
+              <div className={styles.cardBody}>
+                <Section title={`${selected.length} shapes`} collapsibleKey="selection">
+                  <Button size="md" variant="secondary" onClick={joinShapes}>Join into one shape</Button>
+                  <p className={styles.empty}>
+                    They become one path, drawn in as many strokes as they had marks, and move, scale
+                    and turn together from then on.
+                  </p>
+                </Section>
+              </div>
+            </Card>
+          )}
+
           {chosen?.kind === "text" && (
             <Card variant="flat" className={styles.controls}>
               <div className={styles.cardBody}>
@@ -1365,6 +1442,11 @@ export default function App() {
                   />
                   {/* Baking takes the whole thing - every copy of a repeat, every letter of a text -
                       and leaves paths whose points can be pulled about one at a time. */}
+                  {(chosen.runs?.length ?? 0) > 1 && (
+                    <Button size="md" variant="secondary" onClick={() => splitShape(chosen.id)}>
+                      {`Split into ${chosen.runs?.length} shapes`}
+                    </Button>
+                  )}
                   {chosen.repeat && chosen.kind !== "path" && (
                     <Button size="md" variant="secondary" onClick={() => bakeShape(chosen.id, true)}>
                       Bake the shape, keep the pattern

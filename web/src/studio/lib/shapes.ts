@@ -28,6 +28,11 @@ export interface Shape {
    * baked - the numbers behind it are given up, and every point can be dragged instead.
    */
   points?: Point[];
+  /**
+   * A path drawn in more than one go: several shapes joined into one thing, or one shape that lifts
+   * the pen partway. `points` is the whole of it when there is only the one run.
+   */
+  runs?: Point[][];
   /** Drawn more than once: in rows and columns, or round a ring. The shape itself is the one you
    *  edit, and every copy follows it. */
   repeat?: Repeat;
@@ -76,6 +81,12 @@ let counter = 0;
 export const newShapeId = () => `shape-${++counter}-${Date.now().toString(36)}`;
 
 /** The box a shape occupies, normalised so x0/y0 is the top-left whichever way it was drawn. */
+/** Every run of a path, the single-run case included: what draws it, and what it is measured by. */
+export const pathRuns = (s: Shape): Point[][] => s.runs ?? (s.points ? [s.points] : []);
+
+/** All of a path's points in one list, in the order they are drawn. */
+export const allPoints = (s: Shape): Point[] => pathRuns(s).flat();
+
 /** The box a path's own points occupy, which is what its handles and its fill are measured against. */
 export const pointsBox = (points: Point[]) => ({
   x0: Math.min(...points.map((p) => p.x)),
@@ -108,7 +119,7 @@ export const outlinePoints = (s: Shape): Point[] => {
       { x: b.x0, y: b.y0 }, { x: b.x1, y: b.y0 }, { x: b.x1, y: b.y1 }, { x: b.x0, y: b.y1 }, { x: b.x0, y: b.y0 },
     ];
   }
-  if (s.kind === "ellipse") {
+  if (s.kind === "ellipse" && !s.points && !s.runs) {
     // A point every few degrees: fine enough that the pen draws a circle, not a polygon.
     const cx = (b.x0 + b.x1) / 2;
     const cy = (b.y0 + b.y1) / 2;
@@ -120,7 +131,7 @@ export const outlinePoints = (s: Shape): Point[] => {
       return { x: cx + rx * Math.cos(a), y: cy + ry * Math.sin(a) };
     });
   }
-  return s.points ?? [];
+  return allPoints(s);
 };
 
 /** The box around several shapes: what a group of them is scaled and turned by. */
@@ -175,12 +186,13 @@ export const turnAround = (shapes: Shape[], about: { x: number; y: number }, deg
 /** The same shape in a new box, with a path's points carried across so they keep their places in it. */
 export const withBox = (s: Shape, box: { x0: number; y0: number; x1: number; y1: number }): Shape => {
   const next = { ...s, x: box.x0, y: box.y0, x2: box.x1, y2: box.y1 };
-  if (!s.points?.length) return next;
+  const runs = pathRuns(s);
+  if (!runs.length) return next;
   const from = boxOf(s);
   const kx = from.x1 - from.x0 > 1e-9 ? (box.x1 - box.x0) / (from.x1 - from.x0) : 1;
   const ky = from.y1 - from.y0 > 1e-9 ? (box.y1 - box.y0) / (from.y1 - from.y0) : 1;
-  next.points = s.points.map((p) => ({ x: box.x0 + (p.x - from.x0) * kx, y: box.y0 + (p.y - from.y0) * ky }));
-  return next;
+  const moved = runs.map((run) => run.map((p) => ({ x: box.x0 + (p.x - from.x0) * kx, y: box.y0 + (p.y - from.y0) * ky })));
+  return { ...next, ...(s.runs ? { runs: moved } : { points: moved[0] }) };
 };
 
 /** A shape too small to have been meant - a click rather than a drag. */
@@ -218,10 +230,11 @@ export const moveBy = (s: Shape, dx: number, dy: number, page: Page): Shape => {
   const b = boxOf(s);
   const byX = Math.max(-b.x0, Math.min(page.w - b.x1, dx));
   const byY = Math.max(-b.y0, Math.min(page.h - b.y1, dy));
+  const shift = (run: Point[]) => run.map((p) => ({ x: p.x + byX, y: p.y + byY }));
   return {
     ...s,
     x: s.x + byX, y: s.y + byY, x2: s.x2 + byX, y2: s.y2 + byY,
-    ...(s.points ? { points: s.points.map((p) => ({ x: p.x + byX, y: p.y + byY })) } : {}),
+    ...(s.runs ? { runs: s.runs.map(shift) } : s.points ? { points: shift(s.points) } : {}),
   };
 };
 
@@ -270,15 +283,17 @@ export const POINT_HANDLE_LIMIT = 120;
 
 export const handlesOf = (s: Shape): { id: Handle; x: number; y: number; point?: true }[] => {
   // A path has both: the corners of its box, which scale the whole of it, and - while there are few
-  // enough of them to pick one out - a grip on every point, which moves that point alone.
-  if (s.points?.length && s.points.length <= POINT_HANDLE_LIMIT) {
+  // enough of them to pick one out - a grip on every point, which moves that point alone. The points
+  // are counted straight through the runs, so one number names a point however many runs there are.
+  const points = allPoints(s);
+  if (points.length && points.length <= POINT_HANDLE_LIMIT) {
     const b = boxOf(s);
     return [
       { id: "nw" as Handle, x: b.x0, y: b.y0 },
       { id: "ne" as Handle, x: b.x1, y: b.y0 },
       { id: "sw" as Handle, x: b.x0, y: b.y1 },
       { id: "se" as Handle, x: b.x1, y: b.y1 },
-      ...s.points.map((p, i) => ({ id: `p${i}` as Handle, x: p.x, y: p.y, point: true as const })),
+      ...points.map((p, i) => ({ id: `p${i}` as Handle, x: p.x, y: p.y, point: true as const })),
     ];
   }
   if (s.kind === "line") {
@@ -299,18 +314,24 @@ export const handlesOf = (s: Shape): { id: Handle; x: number; y: number; point?:
 /** Put one corner (or one end of a line) where the pointer is. */
 export const dragHandle = (s: Shape, handle: Handle, x: number, y: number): Shape => {
   // One point of a path: the point moves, and the box follows it rather than the other way round.
-  if (handle.startsWith("p") && s.points) {
-    const i = Number(handle.slice(1));
-    const last = s.points.length - 1;
-    // A closed path ends where it began - the same point written twice - so dragging either end
-    // takes the other with it, rather than leaving the outline open.
-    const shut = last > 1
-      && Math.abs(s.points[0].x - s.points[last].x) < 1e-9
-      && Math.abs(s.points[0].y - s.points[last].y) < 1e-9;
-    const ends = shut && (i === 0 || i === last);
-    const points = s.points.map((p, k) => ((k === i || (ends && (k === 0 || k === last))) ? { x, y } : p));
-    const b = pointsBox(points);
-    return { ...s, points, x: b.x0, y: b.y0, x2: b.x1, y2: b.y1 };
+  if (handle.startsWith("p") && pathRuns(s).length) {
+    const wanted = Number(handle.slice(1));
+    let seen = 0;
+    const runs = pathRuns(s).map((run) => {
+      const i = wanted - seen;
+      seen += run.length;
+      if (i < 0 || i >= run.length) return run;
+      const last = run.length - 1;
+      // A run that ends where it began is closed - the same point written twice - so dragging
+      // either end takes the other with it, rather than leaving the outline open.
+      const shut = last > 1
+        && Math.abs(run[0].x - run[last].x) < 1e-9
+        && Math.abs(run[0].y - run[last].y) < 1e-9;
+      const ends = shut && (i === 0 || i === last);
+      return run.map((p, k) => ((k === i || (ends && (k === 0 || k === last))) ? { x, y } : p));
+    });
+    const b = pointsBox(runs.flat());
+    return { ...s, ...(s.runs ? { runs } : { points: runs[0] }), x: b.x0, y: b.y0, x2: b.x1, y2: b.y1 };
   }
   const n = normalized(s);
   switch (handle) {

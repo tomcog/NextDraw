@@ -1,5 +1,6 @@
 import { newFillId, type Fill } from "./hatch";
 import { curveFromData } from "./parametric";
+import { flattenPath } from "./text";
 import { repeatFromData } from "./repeat";
 import { newLayerId, newShapeId, type Layer, type Page, type Shape } from "./shapes";
 import { FILL_GROUP_PREFIX } from "./svg";
@@ -209,10 +210,26 @@ export function parseDrawing(text: string): Opened {
         });
         break;
       }
-      case "path":
+      case "path": {
         if (fromText(el.getAttribute("id") || "")) break;
-        unsupported++;
+        // Moves, lines and curves become runs of points: a shape that can be edited here, rather
+        // than a mark that can only be counted. Anything else in the path is left alone.
+        const runs = flattenPath(el.getAttribute("d") || "")
+          .map((run) => run.map((p) => ({ x: toX(p.x), y: toY(p.y) })))
+          .filter((run) => run.length > 1);
+        if (!runs.length) {
+          unsupported++;
+          break;
+        }
+        const all = runs.flat();
+        shapes.push({
+          id: noteSource(el), layerId: "", kind: "path",
+          ...(runs.length > 1 ? { runs } : { points: runs[0] }),
+          x: Math.min(...all.map((p) => p.x)), y: Math.min(...all.map((p) => p.y)),
+          x2: Math.max(...all.map((p) => p.x)), y2: Math.max(...all.map((p) => p.y)),
+        });
         break;
+      }
       case "text":
       case "image":
       case "use":

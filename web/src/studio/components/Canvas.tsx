@@ -1,7 +1,7 @@
 import { useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
 import {
   angleFromCenter, boxAround, boxOf, clampToPage, dragHandleTurned, handlePoints, isDegenerate,
-  moveBy, newShapeId, scaleInto, turnAround, turnAttr, turnGrip, CURSOR,
+  moveBy, newShapeId, pathRuns, scaleInto, turnAround, turnAttr, turnGrip, CURSOR,
   type Handle, type Page, type Shape, type ShapeKind,
 } from "../lib/shapes";
 import { hatchLines, hatchStroke, type Fill } from "../lib/hatch";
@@ -319,7 +319,14 @@ export function Canvas({ page, shapes, fills, layers, activeLayer, model, zoom, 
       );
     }
     if (s.kind === "path") {
-      return <polyline key={key} {...common} fill="none" points={pointsAttr(s.points ?? [])} />;
+      // One polyline per run: a joined shape is several strokes that move, scale and turn as one.
+      const runs = pathRuns(s);
+      if (runs.length === 1) return <polyline key={key} {...common} fill="none" points={pointsAttr(runs[0])} />;
+      return (
+        <g key={key} transform={turnAttr(s)}>
+          {runs.map((run, i) => <polyline key={i} {...props} fill="none" points={pointsAttr(run)} />)}
+        </g>
+      );
     }
     if (s.kind === "curve") {
       // Several strokes where the curve lifts the pen (a parabolic's corners), so what's on screen
