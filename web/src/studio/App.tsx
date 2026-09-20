@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Button, ButtonRound, Card, Checkbox, InputSelect, InputText, LayerController } from "@tomcoggia/ui";
+import { Button, ButtonRound, Card, Checkbox, InputSelect, InputText, InputTextarea, LayerController } from "@tomcoggia/ui";
 import { ArrowDownToLine, Circle, Copy, EllipsisVertical, FilePlus, Flame, FolderOpen, Layers2, LoaderPinwheel, Minus, MousePointer2, Pentagon, Plus, Radar, Rainbow, Ratio, Redo2, Spline, Square, Star, StickyNote, Trash2, Type, Undo2 } from "lucide-react";
 import { FileBrowser, LAST_FOLDER_KEY, type OpenResult } from "../components/FileBrowser";
 import { Section } from "../components/controls/Section";
@@ -489,8 +489,9 @@ export default function App() {
     if (font) remember(FONT_KEY, font);
   }, [font]);
 
-  /** Change a text shape: what it says, or the font it is set in. Its box follows the words. */
-  const setTextOf = (patch: { text?: string; font?: string }) => {
+  /** Change a text shape: its words, its font, or the room between letters and lines. Its box
+   *  follows whatever that comes to. */
+  const setTextOf = (patch: { text?: string; font?: string; tracking?: number; leading?: number }) => {
     if (!chosen || chosen.kind !== "text") return;
     record();
     setShapes((list) => list.map((s) => {
@@ -1217,11 +1218,15 @@ export default function App() {
             <Card variant="flat" className={styles.controls}>
               <div className={styles.cardBody}>
                 <Section title="Text" collapsibleKey="text">
-                  <InputText
+                  <InputTextarea
                     size="md"
                     label="Words"
+                    rows={2}
+                    autoResize
                     value={chosen.text ?? ""}
-                    maxLength={200}
+                    maxLength={500}
+                    // Enter starts a new line here rather than doing anything to the drawing.
+                    onKeyDown={(e) => e.stopPropagation()}
                     onChange={(e) => setTextOf({ text: e.target.value })}
                   />
                   <InputSelect
@@ -1234,7 +1239,30 @@ export default function App() {
                     {!fontList.length && <option value="">No fonts on this Mac</option>}
                     {fontList.map((f) => <option key={f} value={f}>{f}</option>)}
                   </InputSelect>
-                  <p className={styles.empty}>Drag a corner to set how tall the letters are.</p>
+                  <div className={styles.fillRow}>
+                    <NumberField
+                      label="Letter spacing"
+                      unit="%"
+                      step={1}
+                      min={-20}
+                      max={200}
+                      value={chosen.tracking ?? 0}
+                      onChange={(tracking) => setTextOf({ tracking })}
+                    />
+                    <NumberField
+                      label="Line spacing"
+                      unit="×"
+                      step={0.1}
+                      min={0.2}
+                      max={10}
+                      value={chosen.leading ?? 1}
+                      onChange={(leading) => setTextOf({ leading })}
+                    />
+                  </div>
+                  <p className={styles.empty}>
+                    Drag a corner to set how tall the letters are. Letter spacing is a share of that
+                    height, so it stays put as the text is resized.
+                  </p>
                 </Section>
               </div>
             </Card>

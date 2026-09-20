@@ -19,6 +19,10 @@ export interface Shape {
    *  the size it is set at, and its width follows from the words. */
   text?: string;
   font?: string;
+  /** Extra room between letters, as a percent of the size: a wet pen needs more of it. */
+  tracking?: number;
+  /** Space from one line to the next, as a multiple of the font's own: 1 is what the font says. */
+  leading?: number;
   /**
    * A path: the points it is drawn through, in inches on the page. A curve becomes one when it is
    * baked - the numbers behind it are given up, and every point can be dragged instead.

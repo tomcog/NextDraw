@@ -157,7 +157,11 @@ function designBlock(fills: Fill[], shapes: Shape[], layers: Layer[]): string {
     // What each text says and which font sets it: the letters are in the file as paths already, and
     // this is what lets them be typed into again.
     ...(texts.length
-      ? { texts: Object.fromEntries(texts.map((s) => [s.id, { text: s.text ?? "", font: s.font ?? "", box: [s.x, s.y, s.x2, s.y2] }])) }
+      ? { texts: Object.fromEntries(texts.map((s) => [s.id, {
+          text: s.text ?? "", font: s.font ?? "", box: [s.x, s.y, s.x2, s.y2],
+          ...(s.tracking ? { tracking: s.tracking } : {}),
+          ...(s.leading && s.leading !== 1 ? { leading: s.leading } : {}),
+        }])) }
       : {}),
     // The numbers behind each parametric shape, and the box it was drawn in, so reopening the
     // drawing gets the curve back rather than a heap of line segments.

@@ -71,7 +71,7 @@ export function parseDrawing(text: string): Opened {
   let design: {
     fills?: unknown; on?: Record<string, string>; curves?: unknown;
     turned?: Record<string, unknown>; repeats?: Record<string, unknown>;
-    texts?: Record<string, { text?: unknown; font?: unknown; box?: unknown }>;
+    texts?: Record<string, { text?: unknown; font?: unknown; box?: unknown; tracking?: unknown; leading?: unknown }>;
   } = {};
   try {
     design = designEl?.textContent ? JSON.parse(designEl.textContent) : {};
@@ -232,6 +232,8 @@ export function parseDrawing(text: string): Opened {
       id: el ? noteSource(el) : id, layerId: "", kind: "text",
       text: typeof saved.text === "string" ? saved.text : "",
       font: typeof saved.font === "string" ? saved.font : "",
+      ...(Number.isFinite(Number(saved.tracking)) ? { tracking: Number(saved.tracking) } : {}),
+      ...(Number.isFinite(Number(saved.leading)) ? { leading: Number(saved.leading) } : {}),
       x: box[0], y: box[1], x2: box[2], y2: box[3],
     });
   }

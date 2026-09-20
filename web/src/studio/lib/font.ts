@@ -83,8 +83,11 @@ export interface SetText {
   lines: number;
 }
 
-/** Set a string in a font: where each glyph goes, in font units, with the first baseline at y = 0. */
-export function setText(text: string, font: StrokeFont): SetText {
+/**
+ * Set a string in a font: where each glyph goes, in font units, with the first baseline at y = 0.
+ * `tracking` is extra room after each letter, in font units.
+ */
+export function setText(text: string, font: StrokeFont, tracking = 0): SetText {
   const glyphs: SetGlyph[] = [];
   let width = 0;
   let x = 0;
@@ -98,9 +101,10 @@ export function setText(text: string, font: StrokeFont): SetText {
     }
     const glyph = font.glyphs.get(char) ?? font.missing;
     if (glyph.d) glyphs.push({ d: glyph.d, x, line });
-    x += glyph.advance;
+    x += glyph.advance + tracking;
   }
-  return { glyphs, width: Math.max(width, x), lines: line + 1 };
+  // The last letter's tracking is room after the end of the line, which is not part of its width.
+  return { glyphs, width: Math.max(0, Math.max(width, x) - tracking), lines: line + 1 };
 }
 
 /** How far apart the baselines sit, in font units: the whole em, ascender to descender. */

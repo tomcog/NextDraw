@@ -47,23 +47,36 @@ function placePath(d: string, k: number, x: number, y: number): string {
   return out.join(" ");
 }
 
-/** The size one em is set at, in inches: the box's height, over however many lines there are. */
+/** What each text shape's numbers come to, with the defaults filled in. */
+const settingsOf = (shape: Shape) => ({
+  tracking: shape.tracking ?? 0, // percent of the size
+  leading: shape.leading ?? 1, // multiples of the font's own line step
+});
+
+/**
+ * The size one em is set at, in inches. The box's height holds the first line in full, plus however
+ * many gaps follow it - so more lines, or more space between them, means smaller letters in the
+ * same box.
+ */
 function emOf(shape: Shape, font: StrokeFont, lines: number) {
   const b = boxOf(shape);
   const height = b.y1 - b.y0;
   const perLine = lineStep(font) / font.unitsPerEm; // ems from one baseline to the next
-  return height > 0 ? height / (perLine * lines) : 0;
+  const { leading } = settingsOf(shape);
+  const tall = perLine * (1 + (lines - 1) * leading);
+  return height > 0 && tall > 0 ? height / tall : 0;
 }
 
 /** Every glyph of a text shape, placed and sized, ready to draw. */
 export function textRuns(shape: Shape, font: StrokeFont | undefined): TextRun[] {
   if (!font || shape.kind !== "text") return [];
-  const set = setText(shape.text ?? "", font);
+  const { tracking, leading } = settingsOf(shape);
+  const set = setText(shape.text ?? "", font, (tracking / 100) * font.unitsPerEm);
   const b = boxOf(shape);
   const em = emOf(shape, font, set.lines);
   if (!em) return [];
   const k = em / font.unitsPerEm;
-  const step = lineStep(font) * k;
+  const step = lineStep(font) * k * leading;
   return set.glyphs
     .map((g) => {
       // The first baseline sits an ascender below the top of the box.
@@ -77,7 +90,8 @@ export function textRuns(shape: Shape, font: StrokeFont | undefined): TextRun[] 
 /** How wide the words come out at the box's height, in inches: what the box's width is set to. */
 export function textWidth(shape: Shape, font: StrokeFont | undefined): number {
   if (!font || shape.kind !== "text") return 0;
-  const set = setText(shape.text ?? "", font);
+  const { tracking } = settingsOf(shape);
+  const set = setText(shape.text ?? "", font, (tracking / 100) * font.unitsPerEm);
   const em = emOf(shape, font, set.lines);
   return (set.width * em) / font.unitsPerEm;
 }
