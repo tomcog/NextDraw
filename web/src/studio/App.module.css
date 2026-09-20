@@ -148,6 +148,22 @@
   gap: 0.125rem;
 }
 
+.shapeLabel {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.5rem;
+  min-width: 0;
+}
+
+.shapeName {
+  flex: 1 1 auto;
+  min-width: 2.5rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .shapeRow {
   display: flex;
   align-items: center;

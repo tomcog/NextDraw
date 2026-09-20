@@ -1293,52 +1293,76 @@ export default function App() {
                     <ul className={styles.shapeList}>
                       {onActive.map((sh, i) => {
                         const b = boxOf(sh);
+                        const name = shapeName(sh, i);
                         return (
-                          <li key={sh.id} className={styles.shapeRow} data-selected={selected.includes(sh.id)}>
-                            {/* Shift picks up another shape without letting go of the ones already picked. */}
-                            <button type="button" className={styles.shapePick}
-                              onClick={(e) => setSelected((current) => (e.shiftKey
-                                ? (current.includes(sh.id) ? current.filter((id) => id !== sh.id) : [...current, sh.id])
-                                : [sh.id]))}>
-                              <span>{shapeName(sh, i)}</span>
-                            </button>
-                            {sizing === sh.id ? (
-                              // Typed in inches, the units the page itself is measured in.
-                              <span className={styles.sizeFields} onBlur={(e) => {
-                                if (!e.currentTarget.contains(e.relatedTarget as Node)) setSizing(null);
-                              }}>
-                                <NumberField
-                                  label={`Width of ${shapeName(sh, i)} (in)`}
-                                  hideLabel
-                                  min={0.02}
-                                  step={0.1}
-                                  value={Number((b.x1 - b.x0).toFixed(3))}
-                                  onChange={(w) => setShapeSize(sh.id, w, b.y1 - b.y0)}
-                                />
-                                <NumberField
-                                  label={`Height of ${shapeName(sh, i)} (in)`}
-                                  hideLabel
-                                  min={0.02}
-                                  step={0.1}
-                                  value={Number((b.y1 - b.y0).toFixed(3))}
-                                  onChange={(h) => setShapeSize(sh.id, b.x1 - b.x0, h)}
-                                />
-                              </span>
-                            ) : (
-                              <button
-                                type="button"
-                                className={styles.shapeSize}
-                                title="Set this shape's size"
-                                onClick={() => { pick(sh.id); setSizing(sh.id); }}
-                              >
-                                {`${fmtIn(b.x1 - b.x0)} × ${fmtIn(b.y1 - b.y0)}`}
-                              </button>
-                            )}
+                          // The same row a layer has: its number, its name, and the same kebab
+                          // after it - with the size where a layer keeps its eye.
+                          <li key={sh.id} className={styles.layerRow}>
+                            <LayerController
+                              // A group of its own per row: several shapes can be picked at once,
+                              // and a browser only ever lets one radio of a group be on.
+                              name={`studio-shape-${sh.id}`}
+                              purpose="draw"
+                              number={i + 1}
+                              // No swatch: everything on a layer draws in that layer's one ink, and
+                              // the row right above says which it is.
+                              hideVisibility
+                              hideHandle
+                              checked={selected.includes(sh.id)}
+                              aria-label={`Shape ${i + 1}, ${name}`}
+                              // The click decides, not the box: several shapes can be picked, which
+                              // a radio would otherwise undo for us. Shift adds one to the selection
+                              // or takes it out; a plain click picks that shape alone.
+                              onChange={() => {}}
+                              onClick={(e) => {
+                                e.preventDefault();
+                                setSelected((current) => (e.shiftKey
+                                  ? (current.includes(sh.id) ? current.filter((id) => id !== sh.id) : [...current, sh.id])
+                                  : [sh.id]));
+                              }}
+                              label={
+                                <span className={styles.shapeLabel}>
+                                  <span className={styles.shapeName}>{name}</span>
+                                  {sizing === sh.id ? (
+                                    // Typed in inches, the units the page itself is measured in.
+                                    <span className={styles.sizeFields} onBlur={(e) => {
+                                      if (!e.currentTarget.contains(e.relatedTarget as Node)) setSizing(null);
+                                    }}>
+                                      <NumberField
+                                        label={`Width of ${name} (in)`}
+                                        hideLabel
+                                        min={0.02}
+                                        step={0.1}
+                                        value={Number((b.x1 - b.x0).toFixed(3))}
+                                        onChange={(w) => setShapeSize(sh.id, w, b.y1 - b.y0)}
+                                      />
+                                      <NumberField
+                                        label={`Height of ${name} (in)`}
+                                        hideLabel
+                                        min={0.02}
+                                        step={0.1}
+                                        value={Number((b.y1 - b.y0).toFixed(3))}
+                                        onChange={(h) => setShapeSize(sh.id, b.x1 - b.x0, h)}
+                                      />
+                                    </span>
+                                  ) : (
+                                    <button
+                                      type="button"
+                                      className={styles.shapeSize}
+                                      title="Set this shape's size"
+                                      onClick={() => { pick(sh.id); setSizing(sh.id); }}
+                                    >
+                                      {`${fmtIn(b.x1 - b.x0)} × ${fmtIn(b.y1 - b.y0)}`}
+                                    </button>
+                                  )}
+                                </span>
+                              }
+                            />
                             <ButtonRound size="sm" variant="ghost" icon={<EllipsisVertical />}
-                              aria-label={`More for ${shapeName(sh, i)}`}
+                              aria-label={`More for ${name}`}
                               aria-haspopup="menu"
                               aria-expanded={rowMenu?.id === sh.id}
-                              title="Duplicate or delete this shape"
+                              title="Duplicate, move or delete this shape"
                               disabled={busy}
                               onClick={(e) => {
                                 const anchor = e.currentTarget;
