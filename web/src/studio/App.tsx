@@ -1532,9 +1532,12 @@ export default function App() {
             </Card>
           )}
 
-          {chosen?.curve && (
+          {/* What the shape itself is made of: the numbers that draw it, and how it is filled in. */}
+          {chosen && (chosen.curve || canFill(chosen)) && (
             <Card variant="flat" className={styles.controls}>
-              <div className={styles.cardBody}>
+              <div className={`${styles.cardBody} ${styles.settings}`}>
+                <Section title="Shape" collapsibleKey="shape">
+                {chosen.curve && (
                 <Section title="Curve" collapsibleKey="curve">
                   <div className={styles.fillRow}>
                     {CURVE_FIELDS[chosen.curve.kind].map((f) => (
@@ -1557,13 +1560,9 @@ export default function App() {
                     </p>
                   )}
                 </Section>
-              </div>
-            </Card>
-          )}
+                )}
 
-          {chosen && canFill(chosen) && (
-            <Card variant="flat" className={styles.controls}>
-              <div className={styles.cardBody}>
+                {canFill(chosen) && (
                 <Section title="Fill" collapsibleKey="fill">
                   <Checkbox
                     checked={chosenFills.length > 0}
@@ -1630,6 +1629,8 @@ export default function App() {
                       onChange={(e) => setOutline(e.target.checked)}
                     />
                   )}
+                </Section>
+                )}
                 </Section>
               </div>
             </Card>
