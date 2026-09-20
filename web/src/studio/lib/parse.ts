@@ -179,13 +179,33 @@ export function parseDrawing(text: string): Opened {
         });
         break;
       case "polyline":
+      case "polygon": {
         // A curve's own lines: rebuilt from the design block below, like a fill's. A curve drawn in
         // several passes numbers them after its own id, so the later ones are matched by their start.
         if (fromCurve(el.getAttribute("id") || "")) break;
-        unsupported++;
+        // Anything else drawn through points is a path: every point of it can be dragged.
+        const nums = numbers(el.getAttribute("points"));
+        const points = nums.slice(0, nums.length - (nums.length % 2))
+          .reduce<{ x: number; y: number }[]>((acc, v, i) => {
+            if (i % 2) acc.push({ x: toX(nums[i - 1]), y: toY(v) });
+            return acc;
+          }, []);
+        if (points.length < 2) {
+          unsupported++;
+          break;
+        }
+        if (el.nodeName.toLowerCase() === "polygon") points.push(points[0]); // a polygon closes itself
+        const pb = {
+          x0: Math.min(...points.map((p) => p.x)), y0: Math.min(...points.map((p) => p.y)),
+          x1: Math.max(...points.map((p) => p.x)), y1: Math.max(...points.map((p) => p.y)),
+        };
+        shapes.push({
+          id: noteSource(el), layerId: "", kind: "path", points,
+          x: pb.x0, y: pb.y0, x2: pb.x1, y2: pb.y1,
+        });
         break;
+      }
       case "path":
-      case "polygon":
       case "text":
       case "image":
       case "use":

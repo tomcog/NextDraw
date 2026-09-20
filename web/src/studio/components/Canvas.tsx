@@ -16,9 +16,10 @@ import styles from "./Canvas.module.css";
 /** Select picks shapes up; the rest draw. Without the distinction a shape covering the page would
  *  be a hole you couldn't draw in, and a drag over one would be ambiguous. A parametric curve is
  *  its own tool per generator, since which curve it is can't be told from the drag. */
-export type Tool = Exclude<ShapeKind, "curve"> | "select" | CurveKind;
+export type Tool = Exclude<ShapeKind, "curve" | "path"> | "select" | CurveKind;
 
 /** The shape a tool draws, as a box with nothing in it yet. */
+// A path is never drawn by hand: it is what a curve becomes when it's baked.
 const shapeFor = (tool: Exclude<Tool, "select">, layerId: string, x: number, y: number): Shape =>
   tool === "rect" || tool === "ellipse" || tool === "line"
     ? { id: newShapeId(), layerId, kind: tool, x, y, x2: x, y2: y }
@@ -194,6 +195,9 @@ export function Canvas({ page, shapes, fills, layers, activeLayer, model, zoom, 
     const b = boxOf(s);
     // A turned shape is drawn turned about the middle of its box; the box itself stays square.
     const common = { ...props, ...(turnAttr(s) ? { transform: turnAttr(s) } : {}) };
+    if (s.kind === "path") {
+      return <polyline key={key} {...common} fill="none" points={pointsAttr(s.points ?? [])} />;
+    }
     if (s.kind === "curve") {
       // Several strokes where the curve lifts the pen (a parabolic's corners), so what's on screen
       // is what goes on the paper, pen lifts and all. The caller's props go on each stroke rather

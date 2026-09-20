@@ -48,6 +48,9 @@ function shapeMarkup(s: Shape): string {
   // Copies carry the shape's id with a number after it, which is how reading the drawing back knows
   // they are copies rather than shapes of their own.
   if (s.repeat) return allCopies(s, (i) => shapeMarkup({ ...s, repeat: undefined, id: i ? `${s.id}-r${i + 1}` : s.id }));
+  if (s.kind === "path") {
+    return `<polyline id="${escapeAttr(s.id)}" points="${pointsAttr(s.points ?? [])}"/>`;
+  }
   if (s.kind === "curve") {
     // Drawn out as the lines the pen makes, so Plot needs to know nothing about the numbers behind
     // them; they travel in the design block below and Studio redraws the curve from those.

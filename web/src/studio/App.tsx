@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Button, ButtonRound, Card, Checkbox, InputSelect, InputText, LayerController } from "@tomcoggia/ui";
-import { ArrowDownToLine, Circle, Copy, EllipsisVertical, FilePlus, FolderOpen, Layers2, LoaderPinwheel, Minus, MousePointer2, Pentagon, Plus, Ratio, Redo2, Spline, Square, Star, StickyNote, Trash2, Undo2 } from "lucide-react";
+import { ArrowDownToLine, Circle, Copy, EllipsisVertical, FilePlus, Flame, FolderOpen, Layers2, LoaderPinwheel, Minus, MousePointer2, Pentagon, Plus, Ratio, Redo2, Spline, Square, Star, StickyNote, Trash2, Undo2 } from "lucide-react";
 import { FileBrowser, LAST_FOLDER_KEY, type OpenResult } from "../components/FileBrowser";
 import { Section } from "../components/controls/Section";
 import { NumberField } from "../components/controls/NumberField";
@@ -17,12 +17,12 @@ import { useRowDrag } from "../lib/useRowDrag";
 import { Canvas, type Tool } from "./components/Canvas";
 import { StudioHeader } from "./components/StudioHeader";
 import { canFill, newFillId, type Fill } from "./lib/hatch";
-import { closingTurns, CURVE_FIELDS, type Curve } from "./lib/parametric";
+import { closingTurns, curveStrokes, CURVE_FIELDS, type Curve, type Point } from "./lib/parametric";
 import { defaultRepeat, placements, REPEAT_FIELDS, REPEAT_LABEL, type Repeat, type RepeatKind } from "./lib/repeat";
 import { parseDrawing } from "./lib/parse";
 import { PaletteMenu } from "../components/controls/PaletteMenu";
 import { RowMenu } from "../components/controls/RowMenu";
-import { boxOf, clampToPage, newLayerId, newShapeId, resizeTo, shapeName, type Layer, type Page, type Shape } from "./lib/shapes";
+import { boxOf, centerOf, clampToPage, newLayerId, newShapeId, pointsBox, resizeTo, shapeName, turnPoint, type Layer, type Page, type Shape } from "./lib/shapes";
 import { buildSvg, cleanFileName } from "./lib/svg";
 import styles from "./App.module.css";
 
@@ -491,6 +491,53 @@ export default function App() {
     setShapes((list) => list.map((s) => (s.id === id ? clampToPage(resizeTo(s, w, h), page) : s)));
   };
 
+  /**
+   * Bake a shape: give up the numbers behind it and keep what they drew. A curve becomes a path with
+   * every point draggable, and a repeat becomes its copies, each its own shape. What was one thing
+   * following its parameters becomes several things to edit by hand - which is the point, and why it
+   * can't be undone except with undo.
+   */
+  const bakeShape = (id: string) => {
+    const shape = shapes.find((s) => s.id === id);
+    if (!shape) return;
+    record();
+    const centre = centerOf(shape);
+    const made: Shape[] = [];
+    for (const place of placements(shape)) {
+      // The shape's own turn first, then the copy's: the same order the drawing is written in.
+      const put = (p: Point) => {
+        const turned = turnPoint(turnPoint(p, centre, shape.rotation ?? 0), centre, place.deg);
+        return { x: turned.x + place.dx, y: turned.y + place.dy };
+      };
+      if (shape.curve) {
+        for (const run of curveStrokes(shape)) {
+          const points = run.map(put);
+          if (points.length < 2) continue;
+          const b = pointsBox(points);
+          made.push({
+            ...shape, id: made.length ? newShapeId() : shape.id,
+            kind: "path", points, curve: undefined, repeat: undefined, rotation: undefined,
+            x: b.x0, y: b.y0, x2: b.x1, y2: b.y1,
+          });
+        }
+      } else {
+        // A plain shape keeps its own kind; only the copies become shapes of their own.
+        made.push({
+          ...shape, id: made.length ? newShapeId() : shape.id, repeat: undefined,
+          rotation: ((shape.rotation ?? 0) + place.deg) % 360 || undefined,
+          x: shape.x + place.dx, y: shape.y + place.dy, x2: shape.x2 + place.dx, y2: shape.y2 + place.dy,
+        });
+      }
+    }
+    if (!made.length) return;
+    setShapes((list) => list.flatMap((s) => (s.id === id ? made : [s])));
+    // Each new shape gets the fills the original had, so the drawing looks the same afterwards.
+    setFills((list) => list.flatMap((f) => (f.shapeId === id
+      ? made.map((s) => ({ ...f, id: s.id === id ? f.id : newFillId(), shapeId: s.id }))
+      : [f])));
+    setSelected(made[0].id);
+  };
+
   /** Repeat the chosen shape, or stop repeating it. Every copy follows the shape itself. */
   const setRepeat = (repeat: Repeat | undefined) => {
     if (!chosen) return;
@@ -673,6 +720,15 @@ export default function App() {
             ]
             : [
               { label: "Duplicate", icon: <Copy />, onSelect: () => duplicateShape(rowMenu.id) },
+              ...(() => {
+                const sh = shapes.find((s) => s.id === rowMenu.id);
+                if (!sh?.curve && !sh?.repeat) return [];
+                return [{
+                  label: sh.curve ? "Bake to a path" : "Bake the copies",
+                  icon: <Flame />,
+                  onSelect: () => bakeShape(rowMenu.id),
+                }];
+              })(),
               // One entry per other layer: a layer is a pen, so this is "draw this in that pen".
               ...layers
                 .filter((l) => l.id !== shapes.find((s) => s.id === rowMenu.id)?.layerId)

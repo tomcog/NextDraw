@@ -48,10 +48,17 @@ export interface Seg {
  * drawing rather than an outline round anything. Everything else can be filled, a polygon, a star or
  * a spirograph included - their fills are clipped to the outline itself, not to the box.
  */
-export const canFill = (s: Shape) => s.kind !== "line" && s.curve?.kind !== "parabolic";
+export const canFill = (s: Shape) =>
+  s.kind !== "line" && s.curve?.kind !== "parabolic" && (s.kind !== "path" || (s.points?.length ?? 0) > 2);
 
-/** The closed outline a curve's fill is clipped to. Empty for anything that isn't a curve. */
-const outlineOf = (s: Shape): Point[] => (s.curve ? curveStrokes(s)[0] ?? [] : []);
+/** The closed outline a fill is clipped to: a curve's generated points, or a path's own. */
+const outlineOf = (s: Shape): Point[] => {
+  const pts = s.curve ? curveStrokes(s)[0] ?? [] : s.points ?? [];
+  if (pts.length > 2 && (pts[0].x !== pts[pts.length - 1].x || pts[0].y !== pts[pts.length - 1].y)) {
+    return [...pts, pts[0]]; // a fill needs a closed outline to count crossings against
+  }
+  return pts;
+};
 
 /**
  * Where a line crosses a closed outline, as the spans that lie inside it. Crossings are counted the
@@ -141,14 +148,14 @@ export function hatchLines(shape: Shape, fill: Fill): Seg[] {
   const cy = (b.y0 + b.y1) / 2;
   const reach = Math.hypot(w, h) / 2;
   const outline = outlineOf(shape);
-  if (shape.curve && outline.length < 3) return [];
+  if ((shape.curve || shape.kind === "path") && outline.length < 3) return [];
 
   const segs: Seg[] = [];
   for (let i = -Math.ceil(reach / step); i <= Math.ceil(reach / step); i++) {
     const t = i * step;
     const px = cx + nx * t;
     const py = cy + ny * t;
-    if (shape.curve) {
+    if (shape.curve || shape.kind === "path") {
       for (const seg of clipToOutline(px, py, dx, dy, outline)) {
         if (Math.hypot(seg.x2 - seg.x1, seg.y2 - seg.y1) > 1e-6) segs.push(seg);
       }
@@ -180,7 +187,7 @@ export function hatchStroke(shape: Shape, fill: Fill): { x: number; y: number }[
 
   // A curve joins along its own outline, the short way round, so the join never cuts across a
   // star's notch or through the middle of a spirograph.
-  const outline = shape.curve ? curveStrokes(shape)[0] ?? [] : [];
+  const outline = outlineOf(shape);
   const walkOutline = (from: Point, to: Point) => {
     if (outline.length < 3) return [];
     // Where each end sits on the outline, as the corner it is nearest to.
@@ -205,7 +212,7 @@ export function hatchStroke(shape: Shape, fill: Fill): { x: number; y: number }[
   };
 
   const join = (from: { x: number; y: number }, to: { x: number; y: number }) => {
-    if (shape.curve) return walkOutline(from, to);
+    if (shape.curve || shape.kind === "path") return walkOutline(from, to);
     if (shape.kind === "rect") {
       // One end on a side (x0 or x1) and the other on the top or bottom: go by the corner they share.
       const side = (p: { x: number; y: number }) =>

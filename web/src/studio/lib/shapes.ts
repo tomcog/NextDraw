@@ -1,10 +1,10 @@
 // Studio's drawing model. Everything is in inches from the page's top-left corner, the same way
 // Plot measures a drawing's footprint, so what's on the page here is what lands on the paper there.
 
-import { CURVE_LABEL, type Curve } from "./parametric";
+import { CURVE_LABEL, type Curve, type Point } from "./parametric";
 import type { Repeat } from "./repeat";
 
-export type ShapeKind = "rect" | "ellipse" | "line" | "curve";
+export type ShapeKind = "rect" | "ellipse" | "line" | "curve" | "path";
 
 export interface Shape {
   id: string;
@@ -15,6 +15,11 @@ export interface Shape {
   y: number;
   x2: number;
   y2: number;
+  /**
+   * A path: the points it is drawn through, in inches on the page. A curve becomes one when it is
+   * baked - the numbers behind it are given up, and every point can be dragged instead.
+   */
+  points?: Point[];
   /** Drawn more than once: in rows and columns, or round a ring. The shape itself is the one you
    *  edit, and every copy follows it. */
   repeat?: Repeat;
@@ -63,6 +68,14 @@ let counter = 0;
 export const newShapeId = () => `shape-${++counter}-${Date.now().toString(36)}`;
 
 /** The box a shape occupies, normalised so x0/y0 is the top-left whichever way it was drawn. */
+/** The box a path's own points occupy, which is what its handles and its fill are measured against. */
+export const pointsBox = (points: Point[]) => ({
+  x0: Math.min(...points.map((p) => p.x)),
+  y0: Math.min(...points.map((p) => p.y)),
+  x1: Math.max(...points.map((p) => p.x)),
+  y1: Math.max(...points.map((p) => p.y)),
+});
+
 export const boxOf = (s: Shape) => ({
   x0: Math.min(s.x, s.x2),
   y0: Math.min(s.y, s.y2),
@@ -71,7 +84,18 @@ export const boxOf = (s: Shape) => ({
 });
 
 export const shapeName = (s: Shape, index: number) =>
-  `${s.curve ? CURVE_LABEL[s.curve.kind] : { rect: "Rectangle", ellipse: "Ellipse", line: "Line", curve: "Curve" }[s.kind]} ${index + 1}`;
+  `${s.curve ? CURVE_LABEL[s.curve.kind] : { rect: "Rectangle", ellipse: "Ellipse", line: "Line", curve: "Curve", path: "Path" }[s.kind]} ${index + 1}`;
+
+/** The same shape in a new box, with a path's points carried across so they keep their places in it. */
+export const withBox = (s: Shape, box: { x0: number; y0: number; x1: number; y1: number }): Shape => {
+  const next = { ...s, x: box.x0, y: box.y0, x2: box.x1, y2: box.y1 };
+  if (!s.points?.length) return next;
+  const from = boxOf(s);
+  const kx = from.x1 - from.x0 > 1e-9 ? (box.x1 - box.x0) / (from.x1 - from.x0) : 1;
+  const ky = from.y1 - from.y0 > 1e-9 ? (box.y1 - box.y0) / (from.y1 - from.y0) : 1;
+  next.points = s.points.map((p) => ({ x: box.x0 + (p.x - from.x0) * kx, y: box.y0 + (p.y - from.y0) * ky }));
+  return next;
+};
 
 /** A shape too small to have been meant - a click rather than a drag. */
 export const isDegenerate = (s: Shape) => {
@@ -108,7 +132,11 @@ export const moveBy = (s: Shape, dx: number, dy: number, page: Page): Shape => {
   const b = boxOf(s);
   const byX = Math.max(-b.x0, Math.min(page.w - b.x1, dx));
   const byY = Math.max(-b.y0, Math.min(page.h - b.y1, dy));
-  return { ...s, x: s.x + byX, y: s.y + byY, x2: s.x2 + byX, y2: s.y2 + byY };
+  return {
+    ...s,
+    x: s.x + byX, y: s.y + byY, x2: s.x2 + byX, y2: s.y2 + byY,
+    ...(s.points ? { points: s.points.map((p) => ({ x: p.x + byX, y: p.y + byY })) } : {}),
+  };
 };
 
 /** The middle of a shape's box, which is what it turns about. */
@@ -149,9 +177,16 @@ export const resizeTo = (s: Shape, w: number, h: number): Shape => {
 };
 
 /** The corners a selected shape can be dragged by: a box has four, a line has its two ends. */
-export type Handle = "nw" | "ne" | "sw" | "se" | "a" | "b";
+export type Handle = "nw" | "ne" | "sw" | "se" | "a" | "b" | `p${number}`;
+
+/** A path with more points than this is dragged by its corners: a thousand grips is not an edit. */
+export const POINT_HANDLE_LIMIT = 120;
 
 export const handlesOf = (s: Shape): { id: Handle; x: number; y: number }[] => {
+  // A path is dragged by its own points, while there are few enough of them to pick one out.
+  if (s.points?.length && s.points.length <= POINT_HANDLE_LIMIT) {
+    return s.points.map((p, i) => ({ id: `p${i}` as Handle, x: p.x, y: p.y }));
+  }
   if (s.kind === "line") {
     return [
       { id: "a", x: s.x, y: s.y },
@@ -169,14 +204,22 @@ export const handlesOf = (s: Shape): { id: Handle; x: number; y: number }[] => {
 
 /** Put one corner (or one end of a line) where the pointer is. */
 export const dragHandle = (s: Shape, handle: Handle, x: number, y: number): Shape => {
+  // One point of a path: the point moves, and the box follows it rather than the other way round.
+  if (handle.startsWith("p") && s.points) {
+    const i = Number(handle.slice(1));
+    const points = s.points.map((p, k) => (k === i ? { x, y } : p));
+    const b = pointsBox(points);
+    return { ...s, points, x: b.x0, y: b.y0, x2: b.x1, y2: b.y1 };
+  }
   const n = normalized(s);
   switch (handle) {
     case "a": return { ...n, x, y };
     case "b": return { ...n, x2: x, y2: y };
-    case "nw": return { ...n, x, y };
-    case "ne": return { ...n, x2: x, y };
-    case "sw": return { ...n, x, y2: y };
-    case "se": return { ...n, x2: x, y2: y };
+    case "nw": return withBox(n, { ...boxOf(n), x0: x, y0: y });
+    case "ne": return withBox(n, { ...boxOf(n), x1: x, y0: y });
+    case "sw": return withBox(n, { ...boxOf(n), x0: x, y1: y });
+    case "se": return withBox(n, { ...boxOf(n), x1: x, y1: y });
+    default: return n;
   }
 };
 
@@ -202,7 +245,7 @@ export const angleFromCenter = (s: Shape, x: number, y: number) => {
   return (Math.atan2(x - c.x, c.y - y) * 180) / Math.PI;
 };
 
-const OPPOSITE: Record<Handle, Handle> = { nw: "se", se: "nw", ne: "sw", sw: "ne", a: "b", b: "a" };
+const OPPOSITE: Record<string, Handle> = { nw: "se", se: "nw", ne: "sw", sw: "ne", a: "b", b: "a" };
 
 /**
  * Drag a handle of a turned shape. The pointer is turned back into the box's own frame, the corner
@@ -222,6 +265,10 @@ export const dragHandleTurned = (s: Shape, handle: Handle, x: number, y: number)
   return { ...next, x: next.x + dx, y: next.y + dy, x2: next.x2 + dx, y2: next.y2 + dy };
 };
 
-export const CURSOR: Record<Handle, string> = {
+const CURSORS: Record<string, string> = {
   nw: "nwse-resize", se: "nwse-resize", ne: "nesw-resize", sw: "nesw-resize", a: "move", b: "move",
 };
+
+export const CURSOR = new Proxy({} as Record<Handle, string>, {
+  get: (_t, key: string) => CURSORS[key] ?? "move", // a path's points are all "move"
+});
