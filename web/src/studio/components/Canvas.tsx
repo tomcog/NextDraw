@@ -195,11 +195,13 @@ export function Canvas({ page, shapes, fills, layers, activeLayer, model, zoom, 
     const common = { ...props, ...(turnAttr(s) ? { transform: turnAttr(s) } : {}) };
     if (s.kind === "curve") {
       // Several strokes where the curve lifts the pen (a parabolic's corners), so what's on screen
-      // is what goes on the paper, pen lifts and all.
+      // is what goes on the paper, pen lifts and all. The caller's props go on each stroke rather
+      // than on the group around them: vector-effect doesn't inherit in SVG, so a class on the group
+      // would leave the interface's screen-width lines measured in inches instead.
       const runs = curveStrokes(s);
       return (
-        <g key={key} {...common}>
-          {runs.map((run, i) => <polyline key={i} fill="none" points={pointsAttr(run)} />)}
+        <g key={key} transform={turnAttr(s)}>
+          {runs.map((run, i) => <polyline key={i} {...props} fill="none" points={pointsAttr(run)} />)}
         </g>
       );
     }
