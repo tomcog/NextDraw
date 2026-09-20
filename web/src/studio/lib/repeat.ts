@@ -15,9 +15,10 @@ export interface GridRepeat {
   stepY: number;
 }
 
-/** Copies round a circle `radius` inches across, with the shape itself at its top. */
+/** Shapes round a circle `radius` inches across, with the shape itself at its top. */
 export interface RingRepeat {
   kind: "ring";
+  /** How many shapes stand in the ring, the one that was drawn included. */
   count: number;
   radius: number;
   /** Turn each copy to face out of the ring, rather than leaving them all the same way up. */
@@ -53,7 +54,8 @@ export const REPEAT_FIELDS: Record<RepeatKind, { key: string; label: string; min
     { key: "stepY", label: "Step down (in)", min: 0, max: 50, step: 0.1 },
   ],
   ring: [
-    { key: "count", label: "Copies", min: 1, max: 200, step: 1 },
+    // "Shapes" rather than "copies": the count takes in the shape that was drawn, not just its copies.
+    { key: "count", label: "Shapes", min: 1, max: 200, step: 1 },
     { key: "radius", label: "Radius (in)", min: 0, max: 50, step: 0.1 },
   ],
 };

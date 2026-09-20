@@ -1191,7 +1191,7 @@ export default function App() {
                     />
                   )}
                   {chosen.repeat && (
-                    <p className={styles.empty}>{`${placements(chosen).length} copies, the first being the shape itself`}</p>
+                    <p className={styles.empty}>{`${placements(chosen).length} shapes in all, counting the one you drew`}</p>
                   )}
                 </Section>
               </div>
