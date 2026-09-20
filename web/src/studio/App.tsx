@@ -19,12 +19,12 @@ import { StudioHeader } from "./components/StudioHeader";
 import { canFill, newFillId, type Fill } from "./lib/hatch";
 import { closingTurns, curveStrokes, CURVE_FIELDS, type Curve, type Point } from "./lib/parametric";
 import { fontNames, loadFont, type StrokeFont } from "./lib/font";
-import { fitText } from "./lib/text";
+import { fitText, flattenPath, textRuns } from "./lib/text";
 import { defaultRepeat, placements, REPEAT_FIELDS, REPEAT_LABEL, type Repeat, type RepeatKind } from "./lib/repeat";
 import { parseDrawing } from "./lib/parse";
 import { PaletteMenu } from "../components/controls/PaletteMenu";
 import { RowMenu } from "../components/controls/RowMenu";
-import { boxOf, centerOf, clampToPage, newLayerId, newShapeId, pointsBox, resizeTo, shapeName, turnPoint, type Layer, type Page, type Shape } from "./lib/shapes";
+import { boxOf, centerOf, clampToPage, moveBy, newLayerId, newShapeId, pointsBox, resizeTo, shapeName, turnPoint, type Layer, type Page, type Shape } from "./lib/shapes";
 import { buildSvg, cleanFileName } from "./lib/svg";
 import styles from "./App.module.css";
 
@@ -251,6 +251,52 @@ export default function App() {
     setFills((list) => list.filter((f) => !ids.includes(f.shapeId)));
     setSelected((current) => current.filter((id) => !ids.includes(id)));
   };
+
+  /**
+   * Nudge everything picked. The arrow keys move it a sixteenth of an inch, a whole inch with Shift
+   * and a hundredth with Alt for the last little bit; the limit is the box round the whole selection,
+   * so a group slides along the page's edge rather than piling up against it.
+   */
+  const nudge = (dx: number, dy: number) => {
+    if (!selected.length) return;
+    record();
+    // Worked out from the list as it stands rather than from this render's copy, so two presses in
+    // one tick both count instead of the second undoing the first.
+    setShapes((list) => {
+      const moving = list.filter((s) => selected.includes(s.id));
+      if (!moving.length) return list;
+      const boxes = moving.map(boxOf);
+      const x0 = Math.min(...boxes.map((b) => b.x0));
+      const y0 = Math.min(...boxes.map((b) => b.y0));
+      const x1 = Math.max(...boxes.map((b) => b.x1));
+      const y1 = Math.max(...boxes.map((b) => b.y1));
+      const byX = Math.max(-x0, Math.min(page.w - x1, dx));
+      const byY = Math.max(-y0, Math.min(page.h - y1, dy));
+      if (!byX && !byY) return list;
+      const byId = new Map(moving.map((s) => [s.id, moveBy(s, byX, byY, page)]));
+      return list.map((s) => byId.get(s.id) ?? s);
+    });
+  };
+  const nudgeRef = useRef(nudge);
+  nudgeRef.current = nudge;
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const step = e.shiftKey ? 1 : e.altKey ? 0.01 : 1 / 16;
+      const by: Record<string, [number, number]> = {
+        ArrowLeft: [-step, 0], ArrowRight: [step, 0], ArrowUp: [0, -step], ArrowDown: [0, step],
+      };
+      const move = by[e.key];
+      if (!move || e.metaKey || e.ctrlKey) return;
+      const el = document.activeElement;
+      // In a field the arrows belong to the text, or to the number being stepped.
+      if (el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement || (el as HTMLElement)?.isContentEditable) return;
+      e.preventDefault();
+      nudgeRef.current(move[0], move[1]);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
 
   // Delete (or Backspace) throws away everything picked - except while typing, where those keys
   // belong to the text. Undo brings it back, since removeShapes records first.
@@ -574,7 +620,22 @@ export default function App() {
         const turned = turnPoint(turnPoint(p, centre, shape.rotation ?? 0), centre, place.deg);
         return { x: turned.x + place.dx, y: turned.y + place.dy };
       };
-      if (shape.curve) {
+      if (shape.kind === "text") {
+        // Every stroke of every letter becomes its own path: the words are given up, the marks stay.
+        for (const glyph of textRuns(shape, fonts[shape.font ?? ""])) {
+          for (const run of flattenPath(glyph.d)) {
+            const points = run.map(put);
+            if (points.length < 2) continue;
+            const b = pointsBox(points);
+            made.push({
+              ...shape, id: made.length ? newShapeId() : shape.id,
+              kind: "path", points, text: undefined, font: undefined, tracking: undefined,
+              leading: undefined, repeat: undefined, rotation: undefined,
+              x: b.x0, y: b.y0, x2: b.x1, y2: b.y1,
+            });
+          }
+        }
+      } else if (shape.curve) {
         for (const run of curveStrokes(shape)) {
           const points = run.map(put);
           if (points.length < 2) continue;
@@ -815,9 +876,9 @@ export default function App() {
               { label: "Duplicate", icon: <Copy />, onSelect: () => duplicateShape(rowMenu.id) },
               ...(() => {
                 const sh = shapes.find((s) => s.id === rowMenu.id);
-                if (!sh?.curve && !sh?.repeat) return [];
+                if (!sh?.curve && !sh?.repeat && sh?.kind !== "text") return [];
                 return [{
-                  label: sh.curve ? "Bake to a path" : "Bake the copies",
+                  label: sh.curve || sh.kind === "text" ? "Bake to a path" : "Bake the copies",
                   icon: <Flame />,
                   onSelect: () => bakeShape(rowMenu.id),
                 }];

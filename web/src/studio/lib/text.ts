@@ -5,6 +5,7 @@
 // glyph's own coordinates run up from the baseline, so each one is drawn flipped.
 
 import { setText, lineStep, type StrokeFont } from "./font";
+import type { Point } from "./parametric";
 import { boxOf, type Shape } from "./shapes";
 
 export type { StrokeFont };
@@ -45,6 +46,83 @@ function placePath(d: string, k: number, x: number, y: number): string {
   }
   flush();
   return out.join(" ");
+}
+
+/**
+ * A placed glyph broken into the runs of points the pen actually travels: one run per stroke, curves
+ * walked at `step` inches, which is what baking text needs. The fonts use absolute moves, lines and
+ * cubics; a Z closes the run it ends.
+ */
+export function flattenPath(d: string, step = 0.01): Point[][] {
+  const parts = d.match(/[A-Za-z]|-?\d*\.?\d+(?:e[-+]?\d+)?/g);
+  if (!parts) return [];
+  const runs: Point[][] = [];
+  let run: Point[] = [];
+  let at: Point = { x: 0, y: 0 };
+  let start: Point = { x: 0, y: 0 };
+  let command = "";
+  const nums: number[] = [];
+  const cubic = (c1: Point, c2: Point, to: Point) => {
+    // Enough steps that the widest curve here is walked in pieces about `step` long.
+    const rough = Math.hypot(c1.x - at.x, c1.y - at.y) + Math.hypot(c2.x - c1.x, c2.y - c1.y) + Math.hypot(to.x - c2.x, to.y - c2.y);
+    const steps = Math.max(2, Math.min(120, Math.ceil(rough / step)));
+    for (let i = 1; i <= steps; i++) {
+      const t = i / steps;
+      const u = 1 - t;
+      run.push({
+        x: u * u * u * at.x + 3 * u * u * t * c1.x + 3 * u * t * t * c2.x + t * t * t * to.x,
+        y: u * u * u * at.y + 3 * u * u * t * c1.y + 3 * u * t * t * c2.y + t * t * t * to.y,
+      });
+    }
+    at = to;
+  };
+  const flush = () => {
+    if (run.length > 1) runs.push(run);
+    run = [];
+  };
+  const take = () => {
+    if (command === "M") {
+      flush();
+      at = { x: nums[0], y: nums[1] };
+      start = at;
+      run = [at];
+    } else if (command === "L") {
+      for (let i = 0; i + 1 < nums.length; i += 2) {
+        at = { x: nums[i], y: nums[i + 1] };
+        run.push(at);
+      }
+    } else if (command === "C") {
+      for (let i = 0; i + 5 < nums.length; i += 6) {
+        cubic({ x: nums[i], y: nums[i + 1] }, { x: nums[i + 2], y: nums[i + 3] }, { x: nums[i + 4], y: nums[i + 5] });
+      }
+    } else if (command === "Z") {
+      run.push(start);
+      flush();
+      run = [start];
+      at = start;
+    }
+    nums.length = 0;
+  };
+  for (const part of parts) {
+    if (/[A-Za-z]/.test(part)) {
+      if (command) take();
+      command = part.toUpperCase();
+      if (command === "Z") take();
+      continue;
+    }
+    nums.push(Number(part));
+    // A move or a line repeated without its letter is more of the same command; a pair after a
+    // move is a line, as SVG says.
+    if (command === "M" && nums.length === 2) {
+      take();
+      command = "L";
+    }
+    if (command === "L" && nums.length === 2) take();
+    if (command === "C" && nums.length === 6) take();
+  }
+  if (command) take();
+  flush();
+  return runs;
 }
 
 /** What each text shape's numbers come to, with the defaults filled in. */
