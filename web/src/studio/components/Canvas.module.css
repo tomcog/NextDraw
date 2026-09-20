@@ -52,6 +52,14 @@
   vector-effect: non-scaling-stroke;
 }
 
+/* A point of a path: the same grip, filled through, so it reads as part of the line rather than as
+   one of the corners that scale the whole shape. */
+.handles circle.point {
+  fill: var(--ui-surface-inverse);
+  stroke: #ffffff;
+  stroke-width: 1;
+}
+
 /* The turn grip and the stalk it stands on: the same grip as a corner, filled instead of hollow so
    it says it does something else. */
 .handles circle.turn {

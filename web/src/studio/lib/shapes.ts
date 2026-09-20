@@ -219,10 +219,18 @@ export type Handle = "nw" | "ne" | "sw" | "se" | "a" | "b" | `p${number}`;
 /** A path with more points than this is dragged by its corners: a thousand grips is not an edit. */
 export const POINT_HANDLE_LIMIT = 120;
 
-export const handlesOf = (s: Shape): { id: Handle; x: number; y: number }[] => {
-  // A path is dragged by its own points, while there are few enough of them to pick one out.
+export const handlesOf = (s: Shape): { id: Handle; x: number; y: number; point?: true }[] => {
+  // A path has both: the corners of its box, which scale the whole of it, and - while there are few
+  // enough of them to pick one out - a grip on every point, which moves that point alone.
   if (s.points?.length && s.points.length <= POINT_HANDLE_LIMIT) {
-    return s.points.map((p, i) => ({ id: `p${i}` as Handle, x: p.x, y: p.y }));
+    const b = boxOf(s);
+    return [
+      { id: "nw" as Handle, x: b.x0, y: b.y0 },
+      { id: "ne" as Handle, x: b.x1, y: b.y0 },
+      { id: "sw" as Handle, x: b.x0, y: b.y1 },
+      { id: "se" as Handle, x: b.x1, y: b.y1 },
+      ...s.points.map((p, i) => ({ id: `p${i}` as Handle, x: p.x, y: p.y, point: true as const })),
+    ];
   }
   if (s.kind === "line") {
     return [

@@ -463,16 +463,26 @@ export function Canvas({ page, shapes, fills, layers, activeLayer, model, zoom, 
                       </>
                     );
                   })()}
-                  {handlePoints(chosen).map((h) => (
-                    <circle
-                      key={h.id}
-                      cx={h.x}
-                      cy={h.y}
-                      r={handleR}
-                      style={{ cursor: CURSOR[h.id] }}
-                      onPointerDown={(e) => onHandleDown(e, chosen, h.id)}
-                    />
-                  ))}
+                  {/* Two kinds of grip on a path: the corners of its box, which scale the whole of
+                      it, and a smaller one on each point. A path's own points often sit exactly on
+                      those corners, so the corners stand a little outside the box to stay reachable. */}
+                  {handlePoints(chosen).map((h) => {
+                    const out = chosen.points?.length && !h.point ? handleR * 1.1 : 0;
+                    const b = boxOf(chosen);
+                    const x = out ? h.x + (h.x <= (b.x0 + b.x1) / 2 ? -out : out) : h.x;
+                    const y = out ? h.y + (h.y <= (b.y0 + b.y1) / 2 ? -out : out) : h.y;
+                    return (
+                      <circle
+                        key={h.id}
+                        className={h.point ? styles.point : undefined}
+                        cx={x}
+                        cy={y}
+                        r={h.point ? handleR * 0.7 : handleR}
+                        style={{ cursor: CURSOR[h.id] }}
+                        onPointerDown={(e) => onHandleDown(e, chosen, h.id)}
+                      />
+                    );
+                  })}
                 </g>
               )}
             </g>
