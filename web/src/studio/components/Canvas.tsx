@@ -234,13 +234,15 @@ export function Canvas({ page, shapes, fills, layers, activeLayer, model, zoom, 
     } else if (drag.mode === "groupScale") {
       // The corner opposite the one being dragged stays where it is, as it does for one shape.
       const b = drag.box;
+      // The page holds the box round the whole group, not each shape on its own: clamping them one
+      // by one would squash whichever reached the edge first and the group would come apart.
       const to = {
-        x0: drag.handle === "nw" || drag.handle === "sw" ? Math.min(p.x, b.x1 - 0.02) : b.x0,
-        y0: drag.handle === "nw" || drag.handle === "ne" ? Math.min(p.y, b.y1 - 0.02) : b.y0,
-        x1: drag.handle === "ne" || drag.handle === "se" ? Math.max(p.x, b.x0 + 0.02) : b.x1,
-        y1: drag.handle === "sw" || drag.handle === "se" ? Math.max(p.y, b.y0 + 0.02) : b.y1,
+        x0: drag.handle === "nw" || drag.handle === "sw" ? Math.max(0, Math.min(p.x, b.x1 - 0.02)) : b.x0,
+        y0: drag.handle === "nw" || drag.handle === "ne" ? Math.max(0, Math.min(p.y, b.y1 - 0.02)) : b.y0,
+        x1: drag.handle === "ne" || drag.handle === "se" ? Math.min(page.w, Math.max(p.x, b.x0 + 0.02)) : b.x1,
+        y1: drag.handle === "sw" || drag.handle === "se" ? Math.min(page.h, Math.max(p.y, b.y0 + 0.02)) : b.y1,
       };
-      onUpdateMany(scaleInto(drag.origins, b, to).map((s) => clampToPage(s, page)));
+      onUpdateMany(scaleInto(drag.origins, b, to));
     } else if (drag.mode === "groupTurn") {
       const now = (Math.atan2(p.x - drag.about.x, drag.about.y - p.y) * 180) / Math.PI;
       const raw = now - drag.from;

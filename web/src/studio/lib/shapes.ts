@@ -143,12 +143,14 @@ export const scaleInto = (shapes: Shape[], from: ReturnType<typeof boxOf>, to: R
   const ky = from.y1 - from.y0 > 1e-9 ? (to.y1 - to.y0) / (from.y1 - from.y0) : 1;
   return shapes.map((s) => {
     const b = boxOf(s);
-    return withBox(s, {
-      x0: to.x0 + (b.x0 - from.x0) * kx,
-      y0: to.y0 + (b.y0 - from.y0) * ky,
-      x1: to.x0 + (b.x1 - from.x0) * kx,
-      y1: to.y0 + (b.y1 - from.y0) * ky,
-    });
+    // The middle of each shape is carried to where the group's scaling puts it, and its own size
+    // scales to match. Moving the middle rather than the corners is what keeps a turned shape in its
+    // place: the middle is what it turns about, while its corners are not where they are drawn.
+    const cx = to.x0 + ((b.x0 + b.x1) / 2 - from.x0) * kx;
+    const cy = to.y0 + ((b.y0 + b.y1) / 2 - from.y0) * ky;
+    const w = (b.x1 - b.x0) * kx;
+    const h = (b.y1 - b.y0) * ky;
+    return withBox(s, { x0: cx - w / 2, y0: cy - h / 2, x1: cx + w / 2, y1: cy + h / 2 });
   });
 };
 
