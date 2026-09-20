@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Button, ButtonRound, Card, Checkbox, InputSelect, InputText, LayerController } from "@tomcoggia/ui";
-import { ArrowDownToLine, Circle, Copy, EllipsisVertical, FilePlus, FolderOpen, Minus, MousePointer2, Plus, Ratio, Redo2, Square, StickyNote, Trash2, Undo2 } from "lucide-react";
+import { ArrowDownToLine, Circle, Copy, EllipsisVertical, FilePlus, FolderOpen, LoaderPinwheel, Minus, MousePointer2, Plus, Ratio, Redo2, Spline, Square, StickyNote, Trash2, Undo2 } from "lucide-react";
 import { FileBrowser, LAST_FOLDER_KEY, type OpenResult } from "../components/FileBrowser";
 import { Section } from "../components/controls/Section";
 import { NumberField } from "../components/controls/NumberField";
@@ -17,6 +17,7 @@ import { useRowDrag } from "../lib/useRowDrag";
 import { Canvas, type Tool } from "./components/Canvas";
 import { StudioHeader } from "./components/StudioHeader";
 import { canFill, newFillId, type Fill } from "./lib/hatch";
+import { closingTurns, CURVE_FIELDS, type Curve } from "./lib/parametric";
 import { parseDrawing } from "./lib/parse";
 import { PaletteMenu } from "../components/controls/PaletteMenu";
 import { RowMenu } from "../components/controls/RowMenu";
@@ -38,6 +39,9 @@ const TOOLS: { kind: Tool; label: string; hint: string; icon: JSX.Element }[] = 
   { kind: "rect", label: "Rectangle", hint: "Draw a rectangle: drag on the page", icon: <Square /> },
   { kind: "ellipse", label: "Ellipse", hint: "Draw an ellipse: drag on the page", icon: <Circle /> },
   { kind: "line", label: "Line", hint: "Draw a line: drag on the page", icon: <Minus /> },
+  // Parametric shapes: drawn as a box like the rest, then tuned by their numbers in the Curve card.
+  { kind: "hypotrochoid", label: "Spirograph", hint: "Draw a spirograph: drag on the page, then set its circles", icon: <LoaderPinwheel /> },
+  { kind: "parabolic", label: "Parabolic curve", hint: "Draw curve stitching: drag on the page, then set its strings", icon: <Spline /> },
 ];
 
 // Used when a tool has no palette of its own, so there is always a pen to draw with.
@@ -425,6 +429,13 @@ export default function App() {
       else updated.splice(at, 1);
       return [...others, ...updated.filter(Boolean)];
     });
+  };
+
+  /** Change one of the chosen curve's numbers. The shape is redrawn from them as they change. */
+  const setCurve = (next: Curve) => {
+    if (!chosen) return;
+    record();
+    setShapes((list) => list.map((s) => (s.id === chosen.id ? { ...s, curve: next } : s)));
   };
 
   const setOutline = (on: boolean) => {
@@ -935,6 +946,34 @@ export default function App() {
                         );
                       })}
                     </ul>
+                  )}
+                </Section>
+              </div>
+            </Card>
+          )}
+
+          {chosen?.curve && (
+            <Card variant="flat" className={styles.controls}>
+              <div className={styles.cardBody}>
+                <Section title="Curve" collapsibleKey="curve">
+                  <div className={styles.fillRow}>
+                    {CURVE_FIELDS[chosen.curve.kind].map((f) => (
+                      <NumberField
+                        key={f.key}
+                        label={f.label}
+                        min={f.min}
+                        max={f.max}
+                        step={f.step}
+                        value={Number((chosen.curve as unknown as Record<string, number>)[f.key])}
+                        onChange={(v) => setCurve({ ...(chosen.curve as Curve), [f.key]: v } as Curve)}
+                      />
+                    ))}
+                  </div>
+                  {chosen.curve.kind === "hypotrochoid" && (
+                    // Past this it retraces itself, and a retraced line is a line the pen draws twice.
+                    <p className={styles.empty}>
+                      {`Closes after ${closingTurns(chosen.curve.R, chosen.curve.r)} turns`}
+                    </p>
                   )}
                 </Section>
               </div>

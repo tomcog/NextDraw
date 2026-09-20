@@ -1,7 +1,9 @@
 // Studio's drawing model. Everything is in inches from the page's top-left corner, the same way
 // Plot measures a drawing's footprint, so what's on the page here is what lands on the paper there.
 
-export type ShapeKind = "rect" | "ellipse" | "line";
+import { CURVE_LABEL, type Curve } from "./parametric";
+
+export type ShapeKind = "rect" | "ellipse" | "line" | "curve";
 
 export interface Shape {
   id: string;
@@ -18,6 +20,11 @@ export interface Shape {
    * out of the drawing's bounds. Absent means drawn.
    */
   outline?: boolean;
+  /**
+   * For a curve: the generator and its numbers. The box above is still the shape's footprint, so a
+   * curve moves, resizes and fills like anything else; the lines are drawn from these every time.
+   */
+  curve?: Curve;
   /**
    * The layer it sits on, which is what decides the colour it's drawn in. A layer is one pen:
    * everything on it plots in that one colour, because plotting a layer is what a pen change is for.
@@ -57,7 +64,7 @@ export const boxOf = (s: Shape) => ({
 });
 
 export const shapeName = (s: Shape, index: number) =>
-  `${{ rect: "Rectangle", ellipse: "Ellipse", line: "Line" }[s.kind]} ${index + 1}`;
+  `${s.curve ? CURVE_LABEL[s.curve.kind] : { rect: "Rectangle", ellipse: "Ellipse", line: "Line", curve: "Curve" }[s.kind]} ${index + 1}`;
 
 /** A shape too small to have been meant - a click rather than a drag. */
 export const isDegenerate = (s: Shape) => {

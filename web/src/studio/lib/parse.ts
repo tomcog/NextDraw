@@ -1,4 +1,5 @@
 import { newFillId, type Fill } from "./hatch";
+import { curveFromData } from "./parametric";
 import { newLayerId, newShapeId, type Layer, type Page, type Shape } from "./shapes";
 import { FILL_GROUP_PREFIX } from "./svg";
 
@@ -62,6 +63,19 @@ export function parseDrawing(text: string): Opened {
 
   const shapes: Shape[] = [];
   let unsupported = 0;
+
+  // Read Studio's own parameters first: they say which polylines are a parametric curve's lines,
+  // so those aren't counted as marks this can't edit.
+  const designEl = svg.getElementsByTagName("nds:design")[0] ?? svg.querySelector("design");
+  let design: { fills?: unknown; on?: Record<string, string>; curves?: unknown } = {};
+  try {
+    design = designEl?.textContent ? JSON.parse(designEl.textContent) : {};
+  } catch {
+    design = {}; // unreadable parameters: the drawing still opens, just without them
+  }
+  const savedCurves = (Array.isArray(design.curves) ? design.curves : []) as Record<string, unknown>[];
+  const curveIds = new Set(savedCurves.map((c) => String(c.shape)));
+  const fromCurve = (id: string) => curveIds.has(id) || [...curveIds].some((c) => id.startsWith(`${c}-`));
 
   // A fill's lines are regenerated from its parameters, so reading them back as hundreds of separate
   // line shapes would both double the drawing and cut it loose from the fill that made it.
@@ -157,8 +171,13 @@ export function parseDrawing(text: string): Opened {
           x2: toX(attr(el, "x2")), y2: toY(attr(el, "y2")),
         });
         break;
-      case "path":
       case "polyline":
+        // A curve's own lines: rebuilt from the design block below, like a fill's. A curve drawn in
+        // several passes numbers them after its own id, so the later ones are matched by their start.
+        if (fromCurve(el.getAttribute("id") || "")) break;
+        unsupported++;
+        break;
+      case "path":
       case "polygon":
       case "text":
       case "image":
@@ -170,15 +189,27 @@ export function parseDrawing(text: string): Opened {
     }
   }
 
+  // Each saved curve becomes one shape again, in the box it was drawn in.
+  for (const saved of savedCurves) {
+    const curve = curveFromData(saved);
+    const box = Array.isArray(saved.box) ? (saved.box as unknown[]).map(Number) : [];
+    if (!curve || box.length !== 4 || box.some((v) => !Number.isFinite(v))) continue;
+    const el = svg.querySelector(`[id="${CSS.escape(String(saved.shape))}"]`);
+    shapes.push({
+      id: el ? noteSource(el) : String(saved.shape),
+      layerId: "", kind: "curve", curve,
+      x: box[0], y: box[1], x2: box[2], y2: box[3],
+    });
+  }
+
   markOutlines();
 
   // Studio's own parameters, if the drawing was made here. A fill whose shape has gone is dropped.
   const ids = new Set(shapes.map((s) => s.id));
   let fills: Fill[] = [];
-  const design = svg.getElementsByTagName("nds:design")[0] ?? svg.querySelector("design");
-  if (design?.textContent) {
-    try {
-      const raw = JSON.parse(design.textContent) as { fills?: unknown; on?: Record<string, string> };
+  {
+    {
+      const raw = design;
       // A shape on %sources has no layer of its own to belong to, so the block names the one it is
       // on. Names survive the trip; Studio's internal ids don't.
       if (raw.on) {
@@ -200,8 +231,6 @@ export function parseDrawing(text: string): Opened {
             connected: f.connected === true,
           }));
       }
-    } catch {
-      // unreadable parameters: the drawing still opens, just without its fills
     }
   }
 

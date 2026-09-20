@@ -1,4 +1,5 @@
 import { hatchLines, hatchStroke, type Fill } from "./hatch";
+import { curveStrokes, pointsAttr } from "./parametric";
 import { boxOf, type Layer, type Page, type Shape } from "./shapes";
 
 // The drawing Studio writes out. Two things matter to Plot at the other end:
@@ -28,6 +29,13 @@ const num = (n: number) => Number(n.toFixed(4)).toString();
 
 function shapeMarkup(s: Shape): string {
   const b = boxOf(s);
+  if (s.kind === "curve") {
+    // Drawn out as the lines the pen makes, so Plot needs to know nothing about the numbers behind
+    // them; they travel in the design block below and Studio redraws the curve from those.
+    return curveStrokes(s)
+      .map((run, i) => `<polyline id="${escapeAttr(s.id)}${i ? `-${i + 1}` : ""}" points="${pointsAttr(run)}"/>`)
+      .join("\n      ");
+  }
   if (s.kind === "line") {
     return `<line id="${escapeAttr(s.id)}" x1="${num(s.x)}" y1="${num(s.y)}" x2="${num(s.x2)}" y2="${num(s.y2)}"/>`;
   }
@@ -100,8 +108,14 @@ function designBlock(fills: Fill[], shapes: Shape[], layers: Layer[]): string {
   // pen's. Names, not Studio's internal ids: the ids mean nothing once the file is reopened, and
   // matching them up by position gets it wrong the moment shapes and layers are in different orders.
   const nameOf = new Map(layers.map((l) => [l.id, l.name]));
+  const curves = shapes.filter((s) => s.curve);
   const data = {
     on: Object.fromEntries(shapes.map((s) => [s.id, nameOf.get(s.layerId) ?? ""])),
+    // The numbers behind each parametric shape, and the box it was drawn in, so reopening the
+    // drawing gets the curve back rather than a heap of line segments.
+    ...(curves.length
+      ? { curves: curves.map((s) => ({ shape: s.id, box: [s.x, s.y, s.x2, s.y2], ...s.curve })) }
+      : {}),
     fills: fills.map((f) => ({
       id: f.id,
       shape: f.shapeId,

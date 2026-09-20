@@ -36,8 +36,9 @@ export interface Seg {
   y2: number;
 }
 
-/** A line has no interior, so there's nothing to fill. */
-export const canFill = (s: Shape) => s.kind !== "line";
+/** A line has no interior, so there's nothing to fill. Neither has a curve: hatching one would fill
+ *  the box it sits in rather than the shape, which is never what it looks like it would do. */
+export const canFill = (s: Shape) => s.kind !== "line" && !s.curve;
 
 /** Spacing in the drawing's own inches, which is what the lines are drawn in. */
 export const stepInches = (fill: Fill) => fill.spacingMm / 25.4 / (fill.scale / 100);

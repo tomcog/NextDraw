@@ -4,6 +4,7 @@ import {
   CURSOR, type Handle, type Page, type Shape, type ShapeKind,
 } from "../lib/shapes";
 import { hatchLines, hatchStroke, type Fill } from "../lib/hatch";
+import { curveStrokes, pointsAttr, DEFAULT_CURVE, type CurveKind } from "../lib/parametric";
 import type { Layer } from "../lib/shapes";
 import { BedCanvas, type BedCanvasHandle, type Box, type Zoom } from "../../components/BedCanvas";
 import { DEFAULT_SETTINGS, UNITS } from "../../lib/constants";
@@ -12,8 +13,15 @@ import { inkLayer } from "../../lib/ink";
 import styles from "./Canvas.module.css";
 
 /** Select picks shapes up; the rest draw. Without the distinction a shape covering the page would
- *  be a hole you couldn't draw in, and a drag over one would be ambiguous. */
-export type Tool = ShapeKind | "select";
+ *  be a hole you couldn't draw in, and a drag over one would be ambiguous. A parametric curve is
+ *  its own tool per generator, since which curve it is can't be told from the drag. */
+export type Tool = Exclude<ShapeKind, "curve"> | "select" | CurveKind;
+
+/** The shape a tool draws, as a box with nothing in it yet. */
+const shapeFor = (tool: Exclude<Tool, "select">, layerId: string, x: number, y: number): Shape =>
+  tool === "rect" || tool === "ellipse" || tool === "line"
+    ? { id: newShapeId(), layerId, kind: tool, x, y, x2: x, y2: y }
+    : { id: newShapeId(), layerId, kind: "curve", curve: DEFAULT_CURVE[tool], x, y, x2: x, y2: y };
 
 interface Props {
   page: Page;
@@ -114,7 +122,7 @@ export function Canvas({ page, shapes, fills, layers, activeLayer, model, zoom, 
     if (tool === "select") return;
     begin(e, {
       mode: "new",
-      shape: clampToPage({ id: newShapeId(), layerId: activeLayer, kind: tool, x: p.x, y: p.y, x2: p.x, y2: p.y }, page),
+      shape: clampToPage(shapeFor(tool, activeLayer, p.x, p.y), page),
     });
   };
 
@@ -164,11 +172,22 @@ export function Canvas({ page, shapes, fills, layers, activeLayer, model, zoom, 
   // they're the same rectangle.
   const element = (s: Shape, key: string, props: Record<string, unknown>) => {
     const b = boxOf(s);
-    const common = { key, ...props };
-    if (s.kind === "line") return <line {...common} x1={s.x} y1={s.y} x2={s.x2} y2={s.y2} />;
+    const common = { ...props };
+    if (s.kind === "curve") {
+      // Several strokes where the curve lifts the pen (a parabolic's corners), so what's on screen
+      // is what goes on the paper, pen lifts and all.
+      const runs = curveStrokes(s);
+      return (
+        <g key={key} {...common}>
+          {runs.map((run, i) => <polyline key={i} fill="none" points={pointsAttr(run)} />)}
+        </g>
+      );
+    }
+    if (s.kind === "line") return <line key={key} {...common} x1={s.x} y1={s.y} x2={s.x2} y2={s.y2} />;
     if (s.kind === "ellipse") {
       return (
         <ellipse
+          key={key}
           {...common}
           cx={(b.x0 + b.x1) / 2}
           cy={(b.y0 + b.y1) / 2}
@@ -177,7 +196,7 @@ export function Canvas({ page, shapes, fills, layers, activeLayer, model, zoom, 
         />
       );
     }
-    return <rect {...common} x={b.x0} y={b.y0} width={b.x1 - b.x0} height={b.y1 - b.y0} />;
+    return <rect key={key} {...common} x={b.x0} y={b.y0} width={b.x1 - b.x0} height={b.y1 - b.y0} />;
   };
 
   // Everything one layer will actually put on the paper: the outlines it draws, and the hatch lines
