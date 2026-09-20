@@ -705,6 +705,16 @@ export default function App() {
     setShapes((list) => list.map((sh) => (sh.id === chosen.id ? { ...sh, outline: on } : sh)));
   };
 
+  /** Hatch a shape, or stop hatching it. A shape that isn't hatched is drawn as its own outline:
+   *  turning the hatch off puts that outline back, so nothing is left invisible. */
+  const setHatched = (on: boolean) => {
+    if (!chosen) return;
+    setFillAt(0, on ? newFill(defaults.angle) : null);
+    if (!on && chosen.outline === false) {
+      setShapes((list) => list.map((sh) => (sh.id === chosen.id ? { ...sh, outline: undefined } : sh)));
+    }
+  };
+
   // Restacking. The list is shown top-down but `layers` is bottom-first, like Plot's, so a row moved
   // n places down the list moves n places up the stack.
   const layerList = useRef<HTMLUListElement>(null);
@@ -1460,7 +1470,7 @@ export default function App() {
                   <Checkbox
                     checked={chosenFills.length > 0}
                     label="Hatch this shape"
-                    onChange={(e) => setFillAt(0, e.target.checked ? newFill(defaults.angle) : null)}
+                    onChange={(e) => setHatched(e.target.checked)}
                   />
                   {chosenFills.map((fill, i) => (
                     <div key={fill.id} className={styles.fillRow}>
@@ -1513,11 +1523,15 @@ export default function App() {
                       }}
                     />
                   )}
-                  <Checkbox
-                    checked={chosen.outline !== false}
-                    label="Draw the outline too"
-                    onChange={(e) => setOutline(e.target.checked)}
-                  />
+                  {/* Only worth asking about while there is a hatch: a shape with no hatch is its
+                      outline, and nothing else. */}
+                  {chosenFills.length > 0 && (
+                    <Checkbox
+                      checked={chosen.outline !== false}
+                      label="Draw the outline too"
+                      onChange={(e) => setOutline(e.target.checked)}
+                    />
+                  )}
                 </Section>
               </div>
             </Card>
