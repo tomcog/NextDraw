@@ -96,6 +96,33 @@ export const shapeName = (s: Shape, index: number) =>
     : s.curve ? CURVE_LABEL[s.curve.kind]
     : { rect: "Rectangle", ellipse: "Ellipse", line: "Line", curve: "Curve", path: "Path", text: "Text" }[s.kind]} ${s.kind === "text" ? "" : index + 1}`.trim();
 
+/**
+ * The outline of a shape that has no points of its own, in the drawing's inches: the corners of a
+ * rectangle, the rim of an ellipse, the two ends of a line. What baking turns into a path.
+ */
+export const outlinePoints = (s: Shape): Point[] => {
+  const b = boxOf(s);
+  if (s.kind === "line") return [{ x: s.x, y: s.y }, { x: s.x2, y: s.y2 }];
+  if (s.kind === "rect") {
+    return [
+      { x: b.x0, y: b.y0 }, { x: b.x1, y: b.y0 }, { x: b.x1, y: b.y1 }, { x: b.x0, y: b.y1 }, { x: b.x0, y: b.y0 },
+    ];
+  }
+  if (s.kind === "ellipse") {
+    // A point every few degrees: fine enough that the pen draws a circle, not a polygon.
+    const cx = (b.x0 + b.x1) / 2;
+    const cy = (b.y0 + b.y1) / 2;
+    const rx = (b.x1 - b.x0) / 2;
+    const ry = (b.y1 - b.y0) / 2;
+    const steps = 72;
+    return Array.from({ length: steps + 1 }, (_, i) => {
+      const a = (i / steps) * 2 * Math.PI - Math.PI / 2;
+      return { x: cx + rx * Math.cos(a), y: cy + ry * Math.sin(a) };
+    });
+  }
+  return s.points ?? [];
+};
+
 /** The same shape in a new box, with a path's points carried across so they keep their places in it. */
 export const withBox = (s: Shape, box: { x0: number; y0: number; x1: number; y1: number }): Shape => {
   const next = { ...s, x: box.x0, y: box.y0, x2: box.x1, y2: box.y1 };

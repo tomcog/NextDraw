@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Button, ButtonRound, Card, Checkbox, InputSelect, InputText, InputTextarea, LayerController } from "@tomcoggia/ui";
-import { ArrowDownToLine, Circle, Copy, EllipsisVertical, FilePlus, Flame, FolderOpen, Layers2, LoaderPinwheel, Minus, MousePointer2, Pentagon, Plus, Radar, Rainbow, Ratio, Redo2, Spline, Square, Star, StickyNote, Trash2, Type, Undo2 } from "lucide-react";
+import { ArrowDownToLine, Circle, Copy, EllipsisVertical, FilePlus, FolderOpen, Layers2, LoaderPinwheel, Minus, MousePointer2, Pentagon, Plus, Radar, Rainbow, Ratio, Redo2, Spline, Square, Star, StickyNote, Trash2, Type, Undo2 } from "lucide-react";
 import { FileBrowser, LAST_FOLDER_KEY, type OpenResult } from "../components/FileBrowser";
 import { Section } from "../components/controls/Section";
 import { NumberField } from "../components/controls/NumberField";
@@ -24,7 +24,7 @@ import { defaultRepeat, placements, REPEAT_FIELDS, REPEAT_LABEL, type Repeat, ty
 import { parseDrawing } from "./lib/parse";
 import { PaletteMenu } from "../components/controls/PaletteMenu";
 import { RowMenu } from "../components/controls/RowMenu";
-import { boxOf, centerOf, clampToPage, moveBy, newLayerId, newShapeId, pointsBox, resizeTo, shapeName, turnPoint, type Layer, type Page, type Shape } from "./lib/shapes";
+import { boxOf, centerOf, clampToPage, moveBy, newLayerId, newShapeId, outlinePoints, pointsBox, resizeTo, shapeName, turnPoint, type Layer, type Page, type Shape } from "./lib/shapes";
 import { buildSvg, cleanFileName } from "./lib/svg";
 import styles from "./App.module.css";
 
@@ -647,11 +647,15 @@ export default function App() {
           });
         }
       } else {
-        // A plain shape keeps its own kind; only the copies become shapes of their own.
+        // A rectangle, an ellipse, a line or a path: flattened to its own points, so each one can be
+        // pulled about point by point afterwards.
+        const points = outlinePoints(shape).map(put);
+        if (points.length < 2) continue;
+        const b = pointsBox(points);
         made.push({
-          ...shape, id: made.length ? newShapeId() : shape.id, repeat: undefined,
-          rotation: ((shape.rotation ?? 0) + place.deg) % 360 || undefined,
-          x: shape.x + place.dx, y: shape.y + place.dy, x2: shape.x2 + place.dx, y2: shape.y2 + place.dy,
+          ...shape, id: made.length ? newShapeId() : shape.id,
+          kind: "path", points, repeat: undefined, rotation: undefined,
+          x: b.x0, y: b.y0, x2: b.x1, y2: b.y1,
         });
       }
     }
@@ -874,15 +878,6 @@ export default function App() {
             ]
             : [
               { label: "Duplicate", icon: <Copy />, onSelect: () => duplicateShape(rowMenu.id) },
-              ...(() => {
-                const sh = shapes.find((s) => s.id === rowMenu.id);
-                if (!sh?.curve && !sh?.repeat && sh?.kind !== "text") return [];
-                return [{
-                  label: sh.curve || sh.kind === "text" ? "Bake to a path" : "Bake the copies",
-                  icon: <Flame />,
-                  onSelect: () => bakeShape(rowMenu.id),
-                }];
-              })(),
               // One entry per other layer: a layer is a pen, so this is "draw this in that pen".
               ...layers
                 .filter((l) => l.id !== shapes.find((s) => s.id === rowMenu.id)?.layerId)
@@ -1340,6 +1335,16 @@ export default function App() {
                     value={chosen.rotation ?? 0}
                     onChange={setRotation}
                   />
+                  {/* Baking takes the whole thing - every copy of a repeat, every letter of a text -
+                      and leaves paths whose points can be pulled about one at a time. */}
+                  <Button size="md" variant="secondary" onClick={() => bakeShape(chosen.id)}>
+                    {chosen.repeat ? `Bake all ${placements(chosen).length} shapes to paths` : "Bake to a path"}
+                  </Button>
+                  <p className={styles.empty}>
+                    {chosen.repeat
+                      ? "Every copy becomes its own shape, and the numbers behind them are given up."
+                      : "The numbers behind it are given up; its points can then be dragged one by one."}
+                  </p>
                 </Section>
               </div>
             </Card>
