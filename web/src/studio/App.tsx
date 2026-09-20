@@ -1452,7 +1452,7 @@ export default function App() {
             <Card variant="flat" className={styles.controls}>
               <div className={`${styles.cardBody} ${styles.settings}`}>
                 <Section title="Transform" collapsibleKey="transform">
-                <Section title="Shape" collapsibleKey="shape">
+                <Section title="Rotate" collapsibleKey="rotate">
                   <NumberField
                     label="Rotation"
                     unit="°"
