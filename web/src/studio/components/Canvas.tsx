@@ -254,15 +254,17 @@ export function Canvas({ page, shapes, fills, layers, activeLayer, model, zoom, 
     const common = { ...props, ...(turnAttr(s) ? { transform: turnAttr(s) } : {}) };
     if (s.kind === "text") {
       // The glyphs, in the size the box says, with a transparent box behind them so the whole thing
-      // can be picked up rather than only the strokes of the letters.
+      // can be picked up rather than only the strokes of the letters. The caller's props go on each
+      // letter rather than on the group: vector-effect doesn't inherit in SVG, so a class on the
+      // group would leave the interface's screen-width lines measured in inches instead.
       const b = boxOf(s);
       const runs = textRuns(s, fonts[s.font ?? ""]);
       return (
-        <g key={key} {...common}>
+        <g key={key} transform={turnAttr(s)}>
           {props.className === styles.grab && (
-            <rect x={b.x0} y={b.y0} width={b.x1 - b.x0} height={b.y1 - b.y0} fill="transparent" stroke="none" />
+            <rect {...props} x={b.x0} y={b.y0} width={b.x1 - b.x0} height={b.y1 - b.y0} fill="transparent" />
           )}
-          {runs.map((run, i) => <path key={i} d={run.d} fill="none" />)}
+          {runs.map((run, i) => <path key={i} {...props} d={run.d} fill="none" />)}
         </g>
       );
     }
