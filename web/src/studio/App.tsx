@@ -1447,9 +1447,11 @@ export default function App() {
             </Card>
           )}
 
+          {/* What is done to a shape as a whole: how it sits, and how many of it there are. */}
           {chosen && (
             <Card variant="flat" className={styles.controls}>
-              <div className={styles.cardBody}>
+              <div className={`${styles.cardBody} ${styles.settings}`}>
+                <Section title="Transform" collapsibleKey="transform">
                 <Section title="Shape" collapsibleKey="shape">
                   <NumberField
                     label="Rotation"
@@ -1479,13 +1481,7 @@ export default function App() {
                       : "The numbers behind it are given up; its points can then be dragged one by one."}
                   </p>
                 </Section>
-              </div>
-            </Card>
-          )}
 
-          {chosen && (
-            <Card variant="flat" className={styles.controls}>
-              <div className={styles.cardBody}>
                 <Section title="Repeat" collapsibleKey="repeat">
                   <div className={styles.tools} role="group" aria-label="How this shape repeats">
                     {REPEATS.map((r) => {
@@ -1530,6 +1526,7 @@ export default function App() {
                   {chosen.repeat && (
                     <p className={styles.empty}>{`${placements(chosen).length} shapes in all, counting the one you drew`}</p>
                   )}
+                </Section>
                 </Section>
               </div>
             </Card>
