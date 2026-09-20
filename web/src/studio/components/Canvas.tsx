@@ -62,6 +62,8 @@ interface Props {
   /** Simulate the ink, or draw each layer flat. Off is also much cheaper on a heavy hatch. */
   inkSim: boolean;
   tool: Tool;
+  /** Round what is drawn and dragged to this many inches, or 0 to leave it where the pointer is. */
+  snap: number;
   /** Everything picked, in the order it was picked: the last of them is what the cards edit. */
   selected: string[];
   onSelect: (ids: string[]) => void;
@@ -105,7 +107,7 @@ function straighten(x: number, y: number, toX: number, toY: number) {
 // The page at true proportions, with a one-inch grid. It keeps the page's own proportions and is
 // sized to them (--canvas-aspect), so the drawing gets as large as the space allows - the same way
 // Plot's preview fills its column.
-export function Canvas({ page, shapes, fills, layers, activeLayer, model, zoom, toolbar, toolbarLeft, fonts, font, penWidthMm, inkOpacity, inkBuilds, inkBuild, inkSim, tool, selected, onSelect, onAdd, onUpdate, onUpdateMany, onEditStart }: Props) {
+export function Canvas({ page, shapes, fills, layers, activeLayer, model, zoom, toolbar, toolbarLeft, fonts, font, snap, penWidthMm, inkOpacity, inkBuilds, inkBuild, inkSim, tool, selected, onSelect, onAdd, onUpdate, onUpdateMany, onEditStart }: Props) {
   const bed = useRef<BedCanvasHandle>(null);
   const [drag, setDrag] = useState<Drag | null>(null);
   const pointer = useRef<number | null>(null);
@@ -140,6 +142,10 @@ export function Canvas({ page, shapes, fills, layers, activeLayer, model, zoom, 
     return at ? { x: at.x / UNITS, y: at.y / UNITS } : null; // bed units to the page's inches
   };
 
+  /** A measurement rounded to the grid, when there is one to snap to. */
+  const grid = (v: number) => (snap > 0 ? Math.round(v / snap) * snap : v);
+  const gridPoint = (p: { x: number; y: number }) => ({ x: grid(p.x), y: grid(p.y) });
+
   const begin = (e: ReactPointerEvent, next: Drag) => {
     try {
       (e.currentTarget as Element).setPointerCapture(e.pointerId);
@@ -162,9 +168,10 @@ export function Canvas({ page, shapes, fills, layers, activeLayer, model, zoom, 
       return;
     }
     onSelect([]);
+    const start = gridPoint(p);
     begin(e, {
       mode: "new",
-      shape: clampToPage(shapeFor(tool, activeLayer, p.x, p.y, font), page),
+      shape: clampToPage(shapeFor(tool, activeLayer, start.x, start.y, font), page),
     });
   };
 
@@ -229,20 +236,22 @@ export function Canvas({ page, shapes, fills, layers, activeLayer, model, zoom, 
       // Shift holds a line to the square and diagonal directions, the way a set square would.
       const end = drag.shape.kind === "line" && e.shiftKey
         ? straighten(drag.shape.x, drag.shape.y, p.x, p.y)
-        : p;
+        : gridPoint(p);
       setDrag({ ...drag, shape: clampToPage({ ...drag.shape, x2: end.x, y2: end.y }, page) });
     } else if (drag.mode === "marquee") {
       setDrag({ ...drag, to: p });
     } else if (drag.mode === "move") {
       // The whole selection moves as one: the limit is the box round all of it, so a group slides
       // along the page's edge instead of collapsing against it.
-      const dx = p.x - drag.from.x;
-      const dy = p.y - drag.from.y;
       const boxes = drag.origins.map(boxOf);
       const x0 = Math.min(...boxes.map((b) => b.x0));
       const y0 = Math.min(...boxes.map((b) => b.y0));
       const x1 = Math.max(...boxes.map((b) => b.x1));
       const y1 = Math.max(...boxes.map((b) => b.y1));
+      // Snapping moves the corner of what's being carried onto the grid, not the pointer: the shape
+      // lands on a line, wherever it was picked up.
+      const dx = snap > 0 ? grid(x0 + p.x - drag.from.x) - x0 : p.x - drag.from.x;
+      const dy = snap > 0 ? grid(y0 + p.y - drag.from.y) - y0 : p.y - drag.from.y;
       const byX = Math.max(-x0, Math.min(page.w - x1, dx));
       const byY = Math.max(-y0, Math.min(page.h - y1, dy));
       onUpdateMany(drag.origins.map((s) => moveBy(s, byX, byY, page)));
@@ -251,11 +260,12 @@ export function Canvas({ page, shapes, fills, layers, activeLayer, model, zoom, 
       const b = drag.box;
       // The page holds the box round the whole group, not each shape on its own: clamping them one
       // by one would squash whichever reached the edge first and the group would come apart.
+      const g = gridPoint(p);
       const to = {
-        x0: drag.handle === "nw" || drag.handle === "sw" ? Math.max(0, Math.min(p.x, b.x1 - 0.02)) : b.x0,
-        y0: drag.handle === "nw" || drag.handle === "ne" ? Math.max(0, Math.min(p.y, b.y1 - 0.02)) : b.y0,
-        x1: drag.handle === "ne" || drag.handle === "se" ? Math.min(page.w, Math.max(p.x, b.x0 + 0.02)) : b.x1,
-        y1: drag.handle === "sw" || drag.handle === "se" ? Math.min(page.h, Math.max(p.y, b.y0 + 0.02)) : b.y1,
+        x0: drag.handle === "nw" || drag.handle === "sw" ? Math.max(0, Math.min(g.x, b.x1 - 0.02)) : b.x0,
+        y0: drag.handle === "nw" || drag.handle === "ne" ? Math.max(0, Math.min(g.y, b.y1 - 0.02)) : b.y0,
+        x1: drag.handle === "ne" || drag.handle === "se" ? Math.min(page.w, Math.max(g.x, b.x0 + 0.02)) : b.x1,
+        y1: drag.handle === "sw" || drag.handle === "se" ? Math.min(page.h, Math.max(g.y, b.y0 + 0.02)) : b.y1,
       };
       onUpdateMany(scaleInto(drag.origins, b, to));
     } else if (drag.mode === "groupTurn") {
@@ -269,7 +279,8 @@ export function Canvas({ page, shapes, fills, layers, activeLayer, model, zoom, 
       const turn = e.shiftKey ? Math.round(raw / 15) * 15 : Math.round(raw);
       onUpdate({ ...drag.origin, rotation: ((turn % 360) + 360) % 360 || undefined });
     } else {
-      onUpdate(clampToPage(dragHandleTurned(drag.origin, drag.handle, p.x, p.y), page));
+      const g = gridPoint(p);
+      onUpdate(clampToPage(dragHandleTurned(drag.origin, drag.handle, g.x, g.y), page));
     }
   };
 

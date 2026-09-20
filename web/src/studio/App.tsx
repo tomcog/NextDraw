@@ -56,6 +56,7 @@ const TOOLS: { kind: Tool; label: string; hint: string; icon: JSX.Element }[] = 
 const PLAIN_PEN: PenColor = { name: "Black", color: "#262626" };
 const TOOL_KEY = "studio-tool";
 const FONT_KEY = "studio-font";
+const SNAP_KEY = "studio-snap";
 
 // How a shape repeats, as the row of round buttons in the Repeat card: one of them is always on.
 const REPEATS: { kind: RepeatKind | null; label: string; hint: string; icon: JSX.Element }[] = [
@@ -131,6 +132,10 @@ export default function App() {
   const fontsRef = useRef(fonts);
   fontsRef.current = fonts;
   const [font, setFont] = useState<string>(() => load<string>(FONT_KEY) ?? "");
+  // Snapping: what a drag rounds to, in inches, and whether it is on at all. Remembered, since it is
+  // a way of working rather than a property of the drawing.
+  const [snapping, setSnapping] = useState<boolean>(() => load<boolean>(`${SNAP_KEY}-on`) ?? false);
+  const [snapStep, setSnapStep] = useState<number>(() => load<number>(SNAP_KEY) ?? 0.25);
   const [model, setModel] = useState<PlotterModel | undefined>();
   // Paper to begin with: the page is what's being drawn on, and the bed is context around it.
   const [zoom, setZoom] = useState<Zoom>("paper");
@@ -541,6 +546,8 @@ export default function App() {
   useEffect(() => {
     if (font) remember(FONT_KEY, font);
   }, [font]);
+  useEffect(() => remember(`${SNAP_KEY}-on`, snapping), [snapping]);
+  useEffect(() => remember(SNAP_KEY, snapStep), [snapStep]);
 
   /** Change a text shape: its words, its font, or the room between letters and lines. Its box
    *  follows whatever that comes to. */
@@ -1021,6 +1028,7 @@ export default function App() {
             tool={tool}
             fonts={fonts}
             font={font}
+            snap={snapping ? snapStep : 0}
             selected={selected}
             onSelect={setSelected}
             onUpdateMany={updateShapes}
@@ -1132,6 +1140,26 @@ export default function App() {
                       }}
                     />
                   </div>
+                </Section>
+
+                <Section title="Grid" collapsibleKey="grid">
+                  <Checkbox
+                    checked={snapping}
+                    label="Snap to the grid"
+                    title="Round what is drawn, moved and resized to the grid"
+                    onChange={(e) => setSnapping(e.target.checked)}
+                  />
+                  {snapping && (
+                    <NumberField
+                      label="Every"
+                      unit="in"
+                      min={0.01}
+                      max={12}
+                      step={0.125}
+                      value={snapStep}
+                      onChange={setSnapStep}
+                    />
+                  )}
                 </Section>
 
                 <Section title="Drawing tool" collapsibleKey="pen">
