@@ -223,13 +223,10 @@
   pointer-events: none;
 }
 
-/* Settings: sections within a card. The inner titles are quieter than the card's own, and a rule
-   between them says where one ends and the next begins. */
+/* Settings: sections within a card. The inner titles are quieter than the card's own, and the space
+   between them is what says where one ends and the next begins. */
 .settings fieldset fieldset { padding: 0.375rem 0; }
 
-.settings fieldset fieldset + fieldset {
-  border-top: 1px solid var(--ui-border-subtle, var(--ui-border-default));
-  padding-top: 0.625rem;
-}
+.settings fieldset fieldset + fieldset { padding-top: 0.625rem; }
 
 .settings fieldset fieldset legend { font-size: 12px; font-weight: 500; }
