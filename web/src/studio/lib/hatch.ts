@@ -1,3 +1,4 @@
+import { curveStrokes, type Point } from "./parametric";
 import { boxOf, type Shape } from "./shapes";
 
 // Hatch fills, kept as parameters rather than as the lines they make (see docs/studio.md). A fill
@@ -42,9 +43,43 @@ export interface Seg {
   y2: number;
 }
 
-/** A line has no interior, so there's nothing to fill. Neither has a curve: hatching one would fill
- *  the box it sits in rather than the shape, which is never what it looks like it would do. */
-export const canFill = (s: Shape) => s.kind !== "line" && !s.curve;
+/**
+ * A line has no interior, so there's nothing to fill. Neither has a parabolic: its strings are the
+ * drawing rather than an outline round anything. Everything else can be filled, a polygon, a star or
+ * a spirograph included - their fills are clipped to the outline itself, not to the box.
+ */
+export const canFill = (s: Shape) => s.kind !== "line" && s.curve?.kind !== "parabolic";
+
+/** The closed outline a curve's fill is clipped to. Empty for anything that isn't a curve. */
+const outlineOf = (s: Shape): Point[] => (s.curve ? curveStrokes(s)[0] ?? [] : []);
+
+/**
+ * Where a line crosses a closed outline, as the spans that lie inside it. Crossings are counted the
+ * even-odd way, which is what makes a star's points fill and the middle of a self-crossing
+ * spirograph read as a pattern rather than as one solid lump.
+ */
+function clipToOutline(px: number, py: number, dx: number, dy: number, pts: Point[]): Seg[] {
+  const hits: number[] = [];
+  for (let i = 0; i < pts.length - 1; i++) {
+    const a = pts[i];
+    const b = pts[i + 1];
+    const ex = b.x - a.x;
+    const ey = b.y - a.y;
+    const denom = dx * ey - dy * ex;
+    if (Math.abs(denom) < 1e-12) continue; // the edge runs along the line: no crossing to count
+    // How far along the edge (u) and along the line (t) they meet.
+    const u = (dx * (a.y - py) - dy * (a.x - px)) / -denom;
+    const t = (ex * (a.y - py) - ey * (a.x - px)) / -denom;
+    // Half-open, so a crossing exactly on a corner is counted once rather than twice.
+    if (u >= 0 && u < 1) hits.push(t);
+  }
+  hits.sort((m, n) => m - n);
+  const segs: Seg[] = [];
+  for (let i = 0; i + 1 < hits.length; i += 2) {
+    segs.push({ x1: px + dx * hits[i], y1: py + dy * hits[i], x2: px + dx * hits[i + 1], y2: py + dy * hits[i + 1] });
+  }
+  return segs;
+}
 
 /** Spacing in the drawing's own inches, which is what the lines are drawn in. */
 export const stepInches = (fill: Fill) => fill.spacingMm / 25.4 / (fill.scale / 100);
@@ -105,12 +140,20 @@ export function hatchLines(shape: Shape, fill: Fill): Seg[] {
   const cx = (b.x0 + b.x1) / 2;
   const cy = (b.y0 + b.y1) / 2;
   const reach = Math.hypot(w, h) / 2;
+  const outline = outlineOf(shape);
+  if (shape.curve && outline.length < 3) return [];
 
   const segs: Seg[] = [];
   for (let i = -Math.ceil(reach / step); i <= Math.ceil(reach / step); i++) {
     const t = i * step;
     const px = cx + nx * t;
     const py = cy + ny * t;
+    if (shape.curve) {
+      for (const seg of clipToOutline(px, py, dx, dy, outline)) {
+        if (Math.hypot(seg.x2 - seg.x1, seg.y2 - seg.y1) > 1e-6) segs.push(seg);
+      }
+      continue;
+    }
     const seg =
       shape.kind === "rect"
         ? clipToBox(px, py, dx, dy, b)
@@ -135,7 +178,34 @@ export function hatchStroke(shape: Shape, fill: Fill): { x: number; y: number }[
   const ry = (b.y1 - b.y0) / 2;
   const eps = 1e-6;
 
+  // A curve joins along its own outline, the short way round, so the join never cuts across a
+  // star's notch or through the middle of a spirograph.
+  const outline = shape.curve ? curveStrokes(shape)[0] ?? [] : [];
+  const walkOutline = (from: Point, to: Point) => {
+    if (outline.length < 3) return [];
+    // Where each end sits on the outline, as the corner it is nearest to.
+    const nearest = (p: Point) => {
+      let best = 0;
+      let dist = Infinity;
+      outline.forEach((q, i) => {
+        const d = (q.x - p.x) ** 2 + (q.y - p.y) ** 2;
+        if (d < dist) { dist = d; best = i; }
+      });
+      return best;
+    };
+    const a = nearest(from);
+    const b2 = nearest(to);
+    const n = outline.length - 1; // the last point repeats the first
+    const forward = (b2 - a + n) % n;
+    const step = forward <= n - forward ? 1 : -1;
+    const count = step === 1 ? forward : n - forward;
+    const points: Point[] = [];
+    for (let k = 1; k < count; k++) points.push(outline[(a + step * k + n * 2) % n]);
+    return points;
+  };
+
   const join = (from: { x: number; y: number }, to: { x: number; y: number }) => {
+    if (shape.curve) return walkOutline(from, to);
     if (shape.kind === "rect") {
       // One end on a side (x0 or x1) and the other on the top or bottom: go by the corner they share.
       const side = (p: { x: number; y: number }) =>
