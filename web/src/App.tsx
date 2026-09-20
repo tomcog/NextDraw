@@ -286,6 +286,10 @@ export default function App() {
     return [printTarget.id, ...layerViews.filter((l) => linked.has(l.id) && !l.hidden).map((l) => l.id)];
   }, [printTarget, linksOf, layerViews]);
   const plotLayerIds = plotLayerId ? printIds : null;
+  // The number the Layers card shows against a layer: the list runs bottom-last, and in Plot mode the
+  // hidden ones leave it, so the number is read off the same rows rather than off the drawing.
+  const layerNumber = (id: string) =>
+    [...layerViews].reverse().filter((l) => layerMode === "preview" || !l.hidden).findIndex((l) => l.id === id) + 1;
   // Preview mode: arrange the drawing - every shown layer in its color, show/hide and reorder layers.
   // Plot mode ("work" in code): only the layer chosen to print is drawn; layers hidden in Preview mode leave the list.
   // Drawings always open in Preview mode.
@@ -1383,7 +1387,7 @@ export default function App() {
             plotting={plotting}
             stopping={status?.state === "stopping" || status?.state === "returning"}
             canPlot={!busy && Boolean(fileName) && Boolean(preview) && onBed && plotterReady && !needsLayerChoice && !nothingShown}
-            plotLabel={!plotterReady ? "Connect the plotter" : nothingShown ? "Show a layer to plot" : needsLayerChoice ? "Choose a layer to plot" : printTarget && plotLayerId ? `Plot ${printTarget.name}${printIds.length > 1 ? ` · ${printIds.length} layers` : ""}` : "Plot"}
+            plotLabel={!plotterReady ? "Connect the plotter" : nothingShown ? "Show a layer to plot" : needsLayerChoice ? "Choose a layer to plot" : printTarget && plotLayerId ? `Plot ${layerNumber(printTarget.id)} · ${printTarget.name}${printIds.length > 1 ? ` · ${printIds.length} layers` : ""}` : "Plot"}
             preparing={status?.state === "preparing"}
             resume={resume}
             confirmation={confirmation}
