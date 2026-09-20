@@ -212,6 +212,23 @@ export default function App() {
     setSelected((current) => (current === id ? null : current));
   };
 
+  // Delete (or Backspace) throws away the selected shape - except while typing, where those keys
+  // belong to the text. Undo brings it back, since removeShape records first.
+  const remove = useRef(removeShape);
+  remove.current = removeShape;
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "Delete" && e.key !== "Backspace") return;
+      if (!selected || e.metaKey || e.ctrlKey || e.altKey) return;
+      const el = document.activeElement;
+      if (el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement || (el as HTMLElement)?.isContentEditable) return;
+      e.preventDefault();
+      remove.current(selected);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [selected]);
+
   // Write the drawing into the folder Plot opens from. Returns where it landed, or null on failure.
   const save = async (): Promise<Saved> => {
     if (!shapes.length) {
