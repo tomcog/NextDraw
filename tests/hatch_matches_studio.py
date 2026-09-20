@@ -23,21 +23,39 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 import server  # noqa: E402
 
+# A curve is filled against its own outline rather than its box, so the shapes here carry the curve
+# that makes them: Studio generates the outline from it, and Plot reads the same outline out of the
+# polyline in the file.
 CASES = [
-    {"kind": kind, "box": box, "angle": angle, "spacing_mm": spacing}
-    for kind, box in (("rect", (1, 1, 3.35, 3.36)), ("rect", (0.5, 2, 4.5, 2.8)), ("ellipse", (1, 1, 4, 2.5)), ("ellipse", (2, 2, 3, 3)))
+    {"kind": kind, "box": box, "angle": angle, "spacing_mm": spacing, "curve": curve}
+    for kind, box, curve in (
+        ("rect", (1, 1, 3.35, 3.36), None),
+        ("rect", (0.5, 2, 4.5, 2.8), None),
+        ("ellipse", (1, 1, 4, 2.5), None),
+        ("ellipse", (2, 2, 3, 3), None),
+        ("polygon", (1, 1, 4, 4), {"kind": "star", "points": 5, "inner": 40}),
+        ("polygon", (0.5, 1, 4.5, 3), {"kind": "star", "points": 7, "inner": 60}),
+        ("polygon", (1, 1, 3.5, 3.5), {"kind": "polygon", "sides": 6}),
+        ("polygon", (1, 1, 4, 3), {"kind": "hypotrochoid", "R": 5, "r": 3, "d": 5, "turns": 3}),
+    )
     for angle in (0, 30, 45, 90, 100, 135)
     for spacing in (0.3, 1.5, 2.0)
 ]
 
 SCRIPT = """
 import { hatchLines, hatchStroke } from "%s";
+import { curveStrokes } from "%s";
 const cases = %s;
 const out = cases.map((c) => {
   const [x0, y0, x1, y1] = c.box;
-  const shape = { id: "s", kind: c.kind, x: x0, y: y0, x2: x1, y2: y1, layerId: "" };
+  const shape = { id: "s", kind: c.curve ? "curve" : c.kind, x: x0, y: y0, x2: x1, y2: y1, layerId: "", ...(c.curve ? { curve: c.curve } : {}) };
   const fill = { id: "f", shapeId: "s", angle: c.angle, spacingMm: c.spacing_mm, scale: 100, connected: true };
-  return { lines: hatchLines(shape, fill).map((l) => [l.x1, l.y1, l.x2, l.y2]), stroke: hatchStroke(shape, fill).map((p) => [p.x, p.y]) };
+  return {
+    lines: hatchLines(shape, fill).map((l) => [l.x1, l.y1, l.x2, l.y2]),
+    stroke: hatchStroke(shape, fill).map((p) => [p.x, p.y]),
+    // The outline Plot reads out of the file, so both sides hatch the same points.
+    outline: c.curve ? (curveStrokes(shape)[0] ?? []).map((p) => [p.x, p.y]) : [],
+  };
 });
 console.log(JSON.stringify(out));
 """
@@ -47,7 +65,8 @@ def studio():
     esbuild = ROOT / "web" / "node_modules" / ".bin" / "esbuild"
     with tempfile.TemporaryDirectory() as tmp:
         src = Path(tmp) / "run.ts"
-        src.write_text(SCRIPT % (ROOT / "web" / "src" / "studio" / "lib" / "hatch.ts", json.dumps(CASES)))
+        lib = ROOT / "web" / "src" / "studio" / "lib"
+        src.write_text(SCRIPT % (lib / "hatch.ts", lib / "parametric.ts", json.dumps(CASES)))
         out = Path(tmp) / "run.js"
         subprocess.run([str(esbuild), str(src), "--bundle", "--platform=node", "--log-level=error", f"--outfile={out}"], check=True)
         return json.loads(subprocess.run(["node", str(out)], check=True, capture_output=True, text=True).stdout)
@@ -56,8 +75,9 @@ def studio():
 def main():
     failures = 0
     for case, ts in zip(CASES, studio()):
-        lines = server.hatch_lines(case["kind"], case["box"], case["angle"], case["spacing_mm"] / 25.4)
-        stroke = server.hatch_stroke(case["kind"], case["box"], lines)
+        outline = [tuple(p) for p in ts["outline"]]
+        lines = server.hatch_lines(case["kind"], case["box"], case["angle"], case["spacing_mm"] / 25.4, outline)
+        stroke = server.hatch_stroke(case["kind"], case["box"], lines, outline)
         for name, py, js in (("lines", [list(l) for l in lines], ts["lines"]), ("stroke", [list(p) for p in stroke], ts["stroke"])):
             same = len(py) == len(js) and all(abs(a - b) < 1e-9 for p, q in zip(py, js) for a, b in zip(p, q))
             if not same:

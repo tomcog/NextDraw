@@ -675,9 +675,10 @@ def fill_spacing_of(group, fills):
     return None
 
 
-def hatch_lines(kind, box, angle, step):
+def hatch_lines(kind, box, angle, step, outline=None):
     """hatchLines: the lines across a rect or ellipse box (x0, y0, x1, y1), `step` apart, swept out
-    from the middle. Each is (x1, y1, x2, y2), running in the direction of the angle."""
+    from the middle. Each is (x1, y1, x2, y2), running in the direction of the angle. A "polygon"
+    is clipped to `outline` - the shape's own points - rather than to the box around it."""
     x0, y0, x1, y1 = box
     w, h = x1 - x0, y1 - y0
     if w <= 0 or h <= 0 or not step > 0.002:
@@ -714,24 +715,64 @@ def hatch_lines(kind, box, angle, step):
         lo, hi = (-b - root) / (2 * a), (-b + root) / (2 * a)
         return (px + dx * lo, py + dy * lo, px + dx * hi, py + dy * hi)
 
+    def clip_outline(px, py):
+        """Every span of the line that lies inside the outline, counting crossings the even-odd way."""
+        hits = []
+        for (ax, ay), (bx, by) in zip(outline, outline[1:]):
+            ex, ey = bx - ax, by - ay
+            denom = dx * ey - dy * ex
+            if abs(denom) < 1e-12:
+                continue
+            u = (dx * (ay - py) - dy * (ax - px)) / -denom
+            t = (ex * (ay - py) - ey * (ax - px)) / -denom
+            if 0 <= u < 1:  # half-open, so a crossing on a corner counts once
+                hits.append(t)
+        hits.sort()
+        return [(px + dx * a, py + dy * a, px + dx * b, py + dy * b)
+                for a, b in zip(hits[0::2], hits[1::2])]
+
     lines = []
     n = math.ceil(reach / step)
     for i in range(-n, n + 1):
         t = i * step
-        seg = (clip_box if kind == "rect" else clip_ellipse)(cx + nx * t, cy + ny * t)
+        px, py = cx + nx * t, cy + ny * t
+        if kind == "polygon":
+            if not outline or len(outline) < 3:
+                continue
+            for seg in clip_outline(px, py):
+                if math.hypot(seg[2] - seg[0], seg[3] - seg[1]) > 1e-6:
+                    lines.append(seg)
+            continue
+        seg = (clip_box if kind == "rect" else clip_ellipse)(px, py)
         if seg and math.hypot(seg[2] - seg[0], seg[3] - seg[1]) > 1e-6:
             lines.append(seg)
     return lines
 
 
-def hatch_stroke(kind, box, lines):
+def hatch_stroke(kind, box, lines, outline=None):
     """hatchStroke: the lines as one zigzag, each end joined to the next line's start along the
-    shape's edge - by the corner of a rect, along the curve of an ellipse. A list of (x, y)."""
+    shape's edge - by the corner of a rect, along the curve of an ellipse, round the outline itself
+    for a polygon. A list of (x, y)."""
     x0, y0, x1, y1 = box
     cx, cy, rx, ry = (x0 + x1) / 2, (y0 + y1) / 2, (x1 - x0) / 2, (y1 - y0) / 2
     eps = 1e-6
 
+    def walk_outline(a, b):
+        """Along the shape's own outline, the short way round, so a join never cuts across a notch."""
+        if not outline or len(outline) < 3:
+            return []
+        nearest = lambda p: min(range(len(outline)),  # noqa: E731
+                                key=lambda i: (outline[i][0] - p[0]) ** 2 + (outline[i][1] - p[1]) ** 2)
+        start, end = nearest(a), nearest(b)
+        n = len(outline) - 1  # the last point repeats the first
+        forward = (end - start + n) % n
+        step_dir = 1 if forward <= n - forward else -1
+        count = forward if step_dir == 1 else n - forward
+        return [outline[(start + step_dir * k) % n] for k in range(1, count)]
+
     def join(a, b):
+        if kind == "polygon":
+            return walk_outline(a, b)
         if kind == "rect":
             side = lambda p: x0 if abs(p[0] - x0) < eps else x1 if abs(p[0] - x1) < eps else None  # noqa: E731
             cap = lambda p: y0 if abs(p[1] - y0) < eps else y1 if abs(p[1] - y1) < eps else None  # noqa: E731
@@ -760,9 +801,26 @@ def hatch_stroke(kind, box, lines):
     return points
 
 
+def outline_points(el):
+    """A Studio curve's own points (a polyline's), as a closed list of (x, y). Empty for anything else."""
+    if el is None or el.tag != SVG_NS + "polyline":
+        return []
+    nums = [float(v) for v in re.findall(r"-?\d*\.?\d+(?:e[-+]?\d+)?", el.get("points") or "")]
+    pts = list(zip(nums[0::2], nums[1::2]))
+    if len(pts) > 2 and pts[0] != pts[-1]:
+        pts.append(pts[0])  # a fill needs a closed outline to count crossings against
+    return pts
+
+
 def shape_box(el):
-    """The box a Studio rect or ellipse is drawn in, as (x0, y0, x1, y1), or None."""
+    """The box a Studio rect, ellipse or curve is drawn in, as (x0, y0, x1, y1), or None."""
     try:
+        if el is not None and el.tag == SVG_NS + "polyline":
+            pts = outline_points(el)
+            if len(pts) < 3:
+                return None
+            xs, ys = [p[0] for p in pts], [p[1] for p in pts]
+            return min(xs), min(ys), max(xs), max(ys)
         if el.tag == SVG_NS + "rect":
             x, y = float(el.get("x", 0)), float(el.get("y", 0))
             return x, y, x + float(el.get("width")), y + float(el.get("height"))
@@ -782,13 +840,18 @@ def regenerate_hatches(root, spacing_by_layer, scale):
     fills = studio_fills(root)
     if not fills:
         return
-    shapes = {el.get("id"): el for el in root.iter(SVG_NS + "rect", SVG_NS + "ellipse") if el.get("id")}
+    # Curves are polylines, and a repeat's copies carry the shape's id with -r2, -r3 after it: the
+    # copies are the same geometry moved, so the first of them is the one a fill is made from.
+    shapes = {el.get("id"): el for el in root.iter(SVG_NS + "rect", SVG_NS + "ellipse", SVG_NS + "polyline")
+              if el.get("id")}
     num = lambda v: f"{v:.4f}".rstrip("0").rstrip(".")  # noqa: E731 - Studio's own rounding
     for layer in layer_groups(root):
         override = spacing_by_layer.get(layer.get("id"))
         for g in list(layer.iter(SVG_NS + "g")):
             gid = g.get("id") or ""
-            fill = fills.get(gid[len(STUDIO_FILL_PREFIX):]) if gid.startswith(STUDIO_FILL_PREFIX) else None
+            # A repeated shape's fill groups are numbered after the first one; they share its numbers.
+            name = re.sub(r"-r\d+$", "", gid[len(STUDIO_FILL_PREFIX):]) if gid.startswith(STUDIO_FILL_PREFIX) else ""
+            fill = fills.get(name)
             shape = shapes.get(fill.get("shape")) if fill else None
             box = shape_box(shape) if shape is not None else None
             if box is None:
@@ -801,13 +864,15 @@ def regenerate_hatches(root, spacing_by_layer, scale):
                 continue
             if override is None and abs(made_for - scale) < 1e-9:
                 continue  # the file's own lines are already right
-            kind = "rect" if shape.tag == SVG_NS + "rect" else "ellipse"
-            lines = hatch_lines(kind, box, angle, spacing / 25.4 / (scale / 100))
+            kind = ("rect" if shape.tag == SVG_NS + "rect"
+                    else "polygon" if shape.tag == SVG_NS + "polyline" else "ellipse")
+            outline = outline_points(shape)
+            lines = hatch_lines(kind, box, angle, spacing / 25.4 / (scale / 100), outline)
             for child in list(g):
                 g.remove(child)
             if fill.get("connected") and lines:
                 el = etree.SubElement(g, SVG_NS + "polyline")
-                el.set("points", " ".join(f"{num(x)},{num(y)}" for x, y in hatch_stroke(kind, box, lines)))
+                el.set("points", " ".join(f"{num(x)},{num(y)}" for x, y in hatch_stroke(kind, box, lines, outline)))
             else:
                 for x1, y1, x2, y2 in lines:
                     el = etree.SubElement(g, SVG_NS + "line")
