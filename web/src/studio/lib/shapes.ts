@@ -252,7 +252,14 @@ export const dragHandle = (s: Shape, handle: Handle, x: number, y: number): Shap
   // One point of a path: the point moves, and the box follows it rather than the other way round.
   if (handle.startsWith("p") && s.points) {
     const i = Number(handle.slice(1));
-    const points = s.points.map((p, k) => (k === i ? { x, y } : p));
+    const last = s.points.length - 1;
+    // A closed path ends where it began - the same point written twice - so dragging either end
+    // takes the other with it, rather than leaving the outline open.
+    const shut = last > 1
+      && Math.abs(s.points[0].x - s.points[last].x) < 1e-9
+      && Math.abs(s.points[0].y - s.points[last].y) < 1e-9;
+    const ends = shut && (i === 0 || i === last);
+    const points = s.points.map((p, k) => ((k === i || (ends && (k === 0 || k === last))) ? { x, y } : p));
     const b = pointsBox(points);
     return { ...s, points, x: b.x0, y: b.y0, x2: b.x1, y2: b.y1 };
   }
