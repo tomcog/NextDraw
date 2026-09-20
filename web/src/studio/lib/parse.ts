@@ -1,5 +1,6 @@
 import { newFillId, type Fill } from "./hatch";
 import { curveFromData } from "./parametric";
+import { repeatFromData } from "./repeat";
 import { newLayerId, newShapeId, type Layer, type Page, type Shape } from "./shapes";
 import { FILL_GROUP_PREFIX } from "./svg";
 
@@ -67,7 +68,10 @@ export function parseDrawing(text: string): Opened {
   // Read Studio's own parameters first: they say which polylines are a parametric curve's lines,
   // so those aren't counted as marks this can't edit.
   const designEl = svg.getElementsByTagName("nds:design")[0] ?? svg.querySelector("design");
-  let design: { fills?: unknown; on?: Record<string, string>; curves?: unknown; turned?: Record<string, unknown> } = {};
+  let design: {
+    fills?: unknown; on?: Record<string, string>; curves?: unknown;
+    turned?: Record<string, unknown>; repeats?: Record<string, unknown>;
+  } = {};
   try {
     design = designEl?.textContent ? JSON.parse(designEl.textContent) : {};
   } catch {
@@ -76,6 +80,9 @@ export function parseDrawing(text: string): Opened {
   const savedCurves = (Array.isArray(design.curves) ? design.curves : []) as Record<string, unknown>[];
   const curveIds = new Set(savedCurves.map((c) => String(c.shape)));
   const fromCurve = (id: string) => curveIds.has(id) || [...curveIds].some((c) => id.startsWith(`${c}-`));
+  // A repeated shape's copies are drawn from the shape itself, so only the first of them is read.
+  const repeatIds = Object.keys(design.repeats ?? {});
+  const isCopy = (id: string) => repeatIds.some((base) => /^-r\d+$/.test(id.slice(base.length)) && id.startsWith(base));
 
   // A fill's lines are regenerated from its parameters, so reading them back as hundreds of separate
   // line shapes would both double the drawing and cut it loose from the fill that made it.
@@ -140,7 +147,7 @@ export function parseDrawing(text: string): Opened {
     });
 
   for (const el of Array.from(svg.querySelectorAll("*"))) {
-    if (generated(el)) continue;
+    if (generated(el) || isCopy(el.getAttribute("id") || "")) continue;
     switch (el.nodeName.toLowerCase()) {
       case "rect": {
         const x = attr(el, "x");
@@ -200,6 +207,12 @@ export function parseDrawing(text: string): Opened {
       layerId: "", kind: "curve", curve,
       x: box[0], y: box[1], x2: box[2], y2: box[3],
     });
+  }
+
+  // How each repeated shape repeats, put back on the one shape its copies were drawn from.
+  for (const s of shapes) {
+    const repeat = repeatFromData(design.repeats?.[s.id]);
+    if (repeat) s.repeat = repeat;
   }
 
   // The angle each turned shape was drawn at. The geometry in the file is already turned, so this

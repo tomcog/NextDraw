@@ -2,6 +2,7 @@
 // Plot measures a drawing's footprint, so what's on the page here is what lands on the paper there.
 
 import { CURVE_LABEL, type Curve } from "./parametric";
+import type { Repeat } from "./repeat";
 
 export type ShapeKind = "rect" | "ellipse" | "line" | "curve";
 
@@ -14,6 +15,9 @@ export interface Shape {
   y: number;
   x2: number;
   y2: number;
+  /** Drawn more than once: in rows and columns, or round a ring. The shape itself is the one you
+   *  edit, and every copy follows it. */
+  repeat?: Repeat;
   /** Degrees clockwise about the middle of the box. The box itself is never turned: keeping it
    *  square is what lets a shape still be resized, hatched and measured after it's been turned. */
   rotation?: number;
@@ -130,6 +134,18 @@ export const turnAttr = (s: Shape): string | undefined => {
   if (!s.rotation) return undefined;
   const c = centerOf(s);
   return `rotate(${Number(s.rotation.toFixed(3))} ${Number(c.x.toFixed(4))} ${Number(c.y.toFixed(4))})`;
+};
+
+/**
+ * The same shape at a given width and height, in inches, held by its top-left corner - or, for a
+ * line, by the end it was drawn from, since a line's direction is its own.
+ */
+export const resizeTo = (s: Shape, w: number, h: number): Shape => {
+  if (s.kind === "line") {
+    return { ...s, x2: s.x + Math.sign(s.x2 - s.x || 1) * w, y2: s.y + Math.sign(s.y2 - s.y || 1) * h };
+  }
+  const b = boxOf(s);
+  return { ...s, x: b.x0, y: b.y0, x2: b.x0 + w, y2: b.y0 + h };
 };
 
 /** The corners a selected shape can be dragged by: a box has four, a line has its two ends. */

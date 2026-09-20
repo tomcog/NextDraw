@@ -5,6 +5,7 @@ import {
 } from "../lib/shapes";
 import { hatchLines, hatchStroke, type Fill } from "../lib/hatch";
 import { curveStrokes, pointsAttr, DEFAULT_CURVE, type CurveKind } from "../lib/parametric";
+import { placementAttr, placements } from "../lib/repeat";
 import type { Layer } from "../lib/shapes";
 import { BedCanvas, type BedCanvasHandle, type Box, type Zoom } from "../../components/BedCanvas";
 import { DEFAULT_SETTINGS, UNITS } from "../../lib/constants";
@@ -226,23 +227,29 @@ export function Canvas({ page, shapes, fills, layers, activeLayer, model, zoom, 
   // itself is a guide, and guides are interface, drawn further down.
   const marksOn = (layer: Layer) => {
     const mine = shapes.filter((sh) => sh.layerId === layer.id);
+    // A repeated shape is drawn once per copy. The copies are marks and nothing else: what you grab,
+    // and what the handles belong to, is always the shape itself.
+    const copies = (sh: Shape, what: (key: string) => ReactNode) =>
+      placements(sh).map((p, i) => (
+        <g key={`${sh.id}-copy-${i}`} transform={placementAttr(sh, p)}>{what(`${sh.id}-${i}`)}</g>
+      ));
     return (
       <>
-        {mine.filter((sh) => sh.outline !== false).map((sh) => element(sh, sh.id, {}))}
+        {mine.filter((sh) => sh.outline !== false).map((sh) => copies(sh, (key) => element(sh, key, {})))}
         {fills
           .filter((f) => mine.some((sh) => sh.id === f.shapeId))
           .map((fill) => {
             const shape = mine.find((sh) => sh.id === fill.shapeId)!;
-            return (
+            return copies(shape, (key) => (
               // The fill turns with the shape it fills, since it is that shape's own hatching.
-              <g key={fill.id} transform={turnAttr(shape)}>
+              <g key={`${key}-fill-${fill.id}`} transform={turnAttr(shape)}>
                 {fill.connected ? (
                   <polyline fill="none" points={hatchStroke(shape, fill).map((p) => `${p.x},${p.y}`).join(" ")} />
                 ) : (
                   hatchLines(shape, fill).map((l, i) => <line key={i} x1={l.x1} y1={l.y1} x2={l.x2} y2={l.y2} />)
                 )}
               </g>
-            );
+            ));
           })}
       </>
     );

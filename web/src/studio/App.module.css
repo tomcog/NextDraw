@@ -178,9 +178,25 @@
 
 .shapeSize {
   flex: none;
+  padding: 0.125rem 0.25rem;
+  border: 0;
+  border-radius: 3px;
+  background: none;
+  font: inherit;
   font-size: 10px;
   color: var(--ui-text-muted);
   font-variant-numeric: tabular-nums;
+  cursor: text;
+}
+
+.shapeSize:hover { background: var(--ui-surface-raised); color: var(--ui-text-default); }
+
+/* The size, open for typing: two small boxes in the row itself, so the shape stays in view. */
+.sizeFields {
+  flex: none;
+  display: flex;
+  gap: 0.25rem;
+  width: 8.5rem;
 }
 
 @media (max-width: 860px) {

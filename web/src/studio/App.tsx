@@ -18,10 +18,11 @@ import { Canvas, type Tool } from "./components/Canvas";
 import { StudioHeader } from "./components/StudioHeader";
 import { canFill, newFillId, type Fill } from "./lib/hatch";
 import { closingTurns, CURVE_FIELDS, type Curve } from "./lib/parametric";
+import { defaultRepeat, placements, REPEAT_FIELDS, REPEAT_LABEL, type Repeat, type RepeatKind } from "./lib/repeat";
 import { parseDrawing } from "./lib/parse";
 import { PaletteMenu } from "../components/controls/PaletteMenu";
 import { RowMenu } from "../components/controls/RowMenu";
-import { boxOf, newLayerId, newShapeId, shapeName, type Layer, type Page, type Shape } from "./lib/shapes";
+import { boxOf, clampToPage, newLayerId, newShapeId, resizeTo, shapeName, type Layer, type Page, type Shape } from "./lib/shapes";
 import { buildSvg, cleanFileName } from "./lib/svg";
 import styles from "./App.module.css";
 
@@ -482,6 +483,21 @@ export default function App() {
     setShapes((list) => list.map((s) => (s.id === chosen.id ? { ...s, rotation: turn || undefined } : s)));
   };
 
+  /** Set a shape's size from the list, in inches, keeping its top-left corner where it is. */
+  const setShapeSize = (id: string, w: number, h: number) => {
+    const shape = shapes.find((s) => s.id === id);
+    if (!shape) return;
+    record();
+    setShapes((list) => list.map((s) => (s.id === id ? clampToPage(resizeTo(s, w, h), page) : s)));
+  };
+
+  /** Repeat the chosen shape, or stop repeating it. Every copy follows the shape itself. */
+  const setRepeat = (repeat: Repeat | undefined) => {
+    if (!chosen) return;
+    record();
+    setShapes((list) => list.map((s) => (s.id === chosen.id ? { ...s, repeat } : s)));
+  };
+
   /** Change one of the chosen curve's numbers. The shape is redrawn from them as they change. */
   const setCurve = (next: Curve) => {
     if (!chosen) return;
@@ -593,6 +609,8 @@ export default function App() {
 
   // The kebab menu on a layer or shape row: duplicate and delete.
   const [rowMenu, setRowMenu] = useState<{ kind: "layer" | "shape"; id: string; anchor: HTMLElement } | null>(null);
+  // The shape whose size in the list is open for typing into. One at a time, like a rename.
+  const [sizing, setSizing] = useState<string | null>(null);
 
   const removeLayer = (id: string) => {
     if (layers.length < 2) return; // there is always somewhere to draw
@@ -987,10 +1005,39 @@ export default function App() {
                           <li key={sh.id} className={styles.shapeRow} data-selected={sh.id === selected}>
                             <button type="button" className={styles.shapePick} onClick={() => setSelected(sh.id)}>
                               <span>{shapeName(sh, i)}</span>
-                              <span className={styles.shapeSize}>
-                                {`${fmtIn(b.x1 - b.x0)} × ${fmtIn(b.y1 - b.y0)}`}
-                              </span>
                             </button>
+                            {sizing === sh.id ? (
+                              // Typed in inches, the units the page itself is measured in.
+                              <span className={styles.sizeFields} onBlur={(e) => {
+                                if (!e.currentTarget.contains(e.relatedTarget as Node)) setSizing(null);
+                              }}>
+                                <NumberField
+                                  label={`Width of ${shapeName(sh, i)} (in)`}
+                                  hideLabel
+                                  min={0.02}
+                                  step={0.1}
+                                  value={Number((b.x1 - b.x0).toFixed(3))}
+                                  onChange={(w) => setShapeSize(sh.id, w, b.y1 - b.y0)}
+                                />
+                                <NumberField
+                                  label={`Height of ${shapeName(sh, i)} (in)`}
+                                  hideLabel
+                                  min={0.02}
+                                  step={0.1}
+                                  value={Number((b.y1 - b.y0).toFixed(3))}
+                                  onChange={(h) => setShapeSize(sh.id, b.x1 - b.x0, h)}
+                                />
+                              </span>
+                            ) : (
+                              <button
+                                type="button"
+                                className={styles.shapeSize}
+                                title="Set this shape's size"
+                                onClick={() => { setSelected(sh.id); setSizing(sh.id); }}
+                              >
+                                {`${fmtIn(b.x1 - b.x0)} × ${fmtIn(b.y1 - b.y0)}`}
+                              </button>
+                            )}
                             <ButtonRound size="sm" variant="ghost" icon={<EllipsisVertical />}
                               aria-label={`More for ${shapeName(sh, i)}`}
                               aria-haspopup="menu"
@@ -1021,6 +1068,52 @@ export default function App() {
                     value={chosen.rotation ?? 0}
                     onChange={setRotation}
                   />
+                </Section>
+              </div>
+            </Card>
+          )}
+
+          {chosen && (
+            <Card variant="flat" className={styles.controls}>
+              <div className={styles.cardBody}>
+                <Section title="Repeat" collapsibleKey="repeat">
+                  <InputSelect
+                    size="md"
+                    label="Repeat"
+                    hideLabel
+                    value={chosen.repeat?.kind ?? ""}
+                    onChange={(e) => setRepeat(e.target.value ? defaultRepeat(e.target.value as RepeatKind, chosen) : undefined)}
+                  >
+                    <option value="">Just the one</option>
+                    {(Object.keys(REPEAT_LABEL) as RepeatKind[]).map((k) => (
+                      <option key={k} value={k}>{REPEAT_LABEL[k]}</option>
+                    ))}
+                  </InputSelect>
+                  {chosen.repeat && (
+                    <div className={styles.fillRow}>
+                      {REPEAT_FIELDS[chosen.repeat.kind].map((f) => (
+                        <NumberField
+                          key={f.key}
+                          label={f.label}
+                          min={f.min}
+                          max={f.max}
+                          step={f.step}
+                          value={Number((chosen.repeat as unknown as Record<string, number>)[f.key])}
+                          onChange={(v) => setRepeat({ ...(chosen.repeat as Repeat), [f.key]: v } as Repeat)}
+                        />
+                      ))}
+                    </div>
+                  )}
+                  {chosen.repeat?.kind === "ring" && (
+                    <Checkbox
+                      checked={chosen.repeat.facing}
+                      label="Turn each copy to face out"
+                      onChange={(e) => setRepeat({ ...(chosen.repeat as Repeat), facing: e.target.checked } as Repeat)}
+                    />
+                  )}
+                  {chosen.repeat && (
+                    <p className={styles.empty}>{`${placements(chosen).length} copies, the first being the shape itself`}</p>
+                  )}
                 </Section>
               </div>
             </Card>

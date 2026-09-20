@@ -1,5 +1,6 @@
 import { hatchLines, hatchStroke, type Fill } from "./hatch";
 import { curveStrokes, pointsAttr } from "./parametric";
+import { placementAttr, placements } from "./repeat";
 import { boxOf, turnAttr, type Layer, type Page, type Shape } from "./shapes";
 
 // The drawing Studio writes out. Two things matter to Plot at the other end:
@@ -27,12 +28,26 @@ const STROKE_IN = 0.008;
 
 const num = (n: number) => Number(n.toFixed(4)).toString();
 
+/** Every copy of a shape, each in its own turn of the page. One copy for a shape that isn't repeated. */
+function allCopies(s: Shape, one: (copy: number) => string): string {
+  return placements(s)
+    .map((p, i) => {
+      const at = placementAttr(s, p);
+      const body = one(i);
+      return at ? `<g transform="${escapeAttr(at)}">${body}</g>` : body;
+    })
+    .join("\n      ");
+}
+
 function shapeMarkup(s: Shape): string {
   const b = boxOf(s);
   // A turned shape is written as its own geometry inside one turn, which every SVG reader applies -
   // and Studio reads the angle back from the design block rather than from the transform.
   const turn = turnAttr(s);
   if (turn) return `<g transform="${escapeAttr(turn)}">${shapeMarkup({ ...s, rotation: 0 })}</g>`;
+  // Copies carry the shape's id with a number after it, which is how reading the drawing back knows
+  // they are copies rather than shapes of their own.
+  if (s.repeat) return allCopies(s, (i) => shapeMarkup({ ...s, repeat: undefined, id: i ? `${s.id}-r${i + 1}` : s.id }));
   if (s.kind === "curve") {
     // Drawn out as the lines the pen makes, so Plot needs to know nothing about the numbers behind
     // them; they travel in the design block below and Studio redraws the curve from those.
@@ -75,7 +90,9 @@ function fillMarkup(shapes: Shape[], fills: Fill[]): string {
           .map((l) => `        <line x1="${num(l.x1)}" y1="${num(l.y1)}" x2="${num(l.x2)}" y2="${num(l.y2)}"/>`)
           .join("\n");
       const turn = turnAttr(shape);
-      return `      <g id="${FILL_GROUP_PREFIX}${escapeAttr(fill.id)}"${turn ? ` transform="${escapeAttr(turn)}"` : ""}>\n${body}\n      </g>`;
+      const group = (n: number) =>
+        `      <g id="${FILL_GROUP_PREFIX}${escapeAttr(fill.id)}${n ? `-r${n + 1}` : ""}"${turn ? ` transform="${escapeAttr(turn)}"` : ""}>\n${body}\n      </g>`;
+      return allCopies(shape, group);
     })
     .filter(Boolean)
     .join("\n");
@@ -115,11 +132,15 @@ function designBlock(fills: Fill[], shapes: Shape[], layers: Layer[]): string {
   const nameOf = new Map(layers.map((l) => [l.id, l.name]));
   const curves = shapes.filter((s) => s.curve);
   const turned = shapes.filter((s) => s.rotation);
+  const repeated = shapes.filter((s) => s.repeat);
   const data = {
     on: Object.fromEntries(shapes.map((s) => [s.id, nameOf.get(s.layerId) ?? ""])),
     // How far each turned shape is turned. The file already draws it turned; this is what lets it be
     // picked up again as a square box with an angle, rather than as geometry nobody can resize.
     ...(turned.length ? { turned: Object.fromEntries(turned.map((s) => [s.id, s.rotation])) } : {}),
+    // How each repeated shape repeats. The copies are all in the file for Plot to draw; this is what
+    // lets Studio pick them up again as one shape drawn many times.
+    ...(repeated.length ? { repeats: Object.fromEntries(repeated.map((s) => [s.id, s.repeat])) } : {}),
     // The numbers behind each parametric shape, and the box it was drawn in, so reopening the
     // drawing gets the curve back rather than a heap of line segments.
     ...(curves.length
