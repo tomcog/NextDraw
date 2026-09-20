@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Button, ButtonRound, Card, Checkbox, InputSelect, InputText, LayerController } from "@tomcoggia/ui";
-import { ArrowDownToLine, Circle, Copy, EllipsisVertical, FilePlus, Flame, FolderOpen, Layers2, LoaderPinwheel, Minus, MousePointer2, Pentagon, Plus, Radar, Rainbow, Ratio, Redo2, Spline, Square, Star, StickyNote, Trash2, Undo2 } from "lucide-react";
+import { ArrowDownToLine, Circle, Copy, EllipsisVertical, FilePlus, Flame, FolderOpen, Layers2, LoaderPinwheel, Minus, MousePointer2, Pentagon, Plus, Radar, Rainbow, Ratio, Redo2, Spline, Square, Star, StickyNote, Trash2, Type, Undo2 } from "lucide-react";
 import { FileBrowser, LAST_FOLDER_KEY, type OpenResult } from "../components/FileBrowser";
 import { Section } from "../components/controls/Section";
 import { NumberField } from "../components/controls/NumberField";
@@ -18,6 +18,8 @@ import { Canvas, type Tool } from "./components/Canvas";
 import { StudioHeader } from "./components/StudioHeader";
 import { canFill, newFillId, type Fill } from "./lib/hatch";
 import { closingTurns, curveStrokes, CURVE_FIELDS, type Curve, type Point } from "./lib/parametric";
+import { fontNames, loadFont, type StrokeFont } from "./lib/font";
+import { fitText } from "./lib/text";
 import { defaultRepeat, placements, REPEAT_FIELDS, REPEAT_LABEL, type Repeat, type RepeatKind } from "./lib/repeat";
 import { parseDrawing } from "./lib/parse";
 import { PaletteMenu } from "../components/controls/PaletteMenu";
@@ -47,11 +49,13 @@ const TOOLS: { kind: Tool; label: string; hint: string; icon: JSX.Element }[] = 
   { kind: "star", label: "Star", hint: "Draw a star: drag on the page, then set its points", icon: <Star /> },
   { kind: "spiral", label: "Spiral", hint: "Draw a spiral: drag on the page, then set its turns", icon: <Radar /> },
   { kind: "arc", label: "Arc", hint: "Draw an arc: drag on the page, then set where it starts and how far it goes", icon: <Rainbow /> },
+  { kind: "text", label: "Text", hint: "Set some words: drag to say how tall, then type them", icon: <Type /> },
 ];
 
 // Used when a tool has no palette of its own, so there is always a pen to draw with.
 const PLAIN_PEN: PenColor = { name: "Black", color: "#262626" };
 const TOOL_KEY = "studio-tool";
+const FONT_KEY = "studio-font";
 
 // The drawing being worked on, remembered so that handing one to Plot - which navigates away - isn't
 // the same as losing it. Its own key: Plot's keys share this origin and still carry the old name.
@@ -112,6 +116,14 @@ export default function App() {
   // Plot's presets rather than being invented here.
   const [defaults, setDefaults] = useState({ angle: 45, spacingMm: 1.5 });
   const [presets, setPresets] = useState<Preset[]>([]);
+  // The single-stroke fonts: the names the app offers, the ones that have been read, and the one new
+  // text is set in. A font is only fetched when something wants to be drawn in it.
+  const [fontList, setFontList] = useState<string[]>([]);
+  const [fonts, setFonts] = useState<Record<string, StrokeFont>>({});
+  // The same fonts, for the callbacks that run outside a render: adding, resizing, saving.
+  const fontsRef = useRef(fonts);
+  fontsRef.current = fonts;
+  const [font, setFont] = useState<string>(() => load<string>(FONT_KEY) ?? "");
   const [model, setModel] = useState<PlotterModel | undefined>();
   // Paper to begin with: the page is what's being drawn on, and the bed is context around it.
   const [zoom, setZoom] = useState<Zoom>("paper");
@@ -191,13 +203,15 @@ export default function App() {
 
   const addShape = useCallback((shape: Shape) => {
     record();
-    setShapes((list) => [...list, shape]);
+    // Text is as wide as its words: the drag only says how tall.
+    setShapes((list) => [...list, shape.kind === "text" ? fitText(shape, fontsRef.current[shape.font ?? ""]) : shape]);
     pick(shape.id);
     setTool("select"); // what you want next is nearly always to nudge the thing you just drew
   }, [record]);
 
   const updateShape = useCallback((shape: Shape) => {
-    setShapes((list) => list.map((s) => (s.id === shape.id ? shape : s)));
+    const next = shape.kind === "text" ? fitText(shape, fontsRef.current[shape.font ?? ""]) : shape;
+    setShapes((list) => list.map((s) => (s.id === next.id ? next : s)));
   }, []);
 
   /** Several shapes changed at once, as a drag of a whole selection does. */
@@ -272,7 +286,7 @@ export default function App() {
     }
     setBusy(true);
     try {
-      const svg = buildSvg(shapes, fills, layers, page, { paperSizeId: sizeId, toolName });
+      const svg = buildSvg(shapes, fills, layers, page, { paperSizeId: sizeId, toolName, fonts });
       // Next to the file that was opened, so a drawing opened from the Desktop is saved back to the
       // Desktop - its card says "In ~/Desktop", and that is where it gets looked for. A drawing never
       // saved goes to the server's default, the shared iCloud folder.
@@ -452,6 +466,39 @@ export default function App() {
   useEffect(() => {
     if (toolName) remember(TOOL_KEY, toolName);
   }, [toolName]);
+
+  // The fonts: the list once, then each one the drawing actually asks for.
+  useEffect(() => {
+    fontNames()
+      .then((names) => {
+        setFontList(names);
+        setFont((current) => (names.includes(current) ? current : names[0] ?? ""));
+      })
+      .catch(() => setFontList([]));
+  }, []);
+  useEffect(() => {
+    const wanted = new Set([font, ...shapes.map((s) => s.font ?? "")].filter(Boolean));
+    for (const name of wanted) {
+      if (fonts[name]) continue;
+      loadFont(name)
+        .then((loaded) => setFonts((all) => ({ ...all, [name]: loaded })))
+        .catch(() => {});
+    }
+  }, [font, shapes, fonts]);
+  useEffect(() => {
+    if (font) remember(FONT_KEY, font);
+  }, [font]);
+
+  /** Change a text shape: what it says, or the font it is set in. Its box follows the words. */
+  const setTextOf = (patch: { text?: string; font?: string }) => {
+    if (!chosen || chosen.kind !== "text") return;
+    record();
+    setShapes((list) => list.map((s) => {
+      if (s.id !== chosen.id) return s;
+      const next = { ...s, ...patch };
+      return fitText(next, fonts[next.font ?? ""]);
+    }));
+  };
 
   // One shape at a time in the cards: the last one picked, and only while it is the only one, so
   // nothing is edited behind your back when a whole group is selected.
@@ -825,6 +872,8 @@ export default function App() {
             inkBuild={inkBuild}
             inkSim={inkSim}
             tool={tool}
+            fonts={fonts}
+            font={font}
             selected={selected}
             onSelect={setSelected}
             onUpdateMany={updateShapes}
@@ -1159,6 +1208,33 @@ export default function App() {
                       })}
                     </ul>
                   )}
+                </Section>
+              </div>
+            </Card>
+          )}
+
+          {chosen?.kind === "text" && (
+            <Card variant="flat" className={styles.controls}>
+              <div className={styles.cardBody}>
+                <Section title="Text" collapsibleKey="text">
+                  <InputText
+                    size="md"
+                    label="Words"
+                    value={chosen.text ?? ""}
+                    maxLength={200}
+                    onChange={(e) => setTextOf({ text: e.target.value })}
+                  />
+                  <InputSelect
+                    size="md"
+                    label="Font"
+                    value={chosen.font ?? ""}
+                    disabled={!fontList.length}
+                    onChange={(e) => setTextOf({ font: e.target.value })}
+                  >
+                    {!fontList.length && <option value="">No fonts on this Mac</option>}
+                    {fontList.map((f) => <option key={f} value={f}>{f}</option>)}
+                  </InputSelect>
+                  <p className={styles.empty}>Drag a corner to set how tall the letters are.</p>
                 </Section>
               </div>
             </Card>

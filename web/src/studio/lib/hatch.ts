@@ -53,7 +53,7 @@ export interface Seg {
 const OPEN_CURVES = ["parabolic", "spiral", "arc"];
 
 export const canFill = (s: Shape) =>
-  s.kind !== "line" && !OPEN_CURVES.includes(s.curve?.kind ?? "")
+  s.kind !== "line" && s.kind !== "text" && !OPEN_CURVES.includes(s.curve?.kind ?? "")
   && (s.kind !== "path" || (s.points?.length ?? 0) > 2);
 
 /** The closed outline a fill is clipped to: a curve's generated points, or a path's own. */

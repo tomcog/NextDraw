@@ -1698,6 +1698,23 @@ def static_files(name):
     return send_from_directory(ROOT / "static", name)
 
 
+# Single-stroke fonts, for Studio's text tool: the pen draws each letter as lines rather than
+# tracing an outline and filling it. They are SVG fonts (a glyph is a path and an advance), shipped
+# with the app - see fonts/OFL.txt and each file's own notice for where they come from.
+FONTS = ROOT / "fonts"
+
+
+@app.get("/api/fonts")
+def list_fonts():
+    names = sorted(p.stem for p in FONTS.glob("*.svg")) if FONTS.is_dir() else []
+    return jsonify(fonts=names)
+
+
+@app.get("/fonts/<name>.svg")
+def font_file(name):
+    return send_from_directory(FONTS, f"{Path(name).name}.svg", mimetype="image/svg+xml")
+
+
 @app.get("/studio")
 def studio_index():
     """NextDraw Studio: the companion app that makes the drawings this one plots (docs/studio.md).

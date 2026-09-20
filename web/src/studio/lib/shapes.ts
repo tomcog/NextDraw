@@ -4,7 +4,7 @@
 import { CURVE_LABEL, type Curve, type Point } from "./parametric";
 import type { Repeat } from "./repeat";
 
-export type ShapeKind = "rect" | "ellipse" | "line" | "curve" | "path";
+export type ShapeKind = "rect" | "ellipse" | "line" | "curve" | "path" | "text";
 
 export interface Shape {
   id: string;
@@ -15,6 +15,10 @@ export interface Shape {
   y: number;
   x2: number;
   y2: number;
+  /** Text set in a single-stroke font: what it says, and which font draws it. The box's height is
+   *  the size it is set at, and its width follows from the words. */
+  text?: string;
+  font?: string;
   /**
    * A path: the points it is drawn through, in inches on the page. A curve becomes one when it is
    * baked - the numbers behind it are given up, and every point can be dragged instead.
@@ -84,7 +88,9 @@ export const boxOf = (s: Shape) => ({
 });
 
 export const shapeName = (s: Shape, index: number) =>
-  `${s.curve ? CURVE_LABEL[s.curve.kind] : { rect: "Rectangle", ellipse: "Ellipse", line: "Line", curve: "Curve", path: "Path" }[s.kind]} ${index + 1}`;
+  `${s.kind === "text" ? (s.text?.trim().split("\n")[0].slice(0, 20) || "Text")
+    : s.curve ? CURVE_LABEL[s.curve.kind]
+    : { rect: "Rectangle", ellipse: "Ellipse", line: "Line", curve: "Curve", path: "Path", text: "Text" }[s.kind]} ${s.kind === "text" ? "" : index + 1}`.trim();
 
 /** The same shape in a new box, with a path's points carried across so they keep their places in it. */
 export const withBox = (s: Shape, box: { x0: number; y0: number; x1: number; y1: number }): Shape => {

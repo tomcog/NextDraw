@@ -71,6 +71,7 @@ export function parseDrawing(text: string): Opened {
   let design: {
     fills?: unknown; on?: Record<string, string>; curves?: unknown;
     turned?: Record<string, unknown>; repeats?: Record<string, unknown>;
+    texts?: Record<string, { text?: unknown; font?: unknown; box?: unknown }>;
   } = {};
   try {
     design = designEl?.textContent ? JSON.parse(designEl.textContent) : {};
@@ -80,6 +81,9 @@ export function parseDrawing(text: string): Opened {
   const savedCurves = (Array.isArray(design.curves) ? design.curves : []) as Record<string, unknown>[];
   const curveIds = new Set(savedCurves.map((c) => String(c.shape)));
   const fromCurve = (id: string) => curveIds.has(id) || [...curveIds].some((c) => id.startsWith(`${c}-`));
+  // A text's letters are in the file as paths; the words come from the design block instead.
+  const textIds = Object.keys(design.texts ?? {});
+  const fromText = (id: string) => textIds.some((base) => id === base || id.startsWith(`${base}-`));
   // A repeated shape's copies are drawn from the shape itself, so only the first of them is read.
   const repeatIds = Object.keys(design.repeats ?? {});
   const isCopy = (id: string) => repeatIds.some((base) => /^-r\d+$/.test(id.slice(base.length)) && id.startsWith(base));
@@ -206,6 +210,9 @@ export function parseDrawing(text: string): Opened {
         break;
       }
       case "path":
+        if (fromText(el.getAttribute("id") || "")) break;
+        unsupported++;
+        break;
       case "text":
       case "image":
       case "use":
@@ -214,6 +221,19 @@ export function parseDrawing(text: string): Opened {
       default:
         break; // svg, g, metadata, defs and the rest draw nothing by themselves
     }
+  }
+
+  // Each saved text becomes one shape again: the words, the font, and the box they were set in.
+  for (const [id, saved] of Object.entries(design.texts ?? {})) {
+    const box = Array.isArray(saved?.box) ? (saved.box as unknown[]).map(Number) : [];
+    if (box.length !== 4 || box.some((v) => !Number.isFinite(v))) continue;
+    const el = svg.querySelector(`[id="${CSS.escape(id)}"]`);
+    shapes.push({
+      id: el ? noteSource(el) : id, layerId: "", kind: "text",
+      text: typeof saved.text === "string" ? saved.text : "",
+      font: typeof saved.font === "string" ? saved.font : "",
+      x: box[0], y: box[1], x2: box[2], y2: box[3],
+    });
   }
 
   // Each saved curve becomes one shape again, in the box it was drawn in.

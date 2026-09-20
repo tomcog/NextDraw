@@ -6,7 +6,7 @@ import { resolve } from "node:path";
 // they share one install and one version of the component library - the drift between two copies is
 // what the single-server decision was meant to avoid (see docs/studio.md).
 // The Flask server (server.py) serves the built pages from ../static at /static/.
-// During `npm run dev`, Vite proxies /api to the running Flask server.
+// During `npm run dev`, Vite proxies /api and /fonts to the running Flask server.
 export default defineConfig({
   plugins: [react()],
   base: "/static/",
@@ -22,6 +22,7 @@ export default defineConfig({
   },
   server: {
     port: 5173,
-    proxy: { "/api": "http://127.0.0.1:5055" },
+    // /fonts too: the single-stroke fonts are served by Flask from the repository's fonts/ folder.
+    proxy: { "/api": "http://127.0.0.1:5055", "/fonts": "http://127.0.0.1:5055" },
   },
 });

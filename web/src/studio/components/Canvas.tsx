@@ -6,6 +6,7 @@ import {
 import { hatchLines, hatchStroke, type Fill } from "../lib/hatch";
 import { curveStrokes, pointsAttr, DEFAULT_CURVE, type CurveKind } from "../lib/parametric";
 import { placementAttr, placements } from "../lib/repeat";
+import { textRuns, type StrokeFont } from "../lib/text";
 import type { Layer } from "../lib/shapes";
 import { BedCanvas, type BedCanvasHandle, type Box, type Zoom } from "../../components/BedCanvas";
 import { DEFAULT_SETTINGS, UNITS } from "../../lib/constants";
@@ -18,12 +19,20 @@ import styles from "./Canvas.module.css";
  *  its own tool per generator, since which curve it is can't be told from the drag. */
 export type Tool = Exclude<ShapeKind, "curve" | "path"> | "select" | CurveKind;
 
+/** A line of text to start from, so a new one says something rather than being an empty box. */
+const NEW_TEXT = "Text";
+
 /** The shape a tool draws, as a box with nothing in it yet. */
 // A path is never drawn by hand: it is what a curve becomes when it's baked.
-const shapeFor = (tool: Exclude<Tool, "select">, layerId: string, x: number, y: number): Shape =>
-  tool === "rect" || tool === "ellipse" || tool === "line"
-    ? { id: newShapeId(), layerId, kind: tool, x, y, x2: x, y2: y }
-    : { id: newShapeId(), layerId, kind: "curve", curve: DEFAULT_CURVE[tool], x, y, x2: x, y2: y };
+const shapeFor = (tool: Exclude<Tool, "select">, layerId: string, x: number, y: number, font: string): Shape => {
+  if (tool === "rect" || tool === "ellipse" || tool === "line") {
+    return { id: newShapeId(), layerId, kind: tool, x, y, x2: x, y2: y };
+  }
+  if (tool === "text") {
+    return { id: newShapeId(), layerId, kind: "text", text: NEW_TEXT, font, x, y, x2: x, y2: y };
+  }
+  return { id: newShapeId(), layerId, kind: "curve", curve: DEFAULT_CURVE[tool], x, y, x2: x, y2: y };
+};
 
 interface Props {
   page: Page;
@@ -39,6 +48,9 @@ interface Props {
   layers: Layer[];
   /** The layer new shapes are drawn onto. */
   activeLayer: string;
+  /** The single-stroke fonts that have been loaded, by name, and the one a new text is set in. */
+  fonts: Record<string, StrokeFont>;
+  font: string;
   /** The tool's line width in millimetres, drawn at true size so the weight is honest. */
   penWidthMm: number;
   /** How solid this tool's ink is (0-1), whether more of it darkens, and by how much where strokes
@@ -78,7 +90,7 @@ type Drag =
 // The page at true proportions, with a one-inch grid. It keeps the page's own proportions and is
 // sized to them (--canvas-aspect), so the drawing gets as large as the space allows - the same way
 // Plot's preview fills its column.
-export function Canvas({ page, shapes, fills, layers, activeLayer, model, zoom, toolbar, toolbarLeft, penWidthMm, inkOpacity, inkBuilds, inkBuild, inkSim, tool, selected, onSelect, onAdd, onUpdate, onUpdateMany, onEditStart }: Props) {
+export function Canvas({ page, shapes, fills, layers, activeLayer, model, zoom, toolbar, toolbarLeft, fonts, font, penWidthMm, inkOpacity, inkBuilds, inkBuild, inkSim, tool, selected, onSelect, onAdd, onUpdate, onUpdateMany, onEditStart }: Props) {
   const bed = useRef<BedCanvasHandle>(null);
   const [drag, setDrag] = useState<Drag | null>(null);
   const pointer = useRef<number | null>(null);
@@ -137,7 +149,7 @@ export function Canvas({ page, shapes, fills, layers, activeLayer, model, zoom, 
     onSelect([]);
     begin(e, {
       mode: "new",
-      shape: clampToPage(shapeFor(tool, activeLayer, p.x, p.y), page),
+      shape: clampToPage(shapeFor(tool, activeLayer, p.x, p.y, font), page),
     });
   };
 
@@ -240,6 +252,20 @@ export function Canvas({ page, shapes, fills, layers, activeLayer, model, zoom, 
     const b = boxOf(s);
     // A turned shape is drawn turned about the middle of its box; the box itself stays square.
     const common = { ...props, ...(turnAttr(s) ? { transform: turnAttr(s) } : {}) };
+    if (s.kind === "text") {
+      // The glyphs, in the size the box says, with a transparent box behind them so the whole thing
+      // can be picked up rather than only the strokes of the letters.
+      const b = boxOf(s);
+      const runs = textRuns(s, fonts[s.font ?? ""]);
+      return (
+        <g key={key} {...common}>
+          {props.className === styles.grab && (
+            <rect x={b.x0} y={b.y0} width={b.x1 - b.x0} height={b.y1 - b.y0} fill="transparent" stroke="none" />
+          )}
+          {runs.map((run, i) => <path key={i} d={run.d} fill="none" />)}
+        </g>
+      );
+    }
     if (s.kind === "path") {
       return <polyline key={key} {...common} fill="none" points={pointsAttr(s.points ?? [])} />;
     }

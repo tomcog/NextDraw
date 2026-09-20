@@ -1,5 +1,6 @@
 import { hatchLines, hatchStroke, type Fill } from "./hatch";
 import { curveStrokes, pointsAttr } from "./parametric";
+import { textRuns, type StrokeFont } from "./text";
 import { placementAttr, placements } from "./repeat";
 import { boxOf, turnAttr, type Layer, type Page, type Shape } from "./shapes";
 
@@ -39,17 +40,25 @@ function allCopies(s: Shape, one: (copy: number) => string): string {
     .join("\n      ");
 }
 
-function shapeMarkup(s: Shape): string {
+function shapeMarkup(s: Shape, fonts: Record<string, StrokeFont> = {}): string {
   const b = boxOf(s);
   // A turned shape is written as its own geometry inside one turn, which every SVG reader applies -
   // and Studio reads the angle back from the design block rather than from the transform.
   const turn = turnAttr(s);
-  if (turn) return `<g transform="${escapeAttr(turn)}">${shapeMarkup({ ...s, rotation: 0 })}</g>`;
+  if (turn) return `<g transform="${escapeAttr(turn)}">${shapeMarkup({ ...s, rotation: 0 }, fonts)}</g>`;
   // Copies carry the shape's id with a number after it, which is how reading the drawing back knows
   // they are copies rather than shapes of their own.
-  if (s.repeat) return allCopies(s, (i) => shapeMarkup({ ...s, repeat: undefined, id: i ? `${s.id}-r${i + 1}` : s.id }));
+  if (s.repeat) return allCopies(s, (i) => shapeMarkup({ ...s, repeat: undefined, id: i ? `${s.id}-r${i + 1}` : s.id }, fonts));
   if (s.kind === "path") {
     return `<polyline id="${escapeAttr(s.id)}" points="${pointsAttr(s.points ?? [])}"/>`;
+  }
+  if (s.kind === "text") {
+    // One path per letter, drawn where it is set. The words themselves are in the design block, so
+    // reopening the drawing gives back something that can still be typed into.
+    const runs = textRuns(s, fonts[s.font ?? ""]);
+    return runs
+      .map((r, i) => `<path id="${escapeAttr(s.id)}${i ? `-g${i + 1}` : ""}" d="${escapeAttr(r.d)}"/>`)
+      .join("\n      ");
   }
   if (s.kind === "curve") {
     // Drawn out as the lines the pen makes, so Plot needs to know nothing about the numbers behind
@@ -134,6 +143,7 @@ function designBlock(fills: Fill[], shapes: Shape[], layers: Layer[]): string {
   // matching them up by position gets it wrong the moment shapes and layers are in different orders.
   const nameOf = new Map(layers.map((l) => [l.id, l.name]));
   const curves = shapes.filter((s) => s.curve);
+  const texts = shapes.filter((s) => s.kind === "text");
   const turned = shapes.filter((s) => s.rotation);
   const repeated = shapes.filter((s) => s.repeat);
   const data = {
@@ -144,6 +154,11 @@ function designBlock(fills: Fill[], shapes: Shape[], layers: Layer[]): string {
     // How each repeated shape repeats. The copies are all in the file for Plot to draw; this is what
     // lets Studio pick them up again as one shape drawn many times.
     ...(repeated.length ? { repeats: Object.fromEntries(repeated.map((s) => [s.id, s.repeat])) } : {}),
+    // What each text says and which font sets it: the letters are in the file as paths already, and
+    // this is what lets them be typed into again.
+    ...(texts.length
+      ? { texts: Object.fromEntries(texts.map((s) => [s.id, { text: s.text ?? "", font: s.font ?? "", box: [s.x, s.y, s.x2, s.y2] }])) }
+      : {}),
     // The numbers behind each parametric shape, and the box it was drawn in, so reopening the
     // drawing gets the curve back rather than a heap of line segments.
     ...(curves.length
@@ -164,6 +179,8 @@ function designBlock(fills: Fill[], shapes: Shape[], layers: Layer[]): string {
 
 export interface SaveOptions {
   paperSizeId: string;
+  /** The fonts in use, so text can be written out as the paths the pen will draw. */
+  fonts?: Record<string, StrokeFont>;
   /** The drawing tool, so Plot opens the drawing with the same one chosen. */
   toolName: string;
 }
@@ -183,7 +200,7 @@ export function buildSvg(
       const drawn = mine.filter((sh) => sh.outline !== false);
       const myFills = fills.filter((f) => mine.some((sh) => sh.id === f.shapeId));
       const inner = [
-        drawn.map((sh) => `      ${shapeMarkup(sh)}`).join("\n"),
+        drawn.map((sh) => `      ${shapeMarkup(sh, opts.fonts)}`).join("\n"),
         fillMarkup(shapes, myFills),
       ].filter(Boolean).join("\n");
       if (!inner) return "";
@@ -204,14 +221,14 @@ ${inner}
      viewBox="0 0 ${num(page.w)} ${num(page.h)}">
 ${plotBlock(page, opts)}
 ${designBlock(fills, shapes, layers)}
-${body}${sourceLayer(sources)}</svg>
+${body}${sourceLayer(sources, opts.fonts ?? {})}</svg>
 `;
 }
 
 /** The unplotted layer holding shapes that are filled but not outlined. Left out when it's empty. */
-function sourceLayer(sources: Shape[]): string {
+function sourceLayer(sources: Shape[], fonts: Record<string, StrokeFont>): string {
   if (!sources.length) return "";
-  const body = sources.map((s) => `      ${shapeMarkup(s)}`).join("\n");
+  const body = sources.map((s) => `      ${shapeMarkup(s, fonts)}`).join("\n");
   return `  <g inkscape:groupmode="layer" inkscape:label="${escapeAttr(SOURCE_LAYER)}" id="studio-sources"
      fill="none" stroke="#000000" stroke-width="${STROKE_IN}">
 ${body}
