@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Button, ButtonRound, Card, Checkbox, InputSelect, InputText, InputTextarea, LayerController } from "@tomcoggia/ui";
-import { ArrowDownToLine, Circle, Copy, EllipsisVertical, FilePlus, FolderOpen, Layers2, LoaderPinwheel, Minus, MousePointer2, Pentagon, Plus, Radar, Rainbow, Ratio, Redo2, Spline, Square, Star, StickyNote, Trash2, Type, Undo2 } from "lucide-react";
+import { ArrowDownToLine, Circle, CircleDot, Copy, EllipsisVertical, FilePlus, FolderOpen, Grid2x2, Layers2, LoaderPinwheel, Minus, MousePointer2, Orbit, Pentagon, Plus, Radar, Rainbow, Ratio, Redo2, Spline, Square, Star, StickyNote, Trash2, Type, Undo2 } from "lucide-react";
 import { FileBrowser, LAST_FOLDER_KEY, type OpenResult } from "../components/FileBrowser";
 import { Section } from "../components/controls/Section";
 import { NumberField } from "../components/controls/NumberField";
@@ -20,7 +20,7 @@ import { canFill, newFillId, type Fill } from "./lib/hatch";
 import { closingTurns, curveStrokes, CURVE_FIELDS, type Curve, type Point } from "./lib/parametric";
 import { fontNames, loadFont, type StrokeFont } from "./lib/font";
 import { fitText, flattenPath, textRuns } from "./lib/text";
-import { defaultRepeat, placements, REPEAT_FIELDS, REPEAT_LABEL, type Repeat, type RepeatKind } from "./lib/repeat";
+import { defaultRepeat, placements, REPEAT_FIELDS, type Repeat, type RepeatKind } from "./lib/repeat";
 import { parseDrawing } from "./lib/parse";
 import { PaletteMenu } from "../components/controls/PaletteMenu";
 import { RowMenu } from "../components/controls/RowMenu";
@@ -56,6 +56,13 @@ const TOOLS: { kind: Tool; label: string; hint: string; icon: JSX.Element }[] = 
 const PLAIN_PEN: PenColor = { name: "Black", color: "#262626" };
 const TOOL_KEY = "studio-tool";
 const FONT_KEY = "studio-font";
+
+// How a shape repeats, as the row of round buttons in the Repeat card: one of them is always on.
+const REPEATS: { kind: RepeatKind | null; label: string; hint: string; icon: JSX.Element }[] = [
+  { kind: null, label: "Just the one", hint: "Draw this shape once", icon: <CircleDot /> },
+  { kind: "grid", label: "Grid", hint: "Repeat it in rows and columns", icon: <Grid2x2 /> },
+  { kind: "ring", label: "Ring", hint: "Repeat it round a circle, with this shape at the top", icon: <Orbit /> },
+];
 
 // The drawing being worked on, remembered so that handing one to Plot - which navigates away - isn't
 // the same as losing it. Its own key: Plot's keys share this origin and still carry the old name.
@@ -1354,18 +1361,23 @@ export default function App() {
             <Card variant="flat" className={styles.controls}>
               <div className={styles.cardBody}>
                 <Section title="Repeat" collapsibleKey="repeat">
-                  <InputSelect
-                    size="md"
-                    label="Repeat"
-                    hideLabel
-                    value={chosen.repeat?.kind ?? ""}
-                    onChange={(e) => setRepeat(e.target.value ? defaultRepeat(e.target.value as RepeatKind, chosen) : undefined)}
-                  >
-                    <option value="">Just the one</option>
-                    {(Object.keys(REPEAT_LABEL) as RepeatKind[]).map((k) => (
-                      <option key={k} value={k}>{REPEAT_LABEL[k]}</option>
-                    ))}
-                  </InputSelect>
+                  <div className={styles.tools} role="group" aria-label="How this shape repeats">
+                    {REPEATS.map((r) => {
+                      const on = (chosen.repeat?.kind ?? null) === r.kind;
+                      return (
+                        <ButtonRound
+                          key={r.label}
+                          size="sm"
+                          icon={r.icon}
+                          className={on ? controls.roundActive : undefined}
+                          aria-label={r.label}
+                          aria-pressed={on}
+                          title={r.hint}
+                          onClick={() => setRepeat(r.kind ? defaultRepeat(r.kind, chosen) : undefined)}
+                        />
+                      );
+                    })}
+                  </div>
                   {chosen.repeat && (
                     <div className={styles.fillRow}>
                       {REPEAT_FIELDS[chosen.repeat.kind].map((f) => (
