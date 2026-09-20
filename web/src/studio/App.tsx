@@ -1443,15 +1443,15 @@ export default function App() {
                   )}
                   {chosen.repeat && chosen.kind !== "path" && (
                     <Button size="md" variant="secondary" onClick={() => bakeShape(chosen.id, true)}>
-                      Bake the shape, keep the pattern
+                      Bake shape
                     </Button>
                   )}
                   <Button size="md" variant="secondary" onClick={() => bakeShape(chosen.id)}>
-                    {chosen.repeat ? `Bake all ${placements(chosen).length} shapes to paths` : "Bake to a path"}
+                    {chosen.repeat ? "Bake pattern" : "Bake shape"}
                   </Button>
                   <p className={styles.empty}>
                     {chosen.repeat
-                      ? "Keep the pattern and only the shape is given up: its points can be dragged, and every copy follows. Bake them all and each copy becomes a shape of its own."
+                      ? `Baking the shape gives up only its own numbers: its points can be dragged and every copy follows. Baking the pattern leaves ${placements(chosen).length} shapes, each free of the others.`
                       : "The numbers behind it are given up; its points can then be dragged one by one."}
                   </p>
                 </Section>
