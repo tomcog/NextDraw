@@ -1137,25 +1137,6 @@ export default function App() {
 
           <Card variant="flat" className={styles.controls}>
             <div className={styles.cardBody}>
-              <div className={styles.tools} role="group" aria-label="Shape to draw">
-                {TOOLS.map((t) => (
-                  <ButtonRound
-                    key={t.kind}
-                    size="sm"
-                    icon={t.icon}
-                    className={tool === t.kind ? controls.roundActive : undefined}
-                    aria-label={t.label}
-                    aria-pressed={tool === t.kind}
-                    title={t.hint}
-                    onClick={() => setTool(t.kind)}
-                  />
-                ))}
-              </div>
-            </div>
-          </Card>
-
-          <Card variant="flat" className={styles.controls}>
-            <div className={styles.cardBody}>
               <Section title="Drawing tool">
                 <InputSelect
                   size="md"
@@ -1175,6 +1156,25 @@ export default function App() {
                   {`Draws a ${penWidthMm} mm line${palette.length > 1 ? ` in ${palette.length} colors` : ""}`}
                 </p>
               </Section>
+            </div>
+          </Card>
+
+          <Card variant="flat" className={styles.controls}>
+            <div className={styles.cardBody}>
+              <div className={styles.tools} role="group" aria-label="Shape to draw">
+                {TOOLS.map((t) => (
+                  <ButtonRound
+                    key={t.kind}
+                    size="sm"
+                    icon={t.icon}
+                    className={tool === t.kind ? controls.roundActive : undefined}
+                    aria-label={t.label}
+                    aria-pressed={tool === t.kind}
+                    title={t.hint}
+                    onClick={() => setTool(t.kind)}
+                  />
+                ))}
+              </div>
             </div>
           </Card>
 
