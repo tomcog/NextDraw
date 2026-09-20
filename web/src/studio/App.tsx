@@ -448,6 +448,15 @@ export default function App() {
     });
   };
 
+  /** Turn the chosen shape about the middle of its box. Its fill turns with it. */
+  const setRotation = (deg: number) => {
+    if (!chosen) return;
+    record();
+    // Kept in 0-359 so the field never walks off into the hundreds when it's nudged round.
+    const turn = ((deg % 360) + 360) % 360;
+    setShapes((list) => list.map((s) => (s.id === chosen.id ? { ...s, rotation: turn || undefined } : s)));
+  };
+
   /** Change one of the chosen curve's numbers. The shape is redrawn from them as they change. */
   const setCurve = (next: Curve) => {
     if (!chosen) return;
@@ -964,6 +973,21 @@ export default function App() {
                       })}
                     </ul>
                   )}
+                </Section>
+              </div>
+            </Card>
+          )}
+
+          {chosen && (
+            <Card variant="flat" className={styles.controls}>
+              <div className={styles.cardBody}>
+                <Section title="Shape" collapsibleKey="shape">
+                  <NumberField
+                    label="Rotation (°)"
+                    step={5}
+                    value={chosen.rotation ?? 0}
+                    onChange={setRotation}
+                  />
                 </Section>
               </div>
             </Card>

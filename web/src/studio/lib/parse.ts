@@ -67,7 +67,7 @@ export function parseDrawing(text: string): Opened {
   // Read Studio's own parameters first: they say which polylines are a parametric curve's lines,
   // so those aren't counted as marks this can't edit.
   const designEl = svg.getElementsByTagName("nds:design")[0] ?? svg.querySelector("design");
-  let design: { fills?: unknown; on?: Record<string, string>; curves?: unknown } = {};
+  let design: { fills?: unknown; on?: Record<string, string>; curves?: unknown; turned?: Record<string, unknown> } = {};
   try {
     design = designEl?.textContent ? JSON.parse(designEl.textContent) : {};
   } catch {
@@ -200,6 +200,13 @@ export function parseDrawing(text: string): Opened {
       layerId: "", kind: "curve", curve,
       x: box[0], y: box[1], x2: box[2], y2: box[3],
     });
+  }
+
+  // The angle each turned shape was drawn at. The geometry in the file is already turned, so this
+  // is what puts the shape back the way Studio holds it: a square box plus an angle.
+  for (const s of shapes) {
+    const deg = Number(design.turned?.[s.id]);
+    if (Number.isFinite(deg) && deg) s.rotation = deg;
   }
 
   markOutlines();

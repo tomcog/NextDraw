@@ -14,6 +14,9 @@ export interface Shape {
   y: number;
   x2: number;
   y2: number;
+  /** Degrees clockwise about the middle of the box. The box itself is never turned: keeping it
+   *  square is what lets a shape still be resized, hatched and measured after it's been turned. */
+  rotation?: number;
   /**
    * Whether the shape's own outline is plotted. Off, it still lives in the file - any fill on it is
    * regenerated from it - but on a `%`-prefixed layer, which NextDraw skips and which Plot leaves
@@ -104,6 +107,31 @@ export const moveBy = (s: Shape, dx: number, dy: number, page: Page): Shape => {
   return { ...s, x: s.x + byX, y: s.y + byY, x2: s.x2 + byX, y2: s.y2 + byY };
 };
 
+/** The middle of a shape's box, which is what it turns about. */
+export const centerOf = (s: Shape) => {
+  const b = boxOf(s);
+  return { x: (b.x0 + b.x1) / 2, y: (b.y0 + b.y1) / 2 };
+};
+
+/** A point turned about another by `deg` degrees clockwise. */
+export const turnPoint = (p: { x: number; y: number }, about: { x: number; y: number }, deg: number) => {
+  const a = (deg * Math.PI) / 180;
+  const dx = p.x - about.x;
+  const dy = p.y - about.y;
+  return {
+    x: about.x + dx * Math.cos(a) - dy * Math.sin(a),
+    y: about.y + dx * Math.sin(a) + dy * Math.cos(a),
+  };
+};
+
+/** How a turned shape is drawn: the same geometry, turned about its middle. Nothing when it isn't
+ *  turned, so an untouched drawing carries no transforms at all. */
+export const turnAttr = (s: Shape): string | undefined => {
+  if (!s.rotation) return undefined;
+  const c = centerOf(s);
+  return `rotate(${Number(s.rotation.toFixed(3))} ${Number(c.x.toFixed(4))} ${Number(c.y.toFixed(4))})`;
+};
+
 /** The corners a selected shape can be dragged by: a box has four, a line has its two ends. */
 export type Handle = "nw" | "ne" | "sw" | "se" | "a" | "b";
 
@@ -134,6 +162,32 @@ export const dragHandle = (s: Shape, handle: Handle, x: number, y: number): Shap
     case "sw": return { ...n, x, y2: y };
     case "se": return { ...n, x2: x, y2: y };
   }
+};
+
+/** Where a handle sits on screen, which for a turned shape is not where it sits in the box. */
+export const handlePoints = (s: Shape) => {
+  const c = centerOf(s);
+  return handlesOf(s).map((h) => ({ ...h, ...(s.rotation ? turnPoint(h, c, s.rotation) : { x: h.x, y: h.y }) }));
+};
+
+const OPPOSITE: Record<Handle, Handle> = { nw: "se", se: "nw", ne: "sw", sw: "ne", a: "b", b: "a" };
+
+/**
+ * Drag a handle of a turned shape. The pointer is turned back into the box's own frame, the corner
+ * is moved there, and the shape is then shifted so the corner opposite the one being dragged stays
+ * where it is on screen - otherwise resizing a turned shape slides it sideways.
+ */
+export const dragHandleTurned = (s: Shape, handle: Handle, x: number, y: number): Shape => {
+  const deg = s.rotation ?? 0;
+  if (!deg) return dragHandle(s, handle, x, y);
+  const before = handlePoints(s).find((h) => h.id === OPPOSITE[handle]);
+  const local = turnPoint({ x, y }, centerOf(s), -deg);
+  const next = dragHandle(s, handle, local.x, local.y);
+  const after = handlePoints(next).find((h) => h.id === OPPOSITE[handle]);
+  if (!before || !after) return next;
+  const dx = before.x - after.x;
+  const dy = before.y - after.y;
+  return { ...next, x: next.x + dx, y: next.y + dy, x2: next.x2 + dx, y2: next.y2 + dy };
 };
 
 export const CURSOR: Record<Handle, string> = {

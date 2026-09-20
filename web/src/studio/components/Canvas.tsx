@@ -1,6 +1,6 @@
 import { useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
 import {
-  boxOf, clampToPage, dragHandle, handlesOf, isDegenerate, moveBy, newShapeId,
+  boxOf, clampToPage, dragHandleTurned, handlePoints, isDegenerate, moveBy, newShapeId, turnAttr,
   CURSOR, type Handle, type Page, type Shape, type ShapeKind,
 } from "../lib/shapes";
 import { hatchLines, hatchStroke, type Fill } from "../lib/hatch";
@@ -155,7 +155,7 @@ export function Canvas({ page, shapes, fills, layers, activeLayer, model, zoom, 
     } else if (drag.mode === "move") {
       onUpdate(moveBy(drag.origin, p.x - drag.from.x, p.y - drag.from.y, page));
     } else {
-      onUpdate(clampToPage(dragHandle(drag.origin, drag.handle, p.x, p.y), page));
+      onUpdate(clampToPage(dragHandleTurned(drag.origin, drag.handle, p.x, p.y), page));
     }
   };
 
@@ -172,7 +172,8 @@ export function Canvas({ page, shapes, fills, layers, activeLayer, model, zoom, 
   // they're the same rectangle.
   const element = (s: Shape, key: string, props: Record<string, unknown>) => {
     const b = boxOf(s);
-    const common = { ...props };
+    // A turned shape is drawn turned about the middle of its box; the box itself stays square.
+    const common = { ...props, ...(turnAttr(s) ? { transform: turnAttr(s) } : {}) };
     if (s.kind === "curve") {
       // Several strokes where the curve lifts the pen (a parabolic's corners), so what's on screen
       // is what goes on the paper, pen lifts and all.
@@ -212,7 +213,8 @@ export function Canvas({ page, shapes, fills, layers, activeLayer, model, zoom, 
           .map((fill) => {
             const shape = mine.find((sh) => sh.id === fill.shapeId)!;
             return (
-              <g key={fill.id}>
+              // The fill turns with the shape it fills, since it is that shape's own hatching.
+              <g key={fill.id} transform={turnAttr(shape)}>
                 {fill.connected ? (
                   <polyline fill="none" points={hatchStroke(shape, fill).map((p) => `${p.x},${p.y}`).join(" ")} />
                 ) : (
@@ -315,7 +317,7 @@ export function Canvas({ page, shapes, fills, layers, activeLayer, model, zoom, 
 
               {showHandles && (
                 <g className={styles.handles}>
-                  {handlesOf(chosen).map((h) => (
+                  {handlePoints(chosen).map((h) => (
                     <circle
                       key={h.id}
                       cx={h.x}
