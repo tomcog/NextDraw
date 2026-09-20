@@ -1447,91 +1447,6 @@ export default function App() {
             </Card>
           )}
 
-          {/* What is done to a shape as a whole: how it sits, and how many of it there are. */}
-          {chosen && (
-            <Card variant="flat" className={styles.controls}>
-              <div className={`${styles.cardBody} ${styles.settings}`}>
-                <Section title="Transform" collapsibleKey="transform">
-                <Section title="Rotate" collapsibleKey="rotate">
-                  <NumberField
-                    label="Rotation"
-                    unit="°"
-                    step={5}
-                    value={chosen.rotation ?? 0}
-                    onChange={setRotation}
-                  />
-                  {/* Baking takes the whole thing - every copy of a repeat, every letter of a text -
-                      and leaves paths whose points can be pulled about one at a time. */}
-                  {(chosen.runs?.length ?? 0) > 1 && (
-                    <Button size="md" variant="secondary" onClick={() => splitShape(chosen.id)}>
-                      {`Split into ${chosen.runs?.length} shapes`}
-                    </Button>
-                  )}
-                  {chosen.repeat && chosen.kind !== "path" && (
-                    <Button size="md" variant="secondary" onClick={() => bakeShape(chosen.id, true)}>
-                      Bake shape
-                    </Button>
-                  )}
-                  <Button size="md" variant="secondary" onClick={() => bakeShape(chosen.id)}>
-                    {chosen.repeat ? "Bake pattern" : "Bake shape"}
-                  </Button>
-                  <p className={styles.empty}>
-                    {chosen.repeat
-                      ? `Baking the shape gives up only its own numbers: its points can be dragged and every copy follows. Baking the pattern leaves ${placements(chosen).length} shapes, each free of the others.`
-                      : "The numbers behind it are given up; its points can then be dragged one by one."}
-                  </p>
-                </Section>
-
-                <Section title="Repeat" collapsibleKey="repeat">
-                  <div className={styles.tools} role="group" aria-label="How this shape repeats">
-                    {REPEATS.map((r) => {
-                      const on = (chosen.repeat?.kind ?? null) === r.kind;
-                      return (
-                        <ButtonRound
-                          key={r.label}
-                          size="sm"
-                          icon={r.icon}
-                          className={on ? controls.roundActive : undefined}
-                          aria-label={r.label}
-                          aria-pressed={on}
-                          title={r.hint}
-                          onClick={() => setRepeat(r.kind ? defaultRepeat(r.kind, chosen) : undefined)}
-                        />
-                      );
-                    })}
-                  </div>
-                  {chosen.repeat && (
-                    <div className={styles.fillRow}>
-                      {REPEAT_FIELDS[chosen.repeat.kind].map((f) => (
-                        <NumberField
-                          key={f.key}
-                          label={f.label}
-                          min={f.min}
-                          max={f.max}
-                          step={f.step}
-                          unit={f.unit}
-                          value={Number((chosen.repeat as unknown as Record<string, number>)[f.key])}
-                          onChange={(v) => setRepeat({ ...(chosen.repeat as Repeat), [f.key]: v } as Repeat)}
-                        />
-                      ))}
-                    </div>
-                  )}
-                  {chosen.repeat?.kind === "ring" && (
-                    <Checkbox
-                      checked={chosen.repeat.facing}
-                      label="Turn each copy to face out"
-                      onChange={(e) => setRepeat({ ...(chosen.repeat as Repeat), facing: e.target.checked } as Repeat)}
-                    />
-                  )}
-                  {chosen.repeat && (
-                    <p className={styles.empty}>{`${placements(chosen).length} shapes in all, counting the one you drew`}</p>
-                  )}
-                </Section>
-                </Section>
-              </div>
-            </Card>
-          )}
-
           {/* What the shape itself is made of: the numbers that draw it, and how it is filled in. */}
           {chosen && (chosen.curve || canFill(chosen)) && (
             <Card variant="flat" className={styles.controls}>
@@ -1631,6 +1546,91 @@ export default function App() {
                   )}
                 </Section>
                 )}
+                </Section>
+              </div>
+            </Card>
+          )}
+
+          {/* What is done to a shape as a whole: how it sits, and how many of it there are. */}
+          {chosen && (
+            <Card variant="flat" className={styles.controls}>
+              <div className={`${styles.cardBody} ${styles.settings}`}>
+                <Section title="Transform" collapsibleKey="transform">
+                <Section title="Rotate" collapsibleKey="rotate">
+                  <NumberField
+                    label="Rotation"
+                    unit="°"
+                    step={5}
+                    value={chosen.rotation ?? 0}
+                    onChange={setRotation}
+                  />
+                  {/* Baking takes the whole thing - every copy of a repeat, every letter of a text -
+                      and leaves paths whose points can be pulled about one at a time. */}
+                  {(chosen.runs?.length ?? 0) > 1 && (
+                    <Button size="md" variant="secondary" onClick={() => splitShape(chosen.id)}>
+                      {`Split into ${chosen.runs?.length} shapes`}
+                    </Button>
+                  )}
+                  {chosen.repeat && chosen.kind !== "path" && (
+                    <Button size="md" variant="secondary" onClick={() => bakeShape(chosen.id, true)}>
+                      Bake shape
+                    </Button>
+                  )}
+                  <Button size="md" variant="secondary" onClick={() => bakeShape(chosen.id)}>
+                    {chosen.repeat ? "Bake pattern" : "Bake shape"}
+                  </Button>
+                  <p className={styles.empty}>
+                    {chosen.repeat
+                      ? `Baking the shape gives up only its own numbers: its points can be dragged and every copy follows. Baking the pattern leaves ${placements(chosen).length} shapes, each free of the others.`
+                      : "The numbers behind it are given up; its points can then be dragged one by one."}
+                  </p>
+                </Section>
+
+                <Section title="Repeat" collapsibleKey="repeat">
+                  <div className={styles.tools} role="group" aria-label="How this shape repeats">
+                    {REPEATS.map((r) => {
+                      const on = (chosen.repeat?.kind ?? null) === r.kind;
+                      return (
+                        <ButtonRound
+                          key={r.label}
+                          size="sm"
+                          icon={r.icon}
+                          className={on ? controls.roundActive : undefined}
+                          aria-label={r.label}
+                          aria-pressed={on}
+                          title={r.hint}
+                          onClick={() => setRepeat(r.kind ? defaultRepeat(r.kind, chosen) : undefined)}
+                        />
+                      );
+                    })}
+                  </div>
+                  {chosen.repeat && (
+                    <div className={styles.fillRow}>
+                      {REPEAT_FIELDS[chosen.repeat.kind].map((f) => (
+                        <NumberField
+                          key={f.key}
+                          label={f.label}
+                          min={f.min}
+                          max={f.max}
+                          step={f.step}
+                          unit={f.unit}
+                          value={Number((chosen.repeat as unknown as Record<string, number>)[f.key])}
+                          onChange={(v) => setRepeat({ ...(chosen.repeat as Repeat), [f.key]: v } as Repeat)}
+                        />
+                      ))}
+                    </div>
+                  )}
+                  {chosen.repeat?.kind === "ring" && (
+                    <Checkbox
+                      checked={chosen.repeat.facing}
+                      label="Turn each copy to face out"
+                      onChange={(e) => setRepeat({ ...(chosen.repeat as Repeat), facing: e.target.checked } as Repeat)}
+                    />
+                  )}
+                  {chosen.repeat && (
+                    <p className={styles.empty}>{`${placements(chosen).length} shapes in all, counting the one you drew`}</p>
+                  )}
+                </Section>
                 </Section>
               </div>
             </Card>
