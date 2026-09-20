@@ -24,6 +24,12 @@ export interface Fill {
    * down once instead of once per line, and the ends of the lines don't blob where it lands.
    */
   connected?: boolean;
+  /**
+   * Set by hand: this fill keeps its own angle and spacing. Without it a fill follows the drawing
+   * tool, since spacing is a fact about the pen rather than about the drawing, and a fill made for
+   * a 0.35 mm pen is wrong the moment a 1.7 mm one is loaded.
+   */
+  custom?: boolean;
 }
 
 let fillCounter = 0;

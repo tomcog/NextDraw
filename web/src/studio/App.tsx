@@ -419,10 +419,18 @@ export default function App() {
   const inkBuilds = tool2?.settings.ink_builds !== false;
   const inkBuild = tool2?.settings.ink_build ?? 1;
 
-  // A fill starts from the chosen tool's own measured numbers when it has them.
+  // A fill starts from the chosen tool's own measured numbers when it has them - and follows that
+  // tool afterwards, because the spacing belongs to the pen: the same fill wants 0.35 mm from an
+  // EnerGel and 1.7 mm from a marker. A fill whose numbers were set by hand keeps them.
   useEffect(() => {
     const hatch = tool2?.hatch;
-    if (hatch?.spacing_mm) setDefaults({ angle: hatch.angle ?? 45, spacingMm: hatch.spacing_mm });
+    if (!hatch?.spacing_mm) return;
+    const next = { angle: hatch.angle ?? 45, spacingMm: hatch.spacing_mm };
+    setDefaults(next);
+    setFills((list) => {
+      if (!list.some((f) => !f.custom && f.spacingMm !== next.spacingMm)) return list;
+      return list.map((f) => (f.custom ? f : { ...f, spacingMm: next.spacingMm }));
+    });
   }, [tool2]);
 
   useEffect(() => {
@@ -443,6 +451,13 @@ export default function App() {
     spacingMm: defaults.spacingMm,
     scale: 100,
   });
+
+  /** A fill the user has typed numbers into stops following the tool until it's told to again. */
+  const setFillByHand = (at: number, next: Fill) => setFillAt(at, { ...next, custom: true });
+
+  /** Hand this fill back to the tool: its numbers become the tool's again, and follow it from now on. */
+  const followTool = (at: number, fill: Fill) =>
+    setFillAt(at, { ...fill, custom: undefined, angle: defaults.angle, spacingMm: defaults.spacingMm });
 
   /** Replace one of the chosen shape's fills, or drop it. Adding uses `at` past the end. */
   const setFillAt = (at: number, next: Fill | null) => {
@@ -1054,17 +1069,25 @@ export default function App() {
                         label={i === 0 ? "Angle (°)" : "Cross angle (°)"}
                         step={5}
                         value={fill.angle}
-                        onChange={(angle) => setFillAt(i, { ...fill, angle })}
+                        onChange={(angle) => setFillByHand(i, { ...fill, angle })}
                       />
                       <NumberField
                         label="Spacing (mm)"
                         step={0.1}
                         min={0.05}
                         value={fill.spacingMm}
-                        onChange={(spacingMm) => setFillAt(i, { ...fill, spacingMm })}
+                        onChange={(spacingMm) => setFillByHand(i, { ...fill, spacingMm })}
                       />
                     </div>
                   ))}
+                  {chosenFills.map((fill, i) => (fill.custom ? (
+                    <p key={`${fill.id}-note`} className={styles.empty}>
+                      {`Set by hand, so it stays at ${fill.spacingMm} mm`}
+                      <Button size="sm" variant="ghost" onClick={() => followTool(i, fill)}>
+                        {toolName ? `Follow ${toolName}` : "Follow the tool"}
+                      </Button>
+                    </p>
+                  ) : null))}
                   {chosenFills.length > 0 && (
                     <Checkbox
                       checked={chosenFills.length > 1}

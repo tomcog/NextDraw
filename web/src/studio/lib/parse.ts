@@ -236,6 +236,7 @@ export function parseDrawing(text: string): Opened {
             spacingMm: Number(f.spacing_mm) || 1.5,
             scale: Number(f.scale) || 100,
             connected: f.connected === true,
+            custom: f.custom === true,
           }));
       }
     }

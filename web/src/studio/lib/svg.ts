@@ -132,6 +132,7 @@ function designBlock(fills: Fill[], shapes: Shape[], layers: Layer[]): string {
       spacing_mm: f.spacingMm,
       scale: f.scale,
       ...(f.connected ? { connected: true } : {}),
+      ...(f.custom ? { custom: true } : {}),
     })),
   };
   return `  <metadata id="nextdraw-studio"><nds:design>${escapeText(JSON.stringify(data))}</nds:design></metadata>`;
