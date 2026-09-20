@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Button, ButtonRound, Card, Checkbox, InputSelect, InputText, InputTextarea, LayerController } from "@tomcoggia/ui";
-import { ArrowDownToLine, Circle, CircleDot, Copy, Ellipsis, EllipsisVertical, FilePlus, FolderOpen, Grid2x2, Layers2, LoaderPinwheel, Minus, MousePointer2, Orbit, Pentagon, Plus, Radar, Rainbow, Ratio, Redo2, Spline, Square, Star, StickyNote, Trash2, Type, Undo2 } from "lucide-react";
+import { ArrowDownToLine, Circle, CircleDot, Copy, Ellipsis, EllipsisVertical, FilePlus, FolderOpen, Grid2x2, Layers2, LoaderPinwheel, Minus, MousePointer2, Orbit, Pentagon, Plus, Radar, Rainbow, Ratio, Redo2, Spline, Square, Star, Trash2, Type, Undo2 } from "lucide-react";
 import { FileBrowser, LAST_FOLDER_KEY, type OpenResult } from "../components/FileBrowser";
 import { Section } from "../components/controls/Section";
 import { NumberField } from "../components/controls/NumberField";
@@ -119,7 +119,6 @@ export default function App() {
   const [layers, setLayers] = useState<Layer[]>(() => [{ id: newLayerId(), name: "Black", color: "#262626" }]);
   const [activeLayer, setActiveLayer] = useState<string>("");
   const [colorMenu, setColorMenu] = useState<{ id: string; anchor: HTMLElement } | null>(null);
-  const [pageOpen, setPageOpen] = useState(false);
   // A tool's measured hatch numbers are the sensible starting point for a new fill, and they live in
   // Plot's presets rather than being invented here.
   const [defaults, setDefaults] = useState({ angle: 45, spacingMm: 1.5 });
@@ -1040,15 +1039,6 @@ export default function App() {
                   <span className={styles.headerTools}>
                     <ButtonRound
                       size="sm"
-                      icon={<StickyNote />}
-                      className={pageOpen ? controls.roundActive : undefined}
-                      aria-label="Page size"
-                      aria-pressed={pageOpen}
-                      title={`Page size: ${fmtIn(page.w)} × ${fmtIn(page.h)}`}
-                      onClick={() => setPageOpen((v) => !v)}
-                    />
-                    <ButtonRound
-                      size="sm"
                       icon={<FilePlus />}
                       aria-label="New drawing"
                       title="Close this drawing and start a new one"
@@ -1113,27 +1103,34 @@ export default function App() {
                   </div>
                 )}
 
-                {pageOpen && (
-                  <div className={styles.pageRow}>
-                    <InputSelect size="md" label="Page size" value={sizeId} onChange={(e) => setSize(e.target.value)}>
-                      {SIZES.map((size) => (
-                        <option key={size.id} value={size.id}>
-                          {size.name}
-                        </option>
-                      ))}
-                    </InputSelect>
-                    <ButtonRound
-                      size="sm"
-                      icon={<Ratio />}
-                      aria-label="Turn the page"
-                      title="Turn the page: swap its width and height"
-                      onClick={() => {
-                        record();
-                        setPage((p) => ({ w: p.h, h: p.w }));
-                      }}
-                    />
-                  </div>
-                )}
+              </Section>
+            </div>
+          </Card>
+
+          {/* The paper the drawing is made for, in its own card the way Plot has it. */}
+          <Card variant="flat" className={styles.controls}>
+            <div className={styles.cardBody}>
+              <Section title="Paper" collapsibleKey="paper">
+                <div className={styles.pageRow}>
+                  <InputSelect size="md" label="Page size" hideLabel value={sizeId} onChange={(e) => setSize(e.target.value)}>
+                    {SIZES.map((size) => (
+                      <option key={size.id} value={size.id}>
+                        {size.name}
+                      </option>
+                    ))}
+                  </InputSelect>
+                  <ButtonRound
+                    size="sm"
+                    icon={<Ratio />}
+                    aria-label="Turn the page"
+                    title="Turn the page: swap its width and height"
+                    onClick={() => {
+                      record();
+                      setPage((p) => ({ w: p.h, h: p.w }));
+                    }}
+                  />
+                </div>
+                <p className={styles.empty}>{`${fmtIn(page.w)} × ${fmtIn(page.h)} in`}</p>
               </Section>
             </div>
           </Card>
