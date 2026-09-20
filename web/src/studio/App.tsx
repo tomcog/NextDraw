@@ -1176,8 +1176,10 @@ export default function App() {
             </div>
           </Card>
 
+          {/* The layers, and what is on the one being worked on: two sections of one card. */}
           <Card variant="flat" className={styles.controls}>
-            <div className={styles.cardBody}>
+            <div className={`${styles.cardBody} ${styles.settings}`}>
+              <Section title="Artwork" collapsibleKey="artwork">
               <Section
                 title="Layers"
                 collapsibleKey="layers"
@@ -1266,12 +1268,8 @@ export default function App() {
                   })}
                 </ul>
               </Section>
-            </div>
-          </Card>
 
-          {active && (
-            <Card variant="flat" className={styles.controls}>
-              <div className={styles.cardBody}>
+              {active && (
                 <Section
                   title={`On ${active.name}`}
                   collapsibleKey="shapes-on-layer"
@@ -1352,9 +1350,10 @@ export default function App() {
                     </ul>
                   )}
                 </Section>
-              </div>
-            </Card>
-          )}
+              )}
+              </Section>
+            </div>
+          </Card>
 
           {selected.length > 1 && (
             <Card variant="flat" className={styles.controls}>
