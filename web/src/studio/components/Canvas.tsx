@@ -1,7 +1,7 @@
 import { useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
 import {
-  boxOf, clampToPage, dragHandleTurned, handlePoints, isDegenerate, moveBy, newShapeId, turnAttr,
-  CURSOR, type Handle, type Page, type Shape, type ShapeKind,
+  angleFromCenter, boxOf, clampToPage, dragHandleTurned, handlePoints, isDegenerate, moveBy,
+  newShapeId, turnAttr, turnGrip, CURSOR, type Handle, type Page, type Shape, type ShapeKind,
 } from "../lib/shapes";
 import { hatchLines, hatchStroke, type Fill } from "../lib/hatch";
 import { curveStrokes, pointsAttr, DEFAULT_CURVE, type CurveKind } from "../lib/parametric";
@@ -63,7 +63,10 @@ interface Props {
 type Drag =
   | { mode: "new"; shape: Shape }
   | { mode: "move"; id: string; from: { x: number; y: number }; origin: Shape }
-  | { mode: "handle"; id: string; handle: Handle; origin: Shape };
+  | { mode: "handle"; id: string; handle: Handle; origin: Shape }
+  // Turning: the angle the pointer started at, so the shape turns by how far the pointer has gone
+  // round rather than jumping to wherever it was grabbed.
+  | { mode: "turn"; id: string; origin: Shape; from: number };
 
 // The page at true proportions, with a one-inch grid. It keeps the page's own proportions and is
 // sized to them (--canvas-aspect), so the drawing gets as large as the space allows - the same way
@@ -138,6 +141,17 @@ export function Canvas({ page, shapes, fills, layers, activeLayer, model, zoom, 
     begin(e, { mode: "move", id: shape.id, from: p, origin: shape });
   };
 
+  // Started on the turn grip: turn the shape about the middle of its box. Shift snaps to 15°, the
+  // angles a drawing is usually squared up to.
+  const onTurnDown = (e: ReactPointerEvent, shape: Shape) => {
+    if (e.button !== 0) return;
+    e.stopPropagation();
+    const p = pointAt(e);
+    if (!p) return;
+    onEditStart();
+    begin(e, { mode: "turn", id: shape.id, origin: shape, from: angleFromCenter(shape, p.x, p.y) });
+  };
+
   // Started on a handle: reshape.
   const onHandleDown = (e: ReactPointerEvent, shape: Shape, handle: Handle) => {
     if (e.button !== 0) return;
@@ -154,6 +168,11 @@ export function Canvas({ page, shapes, fills, layers, activeLayer, model, zoom, 
       setDrag({ ...drag, shape: clampToPage({ ...drag.shape, x2: p.x, y2: p.y }, page) });
     } else if (drag.mode === "move") {
       onUpdate(moveBy(drag.origin, p.x - drag.from.x, p.y - drag.from.y, page));
+    } else if (drag.mode === "turn") {
+      const by = angleFromCenter(drag.origin, p.x, p.y) - drag.from;
+      const raw = (drag.origin.rotation ?? 0) + by;
+      const turn = e.shiftKey ? Math.round(raw / 15) * 15 : Math.round(raw);
+      onUpdate({ ...drag.origin, rotation: ((turn % 360) + 360) % 360 || undefined });
     } else {
       onUpdate(clampToPage(dragHandleTurned(drag.origin, drag.handle, p.x, p.y), page));
     }
@@ -229,6 +248,7 @@ export function Canvas({ page, shapes, fills, layers, activeLayer, model, zoom, 
 
   const chosen = shapes.find((s) => s.id === selected) ?? null;
   const showHandles = chosen && drag?.mode !== "new" && drag?.mode !== "move";
+  // Far enough off the edge that the grip never sits on a corner handle, in the page's inches.
 
   return (
     <BedCanvas
@@ -317,6 +337,25 @@ export function Canvas({ page, shapes, fills, layers, activeLayer, model, zoom, 
 
               {showHandles && (
                 <g className={styles.handles}>
+                  {/* The turn grip, on a stalk from the top edge so it reads as turning rather than
+                      as another corner to drag. */}
+                  {(() => {
+                    const grip = turnGrip(chosen, handleR * 4);
+                    const top = turnGrip(chosen, 0);
+                    return (
+                      <>
+                        <line className={styles.stalk} x1={top.x} y1={top.y} x2={grip.x} y2={grip.y} />
+                        <circle
+                          cx={grip.x}
+                          cy={grip.y}
+                          r={handleR}
+                          className={styles.turn}
+                          style={{ cursor: "grab" }}
+                          onPointerDown={(e) => onTurnDown(e, chosen)}
+                        />
+                      </>
+                    );
+                  })()}
                   {handlePoints(chosen).map((h) => (
                     <circle
                       key={h.id}

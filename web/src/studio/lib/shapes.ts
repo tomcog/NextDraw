@@ -170,6 +170,22 @@ export const handlePoints = (s: Shape) => {
   return handlesOf(s).map((h) => ({ ...h, ...(s.rotation ? turnPoint(h, c, s.rotation) : { x: h.x, y: h.y }) }));
 };
 
+/** Where the turn grip sits: above the middle of the box's top edge, `out` inches clear of it, and
+ *  turned with the shape so it always stands off the same edge. */
+export const turnGrip = (s: Shape, out: number) => {
+  const b = boxOf(s);
+  const c = centerOf(s);
+  const p = { x: (b.x0 + b.x1) / 2, y: b.y0 - out };
+  return s.rotation ? turnPoint(p, c, s.rotation) : p;
+};
+
+/** The angle from a shape's middle to a point, in degrees clockwise from straight up - the same way
+ *  the rotation field reads, so dragging the grip to the right of the shape says 90. */
+export const angleFromCenter = (s: Shape, x: number, y: number) => {
+  const c = centerOf(s);
+  return (Math.atan2(x - c.x, c.y - y) * 180) / Math.PI;
+};
+
 const OPPOSITE: Record<Handle, Handle> = { nw: "se", se: "nw", ne: "sw", sw: "ne", a: "b", b: "a" };
 
 /**
