@@ -434,6 +434,19 @@ export function Canvas({ page, shapes, fills, layers, activeLayer, model, zoom, 
         const handleR = (mark * 0.28) / UNITS;
         return (
           <g transform={`scale(${UNITS})`}>
+            {/* The grid a drag lands on, under everything else and in the faintest line there is.
+                Only while snapping is on, and only while the lines are far enough apart to read as
+                a grid rather than as a wash. */}
+            {snap > 0 && page.w / snap + page.h / snap <= 400 && (
+              <g className={styles.grid}>
+                {Array.from({ length: Math.floor(page.w / snap) }, (_, i) => (i + 1) * snap).map((x) => (
+                  <line key={`v${x}`} x1={x} y1={0} x2={x} y2={page.h} />
+                ))}
+                {Array.from({ length: Math.floor(page.h / snap) }, (_, i) => (i + 1) * snap).map((y) => (
+                  <line key={`h${y}`} x1={0} y1={y} x2={page.w} y2={y} />
+                ))}
+              </g>
+            )}
             {/* The ink: exactly what the pen will put on the paper, in the structure Plot's preview
                 uses, painted by the same rules in index.css. That's what makes a drawing look the
                 same in both apps rather than merely similar. Nothing in here is clickable - what you

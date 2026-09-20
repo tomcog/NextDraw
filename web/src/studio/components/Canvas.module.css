@@ -7,6 +7,15 @@
 /* Dragging draws; it must not scroll the page under the finger. */
 .wrap svg { touch-action: none; }
 
+/* The grid a drag snaps to: the faintest line the paper will carry, and never in the way of the
+   pointer. It is interface rather than ink, so its width is in screen pixels. */
+.grid line {
+  stroke: var(--ui-border-subtle, #e5e5e5);
+  stroke-width: 1;
+  vector-effect: non-scaling-stroke;
+  pointer-events: none;
+}
+
 /* The ink. How it's painted is index.css's business - the same .pv-colored rules Plot's preview
    uses - so all this does is keep it out of the way of the pointer. Nothing here is grabbable; the
    grips below are, which is what lets a hairline mark still be easy to pick up. */
