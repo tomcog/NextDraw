@@ -1,7 +1,8 @@
 import { useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
 import {
-  angleFromCenter, boxOf, clampToPage, dragHandleTurned, handlePoints, isDegenerate, moveBy,
-  newShapeId, turnAttr, turnGrip, CURSOR, type Handle, type Page, type Shape, type ShapeKind,
+  angleFromCenter, boxAround, boxOf, clampToPage, dragHandleTurned, handlePoints, isDegenerate,
+  moveBy, newShapeId, scaleInto, turnAround, turnAttr, turnGrip, CURSOR,
+  type Handle, type Page, type Shape, type ShapeKind,
 } from "../lib/shapes";
 import { hatchLines, hatchStroke, type Fill } from "../lib/hatch";
 import { curveStrokes, pointsAttr, DEFAULT_CURVE, type CurveKind } from "../lib/parametric";
@@ -82,6 +83,9 @@ type Drag =
   | { mode: "move"; from: { x: number; y: number }; origins: Shape[] }
   // Rubber band: drawn on the empty page to gather up everything it touches.
   | { mode: "marquee"; from: { x: number; y: number }; to: { x: number; y: number }; add: string[] }
+  // A whole selection at once: scaled by a corner of the box round it, or turned about its middle.
+  | { mode: "groupScale"; handle: Handle; origins: Shape[]; box: ReturnType<typeof boxOf> }
+  | { mode: "groupTurn"; origins: Shape[]; about: { x: number; y: number }; from: number }
   | { mode: "handle"; id: string; handle: Handle; origin: Shape }
   // Turning: the angle the pointer started at, so the shape turns by how far the pointer has gone
   // round rather than jumping to wherever it was grabbed.
@@ -184,6 +188,20 @@ export function Canvas({ page, shapes, fills, layers, activeLayer, model, zoom, 
     begin(e, { mode: "turn", id: shape.id, origin: shape, from: angleFromCenter(shape, p.x, p.y) });
   };
 
+  // Started on a grip of a group: scale everything picked, or turn it, as one thing.
+  const onGroupDown = (e: ReactPointerEvent, handle: Handle | "turn") => {
+    if (e.button !== 0) return;
+    e.stopPropagation();
+    const p = pointAt(e);
+    if (!p) return;
+    onEditStart();
+    const box = boxAround(group);
+    const about = { x: (box.x0 + box.x1) / 2, y: (box.y0 + box.y1) / 2 };
+    begin(e, handle === "turn"
+      ? { mode: "groupTurn", origins: group, about, from: (Math.atan2(p.x - about.x, about.y - p.y) * 180) / Math.PI }
+      : { mode: "groupScale", handle, origins: group, box });
+  };
+
   // Started on a handle: reshape.
   const onHandleDown = (e: ReactPointerEvent, shape: Shape, handle: Handle) => {
     if (e.button !== 0) return;
@@ -213,6 +231,21 @@ export function Canvas({ page, shapes, fills, layers, activeLayer, model, zoom, 
       const byX = Math.max(-x0, Math.min(page.w - x1, dx));
       const byY = Math.max(-y0, Math.min(page.h - y1, dy));
       onUpdateMany(drag.origins.map((s) => moveBy(s, byX, byY, page)));
+    } else if (drag.mode === "groupScale") {
+      // The corner opposite the one being dragged stays where it is, as it does for one shape.
+      const b = drag.box;
+      const to = {
+        x0: drag.handle === "nw" || drag.handle === "sw" ? Math.min(p.x, b.x1 - 0.02) : b.x0,
+        y0: drag.handle === "nw" || drag.handle === "ne" ? Math.min(p.y, b.y1 - 0.02) : b.y0,
+        x1: drag.handle === "ne" || drag.handle === "se" ? Math.max(p.x, b.x0 + 0.02) : b.x1,
+        y1: drag.handle === "sw" || drag.handle === "se" ? Math.max(p.y, b.y0 + 0.02) : b.y1,
+      };
+      onUpdateMany(scaleInto(drag.origins, b, to).map((s) => clampToPage(s, page)));
+    } else if (drag.mode === "groupTurn") {
+      const now = (Math.atan2(p.x - drag.about.x, drag.about.y - p.y) * 180) / Math.PI;
+      const raw = now - drag.from;
+      const by = e.shiftKey ? Math.round(raw / 15) * 15 : Math.round(raw);
+      onUpdateMany(turnAround(drag.origins, drag.about, by));
     } else if (drag.mode === "turn") {
       const by = angleFromCenter(drag.origin, p.x, p.y) - drag.from;
       const raw = (drag.origin.rotation ?? 0) + by;
@@ -433,13 +466,43 @@ export function Canvas({ page, shapes, fills, layers, activeLayer, model, zoom, 
                   height={Math.abs(drag.to.y - drag.from.y)}
                 />
               )}
+              {/* A group is moved, scaled and turned as one: the box round it, its four corners and
+                  a grip on a stalk, the same as one shape has. */}
               {group.length > 0 && drag?.mode !== "marquee" && (() => {
-                const boxes = group.map(boxOf);
-                const x0 = Math.min(...boxes.map((b) => b.x0));
-                const y0 = Math.min(...boxes.map((b) => b.y0));
-                const x1 = Math.max(...boxes.map((b) => b.x1));
-                const y1 = Math.max(...boxes.map((b) => b.y1));
-                return <rect className={styles.draft} x={x0} y={y0} width={x1 - x0} height={y1 - y0} />;
+                const b = boxAround(group);
+                const grip = { x: (b.x0 + b.x1) / 2, y: b.y0 - handleR * 4 };
+                const corners: { id: Handle; x: number; y: number }[] = [
+                  { id: "nw", x: b.x0, y: b.y0 }, { id: "ne", x: b.x1, y: b.y0 },
+                  { id: "sw", x: b.x0, y: b.y1 }, { id: "se", x: b.x1, y: b.y1 },
+                ];
+                return (
+                  <>
+                    <rect className={styles.draft} x={b.x0} y={b.y0} width={b.x1 - b.x0} height={b.y1 - b.y0} />
+                    {drag?.mode !== "move" && (
+                      <g className={styles.handles}>
+                        <line className={styles.stalk} x1={grip.x} y1={b.y0} x2={grip.x} y2={grip.y} />
+                        <circle
+                          cx={grip.x}
+                          cy={grip.y}
+                          r={handleR}
+                          className={styles.turn}
+                          style={{ cursor: "grab" }}
+                          onPointerDown={(e) => onGroupDown(e, "turn")}
+                        />
+                        {corners.map((c) => (
+                          <circle
+                            key={c.id}
+                            cx={c.x}
+                            cy={c.y}
+                            r={handleR}
+                            style={{ cursor: CURSOR[c.id] }}
+                            onPointerDown={(e) => onGroupDown(e, c.id)}
+                          />
+                        ))}
+                      </g>
+                    )}
+                  </>
+                );
               })()}
 
               {showHandles && (

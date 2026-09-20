@@ -123,6 +123,53 @@ export const outlinePoints = (s: Shape): Point[] => {
   return s.points ?? [];
 };
 
+/** The box around several shapes: what a group of them is scaled and turned by. */
+export const boxAround = (shapes: Shape[]) => {
+  const boxes = shapes.map(boxOf);
+  return {
+    x0: Math.min(...boxes.map((b) => b.x0)),
+    y0: Math.min(...boxes.map((b) => b.y0)),
+    x1: Math.max(...boxes.map((b) => b.x1)),
+    y1: Math.max(...boxes.map((b) => b.y1)),
+  };
+};
+
+/**
+ * Every shape of a group, scaled from one box into another: each keeps its place and its share of
+ * the whole, so the group grows and shrinks as one thing.
+ */
+export const scaleInto = (shapes: Shape[], from: ReturnType<typeof boxOf>, to: ReturnType<typeof boxOf>): Shape[] => {
+  const kx = from.x1 - from.x0 > 1e-9 ? (to.x1 - to.x0) / (from.x1 - from.x0) : 1;
+  const ky = from.y1 - from.y0 > 1e-9 ? (to.y1 - to.y0) / (from.y1 - from.y0) : 1;
+  return shapes.map((s) => {
+    const b = boxOf(s);
+    return withBox(s, {
+      x0: to.x0 + (b.x0 - from.x0) * kx,
+      y0: to.y0 + (b.y0 - from.y0) * ky,
+      x1: to.x0 + (b.x1 - from.x0) * kx,
+      y1: to.y0 + (b.y1 - from.y0) * ky,
+    });
+  });
+};
+
+/**
+ * Every shape of a group, turned about one point: each one's own turn takes up the angle, and its
+ * box is carried round to where the turn puts it.
+ */
+export const turnAround = (shapes: Shape[], about: { x: number; y: number }, deg: number): Shape[] =>
+  shapes.map((s) => {
+    const c = centerOf(s);
+    const to = turnPoint(c, about, deg);
+    const dx = to.x - c.x;
+    const dy = to.y - c.y;
+    return {
+      ...s,
+      rotation: ((((s.rotation ?? 0) + deg) % 360) + 360) % 360 || undefined,
+      x: s.x + dx, y: s.y + dy, x2: s.x2 + dx, y2: s.y2 + dy,
+      ...(s.points ? { points: s.points.map((p) => ({ x: p.x + dx, y: p.y + dy })) } : {}),
+    };
+  });
+
 /** The same shape in a new box, with a path's points carried across so they keep their places in it. */
 export const withBox = (s: Shape, box: { x0: number; y0: number; x1: number; y1: number }): Shape => {
   const next = { ...s, x: box.x0, y: box.y0, x2: box.x1, y2: box.y1 };
