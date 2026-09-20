@@ -1132,7 +1132,6 @@ export default function App() {
                       }}
                     />
                   </div>
-                  <p className={styles.empty}>{`${fmtIn(page.w)} × ${fmtIn(page.h)} in`}</p>
                 </Section>
 
                 <Section title="Drawing tool" collapsibleKey="pen">
