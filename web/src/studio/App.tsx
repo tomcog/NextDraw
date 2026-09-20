@@ -117,7 +117,10 @@ export default function App() {
   const [zoom, setZoom] = useState<Zoom>("paper");
   const [toolName, setToolName] = useState<string>(() => load<string>(TOOL_KEY) ?? "");
   const [tool, setTool] = useState<Tool>("rect");
-  const [selected, setSelected] = useState<string | null>(null);
+  // Everything picked, in the order it was picked. The cards edit the last of them; a drag, a delete
+  // or a nudge takes the lot, which is what makes moving a whole layer at once possible.
+  const [selected, setSelected] = useState<string[]>([]);
+  const pick = (id: string | null) => setSelected(id ? [id] : []);
   const [name, setName] = useState("Untitled");
   const [saved, setSaved] = useState<Saved>(null);
   const [busy, setBusy] = useState(false);
@@ -165,7 +168,7 @@ export default function App() {
       setLayers(next.layers);
       setPage(next.page);
       // A shape that isn't there any more can't stay selected, or its handles would hang in the air.
-      setSelected((id) => (next.shapes.some((s) => s.id === id) ? id : null));
+      setSelected((ids) => ids.filter((id) => next.shapes.some((s) => s.id === id)));
     },
     [shapes, fills, layers, page],
   );
@@ -189,12 +192,18 @@ export default function App() {
   const addShape = useCallback((shape: Shape) => {
     record();
     setShapes((list) => [...list, shape]);
-    setSelected(shape.id);
+    pick(shape.id);
     setTool("select"); // what you want next is nearly always to nudge the thing you just drew
   }, [record]);
 
   const updateShape = useCallback((shape: Shape) => {
     setShapes((list) => list.map((s) => (s.id === shape.id ? shape : s)));
+  }, []);
+
+  /** Several shapes changed at once, as a drag of a whole selection does. */
+  const updateShapes = useCallback((changed: Shape[]) => {
+    const byId = new Map(changed.map((s) => [s.id, s]));
+    setShapes((list) => list.map((s) => byId.get(s.id) ?? s));
   }, []);
 
   // A copy of a shape and its fill, on the same layer, nudged down and to the right so it can be
@@ -207,7 +216,7 @@ export default function App() {
     const copy: Shape = { ...shape, id: newShapeId(), x: shape.x + nudge, y: shape.y + nudge, x2: shape.x2 + nudge, y2: shape.y2 + nudge };
     setShapes((list) => [...list, copy]);
     setFills((list) => [...list, ...list.filter((f) => f.shapeId === id).map((f) => ({ ...f, id: newFillId(), shapeId: copy.id }))]);
-    setSelected(copy.id);
+    pick(copy.id);
   };
 
   // Move a shape to another pen. Its fills go with it, since a fill belongs to its shape, and both
@@ -215,24 +224,28 @@ export default function App() {
   const moveShapeToLayer = (id: string, layerId: string) => {
     record();
     setShapes((list) => list.map((s) => (s.id === id ? { ...s, layerId } : s)));
-    setSelected(id);
+    pick(id);
   };
 
-  const removeShape = (id: string) => {
+  const removeShape = (id: string) => removeShapes([id]);
+
+  /** Throw away several shapes at once - what Delete does to a whole selection. */
+  const removeShapes = (ids: string[]) => {
+    if (!ids.length) return;
     record();
-    setShapes((list) => list.filter((s) => s.id !== id));
-    setFills((list) => list.filter((f) => f.shapeId !== id));
-    setSelected((current) => (current === id ? null : current));
+    setShapes((list) => list.filter((s) => !ids.includes(s.id)));
+    setFills((list) => list.filter((f) => !ids.includes(f.shapeId)));
+    setSelected((current) => current.filter((id) => !ids.includes(id)));
   };
 
-  // Delete (or Backspace) throws away the selected shape - except while typing, where those keys
-  // belong to the text. Undo brings it back, since removeShape records first.
-  const remove = useRef(removeShape);
-  remove.current = removeShape;
+  // Delete (or Backspace) throws away everything picked - except while typing, where those keys
+  // belong to the text. Undo brings it back, since removeShapes records first.
+  const remove = useRef(removeShapes);
+  remove.current = removeShapes;
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== "Delete" && e.key !== "Backspace") return;
-      if (!selected || e.metaKey || e.ctrlKey || e.altKey) return;
+      if (!selected.length || e.metaKey || e.ctrlKey || e.altKey) return;
       const el = document.activeElement;
       if (el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement || (el as HTMLElement)?.isContentEditable) return;
       e.preventDefault();
@@ -318,7 +331,7 @@ export default function App() {
     const first = { id: newLayerId(), name: "Black", color: "#262626" };
     setLayers([first]);
     setActiveLayer(first.id);
-    setSelected(null);
+    setSelected([]);
     setPast([]);
     setFuture([]);
     setName("Untitled");
@@ -344,7 +357,7 @@ export default function App() {
     setFills(drawing.fills);
     setLayers(drawing.layers);
     setActiveLayer(drawing.layers[0]?.id ?? "");
-    setSelected(null);
+    setSelected([]);
     setPast([]);
     setFuture([]);
     setName(res.name.replace(/\.svg$/i, ""));
@@ -440,7 +453,9 @@ export default function App() {
     if (toolName) remember(TOOL_KEY, toolName);
   }, [toolName]);
 
-  const chosen = shapes.find((s) => s.id === selected) ?? null;
+  // One shape at a time in the cards: the last one picked, and only while it is the only one, so
+  // nothing is edited behind your back when a whole group is selected.
+  const chosen = selected.length === 1 ? shapes.find((s) => s.id === selected[0]) ?? null : null;
   const chosenFills = chosen ? fills.filter((f) => f.shapeId === chosen.id) : [];
 
   // The layer new shapes land on, and the one the Shapes card lists. Always a real layer.
@@ -537,7 +552,7 @@ export default function App() {
     setFills((list) => list.flatMap((f) => (f.shapeId === id
       ? made.map((s) => ({ ...f, id: s.id === id ? f.id : newFillId(), shapeId: s.id }))
       : [f])));
-    setSelected(made[0].id);
+    pick(made[0].id);
   };
 
   /** Repeat the chosen shape, or stop repeating it. Every copy follows the shape itself. */
@@ -678,7 +693,7 @@ export default function App() {
     };
   }, [sizing]);
   useEffect(() => {
-    if (sizing && selected !== sizing) setSizing(null);
+    if (sizing && (selected.length !== 1 || selected[0] !== sizing)) setSizing(null);
   }, [selected, sizing]);
 
 
@@ -690,7 +705,7 @@ export default function App() {
     setFills((list) => list.filter((f) => !gone.includes(f.shapeId)));
     setLayers((list) => list.filter((l) => l.id !== id));
     setActiveLayer((current) => (current === id ? layers.find((l) => l.id !== id)!.id : current));
-    setSelected((current) => (gone.includes(current ?? "") ? null : current));
+    setSelected((current) => current.filter((id) => !gone.includes(id)));
   };
 
   const setSize = (id: string) => {
@@ -731,6 +746,13 @@ export default function App() {
           onClose={() => setRowMenu(null)}
           actions={rowMenu.kind === "layer"
             ? [
+              {
+                label: "Select everything on it",
+                icon: <MousePointer2 />,
+                disabled: !shapes.some((s) => s.layerId === rowMenu.id),
+                // Picked as one, they move as one: the way a whole layer is shifted about the page.
+                onSelect: () => setSelected(shapes.filter((s) => s.layerId === rowMenu.id).map((s) => s.id)),
+              },
               { label: "Duplicate", icon: <Copy />, onSelect: () => duplicateLayer(rowMenu.id) },
               {
                 label: "Merge with below",
@@ -805,6 +827,7 @@ export default function App() {
             tool={tool}
             selected={selected}
             onSelect={setSelected}
+            onUpdateMany={updateShapes}
             onAdd={addShape}
             onUpdate={updateShape}
             onEditStart={record}
@@ -1069,7 +1092,7 @@ export default function App() {
                           const gone = onActive.map((sh) => sh.id);
                           setShapes((list) => list.filter((sh) => !gone.includes(sh.id)));
                           setFills((list) => list.filter((f) => !gone.includes(f.shapeId)));
-                          setSelected(null);
+                          setSelected([]);
                         }} />
                     ) : undefined
                   }
@@ -1081,8 +1104,12 @@ export default function App() {
                       {onActive.map((sh, i) => {
                         const b = boxOf(sh);
                         return (
-                          <li key={sh.id} className={styles.shapeRow} data-selected={sh.id === selected}>
-                            <button type="button" className={styles.shapePick} onClick={() => setSelected(sh.id)}>
+                          <li key={sh.id} className={styles.shapeRow} data-selected={selected.includes(sh.id)}>
+                            {/* Shift picks up another shape without letting go of the ones already picked. */}
+                            <button type="button" className={styles.shapePick}
+                              onClick={(e) => setSelected((current) => (e.shiftKey
+                                ? (current.includes(sh.id) ? current.filter((id) => id !== sh.id) : [...current, sh.id])
+                                : [sh.id]))}>
                               <span>{shapeName(sh, i)}</span>
                             </button>
                             {sizing === sh.id ? (
@@ -1112,7 +1139,7 @@ export default function App() {
                                 type="button"
                                 className={styles.shapeSize}
                                 title="Set this shape's size"
-                                onClick={() => { setSelected(sh.id); setSizing(sh.id); }}
+                                onClick={() => { pick(sh.id); setSizing(sh.id); }}
                               >
                                 {`${fmtIn(b.x1 - b.x0)} × ${fmtIn(b.y1 - b.y0)}`}
                               </button>

@@ -49,10 +49,13 @@ interface Props {
   /** Simulate the ink, or draw each layer flat. Off is also much cheaper on a heavy hatch. */
   inkSim: boolean;
   tool: Tool;
-  selected: string | null;
-  onSelect: (id: string | null) => void;
+  /** Everything picked, in the order it was picked: the last of them is what the cards edit. */
+  selected: string[];
+  onSelect: (ids: string[]) => void;
   onAdd: (shape: Shape) => void;
   onUpdate: (shape: Shape) => void;
+  /** Several shapes at once, for dragging a whole selection - or a whole layer - together. */
+  onUpdateMany: (shapes: Shape[]) => void;
   /** A move or reshape is about to start. One call per gesture, before anything changes, so undo
    *  steps back over the whole drag rather than over each of the hundreds of updates it makes. */
   onEditStart: () => void;
@@ -64,7 +67,9 @@ interface Props {
 // truthful mid-drag rather than catching up at the end.
 type Drag =
   | { mode: "new"; shape: Shape }
-  | { mode: "move"; id: string; from: { x: number; y: number }; origin: Shape }
+  | { mode: "move"; from: { x: number; y: number }; origins: Shape[] }
+  // Rubber band: drawn on the empty page to gather up everything it touches.
+  | { mode: "marquee"; from: { x: number; y: number }; to: { x: number; y: number }; add: string[] }
   | { mode: "handle"; id: string; handle: Handle; origin: Shape }
   // Turning: the angle the pointer started at, so the shape turns by how far the pointer has gone
   // round rather than jumping to wherever it was grabbed.
@@ -73,7 +78,7 @@ type Drag =
 // The page at true proportions, with a one-inch grid. It keeps the page's own proportions and is
 // sized to them (--canvas-aspect), so the drawing gets as large as the space allows - the same way
 // Plot's preview fills its column.
-export function Canvas({ page, shapes, fills, layers, activeLayer, model, zoom, toolbar, toolbarLeft, penWidthMm, inkOpacity, inkBuilds, inkBuild, inkSim, tool, selected, onSelect, onAdd, onUpdate, onEditStart }: Props) {
+export function Canvas({ page, shapes, fills, layers, activeLayer, model, zoom, toolbar, toolbarLeft, penWidthMm, inkOpacity, inkBuilds, inkBuild, inkSim, tool, selected, onSelect, onAdd, onUpdate, onUpdateMany, onEditStart }: Props) {
   const bed = useRef<BedCanvasHandle>(null);
   const [drag, setDrag] = useState<Drag | null>(null);
   const pointer = useRef<number | null>(null);
@@ -118,13 +123,18 @@ export function Canvas({ page, shapes, fills, layers, activeLayer, model, zoom, 
     setDrag(next);
   };
 
-  // Started on the page itself: draw a new shape, or in select mode just clear the selection.
+  // Started on the page itself: draw a new shape, or in select mode drag a band round what you want.
   const onPointerDown = (e: ReactPointerEvent<SVGSVGElement>) => {
     if (e.button !== 0) return;
     const p = pointAt(e);
     if (!p) return;
-    onSelect(null);
-    if (tool === "select") return;
+    if (tool === "select") {
+      // Shift keeps what's already picked, so a band can gather more onto it.
+      if (!e.shiftKey) onSelect([]);
+      begin(e, { mode: "marquee", from: p, to: p, add: e.shiftKey ? selected : [] });
+      return;
+    }
+    onSelect([]);
     begin(e, {
       mode: "new",
       shape: clampToPage(shapeFor(tool, activeLayer, p.x, p.y), page),
@@ -138,9 +148,17 @@ export function Canvas({ page, shapes, fills, layers, activeLayer, model, zoom, 
     e.stopPropagation();
     const p = pointAt(e);
     if (!p) return;
-    onSelect(shape.id);
+    // Shift adds a shape to the selection, or takes it out again. Otherwise: a shape already in the
+    // selection keeps the whole of it, so dragging any one of them moves the lot; anything else
+    // becomes the selection on its own.
+    const inSelection = selected.includes(shape.id);
+    const next = e.shiftKey
+      ? (inSelection ? selected.filter((id) => id !== shape.id) : [...selected, shape.id])
+      : (inSelection ? selected : [shape.id]);
+    onSelect(next);
+    if (e.shiftKey && !next.includes(shape.id)) return; // just taken out: nothing to drag
     onEditStart();
-    begin(e, { mode: "move", id: shape.id, from: p, origin: shape });
+    begin(e, { mode: "move", from: p, origins: shapes.filter((s) => next.includes(s.id)) });
   };
 
   // Started on the turn grip: turn the shape about the middle of its box. Shift snaps to 15°, the
@@ -168,8 +186,21 @@ export function Canvas({ page, shapes, fills, layers, activeLayer, model, zoom, 
     if (!p) return;
     if (drag.mode === "new") {
       setDrag({ ...drag, shape: clampToPage({ ...drag.shape, x2: p.x, y2: p.y }, page) });
+    } else if (drag.mode === "marquee") {
+      setDrag({ ...drag, to: p });
     } else if (drag.mode === "move") {
-      onUpdate(moveBy(drag.origin, p.x - drag.from.x, p.y - drag.from.y, page));
+      // The whole selection moves as one: the limit is the box round all of it, so a group slides
+      // along the page's edge instead of collapsing against it.
+      const dx = p.x - drag.from.x;
+      const dy = p.y - drag.from.y;
+      const boxes = drag.origins.map(boxOf);
+      const x0 = Math.min(...boxes.map((b) => b.x0));
+      const y0 = Math.min(...boxes.map((b) => b.y0));
+      const x1 = Math.max(...boxes.map((b) => b.x1));
+      const y1 = Math.max(...boxes.map((b) => b.y1));
+      const byX = Math.max(-x0, Math.min(page.w - x1, dx));
+      const byY = Math.max(-y0, Math.min(page.h - y1, dy));
+      onUpdateMany(drag.origins.map((s) => moveBy(s, byX, byY, page)));
     } else if (drag.mode === "turn") {
       const by = angleFromCenter(drag.origin, p.x, p.y) - drag.from;
       const raw = (drag.origin.rotation ?? 0) + by;
@@ -184,6 +215,20 @@ export function Canvas({ page, shapes, fills, layers, activeLayer, model, zoom, 
     if (pointer.current !== e.pointerId) return;
     pointer.current = null;
     if (drag?.mode === "new" && !isDegenerate(drag.shape)) onAdd(drag.shape);
+    if (drag?.mode === "marquee") {
+      const band = {
+        x0: Math.min(drag.from.x, drag.to.x), y0: Math.min(drag.from.y, drag.to.y),
+        x1: Math.max(drag.from.x, drag.to.x), y1: Math.max(drag.from.y, drag.to.y),
+      };
+      // Anything the band touches, so a shape doesn't have to be swallowed whole to be caught.
+      const caught = shown.filter((sh) => {
+        const b = boxOf(sh);
+        return b.x0 <= band.x1 && b.x1 >= band.x0 && b.y0 <= band.y1 && b.y1 >= band.y0;
+      });
+      if (band.x1 - band.x0 > 0.02 || band.y1 - band.y0 > 0.02) {
+        onSelect([...drag.add, ...caught.map((sh) => sh.id).filter((id) => !drag.add.includes(id))]);
+      }
+    }
     setDrag(null);
   };
 
@@ -259,7 +304,9 @@ export function Canvas({ page, shapes, fills, layers, activeLayer, model, zoom, 
     );
   };
 
-  const chosen = shapes.find((s) => s.id === selected) ?? null;
+  // The cards edit the last shape picked; its handles are shown while it is the only one.
+  const chosen = selected.length === 1 ? shapes.find((s) => s.id === selected[0]) ?? null : null;
+  const group = selected.length > 1 ? shapes.filter((s) => selected.includes(s.id)) : [];
   const showHandles = chosen && drag?.mode !== "new" && drag?.mode !== "move";
   // Far enough off the edge that the grip never sits on a corner handle, in the page's inches.
 
@@ -339,7 +386,7 @@ export function Canvas({ page, shapes, fills, layers, activeLayer, model, zoom, 
                         hitting a stroke that may be a fraction of a millimetre wide. */}
                     {element(sh, `${sh.id}-grab`, {
                       className: styles.grab,
-                      "data-selected": sh.id === selected ? "true" : undefined,
+                      "data-selected": selected.includes(sh.id) ? "true" : undefined,
                       onPointerDown: (e: ReactPointerEvent) => onShapeDown(e, sh),
                     })}
                   </g>
@@ -347,6 +394,25 @@ export function Canvas({ page, shapes, fills, layers, activeLayer, model, zoom, 
               })}
 
               {drag?.mode === "new" && element(drag.shape, "draft", { className: styles.draft })}
+
+              {/* The band, and the box round a group of shapes picked with it. */}
+              {drag?.mode === "marquee" && (
+                <rect
+                  className={styles.draft}
+                  x={Math.min(drag.from.x, drag.to.x)}
+                  y={Math.min(drag.from.y, drag.to.y)}
+                  width={Math.abs(drag.to.x - drag.from.x)}
+                  height={Math.abs(drag.to.y - drag.from.y)}
+                />
+              )}
+              {group.length > 0 && drag?.mode !== "marquee" && (() => {
+                const boxes = group.map(boxOf);
+                const x0 = Math.min(...boxes.map((b) => b.x0));
+                const y0 = Math.min(...boxes.map((b) => b.y0));
+                const x1 = Math.max(...boxes.map((b) => b.x1));
+                const y1 = Math.max(...boxes.map((b) => b.y1));
+                return <rect className={styles.draft} x={x0} y={y0} width={x1 - x0} height={y1 - y0} />;
+              })()}
 
               {showHandles && (
                 <g className={styles.handles}>
