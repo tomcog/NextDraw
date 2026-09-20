@@ -93,6 +93,22 @@ type Drag =
   // round rather than jumping to wherever it was grabbed.
   | { mode: "turn"; id: string; origin: Shape; from: number };
 
+/**
+ * A corner held to the shape's own proportions: the pointer is taken as far as it has gone in the
+ * direction that has moved most, and the other side follows from the ratio. `anchor` is the corner
+ * that stays put.
+ */
+function keepProportions(anchor: { x: number; y: number }, p: { x: number; y: number }, ratio: number) {
+  const dx = p.x - anchor.x;
+  const dy = p.y - anchor.y;
+  if (!Number.isFinite(ratio) || ratio <= 0) return p;
+  const sx = dx < 0 ? -1 : 1;
+  const sy = dy < 0 ? -1 : 1;
+  return Math.abs(dx) / ratio > Math.abs(dy)
+    ? { x: p.x, y: anchor.y + (sy * Math.abs(dx)) / ratio }
+    : { x: anchor.x + sx * Math.abs(dy) * ratio, y: p.y };
+}
+
 /** The nearest eighth of a turn from where a line started: flat, upright, or at 45 degrees. */
 function straighten(x: number, y: number, toX: number, toY: number) {
   const dx = toX - x;
@@ -260,7 +276,13 @@ export function Canvas({ page, shapes, fills, layers, activeLayer, model, zoom, 
       const b = drag.box;
       // The page holds the box round the whole group, not each shape on its own: clamping them one
       // by one would squash whichever reached the edge first and the group would come apart.
-      const g = gridPoint(p);
+      // Shift keeps the group's proportions, measured from the corner that stays put.
+      const anchor = {
+        x: drag.handle === "nw" || drag.handle === "sw" ? b.x1 : b.x0,
+        y: drag.handle === "nw" || drag.handle === "ne" ? b.y1 : b.y0,
+      };
+      const held = e.shiftKey ? keepProportions(anchor, p, (b.x1 - b.x0) / (b.y1 - b.y0)) : p;
+      const g = gridPoint(held);
       const to = {
         x0: drag.handle === "nw" || drag.handle === "sw" ? Math.max(0, Math.min(g.x, b.x1 - 0.02)) : b.x0,
         y0: drag.handle === "nw" || drag.handle === "ne" ? Math.max(0, Math.min(g.y, b.y1 - 0.02)) : b.y0,
@@ -279,7 +301,22 @@ export function Canvas({ page, shapes, fills, layers, activeLayer, model, zoom, 
       const turn = e.shiftKey ? Math.round(raw / 15) * 15 : Math.round(raw);
       onUpdate({ ...drag.origin, rotation: ((turn % 360) + 360) % 360 || undefined });
     } else {
-      const g = gridPoint(p);
+      const b = boxOf(drag.origin);
+      // Shift holds a corner to the shape's proportions, and a line's end to the square and diagonal
+      // directions - the same rule the line was drawn under.
+      const corner = ["nw", "ne", "sw", "se"].includes(drag.handle);
+      const anchor = {
+        x: drag.handle === "nw" || drag.handle === "sw" ? b.x1 : b.x0,
+        y: drag.handle === "nw" || drag.handle === "ne" ? b.y1 : b.y0,
+      };
+      const held = !e.shiftKey ? p
+        : corner ? keepProportions(anchor, p, (b.x1 - b.x0) / (b.y1 - b.y0))
+        : drag.origin.kind === "line"
+          ? (drag.handle === "b"
+              ? straighten(drag.origin.x, drag.origin.y, p.x, p.y)
+              : straighten(drag.origin.x2, drag.origin.y2, p.x, p.y))
+          : p;
+      const g = gridPoint(held);
       onUpdate(clampToPage(dragHandleTurned(drag.origin, drag.handle, g.x, g.y), page));
     }
   };
