@@ -1107,54 +1107,53 @@ export default function App() {
             </div>
           </Card>
 
-          {/* The paper the drawing is made for, in its own card the way Plot has it. */}
+          {/* What the drawing is made on and with: two settings under one lid, each of which
+              folds on its own, as does the card around them. */}
           <Card variant="flat" className={styles.controls}>
-            <div className={styles.cardBody}>
-              <Section title="Paper" collapsibleKey="paper">
-                <div className={styles.pageRow}>
-                  <InputSelect size="md" label="Page size" hideLabel value={sizeId} onChange={(e) => setSize(e.target.value)}>
-                    {SIZES.map((size) => (
-                      <option key={size.id} value={size.id}>
-                        {size.name}
+            <div className={`${styles.cardBody} ${styles.settings}`}>
+              <Section title="Settings" collapsibleKey="settings">
+                <Section title="Paper" collapsibleKey="paper">
+                  <div className={styles.pageRow}>
+                    <InputSelect size="md" label="Page size" hideLabel value={sizeId} onChange={(e) => setSize(e.target.value)}>
+                      {SIZES.map((size) => (
+                        <option key={size.id} value={size.id}>
+                          {size.name}
+                        </option>
+                      ))}
+                    </InputSelect>
+                    <ButtonRound
+                      size="sm"
+                      icon={<Ratio />}
+                      aria-label="Turn the page"
+                      title="Turn the page: swap its width and height"
+                      onClick={() => {
+                        record();
+                        setPage((p) => ({ w: p.h, h: p.w }));
+                      }}
+                    />
+                  </div>
+                  <p className={styles.empty}>{`${fmtIn(page.w)} × ${fmtIn(page.h)} in`}</p>
+                </Section>
+
+                <Section title="Drawing tool" collapsibleKey="pen">
+                  <InputSelect
+                    size="md"
+                    label="Tool"
+                    hideLabel
+                    value={toolName}
+                    disabled={busy || !presets.length}
+                    onChange={(e) => setToolName(e.target.value)}
+                  >
+                    {presets.map((t) => (
+                      <option key={t.name} value={t.name}>
+                        {t.name}
                       </option>
                     ))}
                   </InputSelect>
-                  <ButtonRound
-                    size="sm"
-                    icon={<Ratio />}
-                    aria-label="Turn the page"
-                    title="Turn the page: swap its width and height"
-                    onClick={() => {
-                      record();
-                      setPage((p) => ({ w: p.h, h: p.w }));
-                    }}
-                  />
-                </div>
-                <p className={styles.empty}>{`${fmtIn(page.w)} × ${fmtIn(page.h)} in`}</p>
-              </Section>
-            </div>
-          </Card>
-
-          <Card variant="flat" className={styles.controls}>
-            <div className={styles.cardBody}>
-              <Section title="Drawing tool">
-                <InputSelect
-                  size="md"
-                  label="Tool"
-                  hideLabel
-                  value={toolName}
-                  disabled={busy || !presets.length}
-                  onChange={(e) => setToolName(e.target.value)}
-                >
-                  {presets.map((t) => (
-                    <option key={t.name} value={t.name}>
-                      {t.name}
-                    </option>
-                  ))}
-                </InputSelect>
-                <p className={styles.empty}>
-                  {`Draws a ${penWidthMm} mm line${palette.length > 1 ? ` in ${palette.length} colors` : ""}`}
-                </p>
+                  <p className={styles.empty}>
+                    {`Draws a ${penWidthMm} mm line${palette.length > 1 ? ` in ${palette.length} colors` : ""}`}
+                  </p>
+                </Section>
               </Section>
             </div>
           </Card>
