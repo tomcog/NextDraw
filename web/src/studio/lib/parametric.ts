@@ -45,11 +45,17 @@ export interface Spiral {
   inner: number; // where the winding starts, as a percent of the full radius
 }
 
-/** A piece of the box's ellipse: `sweep` degrees of it, starting `start` degrees round from the top. */
+/**
+ * A piece of the box's ellipse: `sweep` degrees of it, starting `start` degrees round from the top.
+ * More than one arc nests them inside each other - a rainbow, or an open hatch that never closes -
+ * with the innermost at `inner` percent of the way out.
+ */
 export interface Arc {
   kind: "arc";
   start: number;
   sweep: number;
+  arcs: number;
+  inner: number;
 }
 
 export type Curve = Hypotrochoid | Parabolic | Polygon | Star | Spiral | Arc;
@@ -65,7 +71,7 @@ export const DEFAULT_CURVE: Record<CurveKind, Curve> = {
   polygon: { kind: "polygon", sides: 6 },
   star: { kind: "star", points: 5, inner: 40 },
   spiral: { kind: "spiral", turns: 4, inner: 5 },
-  arc: { kind: "arc", start: 0, sweep: 180 },
+  arc: { kind: "arc", start: 0, sweep: 180, arcs: 1, inner: 40 },
 };
 
 export const CURVE_LABEL: Record<CurveKind, string> = {
@@ -101,6 +107,8 @@ export const CURVE_FIELDS: Record<CurveKind, { key: string; label: string; min: 
   arc: [
     { key: "start", label: "From (°)", min: -360, max: 360, step: 15 },
     { key: "sweep", label: "Sweep (°)", min: -360, max: 360, step: 15 },
+    { key: "arcs", label: "Arcs", min: 1, max: 200, step: 1 },
+    { key: "inner", label: "Innermost (%)", min: 1, max: 99, step: 5 },
   ],
 };
 
@@ -153,6 +161,16 @@ function cornerPoints(c: Polygon | Star): Point[] {
   return points;
 }
 
+/** One arc of the unit circle, at `radius`: the ring an arc shape draws, before it is fitted. */
+function arcPoints(c: Arc, radius: number): Point[] {
+  const sweep = Math.max(-360, Math.min(360, c.sweep));
+  const steps = Math.max(8, Math.round(Math.abs(sweep) / 2));
+  return Array.from({ length: steps + 1 }, (_, i) => {
+    const a = ((c.start - 90 + (sweep * i) / steps) * Math.PI) / 180;
+    return { x: radius * Math.cos(a), y: radius * Math.sin(a) };
+  });
+}
+
 /** A spiral wound out from the middle, and an arc round the same circle: both in their own units. */
 function roundPoints(c: Spiral | Arc): Point[] {
   const points: Point[] = [];
@@ -168,13 +186,30 @@ function roundPoints(c: Spiral | Arc): Point[] {
     }
     return points;
   }
-  const sweep = Math.max(-360, Math.min(360, c.sweep));
-  const steps = Math.max(8, Math.round(Math.abs(sweep) / 2));
-  for (let i = 0; i <= steps; i++) {
-    const a = ((c.start - 90 + (sweep * i) / steps) * Math.PI) / 180;
-    points.push({ x: Math.cos(a), y: Math.sin(a) });
-  }
-  return points;
+  return arcPoints(c, 1);
+}
+
+/**
+ * Nested arcs, all fitted the way the outermost is: they share one centre and one scale, so they stay
+ * concentric however the box is stretched. Each is its own stroke, since they never join up.
+ */
+function arcRings(c: Arc, b: ReturnType<typeof boxOf>): Point[][] {
+  const arcs = Math.max(1, Math.round(c.arcs));
+  const inner = Math.max(0.01, Math.min(0.99, c.inner / 100));
+  const outer = arcPoints(c, 1);
+  const xs = outer.map((p) => p.x);
+  const ys = outer.map((p) => p.y);
+  const w = Math.max(...xs) - Math.min(...xs);
+  const h = Math.max(...ys) - Math.min(...ys);
+  const kx = w > 1e-9 ? (b.x1 - b.x0) / w : 1;
+  const ky = h > 1e-9 ? (b.y1 - b.y0) / h : 1;
+  // Where the unit circle's middle lands once the outermost arc fills the box.
+  const cx = b.x0 + (0 - Math.min(...xs)) * kx;
+  const cy = b.y0 + (0 - Math.min(...ys)) * ky;
+  return Array.from({ length: arcs }, (_, i) => {
+    const radius = arcs === 1 ? 1 : inner + ((1 - inner) * i) / (arcs - 1);
+    return arcPoints(c, radius).map((p) => ({ x: cx + p.x * kx, y: cy + p.y * ky }));
+  });
 }
 
 /** Scale and shift points so they just fill the box, keeping their proportions. */
@@ -240,7 +275,8 @@ export function curveStrokes(shape: Shape): Point[][] {
   if (curve.kind === "parabolic") return parabolicPoints(curve, b);
   if (curve.kind === "polygon" || curve.kind === "star") return [fitToBox(cornerPoints(curve), b, true)];
   // A spiral and an arc are drawn round the box the way an ellipse is, so a wide box gives a wide one.
-  if (curve.kind === "spiral" || curve.kind === "arc") return [fitToBox(roundPoints(curve), b, true)];
+  if (curve.kind === "arc") return arcRings(curve, b);
+  if (curve.kind === "spiral") return [fitToBox(roundPoints(curve), b, true)];
   return [fitToBox(hypotrochoidPoints(curve), b)];
 }
 
@@ -262,6 +298,8 @@ export function curveFromData(raw: unknown): Curve | null {
   if (d.kind === "polygon") return { kind: "polygon", sides: n("sides", 6) };
   if (d.kind === "star") return { kind: "star", points: n("points", 5), inner: n("inner", 40) };
   if (d.kind === "spiral") return { kind: "spiral", turns: n("turns", 4), inner: n("inner", 5) };
-  if (d.kind === "arc") return { kind: "arc", start: n("start", 0), sweep: n("sweep", 180) };
+  if (d.kind === "arc") {
+    return { kind: "arc", start: n("start", 0), sweep: n("sweep", 180), arcs: n("arcs", 1), inner: n("inner", 40) };
+  }
   return null;
 }
