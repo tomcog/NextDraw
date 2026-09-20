@@ -84,7 +84,7 @@ export const CURVE_LABEL: Record<CurveKind, string> = {
 };
 
 /** The numbers a curve shows in the panel: what to call each one and how far it may go. */
-export const CURVE_FIELDS: Record<CurveKind, { key: string; label: string; min: number; max: number; step: number }[]> = {
+export const CURVE_FIELDS: Record<CurveKind, { key: string; label: string; min: number; max: number; step: number; unit?: string }[]> = {
   hypotrochoid: [
     { key: "R", label: "Fixed circle", min: 1, max: 200, step: 1 },
     { key: "r", label: "Rolling circle", min: -200, max: 200, step: 1 },
@@ -98,17 +98,17 @@ export const CURVE_FIELDS: Record<CurveKind, { key: string; label: string; min: 
   polygon: [{ key: "sides", label: "Sides", min: 3, max: 100, step: 1 }],
   star: [
     { key: "points", label: "Points", min: 2, max: 100, step: 1 },
-    { key: "inner", label: "Inner (%)", min: 1, max: 99, step: 5 },
+    { key: "inner", label: "Inner", min: 1, max: 99, step: 5, unit: "%" },
   ],
   spiral: [
     { key: "turns", label: "Turns", min: 0.25, max: 100, step: 0.5 },
-    { key: "inner", label: "Starts at (%)", min: 0, max: 95, step: 5 },
+    { key: "inner", label: "Starts at", min: 0, max: 95, step: 5, unit: "%" },
   ],
   arc: [
-    { key: "start", label: "From (°)", min: -360, max: 360, step: 15 },
-    { key: "sweep", label: "Sweep (°)", min: -360, max: 360, step: 15 },
+    { key: "start", label: "From", min: -360, max: 360, step: 15, unit: "°" },
+    { key: "sweep", label: "Sweep", min: -360, max: 360, step: 15, unit: "°" },
     { key: "arcs", label: "Arcs", min: 1, max: 200, step: 1 },
-    { key: "inner", label: "Innermost (%)", min: 1, max: 99, step: 5 },
+    { key: "inner", label: "Innermost", min: 1, max: 99, step: 5, unit: "%" },
   ],
 };
 

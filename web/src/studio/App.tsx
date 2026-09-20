@@ -1142,7 +1142,8 @@ export default function App() {
               <div className={styles.cardBody}>
                 <Section title="Shape" collapsibleKey="shape">
                   <NumberField
-                    label="Rotation (°)"
+                    label="Rotation"
+                    unit="°"
                     step={5}
                     value={chosen.rotation ?? 0}
                     onChange={setRotation}
@@ -1177,6 +1178,7 @@ export default function App() {
                           min={f.min}
                           max={f.max}
                           step={f.step}
+                          unit={f.unit}
                           value={Number((chosen.repeat as unknown as Record<string, number>)[f.key])}
                           onChange={(v) => setRepeat({ ...(chosen.repeat as Repeat), [f.key]: v } as Repeat)}
                         />
@@ -1210,6 +1212,7 @@ export default function App() {
                         min={f.min}
                         max={f.max}
                         step={f.step}
+                        unit={f.unit}
                         value={Number((chosen.curve as unknown as Record<string, number>)[f.key])}
                         onChange={(v) => setCurve({ ...(chosen.curve as Curve), [f.key]: v } as Curve)}
                       />
@@ -1238,13 +1241,15 @@ export default function App() {
                   {chosenFills.map((fill, i) => (
                     <div key={fill.id} className={styles.fillRow}>
                       <NumberField
-                        label={i === 0 ? "Angle (°)" : "Cross angle (°)"}
+                        label={i === 0 ? "Angle" : "Cross angle"}
+                        unit="°"
                         step={5}
                         value={fill.angle}
                         onChange={(angle) => setFillByHand(i, { ...fill, angle })}
                       />
                       <NumberField
-                        label="Spacing (mm)"
+                        label="Spacing"
+                        unit="mm"
                         step={0.1}
                         min={0.05}
                         value={fill.spacingMm}

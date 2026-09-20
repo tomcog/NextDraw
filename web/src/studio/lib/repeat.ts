@@ -46,17 +46,17 @@ export function defaultRepeat(kind: RepeatKind, s: Shape): Repeat {
   return { kind: "ring", count: 6, radius: Number((Math.max(w, h) * 1.5).toFixed(3)), facing: true };
 }
 
-export const REPEAT_FIELDS: Record<RepeatKind, { key: string; label: string; min: number; max: number; step: number }[]> = {
+export const REPEAT_FIELDS: Record<RepeatKind, { key: string; label: string; min: number; max: number; step: number; unit?: string }[]> = {
   grid: [
     { key: "across", label: "Across", min: 1, max: 100, step: 1 },
     { key: "down", label: "Down", min: 1, max: 100, step: 1 },
-    { key: "stepX", label: "Step across (in)", min: 0, max: 50, step: 0.1 },
-    { key: "stepY", label: "Step down (in)", min: 0, max: 50, step: 0.1 },
+    { key: "stepX", label: "Step across", min: 0, max: 50, step: 0.1, unit: "in" },
+    { key: "stepY", label: "Step down", min: 0, max: 50, step: 0.1, unit: "in" },
   ],
   ring: [
     // "Shapes" rather than "copies": the count takes in the shape that was drawn, not just its copies.
     { key: "count", label: "Shapes", min: 1, max: 200, step: 1 },
-    { key: "radius", label: "Radius (in)", min: 0, max: 50, step: 0.1 },
+    { key: "radius", label: "Radius", min: 0, max: 50, step: 0.1, unit: "in" },
   ],
 };
 

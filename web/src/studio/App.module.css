@@ -60,14 +60,18 @@
 }
 
 .pageRow,
+/* Fields side by side while they stay readable, then onto the next line: four of them in one column
+   left no room for the value once the unit sat beside it. */
 .fillRow {
   display: flex;
+  flex-wrap: wrap;
   align-items: flex-end;
   gap: 0.5rem;
 }
 
-.pageRow > :first-child,
-.fillRow > * { flex: 1; min-width: 0; }
+.pageRow > :first-child { flex: 1; min-width: 0; }
+
+.fillRow > * { flex: 1 1 4.5rem; min-width: 4.5rem; }
 
 /* Layers: the library's own row, with a bin after it. */
 .layerList {

@@ -109,7 +109,7 @@
   height: var(--ui-input-text-md-height, 24px); /* the fields are size="md" */
   display: flex;
   align-items: center;
-  font-size: 0.8125rem;
+  font-size: 0.75rem;
   color: var(--ui-text-muted);
   pointer-events: none;
 }

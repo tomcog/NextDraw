@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { InputText } from "@tomcoggia/ui";
+import styles from "./controls.module.css";
 
 interface Props {
   label: string;
@@ -8,6 +9,8 @@ interface Props {
   max?: number;
   step?: number;
   disabled?: boolean;
+  /** Shown inside the field after the value ("°", "mm", "in"), so the label can stay a plain name. */
+  unit?: string;
   hideLabel?: boolean; // the label still names the field for screen readers
   onChange: (value: number) => void;
 }
@@ -18,7 +21,7 @@ interface Props {
 // the typing lands on top of whatever that put in the box. So the draft is free text until it's
 // committed on blur or Enter, and only then is it clamped; a draft that isn't a number at all leaves
 // the value alone. The arrow keys commit as they step, so holding one still walks the value.
-export function NumberField({ label, value, min, max, step = 1, disabled, hideLabel, onChange }: Props) {
+export function NumberField({ label, value, min, max, step = 1, disabled, unit, hideLabel, onChange }: Props) {
   const [draft, setDraft] = useState(String(value));
   useEffect(() => setDraft(String(value)), [value]);
 
@@ -36,11 +39,13 @@ export function NumberField({ label, value, min, max, step = 1, disabled, hideLa
     if (next !== value) onChange(next);
   };
 
-  return (
+  const field = (
     <InputText
       size="md"
       label={label}
       hideLabel={hideLabel}
+      aria-label={unit ? `${label} (${unit})` : undefined}
+      style={unit ? { paddingRight: `${0.5 + unit.length * 0.5}rem` } : undefined}
       type="number"
       inputMode="decimal"
       step={step}
@@ -60,5 +65,13 @@ export function NumberField({ label, value, min, max, step = 1, disabled, hideLa
         }
       }}
     />
+  );
+
+  if (!unit) return field;
+  return (
+    <span className={styles.suffixed}>
+      {field}
+      <span className={styles.suffix} aria-hidden>{unit}</span>
+    </span>
   );
 }
