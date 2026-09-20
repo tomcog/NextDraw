@@ -4,7 +4,16 @@
 
 import { centerOf, type Shape } from "./shapes";
 
-export type RepeatKind = "grid" | "ring";
+export type RepeatKind = "line" | "grid" | "ring";
+
+/** Copies in a row, each `step` inches on from the last, in whatever direction `angle` points. */
+export interface LineRepeat {
+  kind: "line";
+  /** How many shapes stand in the row, the one that was drawn included. */
+  count: number;
+  step: number;
+  angle: number;
+}
 
 /** Copies in rows and columns, each `stepX`/`stepY` inches on from the last. */
 export interface GridRepeat {
@@ -25,9 +34,9 @@ export interface RingRepeat {
   facing: boolean;
 }
 
-export type Repeat = GridRepeat | RingRepeat;
+export type Repeat = LineRepeat | GridRepeat | RingRepeat;
 
-export const REPEAT_LABEL: Record<RepeatKind, string> = { grid: "Grid", ring: "Ring" };
+export const REPEAT_LABEL: Record<RepeatKind, string> = { line: "Row", grid: "Grid", ring: "Ring" };
 
 /** One copy's place: how far it is moved, and how far it is turned about its own middle. */
 export interface Placement {
@@ -40,6 +49,9 @@ export interface Placement {
 export function defaultRepeat(kind: RepeatKind, s: Shape): Repeat {
   const w = Math.abs(s.x2 - s.x) || 1;
   const h = Math.abs(s.y2 - s.y) || 1;
+  if (kind === "line") {
+    return { kind: "line", count: 4, step: Number((w * 1.2).toFixed(3)), angle: 0 };
+  }
   if (kind === "grid") {
     return { kind: "grid", across: 3, down: 2, stepX: Number((w * 1.2).toFixed(3)), stepY: Number((h * 1.2).toFixed(3)) };
   }
@@ -47,6 +59,11 @@ export function defaultRepeat(kind: RepeatKind, s: Shape): Repeat {
 }
 
 export const REPEAT_FIELDS: Record<RepeatKind, { key: string; label: string; min: number; max: number; step: number; unit?: string }[]> = {
+  line: [
+    { key: "count", label: "Shapes", min: 1, max: 500, step: 1 },
+    { key: "step", label: "Step", min: 0, max: 50, step: 0.1, unit: "in" },
+    { key: "angle", label: "Angle", min: -360, max: 360, step: 15, unit: "°" },
+  ],
   grid: [
     { key: "across", label: "Across", min: 1, max: 100, step: 1 },
     { key: "down", label: "Down", min: 1, max: 100, step: 1 },
@@ -68,6 +85,16 @@ export function placements(s: Shape): Placement[] {
   const r = s.repeat;
   const none: Placement[] = [{ dx: 0, dy: 0, deg: 0 }];
   if (!r) return none;
+  if (r.kind === "line") {
+    // Straight out from the shape, which stays where it was drawn: the first of the row.
+    const count = Math.max(1, Math.round(r.count));
+    const rad = (r.angle * Math.PI) / 180;
+    return Array.from({ length: count }, (_, i) => ({
+      dx: i * r.step * Math.cos(rad),
+      dy: i * r.step * Math.sin(rad),
+      deg: 0,
+    }));
+  }
   if (r.kind === "grid") {
     const across = Math.max(1, Math.round(r.across));
     const down = Math.max(1, Math.round(r.down));
@@ -105,6 +132,7 @@ export function repeatFromData(raw: unknown): Repeat | null {
   const d = raw as Record<string, unknown> | null;
   if (!d || typeof d !== "object") return null;
   const n = (key: string, fallback: number) => (Number.isFinite(Number(d[key])) ? Number(d[key]) : fallback);
+  if (d.kind === "line") return { kind: "line", count: n("count", 4), step: n("step", 1), angle: n("angle", 0) };
   if (d.kind === "grid") {
     return { kind: "grid", across: n("across", 1), down: n("down", 1), stepX: n("stepX", 1), stepY: n("stepY", 1) };
   }

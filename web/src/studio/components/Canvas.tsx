@@ -91,6 +91,17 @@ type Drag =
   // round rather than jumping to wherever it was grabbed.
   | { mode: "turn"; id: string; origin: Shape; from: number };
 
+/** The nearest eighth of a turn from where a line started: flat, upright, or at 45 degrees. */
+function straighten(x: number, y: number, toX: number, toY: number) {
+  const dx = toX - x;
+  const dy = toY - y;
+  const step = Math.PI / 4;
+  const angle = Math.round(Math.atan2(dy, dx) / step) * step;
+  // As long as the pointer has travelled, measured along the direction it is being held to.
+  const along = dx * Math.cos(angle) + dy * Math.sin(angle);
+  return { x: x + along * Math.cos(angle), y: y + along * Math.sin(angle) };
+}
+
 // The page at true proportions, with a one-inch grid. It keeps the page's own proportions and is
 // sized to them (--canvas-aspect), so the drawing gets as large as the space allows - the same way
 // Plot's preview fills its column.
@@ -215,7 +226,11 @@ export function Canvas({ page, shapes, fills, layers, activeLayer, model, zoom, 
     const p = pointAt(e);
     if (!p) return;
     if (drag.mode === "new") {
-      setDrag({ ...drag, shape: clampToPage({ ...drag.shape, x2: p.x, y2: p.y }, page) });
+      // Shift holds a line to the square and diagonal directions, the way a set square would.
+      const end = drag.shape.kind === "line" && e.shiftKey
+        ? straighten(drag.shape.x, drag.shape.y, p.x, p.y)
+        : p;
+      setDrag({ ...drag, shape: clampToPage({ ...drag.shape, x2: end.x, y2: end.y }, page) });
     } else if (drag.mode === "marquee") {
       setDrag({ ...drag, to: p });
     } else if (drag.mode === "move") {
