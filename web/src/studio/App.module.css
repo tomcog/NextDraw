@@ -122,8 +122,10 @@
   gap: 0.375rem;
 }
 
+/* One row while they fit, then onto the next: the card's width decides, not the number of tools. */
 .tools {
   display: flex;
+  flex-wrap: wrap;
   gap: 0.375rem;
 }
 

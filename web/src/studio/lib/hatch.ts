@@ -48,8 +48,13 @@ export interface Seg {
  * drawing rather than an outline round anything. Everything else can be filled, a polygon, a star or
  * a spirograph included - their fills are clipped to the outline itself, not to the box.
  */
+// A parabolic's strings are the drawing rather than an outline round anything, and a spiral and an
+// arc are lines that never close, so there is no inside for a fill to be in.
+const OPEN_CURVES = ["parabolic", "spiral", "arc"];
+
 export const canFill = (s: Shape) =>
-  s.kind !== "line" && s.curve?.kind !== "parabolic" && (s.kind !== "path" || (s.points?.length ?? 0) > 2);
+  s.kind !== "line" && !OPEN_CURVES.includes(s.curve?.kind ?? "")
+  && (s.kind !== "path" || (s.points?.length ?? 0) > 2);
 
 /** The closed outline a fill is clipped to: a curve's generated points, or a path's own. */
 const outlineOf = (s: Shape): Point[] => {

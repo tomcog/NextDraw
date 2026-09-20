@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Button, ButtonRound, Card, Checkbox, InputSelect, InputText, LayerController } from "@tomcoggia/ui";
-import { ArrowDownToLine, Circle, Copy, EllipsisVertical, FilePlus, Flame, FolderOpen, Layers2, LoaderPinwheel, Minus, MousePointer2, Pentagon, Plus, Ratio, Redo2, Spline, Square, Star, StickyNote, Trash2, Undo2 } from "lucide-react";
+import { ArrowDownToLine, Circle, Copy, EllipsisVertical, FilePlus, Flame, FolderOpen, Layers2, LoaderPinwheel, Minus, MousePointer2, Pentagon, Plus, Radar, Rainbow, Ratio, Redo2, Spline, Square, Star, StickyNote, Trash2, Undo2 } from "lucide-react";
 import { FileBrowser, LAST_FOLDER_KEY, type OpenResult } from "../components/FileBrowser";
 import { Section } from "../components/controls/Section";
 import { NumberField } from "../components/controls/NumberField";
@@ -45,6 +45,8 @@ const TOOLS: { kind: Tool; label: string; hint: string; icon: JSX.Element }[] = 
   { kind: "parabolic", label: "Parabolic curve", hint: "Draw curve stitching: drag on the page, then set its strings", icon: <Spline /> },
   { kind: "polygon", label: "Polygon", hint: "Draw a polygon: drag on the page, then set how many sides", icon: <Pentagon /> },
   { kind: "star", label: "Star", hint: "Draw a star: drag on the page, then set its points", icon: <Star /> },
+  { kind: "spiral", label: "Spiral", hint: "Draw a spiral: drag on the page, then set its turns", icon: <Radar /> },
+  { kind: "arc", label: "Arc", hint: "Draw an arc: drag on the page, then set where it starts and how far it goes", icon: <Rainbow /> },
 ];
 
 // Used when a tool has no palette of its own, so there is always a pen to draw with.
@@ -658,6 +660,27 @@ export default function App() {
   const [rowMenu, setRowMenu] = useState<{ kind: "layer" | "shape"; id: string; anchor: HTMLElement } | null>(null);
   // The shape whose size in the list is open for typing into. One at a time, like a rename.
   const [sizing, setSizing] = useState<string | null>(null);
+
+  // The size boxes close as soon as they stop being what you're doing: a click anywhere else, Escape,
+  // or picking another shape. Blur alone isn't enough - clicking the page moves nothing's focus.
+  useEffect(() => {
+    if (!sizing) return;
+    const away = (e: Event) => {
+      const el = e.target as Node;
+      if (!(el instanceof Node) || !document.querySelector(`.${styles.sizeFields}`)?.contains(el)) setSizing(null);
+    };
+    const key = (e: KeyboardEvent) => { if (e.key === "Escape") setSizing(null); };
+    document.addEventListener("pointerdown", away, true);
+    document.addEventListener("keydown", key);
+    return () => {
+      document.removeEventListener("pointerdown", away, true);
+      document.removeEventListener("keydown", key);
+    };
+  }, [sizing]);
+  useEffect(() => {
+    if (sizing && selected !== sizing) setSizing(null);
+  }, [selected, sizing]);
+
 
   const removeLayer = (id: string) => {
     if (layers.length < 2) return; // there is always somewhere to draw

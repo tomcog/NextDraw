@@ -7,7 +7,7 @@
 
 import { boxOf, type Shape } from "./shapes";
 
-export type CurveKind = "hypotrochoid" | "parabolic" | "polygon" | "star";
+export type CurveKind = "hypotrochoid" | "parabolic" | "polygon" | "star" | "spiral" | "arc";
 
 /** A spirograph: a circle of radius `r` rolling inside one of radius `R`, pen `d` from its centre. */
 export interface Hypotrochoid {
@@ -38,7 +38,21 @@ export interface Star {
   inner: number;
 }
 
-export type Curve = Hypotrochoid | Parabolic | Polygon | Star;
+/** An Archimedean spiral: evenly spaced turns, wound out from `inner` percent of the way out. */
+export interface Spiral {
+  kind: "spiral";
+  turns: number;
+  inner: number; // where the winding starts, as a percent of the full radius
+}
+
+/** A piece of the box's ellipse: `sweep` degrees of it, starting `start` degrees round from the top. */
+export interface Arc {
+  kind: "arc";
+  start: number;
+  sweep: number;
+}
+
+export type Curve = Hypotrochoid | Parabolic | Polygon | Star | Spiral | Arc;
 
 export interface Point {
   x: number;
@@ -50,6 +64,8 @@ export const DEFAULT_CURVE: Record<CurveKind, Curve> = {
   parabolic: { kind: "parabolic", strings: 12, corners: 4 },
   polygon: { kind: "polygon", sides: 6 },
   star: { kind: "star", points: 5, inner: 40 },
+  spiral: { kind: "spiral", turns: 4, inner: 5 },
+  arc: { kind: "arc", start: 0, sweep: 180 },
 };
 
 export const CURVE_LABEL: Record<CurveKind, string> = {
@@ -57,6 +73,8 @@ export const CURVE_LABEL: Record<CurveKind, string> = {
   parabolic: "Parabolic curve",
   polygon: "Polygon",
   star: "Star",
+  spiral: "Spiral",
+  arc: "Arc",
 };
 
 /** The numbers a curve shows in the panel: what to call each one and how far it may go. */
@@ -75,6 +93,14 @@ export const CURVE_FIELDS: Record<CurveKind, { key: string; label: string; min: 
   star: [
     { key: "points", label: "Points", min: 2, max: 100, step: 1 },
     { key: "inner", label: "Inner (%)", min: 1, max: 99, step: 5 },
+  ],
+  spiral: [
+    { key: "turns", label: "Turns", min: 0.25, max: 100, step: 0.5 },
+    { key: "inner", label: "Starts at (%)", min: 0, max: 95, step: 5 },
+  ],
+  arc: [
+    { key: "start", label: "From (°)", min: -360, max: 360, step: 15 },
+    { key: "sweep", label: "Sweep (°)", min: -360, max: 360, step: 15 },
   ],
 };
 
@@ -124,6 +150,30 @@ function cornerPoints(c: Polygon | Star): Point[] {
     points.push({ x: r * Math.cos(a), y: r * Math.sin(a) });
   }
   points.push(points[0]); // closed, so the pen finishes where it started
+  return points;
+}
+
+/** A spiral wound out from the middle, and an arc round the same circle: both in their own units. */
+function roundPoints(c: Spiral | Arc): Point[] {
+  const points: Point[] = [];
+  if (c.kind === "spiral") {
+    const turns = Math.max(0.05, c.turns);
+    const from = Math.max(0, Math.min(95, c.inner)) / 100;
+    const steps = Math.max(64, Math.min(20000, Math.round(turns * 180)));
+    for (let i = 0; i <= steps; i++) {
+      const t = i / steps;
+      const a = -Math.PI / 2 + t * turns * 2 * Math.PI;
+      const r = from + (1 - from) * t;
+      points.push({ x: r * Math.cos(a), y: r * Math.sin(a) });
+    }
+    return points;
+  }
+  const sweep = Math.max(-360, Math.min(360, c.sweep));
+  const steps = Math.max(8, Math.round(Math.abs(sweep) / 2));
+  for (let i = 0; i <= steps; i++) {
+    const a = ((c.start - 90 + (sweep * i) / steps) * Math.PI) / 180;
+    points.push({ x: Math.cos(a), y: Math.sin(a) });
+  }
   return points;
 }
 
@@ -189,6 +239,8 @@ export function curveStrokes(shape: Shape): Point[][] {
   const b = boxOf(shape);
   if (curve.kind === "parabolic") return parabolicPoints(curve, b);
   if (curve.kind === "polygon" || curve.kind === "star") return [fitToBox(cornerPoints(curve), b, true)];
+  // A spiral and an arc are drawn round the box the way an ellipse is, so a wide box gives a wide one.
+  if (curve.kind === "spiral" || curve.kind === "arc") return [fitToBox(roundPoints(curve), b, true)];
   return [fitToBox(hypotrochoidPoints(curve), b)];
 }
 
@@ -209,5 +261,7 @@ export function curveFromData(raw: unknown): Curve | null {
   }
   if (d.kind === "polygon") return { kind: "polygon", sides: n("sides", 6) };
   if (d.kind === "star") return { kind: "star", points: n("points", 5), inner: n("inner", 40) };
+  if (d.kind === "spiral") return { kind: "spiral", turns: n("turns", 4), inner: n("inner", 5) };
+  if (d.kind === "arc") return { kind: "arc", start: n("start", 0), sweep: n("sweep", 180) };
   return null;
 }
