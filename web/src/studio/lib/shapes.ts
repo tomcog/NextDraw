@@ -35,6 +35,11 @@ export interface Shape {
    */
   runs?: Point[][];
   /**
+   * What it is called in the list, when it has been given a name. Without one the list says what it
+   * is and where it sits - Path 3 - which is enough until a drawing has enough in it that it isn't.
+   */
+  name?: string;
+  /**
    * Whether a path is drawn as a curve through its points rather than as the lines between them.
    * The points stay what they are - each one can still be dragged, and simplifying leaves fewer of
    * them - and the curve is worked out from them every time it is drawn or written out.
@@ -119,6 +124,7 @@ export const boxOf = (s: Shape) => ({
 });
 
 export const shapeName = (s: Shape, index: number) =>
+  s.name?.trim() ||
   `${s.kind === "text" ? (s.text?.trim().split("\n")[0].slice(0, 20) || "Text")
     : s.curve ? CURVE_LABEL[s.curve.kind]
     : { rect: "Rectangle", ellipse: "Ellipse", line: "Line", curve: "Curve", path: "Path", text: "Text" }[s.kind]} ${s.kind === "text" ? "" : index + 1}`.trim();

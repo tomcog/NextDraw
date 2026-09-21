@@ -76,6 +76,7 @@ export function parseDrawing(text: string): Opened {
   let design: {
     fills?: unknown; on?: Record<string, string>; curves?: unknown;
     turned?: Record<string, unknown>; repeats?: Record<string, unknown>; smoothed?: Record<string, unknown>;
+    names?: Record<string, unknown>;
     texts?: Record<string, { text?: unknown; font?: unknown; box?: unknown; tracking?: unknown; leading?: unknown }>;
   } = {};
   try {
@@ -278,6 +279,12 @@ export function parseDrawing(text: string): Opened {
   for (const s of shapes) {
     const repeat = repeatFromData(design.repeats?.[s.id]);
     if (repeat) s.repeat = repeat;
+  }
+
+  // What each shape has been called, for the ones that were given a name.
+  for (const s of shapes) {
+    const name = design.names?.[s.id];
+    if (typeof name === "string" && name.trim()) s.name = name.trim();
   }
 
   // The points behind each smoothed path. What's in the file is the curve walked out into segments;

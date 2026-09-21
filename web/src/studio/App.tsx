@@ -942,6 +942,13 @@ export default function App() {
       return { ...l, name: uniqueName(wanted, list.filter((o) => o.id !== id).map((o) => o.name)) };
     }));
 
+  // The same for a shape: typed in place, settled when the field is left. A name that is wiped out
+  // goes back to being what the shape is and where it sits, rather than being left blank.
+  const typeShapeName = (id: string, name: string) =>
+    setShapes((list) => list.map((s) => (s.id === id ? { ...s, name } : s)));
+  const settleShapeName = (id: string) =>
+    setShapes((list) => list.map((s) => (s.id === id ? { ...s, name: s.name?.trim() || undefined } : s)));
+
   // Any colour at all for a layer, from the system colour picker - for a pen that isn't in the tool's
   // palette. Only the colour changes; the layer keeps the name it has.
   const colorInput = useRef<HTMLInputElement>(null);
@@ -1478,7 +1485,19 @@ export default function App() {
                               }}
                               label={
                                 <span className={styles.shapeLabel}>
-                                  <span className={styles.shapeName}>{name}</span>
+                                  <input
+                                    className={styles.shapeName}
+                                    value={name}
+                                    aria-label={`Name of ${name}`}
+                                    title="The shape's name: click to change it"
+                                    disabled={busy}
+                                    onFocus={() => record()}
+                                    onChange={(e) => typeShapeName(sh.id, e.target.value)}
+                                    onBlur={() => settleShapeName(sh.id)}
+                                    onKeyDown={(e) => {
+                                      if (e.key === "Enter" || e.key === "Escape") e.currentTarget.blur();
+                                    }}
+                                  />
                                   {/* How big it is, at the end of the row. Numbers alone: the page is
                                       inches throughout, and setting them is the kebab's job. */}
                                   <span className={styles.shapeSize}>

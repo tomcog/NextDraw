@@ -156,6 +156,7 @@ function designBlock(fills: Fill[], shapes: Shape[], layers: Layer[]): string {
   const turned = shapes.filter((s) => s.rotation);
   const repeated = shapes.filter((s) => s.repeat);
   const smoothed = shapes.filter((s) => s.smooth && s.kind === "path");
+  const named = shapes.filter((s) => s.name?.trim());
   const data = {
     on: Object.fromEntries(shapes.map((s) => [s.id, nameOf.get(s.layerId) ?? ""])),
     // How far each turned shape is turned. The file already draws it turned; this is what lets it be
@@ -164,6 +165,11 @@ function designBlock(fills: Fill[], shapes: Shape[], layers: Layer[]): string {
     // How each repeated shape repeats. The copies are all in the file for Plot to draw; this is what
     // lets Studio pick them up again as one shape drawn many times.
     ...(repeated.length ? { repeats: Object.fromEntries(repeated.map((s) => [s.id, s.repeat])) } : {}),
+    // What shapes have been called. Only the ones given a name: the rest are named after what they
+    // are, and that is worked out again every time the drawing is opened.
+    ...(named.length
+      ? { names: Object.fromEntries(named.map((s) => [s.id, s.name?.trim()])) }
+      : {}),
     // The points a smoothed path was drawn through. The file holds the curve itself, as the lines
     // the pen makes; these are what lets it be picked up again as a few points to drag rather than
     // as the hundreds they were walked out into.

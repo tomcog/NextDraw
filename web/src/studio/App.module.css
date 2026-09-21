@@ -157,13 +157,21 @@
   min-width: 0;
 }
 
+/* A field that reads as the name until it is typed into, the way a layer's does. */
 .shapeName {
   flex: 1 1 auto;
   min-width: 2.5rem;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  border: 0;
+  padding: 0;
+  background: none;
+  font: inherit;
+  color: inherit;
 }
+
+.shapeName:focus { outline: none; }
 
 .shapeRow {
   display: flex;
