@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Button, ButtonRound, Card, Checkbox, ConfirmButton, InputSelect, InputText, InputTextarea, LayerController } from "@tomcoggia/ui";
-import { AlignJustify, ArrowDownToLine, AudioWaveform, Circle, CircleDashed, CircleDot, Copy, Ellipsis, EllipsisVertical, FilePlus, Flame, FlameKindling, FolderOpen, Grid2x2, Layers2, LoaderPinwheel, Menu, Minus, MoveHorizontal, MoveVertical, MousePointer2, Orbit, PaintBucket, PenLine, Pentagon, Plus, Radar, Rainbow, Redo2, Repeat as RepeatIcon, RotateCw, Save, Spline, Square, SquareDimensions, Star, Trash2, Type, Undo2, Waves, Waypoints } from "lucide-react";
+import { AlignJustify, ArrowDownToLine, AudioWaveform, Circle, CircleDashed, CircleDot, ClipboardCopy, ClipboardPaste, Copy, Ellipsis, EllipsisVertical, FilePlus, Flame, FlameKindling, FolderOpen, Grid2x2, Layers2, LoaderPinwheel, Menu, Minus, MoveHorizontal, MoveVertical, MousePointer2, Orbit, PaintBucket, PenLine, Pentagon, Plus, Radar, Rainbow, Redo2, Repeat as RepeatIcon, RotateCw, Save, Spline, Square, SquareDimensions, Star, Trash2, Type, Undo2, Waves, Waypoints } from "lucide-react";
 import { FileBrowser, LAST_FOLDER_KEY, type OpenResult } from "../components/FileBrowser";
 import { Section } from "../components/controls/Section";
 import { NumberField } from "../components/controls/NumberField";
@@ -279,6 +279,32 @@ export default function App() {
 
   // A copy of a shape and its fill, on the same layer, nudged down and to the right so it can be
   // seen - and chosen, ready to be dragged where it's wanted.
+  // Copied shapes, kept in the app rather than in the system clipboard: what is on it is a shape
+  // with its fills and its own numbers, and nothing outside Studio would know what to do with that.
+  const [clipboard, setClipboard] = useState<{ shape: Shape; fills: Fill[] } | null>(null);
+
+  const copyShape = (id: string) => {
+    const shape = shapes.find((s) => s.id === id);
+    if (!shape) return;
+    setClipboard({ shape, fills: fills.filter((f) => f.shapeId === id) });
+  };
+
+  /** Put the copied shape down on a layer - the one being drawn on unless another is named. */
+  const pasteShape = (layerId?: string) => {
+    if (!clipboard) return;
+    record();
+    // A step down and across, so it lands beside what it came from rather than exactly on it.
+    const copy: Shape = {
+      ...moveBy(clipboard.shape, 0.25, 0.25, page),
+      id: newShapeId(),
+      layerId: layerId ?? activeLayer,
+    };
+    setShapes((list) => [...list, copy]);
+    setFills((list) => [...list, ...clipboard.fills.map((f) => ({ ...f, id: newFillId(), shapeId: copy.id }))]);
+    if (layerId && layerId !== activeLayer) setActiveLayer(layerId);
+    pick(copy.id);
+  };
+
   const duplicateShape = (id: string) => {
     const shape = shapes.find((s) => s.id === id);
     if (!shape) return;
@@ -369,6 +395,26 @@ export default function App() {
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, []);
+
+  // The same two things from the keyboard. Only with a modifier, and never while typing, where the
+  // browser's own copy and paste belong to the text.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (!(e.metaKey || e.ctrlKey) || e.altKey) return;
+      const el = document.activeElement;
+      if (el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement || (el as HTMLElement)?.isContentEditable) return;
+      const key = e.key.toLowerCase();
+      if (key === "c" && selected.length === 1) {
+        e.preventDefault();
+        copyShape(selected[0]);
+      } else if (key === "v" && clipboard) {
+        e.preventDefault();
+        pasteShape();
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Delete (or Backspace) throws away everything picked - except while typing, where those keys
   // belong to the text. Undo brings it back, since removeShapes records first.
@@ -1111,6 +1157,12 @@ export default function App() {
                   setRenamingLayer(rowMenu.id);
                 },
               },
+              {
+                label: "Paste",
+                icon: <ClipboardPaste />,
+                disabled: !clipboard,
+                onSelect: () => pasteShape(rowMenu.id),
+              },
               { label: "Duplicate", icon: <Copy />, onSelect: () => duplicateLayer(rowMenu.id) },
               {
                 label: "Merge with below",
@@ -1153,6 +1205,7 @@ export default function App() {
                   },
                 ]
                 : []),
+              { label: "Copy", icon: <ClipboardCopy />, onSelect: () => copyShape(rowMenu.id) },
               {
                 label: "Set size",
                 icon: <SquareDimensions />,
