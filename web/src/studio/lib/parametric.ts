@@ -279,7 +279,11 @@ function parabolicPoints(c: Parabolic, b: ReturnType<typeof boxOf>): Point[][] {
   const along = (from: Point, to: Point, t: number) => ({ x: from.x + (to.x - from.x) * t, y: from.y + (to.y - from.y) * t });
   return arms.map(({ at, a, b: arm }) => {
     const run: Point[] = [];
-    for (let i = 1; i <= n; i++) {
+    // From 0 rather than 1, so both arms are drawn and not just the one. The string at either end
+    // is the degenerate one - it runs from the far end of an arm to the corner, which is that whole
+    // side - and stopping at 1 drew the last of them but never the first, leaving the corner with a
+    // solid line down one side and nothing down the other.
+    for (let i = 0; i <= n; i++) {
       // Out along one string and back along the next, so one corner is a single stroke.
       const first = along(at, a, i / n);
       const second = along(arm, at, i / n);
