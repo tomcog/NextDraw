@@ -179,3 +179,45 @@ export function flattenPath(d: string, step = 0.01): Point[][] {
   flush();
   return runs;
 }
+
+/**
+ * A run with the points it doesn't need taken out: Douglas-Peucker, which keeps every point that is
+ * further than `tolerance` from the line its neighbours make and drops the rest. The ends are always
+ * kept, so a closed run stays closed, and the shape stays within the tolerance of what it was.
+ */
+export function simplifyRun(points: Point[], tolerance: number): Point[] {
+  if (points.length < 3 || tolerance <= 0) return points;
+  const keep = new Array<boolean>(points.length).fill(false);
+  keep[0] = true;
+  keep[points.length - 1] = true;
+  // Worked through a list rather than by recursion: a path of thousands of points would otherwise
+  // go as deep as it is long.
+  const spans: [number, number][] = [[0, points.length - 1]];
+  while (spans.length) {
+    const [from, to] = spans.pop()!;
+    if (to <= from + 1) continue;
+    const a = points[from];
+    const b = points[to];
+    const dx = b.x - a.x;
+    const dy = b.y - a.y;
+    const len = Math.hypot(dx, dy);
+    let worst = -1;
+    let at = from;
+    for (let i = from + 1; i < to; i++) {
+      const p = points[i];
+      // How far the point lies off the line from a to b - or off a itself, where they meet.
+      const away = len < 1e-12
+        ? Math.hypot(p.x - a.x, p.y - a.y)
+        : Math.abs(dy * (p.x - a.x) - dx * (p.y - a.y)) / len;
+      if (away > worst) {
+        worst = away;
+        at = i;
+      }
+    }
+    if (worst > tolerance) {
+      keep[at] = true;
+      spans.push([from, at], [at, to]);
+    }
+  }
+  return points.filter((_, i) => keep[i]);
+}

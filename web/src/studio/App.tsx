@@ -19,13 +19,13 @@ import { StudioHeader } from "./components/StudioHeader";
 import { canConnect, canFill, fillNumbers, newFillId, FILL_LABEL, type Fill, type FillKind } from "./lib/hatch";
 import { closingTurns, curveStrokes, CURVE_FIELDS, type Curve, type Point } from "./lib/parametric";
 import { fontNames, loadFont, type StrokeFont } from "./lib/font";
-import { flattenPath } from "./lib/path";
+import { flattenPath, simplifyRun } from "./lib/path";
 import { fitText, textRuns } from "./lib/text";
 import { defaultRepeat, placements, REPEAT_FIELDS, type Repeat, type RepeatKind } from "./lib/repeat";
 import { parseDrawing } from "./lib/parse";
 import { PaletteMenu } from "../components/controls/PaletteMenu";
 import { RowMenu } from "../components/controls/RowMenu";
-import { boxOf, centerOf, clampToPage, moveBy, newLayerId, newShapeId, outlinePoints, pathRuns, pointsBox, resizeTo, shapeName, turnPoint, type Layer, type Page, type Shape } from "./lib/shapes";
+import { boxOf, centerOf, clampToPage, moveBy, newLayerId, newShapeId, outlinePoints, pathRuns, pointsBox, resizeTo, shapeName, turnPoint, POINT_HANDLE_LIMIT, type Layer, type Page, type Shape } from "./lib/shapes";
 import { buildSvg, cleanFileName } from "./lib/svg";
 import styles from "./App.module.css";
 
@@ -59,6 +59,7 @@ const PLAIN_PEN: PenColor = { name: "Black", color: "#262626" };
 const TOOL_KEY = "studio-tool";
 const FONT_KEY = "studio-font";
 const SNAP_KEY = "studio-snap";
+const SIMPLIFY_KEY = "studio-simplify";
 
 // What each kind of fill is, at a glance, and what it costs the pen.
 const FILL_ICON: Record<FillKind, JSX.Element> = {
@@ -153,6 +154,8 @@ export default function App() {
   // a way of working rather than a property of the drawing.
   const [snapping, setSnapping] = useState<boolean>(() => load<boolean>(`${SNAP_KEY}-on`) ?? false);
   const [snapStep, setSnapStep] = useState<number>(() => load<number>(SNAP_KEY) ?? 0.25);
+  // How far a simplified path may stray from the one it was, in millimetres on the paper.
+  const [simplifyMm, setSimplifyMm] = useState<number>(() => load<number>(SIMPLIFY_KEY) ?? 0.2);
   const [model, setModel] = useState<PlotterModel | undefined>();
   // Paper to begin with: the page is what's being drawn on, and the bed is context around it.
   const [zoom, setZoom] = useState<Zoom>("paper");
@@ -565,6 +568,7 @@ export default function App() {
   }, [font]);
   useEffect(() => remember(`${SNAP_KEY}-on`, snapping), [snapping]);
   useEffect(() => remember(SNAP_KEY, snapStep), [snapStep]);
+  useEffect(() => remember(SIMPLIFY_KEY, simplifyMm), [simplifyMm]);
 
   /** Change a text shape: its words, its font, or the room between letters and lines. Its box
    *  follows whatever that comes to. */
@@ -753,6 +757,24 @@ export default function App() {
     setShapes((list) => list.flatMap((s) => (s.id === first.id ? [joined] : gone.includes(s.id) ? [] : [s])));
     setFills((list) => list.filter((f) => !gone.includes(f.shapeId)));
     setSelected([first.id]);
+  };
+
+  /**
+   * Drop the points a path doesn't need. A drawing that has been through another program arrives
+   * with its curves walked into thousands of points; this leaves the ones that carry the shape, so
+   * they can be dragged - and the plotter has less to read.
+   */
+  const simplifyShape = (id: string) => {
+    const shape = shapes.find((s) => s.id === id);
+    const runs = shape ? pathRuns(shape) : [];
+    if (!shape || !runs.length) return;
+    const tolerance = simplifyMm / 25.4;
+    const simpler = runs.map((run) => simplifyRun(run, tolerance)).filter((run) => run.length > 1);
+    if (!simpler.length || simpler.reduce((n, r) => n + r.length, 0) >= runs.reduce((n, r) => n + r.length, 0)) return;
+    record();
+    setShapes((list) => list.map((s) => (s.id === id
+      ? { ...s, ...(s.runs ? { runs: simpler } : { points: simpler[0] }) }
+      : s)));
   };
 
   /** Take a joined shape apart again: each run becomes a shape of its own. */
@@ -1671,6 +1693,30 @@ export default function App() {
                   />
                   {/* Baking takes the whole thing - every copy of a repeat, every letter of a text -
                       and leaves paths whose points can be pulled about one at a time. */}
+                  {chosen.kind === "path" && (() => {
+                    const points = pathRuns(chosen).reduce((n, r) => n + r.length, 0);
+                    return (
+                      <>
+                        <div className={styles.fillRow}>
+                          <Button size="md" variant="secondary" onClick={() => simplifyShape(chosen.id)}>
+                            Simplify
+                          </Button>
+                          <NumberField
+                            label="Within"
+                            unit="mm"
+                            min={0.01}
+                            max={10}
+                            step={0.05}
+                            value={simplifyMm}
+                            onChange={setSimplifyMm}
+                          />
+                        </div>
+                        <p className={styles.empty}>
+                          {`${points} point${points === 1 ? "" : "s"}${points > POINT_HANDLE_LIMIT ? " - too many to drag one by one" : ""}`}
+                        </p>
+                      </>
+                    );
+                  })()}
                   {(chosen.runs?.length ?? 0) > 1 && (
                     <Button size="md" variant="secondary" onClick={() => splitShape(chosen.id)}>
                       {`Split into ${chosen.runs?.length} shapes`}
