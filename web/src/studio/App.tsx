@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Button, ButtonRound, Card, Checkbox, InputSelect, InputText, InputTextarea, LayerController } from "@tomcoggia/ui";
-import { AlignJustify, ArrowDownToLine, AudioWaveform, Circle, CircleDashed, CircleDot, Copy, Ellipsis, EllipsisVertical, FilePlus, Flame, FlameKindling, FolderOpen, Grid2x2, Layers2, LoaderPinwheel, Menu, Minus, MoveHorizontal, MoveVertical, MousePointer2, Orbit, PaintBucket, Pentagon, Plus, Radar, Rainbow, Redo2, Spline, Square, SquareDimensions, Star, Trash2, Type, Undo2, Waves, Waypoints } from "lucide-react";
+import { AlignJustify, ArrowDownToLine, AudioWaveform, Circle, CircleDashed, CircleDot, Copy, Ellipsis, EllipsisVertical, FilePlus, Flame, FlameKindling, FolderOpen, Grid2x2, Layers2, LoaderPinwheel, Menu, Minus, MoveHorizontal, MoveVertical, MousePointer2, Orbit, PaintBucket, Pentagon, Plus, Radar, Rainbow, Redo2, Repeat as RepeatIcon, Spline, Square, SquareDimensions, Star, Trash2, Type, Undo2, Waves, Waypoints } from "lucide-react";
 import { FileBrowser, LAST_FOLDER_KEY, type OpenResult } from "../components/FileBrowser";
 import { Section } from "../components/controls/Section";
 import { NumberField } from "../components/controls/NumberField";
@@ -163,6 +163,9 @@ export default function App() {
   // And whether the hatch settings are open. A shape is filled or it isn't, and the numbers behind
   // the fill are worth looking at only while that is being decided.
   const [filling, setFilling] = useState(false);
+  // And whether the repeat settings are open, for the same reason: how many of a shape there are is
+  // settled early and then left alone.
+  const [repeating, setRepeating] = useState(false);
   const [model, setModel] = useState<PlotterModel | undefined>();
   // Paper to begin with: the page is what's being drawn on, and the bed is context around it.
   const [zoom, setZoom] = useState<Zoom>("paper");
@@ -1782,17 +1785,29 @@ export default function App() {
             <Card variant="flat" className={styles.controls}>
               <div className={`${styles.cardBody} ${styles.settings}`}>
                 <Section title="Transform" collapsibleKey="transform">
-                <Section title="Rotate" collapsibleKey="rotate">
-                  <NumberField
-                    label="Rotation"
-                    unit="°"
-                    step={5}
-                    value={chosen.rotation ?? 0}
-                    onChange={setRotation}
+                <div className={styles.tools} role="group" aria-label="Transform this shape">
+                  <ButtonRound
+                    size="sm"
+                    icon={<RepeatIcon />}
+                    className={repeating ? controls.roundActive : undefined}
+                    aria-label="Repeat"
+                    aria-expanded={repeating}
+                    aria-pressed={repeating}
+                    title="Repeat: draw this shape more than once, in a row, a grid or a ring"
+                    onClick={() => setRepeating((on) => !on)}
                   />
-                </Section>
+                </div>
 
-                <Section title="Repeat" collapsibleKey="repeat">
+                <NumberField
+                  label="Rotation"
+                  unit="°"
+                  step={5}
+                  value={chosen.rotation ?? 0}
+                  onChange={setRotation}
+                />
+
+                {repeating && (
+                <>
                   <div className={styles.tools} role="group" aria-label="How this shape repeats">
                     {REPEATS.map((r) => {
                       const on = (chosen.repeat?.kind ?? null) === r.kind;
@@ -1836,7 +1851,8 @@ export default function App() {
                   {chosen.repeat && (
                     <p className={styles.empty}>{`${placements(chosen).length} shapes in all, counting the one you drew`}</p>
                   )}
-                </Section>
+                </>
+                )}
                 </Section>
               </div>
             </Card>
