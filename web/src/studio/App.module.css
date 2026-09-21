@@ -204,6 +204,9 @@
 .layerRow [class*="lead"],
 .layerRow [class*="label"] { flex: 1; min-width: 0; }
 
+/* The library keeps room for a row's number even when there is none to print. */
+.shapeList [class*="number"] { display: none; }
+
 .shapeSize {
   flex: none;
   padding: 0.125rem 0.25rem;

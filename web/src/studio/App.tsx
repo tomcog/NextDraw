@@ -1422,7 +1422,10 @@ export default function App() {
                               // and a browser only ever lets one radio of a group be on.
                               name={`studio-shape-${sh.id}`}
                               purpose="draw"
-                              number={i + 1}
+                              // No numeral: a layer is numbered because it is plotted in that
+                              // order, and a shape on it isn't. The row still says which it is to a
+                              // screen reader, below.
+                              number={null}
                               // No swatch: everything on a layer draws in that layer's one ink, and
                               // the row right above says which it is.
                               hideVisibility
