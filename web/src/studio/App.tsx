@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Button, ButtonRound, Card, Checkbox, InputSelect, InputText, InputTextarea, LayerController } from "@tomcoggia/ui";
-import { AlignJustify, ArrowDownToLine, AudioWaveform, Circle, CircleDashed, CircleDot, Copy, Ellipsis, EllipsisVertical, FilePlus, Flame, FlameKindling, FolderOpen, Grid2x2, Layers2, LoaderPinwheel, Menu, Minus, MousePointer2, Orbit, Pentagon, Plus, Radar, Rainbow, Ratio, Redo2, Spline, Square, SquareDimensions, Star, Trash2, Type, Undo2, Waves, Waypoints } from "lucide-react";
+import { AlignJustify, ArrowDownToLine, AudioWaveform, Circle, CircleDashed, CircleDot, Copy, Ellipsis, EllipsisVertical, FilePlus, Flame, FlameKindling, FolderOpen, Grid2x2, Layers2, LoaderPinwheel, Menu, Minus, MoveHorizontal, MoveVertical, MousePointer2, Orbit, Pentagon, Plus, Radar, Rainbow, Redo2, Spline, Square, SquareDimensions, Star, Trash2, Type, Undo2, Waves, Waypoints } from "lucide-react";
 import { FileBrowser, LAST_FOLDER_KEY, type OpenResult } from "../components/FileBrowser";
 import { Section } from "../components/controls/Section";
 import { NumberField } from "../components/controls/NumberField";
@@ -1169,16 +1169,30 @@ export default function App() {
                         </option>
                       ))}
                     </InputSelect>
-                    <ButtonRound
-                      size="sm"
-                      icon={<Ratio />}
-                      aria-label="Turn the page"
-                      title="Turn the page: swap its width and height"
-                      onClick={() => {
-                        record();
-                        setPage((p) => ({ w: p.h, h: p.w }));
-                      }}
-                    />
+                    {/* The page lies one way or the other; two buttons say which, and the one the
+                        page is already in stays pressed. */}
+                    {[
+                      { wide: true, icon: <MoveHorizontal />, label: "Landscape", hint: "Landscape: the page lies on its side" },
+                      { wide: false, icon: <MoveVertical />, label: "Portrait", hint: "Portrait: the page stands up" },
+                    ].map(({ wide, icon, label, hint }) => {
+                      const on = page.w > page.h === wide;
+                      return (
+                        <ButtonRound
+                          key={label}
+                          size="sm"
+                          icon={icon}
+                          className={on ? controls.roundActive : undefined}
+                          aria-label={label}
+                          aria-pressed={on}
+                          title={hint}
+                          onClick={() => {
+                            if (on) return; // already lying that way
+                            record();
+                            setPage((p) => ({ w: wide ? Math.max(p.w, p.h) : Math.min(p.w, p.h), h: wide ? Math.min(p.w, p.h) : Math.max(p.w, p.h) }));
+                          }}
+                        />
+                      );
+                    })}
                   </div>
                 </Section>
 
