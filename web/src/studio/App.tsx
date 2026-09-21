@@ -1514,6 +1514,15 @@ export default function App() {
                       </option>
                     ))}
                   </InputSelect>
+                  {tips.length <= 1 && (
+                    // A marker with one tip keeps the row's space all the same, so its pen is drawn
+                    // the same size as every other's and the cards line up. Held open by a button
+                    // that isn't there rather than by a measurement, which would go stale the moment
+                    // the row's own size changed.
+                    <div className={styles.tools} aria-hidden>
+                      <Button size="sm" variant="ghost" tabIndex={-1} className={styles.tipRowHold}>&nbsp;</Button>
+                    </div>
+                  )}
                   {tips.length > 1 && (
                     <div className={styles.tools} role="group" aria-label="Tip">
                       {tips.map((t) => (

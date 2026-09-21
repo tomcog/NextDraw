@@ -272,9 +272,11 @@ span.shapeName { cursor: pointer; }
    when the tool hasn't got one, so the menu sits where it always did. */
 .toolPick {
   display: flex;
-  align-items: center;
+  align-items: flex-start; /* the menu stays at the top; the room a missing tip row leaves is below it */
   gap: 0.5rem;
 }
+/* Holds the tip row open for a marker that has only one. */
+.tipRowHold { visibility: hidden; }
 .toolPickMain {
   flex: 1;
   min-width: 0;
