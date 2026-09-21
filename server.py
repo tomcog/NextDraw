@@ -1820,6 +1820,65 @@ def clean_preset_settings(raw):
     return {k: v for k, v in clean_settings(raw).items() if k in PRESET_NUMERIC}
 
 
+# A marker that comes with more than one tip - two ends of the same pen, or the same ink in a second
+# barrel - is one preset with variants rather than one preset per tip. What they share is the marker:
+# the palette, the barrel it is clipped by, how it is handled. What differs is the tip: how wide it
+# draws, how far the pen drops, what it hatches at, whether it is held at a tilt.
+# Everything outside this pair of functions sees the flat list it always saw, one entry per tip,
+# named as it always was - "Betem Acrylic" and its "Fine" tip resolve to "Betem Acrylic Fine" - so a
+# drawing that names a tool, a menu that lists one, and /api/presets/<name> all still find it.
+# Inherited per key, not per block: a tip that says nothing about tilt takes the marker's, and one
+# that sets it to null has none.
+VARIANT_KEYS = ("hatch", "tilt", "drag", "barrel_mm", "palette")
+
+
+def resolved_name(preset, variant):
+    """What a tip is called: the marker's name and the tip's, which is the flat name it always had."""
+    return f"{str(preset.get('name') or '').strip()} {str(variant.get('name') or '').strip()}".strip()
+
+
+def resolve_presets(saved):
+    """The presets as every consumer sees them: one entry per tip, the tip's own settings merged over
+    the marker's. `family` and `variant` say where each came from, for a menu that groups them."""
+    out = []
+    for preset in saved:
+        variants = preset.get("variants")
+        if not isinstance(variants, list) or not variants:
+            out.append(preset)
+            continue
+        for variant in variants:
+            if not isinstance(variant, dict):
+                continue
+            entry = {k: v for k, v in preset.items() if k not in ("variants", "settings")}
+            entry["name"] = resolved_name(preset, variant)
+            entry["family"] = str(preset.get("name") or "").strip()
+            entry["variant"] = str(variant.get("name") or "").strip()
+            entry["settings"] = {**(preset.get("settings") or {}), **(variant.get("settings") or {})}
+            for key in VARIANT_KEYS:
+                if key in variant:
+                    if variant[key] is None:
+                        entry.pop(key, None)  # the marker has one, this tip hasn't
+                    else:
+                        entry[key] = variant[key]
+            out.append(entry)
+    return out
+
+
+def find_preset(saved, name):
+    """The marker and tip a flat name belongs to, as (preset, variant). The variant is None for a
+    marker with no tips of its own, and the pair is (None, None) when nothing answers to the name."""
+    name = str(name or "").strip()
+    for preset in saved:
+        variants = preset.get("variants")
+        if isinstance(variants, list) and variants:
+            for variant in variants:
+                if isinstance(variant, dict) and resolved_name(preset, variant) == name:
+                    return preset, variant
+        elif str(preset.get("name") or "").strip() == name:
+            return preset, None
+    return None, None
+
+
 @app.get("/")
 def index():
     return send_from_directory(ROOT / "static", "index.html")
@@ -2822,7 +2881,7 @@ def manual():
 
 @app.get("/api/presets")
 def list_presets():
-    return jsonify(presets=load_presets())
+    return jsonify(presets=resolve_presets(load_presets()))
 
 
 @app.put("/api/presets/<name>")
@@ -2832,7 +2891,10 @@ def put_preset(name):
         return jsonify(error="Give the preset a name."), 400
     settings = clean_preset_settings(request.json or {})
     existing = load_presets()
-    previous = next((p for p in existing if p.get("name") == name), {})
+    marker, tip = find_preset(existing, name)
+    if tip is not None:
+        return save_tip(existing, marker, tip, settings, request.json or {})
+    previous = marker or {}
     presets = [p for p in existing if p.get("name") != name]
     entry = {"name": name, "settings": settings}
     if previous.get("palette"):
@@ -2860,7 +2922,29 @@ def put_preset(name):
     presets.append(entry)
     presets.sort(key=lambda p: p["name"].lower())
     save_presets(presets)
-    return jsonify(presets=presets)
+    return jsonify(presets=resolve_presets(presets))
+
+
+def save_tip(presets, marker, tip, settings, body):
+    """Save one tip of a marker. Only what this tip does differently from the marker is written on
+    it, so the two tips go on sharing everything they had in common - change the marker's handling
+    and both still follow it. The measured numbers stay at whichever level already holds them."""
+    shared = marker.get("settings") or {}
+    tip["settings"] = {k: v for k, v in settings.items() if shared.get(k) != v}
+    holder = tip if "tilt" in tip else marker
+    if holder.get("tilt"):
+        try:
+            offset = float(body["tilt_offset_mm"])
+            holder["tilt"] = {**holder["tilt"], "offset_mm": round(max(0.0, min(100.0, offset)), 2)}
+        except (KeyError, TypeError, ValueError):
+            pass
+    try:
+        barrel = round(max(1.0, min(60.0, float(body["barrel_mm"]))), 2)
+        (tip if "barrel_mm" in tip else marker)["barrel_mm"] = barrel
+    except (KeyError, TypeError, ValueError):
+        pass
+    save_presets(presets)
+    return jsonify(presets=resolve_presets(presets))
 
 
 def clean_palette(raw):
@@ -2880,7 +2964,10 @@ def clean_palette(raw):
 def put_palette(name):
     """Save the pen colors of one tool. An empty palette leaves the tool without one."""
     presets = load_presets()
-    preset = next((p for p in presets if p.get("name") == name.strip()[:40]), None)
+    # Onto the marker, not the tip: the same ink comes out of both ends, which is the whole reason
+    # they are one preset. A tip that was given a palette of its own keeps it.
+    marker, tip = find_preset(presets, name.strip()[:40])
+    preset = tip if (tip is not None and "palette" in tip) else marker
     if preset is None:
         return jsonify(error="That drawing tool isn't on this Mac."), 404
     colors = clean_palette((request.json or {}).get("palette"))
@@ -2889,14 +2976,20 @@ def put_palette(name):
     else:
         preset.pop("palette", None)
     save_presets(presets)
-    return jsonify(presets=presets)
+    return jsonify(presets=resolve_presets(presets))
 
 
 @app.delete("/api/presets/<name>")
 def delete_preset(name):
-    presets = [p for p in load_presets() if p.get("name") != name]
+    saved = load_presets()
+    marker, tip = find_preset(saved, name)
+    if tip is not None:
+        marker["variants"] = [v for v in marker["variants"] if v is not tip]
+        presets = saved if marker["variants"] else [p for p in saved if p is not marker]
+    else:
+        presets = [p for p in saved if p.get("name") != name]
     save_presets(presets)
-    return jsonify(presets=presets)
+    return jsonify(presets=resolve_presets(presets))
 
 
 def lan_addresses():

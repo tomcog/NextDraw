@@ -621,6 +621,19 @@ export default function App() {
   useEffect(() => remember(STORAGE.inkSim, inkSim), [inkSim]);
 
   const tool2 = presets.find((t) => t.name === toolName) ?? null;
+  // The menu lists markers, not tips: a marker that comes with more than one tip is one line with a
+  // row of tips under it, rather than a line per tip. A marker with no tips of its own is its own
+  // entry and shows no row. The name of a tool is still the whole of it - the family is only how the
+  // menu is grouped - so what is picked here is what a drawing records.
+  const familyOf = (t: Preset) => t.family ?? t.name;
+  const families = presets.reduce<{ name: string; tips: Preset[] }[]>((list, t) => {
+    const at = list.find((f) => f.name === familyOf(t));
+    if (at) at.tips.push(t);
+    else list.push({ name: familyOf(t), tips: [t] });
+    return list;
+  }, []);
+  const family = tool2 ? familyOf(tool2) : "";
+  const tips = families.find((f) => f.name === family)?.tips ?? [];
   const palette: PenColor[] = tool2?.palette?.length ? tool2.palette : [PLAIN_PEN];
   // Darkest last in the list, so the default pen is the one you'd reach for first.
   // The real line the pen lays down, so the drawing shows its true weight against the hatch spacing.
@@ -1478,16 +1491,38 @@ export default function App() {
                     size="md"
                     label="Tool"
                     hideLabel
-                    value={toolName}
+                    value={family}
                     disabled={busy || !presets.length}
-                    onChange={(e) => setToolName(e.target.value)}
+                    // Changing marker keeps the tip you were on where the new one has that tip too -
+                    // a Fine is a Fine - and otherwise takes its first.
+                    onChange={(e) => {
+                      const picked = families.find((f) => f.name === e.target.value)?.tips ?? [];
+                      const same = picked.find((t) => t.variant && t.variant === tool2?.variant);
+                      setToolName((same ?? picked[0])?.name ?? "");
+                    }}
                   >
-                    {presets.map((t) => (
-                      <option key={t.name} value={t.name}>
-                        {t.name}
+                    {families.map((f) => (
+                      <option key={f.name} value={f.name}>
+                        {f.name}
                       </option>
                     ))}
                   </InputSelect>
+                  {tips.length > 1 && (
+                    <div className={styles.tools} role="group" aria-label="Tip">
+                      {tips.map((t) => (
+                        <Button
+                          key={t.name}
+                          size="sm"
+                          variant={t.name === toolName ? "primary" : "ghost"}
+                          aria-pressed={t.name === toolName}
+                          title={`${t.variant}: draws a ${t.settings.pen_width ?? "?"} mm line`}
+                          onClick={() => setToolName(t.name)}
+                        >
+                          {t.variant}
+                        </Button>
+                      ))}
+                    </div>
+                  )}
                   <p className={styles.empty}>
                     {`Draws a ${penWidthMm} mm line${palette.length > 1 ? ` in ${palette.length} colors` : ""}`}
                   </p>

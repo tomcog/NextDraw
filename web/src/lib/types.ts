@@ -184,6 +184,15 @@ export interface Preset {
   drag?: Drag; // a soft tip that may only be pulled, never pushed
   hatch?: { angle?: number; spacing_mm?: number }; // measured by hand; what a fill starts from
   barrel_mm?: number; // the barrel's width where the clip holds it; a fat one moves the tip down the page
+  /**
+   * Which marker this is a tip of, and which tip. A marker that comes with more than one - two ends
+   * of the same pen, or the same ink in a second barrel - is one preset in the file and one of
+   * these per tip, resolved by the server. `name` is still the whole of it, "Betem Acrylic Fine",
+   * which is what a drawing names and what the menu used to list; these two are for grouping it.
+   * Absent on a marker that has no tips of its own.
+   */
+  family?: string;
+  variant?: string;
 }
 
 // A brush or other soft tip splays when it is pushed, so it only travels away from home along the
