@@ -198,8 +198,14 @@
   font-size: 12px;
 }
 
+/* The label fills the row so the size can sit at its end. */
+.layerRow [class*="lead"] { flex: 1; min-width: 0; }
+
 .shapeSize {
   flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
   padding: 0.125rem 0.25rem;
   border: 0;
   border-radius: 3px;
@@ -213,13 +219,12 @@
 
 .shapeSize:hover { background: var(--ui-surface-raised); color: var(--ui-text-default); }
 
-/* The size, open for typing: two small boxes in the row itself, so the shape stays in view. */
-.sizeFields {
-  flex: none;
-  display: flex;
-  gap: 0.25rem;
-  width: 8.5rem;
+.sizeIcon {
+  width: 11px;
+  height: 11px;
+  opacity: 0.7;
 }
+
 
 @media (max-width: 860px) {
   .layout { grid-template-columns: minmax(0, 1fr); padding-inline: 1rem; }

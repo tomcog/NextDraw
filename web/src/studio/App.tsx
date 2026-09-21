@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Button, ButtonRound, Card, Checkbox, InputSelect, InputText, InputTextarea, LayerController } from "@tomcoggia/ui";
-import { AlignJustify, ArrowDownToLine, AudioWaveform, Circle, CircleDashed, CircleDot, Copy, Ellipsis, EllipsisVertical, FilePlus, FolderOpen, Grid2x2, Layers2, LoaderPinwheel, Menu, Minus, MousePointer2, Orbit, Pentagon, Plus, Radar, Rainbow, Ratio, Redo2, Spline, Square, Star, Trash2, Type, Undo2, Waves } from "lucide-react";
+import { AlignJustify, ArrowDownToLine, AudioWaveform, Circle, CircleDashed, CircleDot, Copy, Ellipsis, EllipsisVertical, FilePlus, FolderOpen, Grid2x2, Layers2, LoaderPinwheel, Menu, Minus, MousePointer2, Orbit, Pentagon, Plus, Proportions, Radar, Rainbow, Ratio, Redo2, Spline, Square, Star, Trash2, Type, Undo2, Waves } from "lucide-react";
 import { FileBrowser, LAST_FOLDER_KEY, type OpenResult } from "../components/FileBrowser";
 import { Section } from "../components/controls/Section";
 import { NumberField } from "../components/controls/NumberField";
@@ -15,6 +15,7 @@ import { InkSimControl } from "../components/InkSimControl";
 import type { Zoom } from "../components/BedCanvas";
 import { useRowDrag } from "../lib/useRowDrag";
 import { Canvas, type Tool } from "./components/Canvas";
+import { SizePopover } from "./components/SizePopover";
 import { StudioHeader } from "./components/StudioHeader";
 import { canConnect, canFill, fillNumbers, newFillId, FILL_LABEL, type Fill, type FillKind } from "./lib/hatch";
 import { closingTurns, curveStrokes, CURVE_FIELDS, type Curve, type Point } from "./lib/parametric";
@@ -924,23 +925,9 @@ export default function App() {
   const [rowMenu, setRowMenu] = useState<{ kind: "layer" | "shape"; id: string; anchor: HTMLElement } | null>(null);
   // The shape whose size in the list is open for typing into. One at a time, like a rename.
   const [sizing, setSizing] = useState<string | null>(null);
+  const [sizeAnchor, setSizeAnchor] = useState<HTMLElement | null>(null);
 
-  // The size boxes close as soon as they stop being what you're doing: a click anywhere else, Escape,
-  // or picking another shape. Blur alone isn't enough - clicking the page moves nothing's focus.
-  useEffect(() => {
-    if (!sizing) return;
-    const away = (e: Event) => {
-      const el = e.target as Node;
-      if (!(el instanceof Node) || !document.querySelector(`.${styles.sizeFields}`)?.contains(el)) setSizing(null);
-    };
-    const key = (e: KeyboardEvent) => { if (e.key === "Escape") setSizing(null); };
-    document.addEventListener("pointerdown", away, true);
-    document.addEventListener("keydown", key);
-    return () => {
-      document.removeEventListener("pointerdown", away, true);
-      document.removeEventListener("keydown", key);
-    };
-  }, [sizing]);
+  // The popover closes itself on a click elsewhere or Escape; this is the other way it goes:
   useEffect(() => {
     if (sizing && (selected.length !== 1 || selected[0] !== sizing)) setSizing(null);
   }, [selected, sizing]);
@@ -989,6 +976,17 @@ export default function App() {
           onClose={() => setColorMenu(null)}
         />
       )}
+      {sizing && sizeAnchor && chosen?.id === sizing && (
+        <SizePopover
+          anchor={sizeAnchor}
+          name={shapeName(chosen, onActive.indexOf(chosen))}
+          width={boxOf(chosen).x1 - boxOf(chosen).x0}
+          height={boxOf(chosen).y1 - boxOf(chosen).y0}
+          onSize={(w, h) => setShapeSize(chosen.id, w, h)}
+          onClose={() => setSizing(null)}
+        />
+      )}
+
       {rowMenu && (
         <RowMenu
           anchor={rowMenu.anchor}
@@ -1390,40 +1388,26 @@ export default function App() {
                               label={
                                 <span className={styles.shapeLabel}>
                                   <span className={styles.shapeName}>{name}</span>
-                                  {sizing === sh.id ? (
-                                    // Typed in inches, the units the page itself is measured in.
-                                    <span className={styles.sizeFields} onBlur={(e) => {
-                                      if (!e.currentTarget.contains(e.relatedTarget as Node)) setSizing(null);
-                                    }}>
-                                      <NumberField
-                                        label={`Width of ${name} (in)`}
-                                        hideLabel
-                                        min={0.02}
-                                        step={0.1}
-                                        value={Number((b.x1 - b.x0).toFixed(3))}
-                                        onChange={(w) => setShapeSize(sh.id, w, b.y1 - b.y0)}
-                                      />
-                                      <NumberField
-                                        label={`Height of ${name} (in)`}
-                                        hideLabel
-                                        min={0.02}
-                                        step={0.1}
-                                        value={Number((b.y1 - b.y0).toFixed(3))}
-                                        onChange={(h) => setShapeSize(sh.id, b.x1 - b.x0, h)}
-                                      />
-                                    </span>
-                                  ) : (
-                                    <button
-                                      type="button"
-                                      className={styles.shapeSize}
-                                      title="Set this shape's size"
-                                      onClick={() => { pick(sh.id); setSizing(sh.id); }}
-                                    >
-                                      {/* Numbers alone: the row has no room to say "in" twice, and
-                                          the page is measured in inches throughout. */}
-                                      {`${trimNum(b.x1 - b.x0, 2)} × ${trimNum(b.y1 - b.y0, 2)}`}
-                                    </button>
-                                  )}
+                                  {/* The size sits at the end of the row, against the button that
+                                      opens it. Numbers alone: the page is inches throughout, and the
+                                      boxes that open say so. */}
+                                  <button
+                                    type="button"
+                                    className={styles.shapeSize}
+                                    aria-label={`Size of ${name}`}
+                                    aria-haspopup="dialog"
+                                    aria-expanded={sizing === sh.id}
+                                    title="Set this shape's size"
+                                    onClick={(e) => {
+                                      const anchor = e.currentTarget;
+                                      pick(sh.id);
+                                      setSizing((open) => (open === sh.id ? null : sh.id));
+                                      setSizeAnchor(anchor);
+                                    }}
+                                  >
+                                    {`${trimNum(b.x1 - b.x0, 2)} × ${trimNum(b.y1 - b.y0, 2)}`}
+                                    <Proportions className={styles.sizeIcon} aria-hidden />
+                                  </button>
                                 </span>
                               }
                             />
