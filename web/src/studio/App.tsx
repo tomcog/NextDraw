@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Button, ButtonRound, Card, Checkbox, InputSelect, InputText, InputTextarea, LayerController } from "@tomcoggia/ui";
-import { AlignJustify, ArrowDownToLine, AudioWaveform, Circle, CircleDashed, CircleDot, Copy, Ellipsis, EllipsisVertical, FilePlus, Flame, FlameKindling, FolderOpen, Grid2x2, Layers2, LoaderPinwheel, Menu, Minus, MoveHorizontal, MoveVertical, MousePointer2, Orbit, PaintBucket, Pentagon, Plus, Radar, Rainbow, Redo2, Repeat as RepeatIcon, Spline, Square, SquareDimensions, Star, Trash2, Type, Undo2, Waves, Waypoints } from "lucide-react";
+import { AlignJustify, ArrowDownToLine, AudioWaveform, Circle, CircleDashed, CircleDot, Copy, Ellipsis, EllipsisVertical, FilePlus, Flame, FolderOpen, Grid2x2, Layers2, LoaderPinwheel, Menu, Minus, MoveHorizontal, MoveVertical, MousePointer2, Orbit, PaintBucket, Pentagon, Plus, Radar, Rainbow, Redo2, Repeat as RepeatIcon, Spline, Square, SquareDimensions, Star, Trash2, Type, Undo2, Waves, Waypoints } from "lucide-react";
 import { FileBrowser, LAST_FOLDER_KEY, type OpenResult } from "../components/FileBrowser";
 import { Section } from "../components/controls/Section";
 import { NumberField } from "../components/controls/NumberField";
@@ -1559,33 +1559,24 @@ export default function App() {
                 </Section>
                 )}
 
-                {/* Baking takes the whole thing - every copy of a repeat, every letter of a text -
-                    and leaves paths whose points can be pulled about one at a time. It is a button
-                    or two, which is less than a section heading is worth. */}
                 {(chosen.runs?.length ?? 0) > 1 && (
                   <Button size="md" variant="secondary" onClick={() => splitShape(chosen.id)}>
                     {`Split into ${chosen.runs?.length} shapes`}
                   </Button>
                 )}
-                <div className={styles.tools} role="group" aria-label="Bake this shape">
+                <div className={styles.tools} role="group" aria-label="What is done to this shape">
+                  {/* Baking a shape is in its own row's menu. The one kept here is the other kind:
+                      it gives up the shape's numbers and leaves the pattern following its points,
+                      which is not a thing the menu can say in a word. */}
                   {chosen.repeat && chosen.kind !== "path" && (
                     <ButtonRound
                       size="sm"
                       icon={<Flame />}
-                      aria-label="Bake shape"
+                      aria-label="Bake shape, keep the pattern"
                       title="Bake the shape: its own numbers are given up, and every copy follows its points"
                       onClick={() => bakeShape(chosen.id, true)}
                     />
                   )}
-                  <ButtonRound
-                    size="sm"
-                    icon={chosen.repeat ? <FlameKindling /> : <Flame />}
-                    aria-label={chosen.repeat ? "Bake pattern" : "Bake shape"}
-                    title={chosen.repeat
-                      ? "Bake the pattern: every copy becomes a shape of its own"
-                      : "Bake the shape: the numbers behind it are given up, and its points can then be dragged one by one"}
-                    onClick={() => bakeShape(chosen.id)}
-                  />
                   {/* A path is the only thing there are points to take out of. */}
                   {chosen.kind === "path" && (
                     <ButtonRound
@@ -1613,13 +1604,6 @@ export default function App() {
                     />
                   )}
                 </div>
-                {/* Only a repeat needs a word: one button there bakes the shape and another the
-                    pattern, and the two look alike until the difference is said. */}
-                {chosen.repeat && (
-                  <p className={styles.empty}>
-                    {`Baking the shape gives up only its own numbers: its points can be dragged and every copy follows. Baking the pattern leaves ${placements(chosen).length} shapes, each free of the others.`}
-                  </p>
-                )}
 
                 {chosen.kind === "path" && simplifying && (() => {
                   const points = pathRuns(chosen).reduce((n, r) => n + r.length, 0);
