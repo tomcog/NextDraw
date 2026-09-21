@@ -1515,7 +1515,7 @@ export default function App() {
           )}
 
           {/* What the shape itself is made of: the numbers that draw it, and how it is filled in. */}
-          {chosen && (chosen.curve || canFill(chosen)) && (
+          {chosen && (chosen.curve || canFill(chosen) || chosen.kind === "path") && (
             <Card variant="flat" className={styles.controls}>
               <div className={`${styles.cardBody} ${styles.settings}`}>
                 <Section title="Shape" collapsibleKey="shape">
@@ -1541,6 +1541,35 @@ export default function App() {
                       {`Closes after ${closingTurns(chosen.curve.R, chosen.curve.r)} turns`}
                     </p>
                   )}
+                </Section>
+                )}
+
+                {chosen.kind === "path" && (
+                <Section title="Simplify" collapsibleKey="simplify">
+                  {(() => {
+                    const points = pathRuns(chosen).reduce((n, r) => n + r.length, 0);
+                    return (
+                      <>
+                        <div className={styles.fillRow}>
+                          <Button size="md" variant="secondary" onClick={() => simplifyShape(chosen.id)}>
+                            Simplify
+                          </Button>
+                          <NumberField
+                            label="Within"
+                            unit="mm"
+                            min={0.01}
+                            max={10}
+                            step={0.05}
+                            value={simplifyMm}
+                            onChange={setSimplifyMm}
+                          />
+                        </div>
+                        <p className={styles.empty}>
+                          {`${points} point${points === 1 ? "" : "s"}${points > POINT_HANDLE_LIMIT ? " - too many to drag one by one" : ""}`}
+                        </p>
+                      </>
+                    );
+                  })()}
                 </Section>
                 )}
 
@@ -1693,30 +1722,6 @@ export default function App() {
                   />
                   {/* Baking takes the whole thing - every copy of a repeat, every letter of a text -
                       and leaves paths whose points can be pulled about one at a time. */}
-                  {chosen.kind === "path" && (() => {
-                    const points = pathRuns(chosen).reduce((n, r) => n + r.length, 0);
-                    return (
-                      <>
-                        <div className={styles.fillRow}>
-                          <Button size="md" variant="secondary" onClick={() => simplifyShape(chosen.id)}>
-                            Simplify
-                          </Button>
-                          <NumberField
-                            label="Within"
-                            unit="mm"
-                            min={0.01}
-                            max={10}
-                            step={0.05}
-                            value={simplifyMm}
-                            onChange={setSimplifyMm}
-                          />
-                        </div>
-                        <p className={styles.empty}>
-                          {`${points} point${points === 1 ? "" : "s"}${points > POINT_HANDLE_LIMIT ? " - too many to drag one by one" : ""}`}
-                        </p>
-                      </>
-                    );
-                  })()}
                   {(chosen.runs?.length ?? 0) > 1 && (
                     <Button size="md" variant="secondary" onClick={() => splitShape(chosen.id)}>
                       {`Split into ${chosen.runs?.length} shapes`}
