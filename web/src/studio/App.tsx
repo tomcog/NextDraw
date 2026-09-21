@@ -48,12 +48,12 @@ const TOOLS: { kind: Tool; label: string; hint: string; icon: JSX.Element }[] = 
   // Parametric shapes: drawn as a box like the rest, then tuned by their numbers in the Curve card.
   { kind: "hypotrochoid", label: "Spirograph", hint: "Draw a spirograph: drag on the page, then set its circles", icon: <LoaderPinwheel /> },
   { kind: "parabolic", label: "Parabolic curve", hint: "Draw curve stitching: drag on the page, then set its strings", icon: <Spline /> },
-  { kind: "polygon", label: "Polygon", hint: "Draw a polygon: drag on the page, then set how many sides", icon: <Pentagon /> },
-  { kind: "star", label: "Star", hint: "Draw a star: drag on the page, then set its points", icon: <Star /> },
+  { kind: "polygon", label: "Polygon", hint: "Polygon (P): drag on the page, then set how many sides", icon: <Pentagon /> },
+  { kind: "star", label: "Star", hint: "Star (S): drag on the page, then set its points", icon: <Star /> },
   { kind: "spiral", label: "Spiral", hint: "Draw a spiral: drag on the page, then set its turns", icon: <Radar /> },
-  { kind: "arc", label: "Arc", hint: "Draw an arc: drag on the page, then set where it starts and how far it goes", icon: <Rainbow /> },
+  { kind: "arc", label: "Arc", hint: "Arc (A): drag on the page, then set where it starts and how far it goes", icon: <Rainbow /> },
   { kind: "wave", label: "Wave", hint: "Draw a wave: drag on the page, then set how many", icon: <Waves /> },
-  { kind: "text", label: "Text", hint: "Set some words: drag to say how tall, then type them", icon: <Type /> },
+  { kind: "text", label: "Text", hint: "Text (T): drag to say how tall, then type the words", icon: <Type /> },
 ];
 
 // Used when a tool has no palette of its own, so there is always a pen to draw with.
@@ -70,6 +70,10 @@ const TOOL_KEYS: Record<string, Tool> = {
   r: "rect",
   o: "ellipse",
   l: "line",
+  t: "text",
+  p: "polygon",
+  s: "star",
+  a: "arc",
 };
 
 const FILL_ICON: Record<FillKind, JSX.Element> = {
