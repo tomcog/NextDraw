@@ -463,7 +463,6 @@ export function Canvas({ page, shapes, fills, layers, activeLayer, model, zoom, 
         shapes.length === 0 && !drag ? (
           <div className={styles.hint} aria-hidden="true">
             <strong>Drag on the page to draw</strong>
-            <span>Then save it and open it in Plot</span>
           </div>
         ) : undefined
       }

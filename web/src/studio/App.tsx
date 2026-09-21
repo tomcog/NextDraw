@@ -1454,7 +1454,7 @@ export default function App() {
                   }
                 >
                   {onActive.length === 0 ? (
-                    <p className={styles.empty}>Drag on the page to draw one.</p>
+                    <p className={styles.empty}>No shapes on layer</p>
                   ) : (
                     <ul className={styles.shapeList}>
                       {onActive.map((sh, i) => {
