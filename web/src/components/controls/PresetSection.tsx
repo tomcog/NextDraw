@@ -1,6 +1,7 @@
 import { useRef, useState } from "react";
+import { ToolNote } from "./ToolNote";
 import { Button, ButtonRound, Checkbox, InputSelect, InputText } from "@tomcoggia/ui";
-import { Angle, CirclePlus, LineSquiggle, Palette, X } from "lucide-react";
+import { CirclePlus, Palette, X } from "lucide-react";
 import styles from "./controls.module.css";
 import { Section } from "./Section";
 import { Slider } from "./Slider";
@@ -45,19 +46,6 @@ export function PresetSection({
   secondTool, secondLayers, layers, inUse, onAddSecond, onSecondTool, onRemoveSecond, onAssign,
   smallPaths, onSmallPaths, tiltOn, onTilt, dragOn, onDrag, paletteOpen, onPalette, onInk,
 }: Props) {
-  // What a tool is always set up for, with nothing to switch: the clip angle, and one-way strokes.
-  const toolNote = (tool: Preset | undefined) => {
-    const why = [
-      ...(tool?.tilt?.fixed ? [`always tilted: set the clip to ${tool.tilt.angle}°`] : []),
-      ...(tool?.drag?.fixed ? ["only ever pulled, so strokes that would push it are cut and turned around"] : []),
-    ];
-    return why.length ? (
-      <p className={styles.tiltNote} title={`This tool is ${why.join("; ")}`}>
-        {tool?.tilt?.fixed && <span className={styles.tiltNoteItem}><Angle size={12} aria-hidden />{`Tilt ${tool.tilt.angle}°`}</span>}
-        {tool?.drag?.fixed && <span className={styles.tiltNoteItem}><LineSquiggle size={12} aria-hidden />Constrained</span>}
-      </p>
-    ) : null;
-  };
   // A tool used at more than one angle keeps its switch. The label gives the angle to set.
   const tiltSwitch = (tool: Preset | undefined) => tool?.tilt && !tool.tilt.fixed && (
       <Checkbox
@@ -148,7 +136,7 @@ export function PresetSection({
           </option>
         ))}
       </InputSelect>
-      {toolNote(active)}
+      <ToolNote tool={active} />
       {tiltSwitch(active)}
       {dragSwitch(active)}
       {mixed && layers.length > 0 && chips(false)}
@@ -174,7 +162,7 @@ export function PresetSection({
             </InputSelect>
             <ButtonRound size="sm" variant="ghost" icon={<X />} aria-label="Remove the second drawing tool" title="Remove the second tool; its layers go back to the first" disabled={disabled} onClick={onRemoveSecond} />
           </div>
-          {toolNote(presets.find((p) => p.name === secondTool))}
+          <ToolNote tool={presets.find((p) => p.name === secondTool)} />
           {tiltSwitch(presets.find((p) => p.name === secondTool))}
           {dragSwitch(presets.find((p) => p.name === secondTool))}
           {layers.length > 0 && chips(true)}

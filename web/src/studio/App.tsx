@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { ToolNote } from "../components/controls/ToolNote";
 import { Button, ButtonRound, Card, Checkbox, ConfirmButton, InputSelect, InputText, InputTextarea, LayerController } from "@tomcoggia/ui";
 import { AlignJustify, ArrowDownToLine, AudioWaveform, Circle, CircleDashed, CircleDot, ClipboardCopy, ClipboardPaste, Copy, Ellipsis, EllipsisVertical, FilePlus, Flame, FlameKindling, FolderOpen, Grid2x2, Layers2, LoaderPinwheel, Menu, Minus, MoveHorizontal, MoveVertical, MousePointer2, Orbit, PaintBucket, PenLine, Pentagon, Plus, Radar, Rainbow, Redo2, Repeat as RepeatIcon, RotateCw, Save, Spline, Square, SquareDimensions, Star, Trash2, Type, Undo2, Waves, Waypoints } from "lucide-react";
 import { FileBrowser, LAST_FOLDER_KEY, type OpenResult } from "../components/FileBrowser";
@@ -1526,6 +1527,10 @@ export default function App() {
                   <p className={styles.empty}>
                     {`Draws a ${penWidthMm} mm line${palette.length > 1 ? ` in ${palette.length} colors` : ""}`}
                   </p>
+                  {/* What the tool is always set up for - the clip angle, and one-way strokes. The
+                      same note Plot shows, from the same place, because it is a fact about the tool
+                      rather than about plotting: it says what to do before a drawing is made with it. */}
+                  <ToolNote tool={tool2 ?? undefined} />
                 </Section>
               </Section>
             </div>
