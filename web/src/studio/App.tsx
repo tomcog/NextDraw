@@ -1433,6 +1433,9 @@ export default function App() {
                           aria-label={`Draw on layer ${at + 1}, ${layer.name}`}
                           label={
                             <input
+                              // Green while it is the layer being drawn on, like the nib beside it
+                              // and like the chosen shape's name below.
+                              className={layer.id === activeLayer ? styles.shapeNameOn : undefined}
                               value={layer.name}
                               aria-label={`Name of layer ${at + 1}`}
                               title="The layer's name: click to change it"
