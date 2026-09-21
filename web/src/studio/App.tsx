@@ -1223,16 +1223,6 @@ export default function App() {
                     icon: <Spline />,
                     onSelect: () => setSmooth(rowMenu.id, !shapes.find((s) => s.id === rowMenu.id)?.smooth),
                   },
-                  {
-                    // Opens the tolerance and the button in the shape's card: how far it may stray
-                    // is a number, and a menu has nowhere to type one.
-                    label: "Simplify…",
-                    icon: <Waypoints />,
-                    onSelect: () => {
-                      pick(rowMenu.id);
-                      setSimplifying(true);
-                    },
-                  },
                 ]
                 : []),
               { label: "Copy", icon: <ClipboardCopy />, onSelect: () => copyShape(rowMenu.id) },
@@ -1874,6 +1864,21 @@ export default function App() {
                       aria-label="Bake shape, keep the pattern"
                       title="Bake the shape: its own numbers are given up, and every copy follows its points"
                       onClick={() => bakeShape(chosen.id, true)}
+                    />
+                  )}
+                  {/* Simplify keeps its button here rather than in the row's menu: it opens a
+                      tolerance to type, and you come back to it until the points are where you
+                      want them. */}
+                  {chosen.kind === "path" && (
+                    <ButtonRound
+                      size="sm"
+                      icon={<Waypoints />}
+                      className={simplifying ? controls.roundActive : undefined}
+                      aria-label="Simplify"
+                      aria-expanded={simplifying}
+                      aria-pressed={simplifying}
+                      title="Simplify: take out the points the path can do without"
+                      onClick={() => setSimplifying((on) => !on)}
                     />
                   )}
                   {/* Only a shape with an inside can be hatched. */}
