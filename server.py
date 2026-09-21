@@ -1913,6 +1913,27 @@ def font_file(name):
     return send_from_directory(FONTS, f"{Path(name).name}.svg", mimetype="image/svg+xml")
 
 
+# A small drawing of each tool's tip, named after the tool - "Paper-Mate Flair Bold.svg". They are
+# the app's own artwork rather than anything it writes, so they live in the repository beside the
+# fonts and travel with the code, not in iCloud Drive with the presets.
+TIPS = ROOT / "tips"
+
+
+@app.get("/tips/<name>.svg")
+def tip_file(name):
+    """The drawing of a tool's tip. A tip with none of its own falls back to its marker's, so one
+    drawing can stand for both ends until each is drawn. Missing is not an error worth shouting
+    about - the card simply shows no tip - so this 404s quietly."""
+    wanted = Path(str(name)).name
+    if (TIPS / f"{wanted}.svg").is_file():
+        return send_from_directory(TIPS, f"{wanted}.svg", mimetype="image/svg+xml")
+    marker, tip = find_preset(load_presets(), wanted)
+    family = str((marker or {}).get("name") or "") if tip is not None else ""
+    if family and (TIPS / f"{Path(family).name}.svg").is_file():
+        return send_from_directory(TIPS, f"{Path(family).name}.svg", mimetype="image/svg+xml")
+    return ("", 404)
+
+
 @app.get("/studio")
 def studio_index():
     """NextDraw Studio: the companion app that makes the drawings this one plots (docs/studio.md).

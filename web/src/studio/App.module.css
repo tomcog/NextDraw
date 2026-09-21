@@ -267,3 +267,12 @@ span.shapeName { cursor: pointer; }
 .settings fieldset fieldset + fieldset { padding-top: 0.5rem; }
 
 .settings fieldset fieldset legend { font-size: 12px; font-weight: 500; }
+
+/* The drawing tool: its tip's drawing, then the marker to choose. The drawing gives up its space
+   when the tool hasn't got one, so the menu sits where it always did. */
+.toolPick {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+.toolPick > *:last-child { flex: 1; min-width: 0; }

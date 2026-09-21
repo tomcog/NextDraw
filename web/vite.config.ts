@@ -22,7 +22,12 @@ export default defineConfig({
   },
   server: {
     port: 5173,
-    // /fonts too: the single-stroke fonts are served by Flask from the repository's fonts/ folder.
-    proxy: { "/api": "http://127.0.0.1:5055", "/fonts": "http://127.0.0.1:5055" },
+    // /fonts and /tips too: the single-stroke fonts and the drawings of each tool's tip are served
+    // by Flask from the repository's fonts/ and tips/ folders.
+    proxy: {
+      "/api": "http://127.0.0.1:5055",
+      "/fonts": "http://127.0.0.1:5055",
+      "/tips": "http://127.0.0.1:5055",
+    },
   },
 });

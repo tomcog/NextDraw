@@ -507,6 +507,16 @@
 
 
 /* How a tool is always set up - its clip angle and one-way strokes: a note, not a setting. */
+/* The drawing of a tool's tip, beside the tool it belongs to. Square, and sized to the control it
+   sits in front of rather than to the drawing, which is exported far larger. */
+.tipMark {
+  width: 28px;
+  height: 28px;
+  flex: none;
+  border-radius: 4px;
+  object-fit: contain;
+}
+
 .tiltNote {
   display: flex;
   align-items: center;
