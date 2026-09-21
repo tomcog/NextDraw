@@ -956,6 +956,8 @@ export default function App() {
   // The shape whose name is open for typing into, and what it was called before: renaming is asked
   // for from the row's menu, and Escape puts the old name back.
   const [renaming, setRenaming] = useState<string | null>(null);
+  // The same for a layer's name, which is edited the same way and for the same reason.
+  const [renamingLayer, setRenamingLayer] = useState<string | null>(null);
   const typeShapeName = (id: string, name: string) =>
     setShapes((list) => list.map((s) => (s.id === id ? { ...s, name } : s)));
   const settleShapeName = (id: string) =>
@@ -965,15 +967,21 @@ export default function App() {
   // is what covers the case where it never took focus in the first place, which would otherwise
   // leave the row typeable for good.
   useEffect(() => {
-    if (!renaming) return;
+    if (!renaming && !renamingLayer) return;
     const away = (e: PointerEvent) => {
       if ((e.target as Element | null)?.closest?.("[data-renaming]")) return;
-      settleShapeName(renaming);
-      setRenaming(null);
+      if (renaming) {
+        settleShapeName(renaming);
+        setRenaming(null);
+      }
+      if (renamingLayer) {
+        settleLayerName(renamingLayer);
+        setRenamingLayer(null);
+      }
     };
     document.addEventListener("pointerdown", away, true);
     return () => document.removeEventListener("pointerdown", away, true);
-  }, [renaming]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [renaming, renamingLayer]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Any colour at all for a layer, from the system colour picker - for a pen that isn't in the tool's
   // palette. Only the colour changes; the layer keeps the name it has.
@@ -1071,6 +1079,15 @@ export default function App() {
                 disabled: !shapes.some((s) => s.layerId === rowMenu.id),
                 // Picked as one, they move as one: the way a whole layer is shifted about the page.
                 onSelect: () => setSelected(shapes.filter((s) => s.layerId === rowMenu.id).map((s) => s.id)),
+              },
+              {
+                label: "Rename",
+                icon: <PenLine />,
+                onSelect: () => {
+                  nameBeforeEdit.current = layers.find((l) => l.id === rowMenu.id)?.name ?? "";
+                  record();
+                  setRenamingLayer(rowMenu.id);
+                },
               },
               { label: "Duplicate", icon: <Copy />, onSelect: () => duplicateLayer(rowMenu.id) },
               {
@@ -1431,26 +1448,39 @@ export default function App() {
                           disabled={busy}
                           onChange={() => setActiveLayer(layer.id)}
                           aria-label={`Draw on layer ${at + 1}, ${layer.name}`}
-                          label={
+                          label={renamingLayer === layer.id ? (
                             <input
-                              // Green while it is the layer being drawn on, like the nib beside it
-                              // and like the chosen shape's name below.
-                              className={layer.id === activeLayer ? styles.shapeNameOn : undefined}
+                              className={`${styles.shapeName} ${styles.shapeNameEdit}`}
+                              data-renaming
                               value={layer.name}
                               aria-label={`Name of layer ${at + 1}`}
-                              title="The layer's name: click to change it"
+                              autoFocus
                               disabled={busy}
-                              onFocus={() => {
-                                nameBeforeEdit.current = layer.name;
-                                record();
-                              }}
+                              onFocus={(e) => e.currentTarget.select()}
                               onChange={(e) => typeLayerName(layer.id, e.target.value)}
-                              onBlur={() => settleLayerName(layer.id)}
+                              onBlur={() => {
+                                settleLayerName(layer.id);
+                                setRenamingLayer(null);
+                              }}
                               onKeyDown={(e) => {
+                                if (e.key === "Escape") typeLayerName(layer.id, nameBeforeEdit.current);
                                 if (e.key === "Enter" || e.key === "Escape") e.currentTarget.blur();
                               }}
                             />
-                          }
+                          ) : (
+                            // Text, not a field: clicking it draws on that layer. Renaming is asked
+                            // for from the kebab, so nothing typed can land in a name by accident.
+                            // Green while it is the one being drawn on, like the nib beside it.
+                            <span
+                              className={layer.id === activeLayer
+                                ? `${styles.shapeName} ${styles.shapeNameOn}`
+                                : styles.shapeName}
+                              title="Click to draw on this layer"
+                              onClick={() => setActiveLayer(layer.id)}
+                            >
+                              {layer.name}
+                            </span>
+                          )}
                           handleProps={{
                             "aria-label": `Move ${layer.name}`,
                             title: "Drag to restack",
@@ -1761,6 +1791,28 @@ export default function App() {
                       onClick={() => setFilling((on) => !on)}
                     />
                   )}
+                  {/* One button per thing that can be done to a shape as a whole, each opening its
+                      own settings: how far it is turned, and how many of it there are. */}
+                  <ButtonRound
+                    size="sm"
+                    icon={<RotateCw />}
+                    className={rotating ? controls.roundActive : undefined}
+                    aria-label="Rotate"
+                    aria-expanded={rotating}
+                    aria-pressed={rotating}
+                    title="Rotate: turn this shape about the middle of its box"
+                    onClick={() => setRotating((on) => !on)}
+                  />
+                  <ButtonRound
+                    size="sm"
+                    icon={<RepeatIcon />}
+                    className={repeating ? controls.roundActive : undefined}
+                    aria-label="Repeat"
+                    aria-expanded={repeating}
+                    aria-pressed={repeating}
+                    title="Repeat: draw this shape more than once, in a row, a grid or a ring"
+                    onClick={() => setRepeating((on) => !on)}
+                  />
                 </div>
 
                 {chosen.kind === "path" && simplifying && (() => {
@@ -1917,113 +1969,79 @@ export default function App() {
                   )}
                 </>
                 )}
-                </Section>
-              </div>
-            </Card>
-          )}
+              {rotating && (
+                <NumberField
+                  label="Rotation"
+                  unit="°"
+                  step={5}
+                  value={chosen.rotation ?? 0}
+                  onChange={setRotation}
+                />
+              )}
 
-          {/* What is done to a shape as a whole: how it sits, and how many of it there are. */}
-          {chosen && (
-            <Card variant="flat" className={styles.controls}>
-              <div className={`${styles.cardBody} ${styles.settings}`}>
-                <Section title="Transform" collapsibleKey="transform">
-                <div className={styles.tools} role="group" aria-label="Transform this shape">
-                  {/* One button per thing that can be done to a shape as a whole, each opening its
-                      own settings: how far it is turned, and how many of it there are. */}
-                  <ButtonRound
-                    size="sm"
-                    icon={<RotateCw />}
-                    className={rotating ? controls.roundActive : undefined}
-                    aria-label="Rotate"
-                    aria-expanded={rotating}
-                    aria-pressed={rotating}
-                    title="Rotate: turn this shape about the middle of its box"
-                    onClick={() => setRotating((on) => !on)}
-                  />
-                  <ButtonRound
-                    size="sm"
-                    icon={<RepeatIcon />}
-                    className={repeating ? controls.roundActive : undefined}
-                    aria-label="Repeat"
-                    aria-expanded={repeating}
-                    aria-pressed={repeating}
-                    title="Repeat: draw this shape more than once, in a row, a grid or a ring"
-                    onClick={() => setRepeating((on) => !on)}
-                  />
-                </div>
-
-                {rotating && (
-                  <NumberField
-                    label="Rotation"
-                    unit="°"
-                    step={5}
-                    value={chosen.rotation ?? 0}
-                    onChange={setRotation}
-                  />
-                )}
-
-                {repeating && (
-                <>
-                  <div className={styles.tools} role="group" aria-label="How this shape repeats">
-                    {REPEATS.map((r) => {
-                      const on = (chosen.repeat?.kind ?? null) === r.kind;
-                      return (
-                        <ButtonRound
-                          key={r.label}
-                          size="sm"
-                          icon={r.icon}
-                          className={on ? controls.roundActive : undefined}
-                          aria-label={r.label}
-                          aria-pressed={on}
-                          title={r.hint}
-                          onClick={() => setRepeat(r.kind ? defaultRepeat(r.kind, chosen) : undefined)}
-                        />
-                      );
-                    })}
-                    {/* At the end of the row that made the copies: the one thing that gives them up
-                        and leaves each as a shape of its own. */}
-                    {chosen.repeat && (
+              {repeating && (
+              <>
+                <div className={styles.tools} role="group" aria-label="How this shape repeats">
+                  {REPEATS.map((r) => {
+                    const on = (chosen.repeat?.kind ?? null) === r.kind;
+                    return (
                       <ButtonRound
+                        key={r.label}
                         size="sm"
-                        icon={<FlameKindling />}
-                        aria-label="Bake pattern"
-                        title={`Bake the pattern: all ${placements(chosen).length} copies become shapes of their own`}
-                        onClick={() => bakeShape(chosen.id)}
+                        icon={r.icon}
+                        className={on ? controls.roundActive : undefined}
+                        aria-label={r.label}
+                        aria-pressed={on}
+                        title={r.hint}
+                        onClick={() => setRepeat(r.kind ? defaultRepeat(r.kind, chosen) : undefined)}
                       />
-                    )}
-                  </div>
+                    );
+                  })}
+                  {/* At the end of the row that made the copies: the one thing that gives them up
+                      and leaves each as a shape of its own. */}
                   {chosen.repeat && (
-                    <div className={styles.fillRow}>
-                      {REPEAT_FIELDS[chosen.repeat.kind].map((f) => (
-                        <NumberField
-                          key={f.key}
-                          label={f.label}
-                          min={f.min}
-                          max={f.max}
-                          step={f.step}
-                          unit={f.unit}
-                          value={Number((chosen.repeat as unknown as Record<string, number>)[f.key])}
-                          onChange={(v) => setRepeat({ ...(chosen.repeat as Repeat), [f.key]: v } as Repeat)}
-                        />
-                      ))}
-                    </div>
-                  )}
-                  {chosen.repeat?.kind === "ring" && (
-                    <Checkbox
-                      checked={chosen.repeat.facing}
-                      label="Turn each copy to face out"
-                      onChange={(e) => setRepeat({ ...(chosen.repeat as Repeat), facing: e.target.checked } as Repeat)}
+                    <ButtonRound
+                      size="sm"
+                      icon={<FlameKindling />}
+                      aria-label="Bake pattern"
+                      title={`Bake the pattern: all ${placements(chosen).length} copies become shapes of their own`}
+                      onClick={() => bakeShape(chosen.id)}
                     />
                   )}
-                  {chosen.repeat && (
-                    <p className={styles.empty}>{`${placements(chosen).length} shapes in all, counting the one you drew`}</p>
-                  )}
-                </>
+                </div>
+                {chosen.repeat && (
+                  <div className={styles.fillRow}>
+                    {REPEAT_FIELDS[chosen.repeat.kind].map((f) => (
+                      <NumberField
+                        key={f.key}
+                        label={f.label}
+                        min={f.min}
+                        max={f.max}
+                        step={f.step}
+                        unit={f.unit}
+                        value={Number((chosen.repeat as unknown as Record<string, number>)[f.key])}
+                        onChange={(v) => setRepeat({ ...(chosen.repeat as Repeat), [f.key]: v } as Repeat)}
+                      />
+                    ))}
+                  </div>
                 )}
+                {chosen.repeat?.kind === "ring" && (
+                  <Checkbox
+                    checked={chosen.repeat.facing}
+                    label="Turn each copy to face out"
+                    onChange={(e) => setRepeat({ ...(chosen.repeat as Repeat), facing: e.target.checked } as Repeat)}
+                  />
+                )}
+                {chosen.repeat && (
+                  <p className={styles.empty}>{`${placements(chosen).length} shapes in all, counting the one you drew`}</p>
+                )}
+              </>
+              )}
                 </Section>
               </div>
             </Card>
           )}
+
         </div>
       </main>
     </div>
