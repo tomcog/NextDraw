@@ -14,12 +14,16 @@ export function TipMark({ tool }: { tool: Preset | undefined }) {
   useEffect(() => setMissing(false), [name]);
   if (!name || missing) return null;
   return (
-    <img
-      className={styles.tipMark}
-      src={`/tips/${encodeURIComponent(name)}.svg`}
-      alt=""
-      aria-hidden
-      onError={() => setMissing(true)}
-    />
+    // The drawing sits inside its box rather than being it: a box of its own can take its height
+    // from what it stands beside, where the drawing would instead stretch the row to its own size.
+    <span className={styles.tipMark}>
+      <img
+        className={styles.tipMarkArt}
+        src={`/tips/${encodeURIComponent(name)}.svg`}
+        alt=""
+        aria-hidden
+        onError={() => setMissing(true)}
+      />
+    </span>
   );
 }

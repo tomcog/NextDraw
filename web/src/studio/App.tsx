@@ -1489,9 +1489,11 @@ export default function App() {
                 </Section>
 
                 <Section title="Drawing tool" collapsibleKey="pen">
-                  {/* The tip's own drawing, in front of the marker it belongs to. */}
+                  {/* The tip's own drawing, in front of the marker and the tips it belongs to:
+                      it stands as tall as they do together, since it is what both of them name. */}
                   <div className={styles.toolPick}>
                   <TipMark tool={tool2 ?? undefined} />
+                  <div className={styles.toolPickMain}>
                   <InputSelect
                     size="md"
                     label="Tool"
@@ -1512,7 +1514,6 @@ export default function App() {
                       </option>
                     ))}
                   </InputSelect>
-                  </div>
                   {tips.length > 1 && (
                     <div className={styles.tools} role="group" aria-label="Tip">
                       {tips.map((t) => (
@@ -1529,6 +1530,8 @@ export default function App() {
                       ))}
                     </div>
                   )}
+                  </div>
+                  </div>
                   <p className={styles.empty}>
                     {`Draws a ${penWidthMm} mm line${palette.length > 1 ? ` in ${palette.length} colors` : ""}`}
                   </p>
