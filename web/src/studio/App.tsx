@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Button, ButtonRound, Card, Checkbox, InputSelect, InputText, InputTextarea, LayerController } from "@tomcoggia/ui";
-import { AlignJustify, ArrowDownToLine, AudioWaveform, Circle, CircleDashed, CircleDot, Copy, Ellipsis, EllipsisVertical, FilePlus, Flame, FolderOpen, Grid2x2, Layers2, LoaderPinwheel, Menu, Minus, MoveHorizontal, MoveVertical, MousePointer2, Orbit, PaintBucket, Pentagon, Plus, Radar, Rainbow, Redo2, Repeat as RepeatIcon, Spline, Square, SquareDimensions, Star, Trash2, Type, Undo2, Waves, Waypoints } from "lucide-react";
+import { AlignJustify, ArrowDownToLine, AudioWaveform, Circle, CircleDashed, CircleDot, Copy, Ellipsis, EllipsisVertical, FilePlus, Flame, FlameKindling, FolderOpen, Grid2x2, Layers2, LoaderPinwheel, Menu, Minus, MoveHorizontal, MoveVertical, MousePointer2, Orbit, PaintBucket, Pentagon, Plus, Radar, Rainbow, Redo2, Repeat as RepeatIcon, Spline, Square, SquareDimensions, Star, Trash2, Type, Undo2, Waves, Waypoints } from "lucide-react";
 import { FileBrowser, LAST_FOLDER_KEY, type OpenResult } from "../components/FileBrowser";
 import { Section } from "../components/controls/Section";
 import { NumberField } from "../components/controls/NumberField";
@@ -1831,6 +1831,17 @@ export default function App() {
                         />
                       );
                     })}
+                    {/* At the end of the row that made the copies: the one thing that gives them up
+                        and leaves each as a shape of its own. */}
+                    {chosen.repeat && (
+                      <ButtonRound
+                        size="sm"
+                        icon={<FlameKindling />}
+                        aria-label="Bake pattern"
+                        title={`Bake the pattern: all ${placements(chosen).length} copies become shapes of their own`}
+                        onClick={() => bakeShape(chosen.id)}
+                      />
+                    )}
                   </div>
                   {chosen.repeat && (
                     <div className={styles.fillRow}>
