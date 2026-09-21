@@ -1116,9 +1116,9 @@ export default function App() {
               // Undoing is about the drawing rather than about the layers, so it sits over the page
               // with the other things that are true of what is being looked at.
               <span className={styles.bedTools}>
-                <ButtonRound size="sm" variant="ghost" icon={<Undo2 />} aria-label="Undo"
+                <ButtonRound size="sm" icon={<Undo2 />} aria-label="Undo"
                   title="Undo the last change" disabled={busy || !past.length} onClick={undo} />
-                <ButtonRound size="sm" variant="ghost" icon={<Redo2 />} aria-label="Redo"
+                <ButtonRound size="sm" icon={<Redo2 />} aria-label="Redo"
                   title="Redo the change just undone" disabled={busy || !future.length} onClick={redo} />
                 <InkSimControl on={inkSim} onChange={setInkSim} />
               </span>

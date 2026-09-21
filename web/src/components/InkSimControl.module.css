@@ -4,20 +4,11 @@
   gap: 0.5rem;
 }
 
-/* A toggle, not an action, so each state sits one rung up the ladder ButtonRound would use.
-   Figma: Button/Round XL, cells 539:2461 (off), 539:2452 (hover), 539:2455 (on).
-
-   Off is the Disabled pair - grey ground, muted glyph - because an untouched toggle should look
-   inert rather than merely un-pressed. Hovering wakes it to the library's own resting pair, and on
-   is the full brand fill. --ui-primary-lighter isn't defined yet, so this carries the same fallback
-   ButtonRound carries. */
-.button {
-  --ui-button-round-bg: var(--ui-surface-disabled);
-  --ui-button-round-icon: var(--ui-text-disabled);
-  --ui-button-round-bg-hover: var(--ui-primary-lighter, color-mix(in srgb, var(--ui-primary) 15%, var(--ui-white)));
-  --ui-button-round-icon-hover: var(--ui-primary);
-}
-
+/* Off, it is an ordinary round button: the same pink ground and red glyph as every other control
+   in the app, so the row over the page reads as one set of buttons rather than one live control
+   beside a greyed-out one. (It used to rest on the Disabled pair, which said "inert" where it meant
+   "off".) On is the full brand fill, which is the difference a toggle needs to show.
+   Figma: Button/Round XL, cells 539:2461 (off), 539:2452 (hover), 539:2455 (on). */
 .button.on {
   --ui-button-round-bg: var(--ui-primary);
   --ui-button-round-icon: var(--ui-text-on-primary);
