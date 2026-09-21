@@ -11,6 +11,7 @@ import { parsePreview, type Preview } from "./lib/preview";
 import { load, save } from "./lib/storage";
 import type { Confirmation, Estimate, Info, Ink, Layer, PenColor, LayerView, Message, Placement, Preset, Settings, Status, Plot } from "./lib/types";
 import { hasPen, inkHex, penNameAt, penNameOf } from "./lib/ink";
+import { Hints } from "./components/controls/Hints";
 import { Header } from "./components/Header";
 import { Bed, type Zoom } from "./components/Bed";
 import { PaletteEditor } from "./components/PaletteEditor";
@@ -1255,6 +1256,7 @@ export default function App() {
   }, []);
   return (
     <div className={styles.app}>
+      <Hints />
       <FileBrowser open={browserOpen} onClose={() => setBrowserOpen(false)} onOpened={onOpened} />
       <Header plotterFound={Boolean(status?.plotter_found)} lostContact={lostContact} />
 

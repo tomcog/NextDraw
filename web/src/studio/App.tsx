@@ -25,6 +25,7 @@ import { fitText, textRuns } from "./lib/text";
 import { defaultRepeat, placements, REPEAT_FIELDS, type Repeat, type RepeatKind } from "./lib/repeat";
 import { parseDrawing } from "./lib/parse";
 import { PaletteMenu } from "../components/controls/PaletteMenu";
+import { Hints } from "../components/controls/Hints";
 import { RowMenu } from "../components/controls/RowMenu";
 import { boxOf, centerOf, clampToPage, drawnRuns, moveBy, newLayerId, newShapeId, outlinePoints, pathRuns, pointsBox, resizeTo, shapeName, turnPoint, POINT_HANDLE_LIMIT, type Layer, type Page, type Shape } from "./lib/shapes";
 import { buildSvg, cleanFileName } from "./lib/svg";
@@ -40,7 +41,7 @@ const SIZES = PAPER_SIZES.filter((p) => p.w && p.h).map((p) => ({
 }));
 
 const TOOLS: { kind: Tool; label: string; hint: string; icon: JSX.Element }[] = [
-  { kind: "select", label: "Select", hint: "Select: drag a shape to move it, its corners to resize", icon: <MousePointer2 /> },
+  { kind: "select", label: "Select", hint: "Select (V): drag a shape to move it, its corners to resize", icon: <MousePointer2 /> },
   { kind: "rect", label: "Rectangle", hint: "Draw a rectangle: drag on the page", icon: <Square /> },
   { kind: "ellipse", label: "Ellipse", hint: "Draw an ellipse: drag on the page", icon: <Circle /> },
   { kind: "line", label: "Line", hint: "Draw a line: drag on the page", icon: <Minus /> },
@@ -335,6 +336,20 @@ export default function App() {
       if (el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement || (el as HTMLElement)?.isContentEditable) return;
       e.preventDefault();
       nudgeRef.current(move[0], move[1]);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
+
+  // V for the select tool, the way every drawing program does it: the pointer is what you want back
+  // after drawing something, and reaching for the toolbar to get it is the long way round.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "v" && e.key !== "V") return;
+      if (e.metaKey || e.ctrlKey || e.altKey) return; // paste, and whatever else the system has
+      const el = document.activeElement;
+      if (el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement || (el as HTMLElement)?.isContentEditable) return;
+      setTool("select");
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
@@ -978,6 +993,7 @@ export default function App() {
 
   return (
     <div className={styles.app}>
+      <Hints />
       <FileBrowser
         open={browserOpen}
         endpoint="/api/studio/read"

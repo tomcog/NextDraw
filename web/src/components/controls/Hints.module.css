@@ -1,0 +1,15 @@
+/* The tooltip itself: a dark slip of text that never takes the pointer, so it can sit over whatever
+   it is explaining without getting in the way of it. */
+.hint {
+  position: fixed;
+  z-index: 60;
+  max-width: 18rem;
+  padding: 0.25rem 0.5rem;
+  border-radius: 4px;
+  background: var(--ui-text-default);
+  color: var(--ui-surface-raised);
+  font-size: 11px;
+  line-height: 1.35;
+  box-shadow: var(--ui-shadow-float-1);
+  pointer-events: none;
+}
