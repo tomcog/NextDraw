@@ -126,6 +126,13 @@
   gap: 0.375rem;
 }
 
+/* The controls that sit on the dimension line above the page, in one row with room between them. */
+.bedTools {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+
 /* One row while they fit, then onto the next: the card's width decides, not the number of tools. */
 .tools {
   display: flex;
