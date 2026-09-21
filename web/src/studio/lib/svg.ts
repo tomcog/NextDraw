@@ -2,7 +2,7 @@ import { fillRuns, type Fill } from "./hatch";
 import { curveStrokes, pointsAttr } from "./parametric";
 import { textRuns, type StrokeFont } from "./text";
 import { placementAttr, placements } from "./repeat";
-import { boxOf, pathRuns, turnAttr, type Layer, type Page, type Shape } from "./shapes";
+import { boxOf, drawnRuns, pathRuns, turnAttr, type Layer, type Page, type Shape } from "./shapes";
 
 // The drawing Studio writes out. Two things matter to Plot at the other end:
 //
@@ -51,7 +51,7 @@ function shapeMarkup(s: Shape, fonts: Record<string, StrokeFont> = {}): string {
   // they are copies rather than shapes of their own.
   if (s.repeat) return allCopies(s, (i) => shapeMarkup({ ...s, repeat: undefined, id: i ? `${s.id}-r${i + 1}` : s.id }, fonts));
   if (s.kind === "path") {
-    const runs = pathRuns(s);
+    const runs = drawnRuns(s);
     if (runs.length === 1) return `<polyline id="${escapeAttr(s.id)}" points="${pointsAttr(runs[0])}"/>`;
     // Several runs in one element: a path with a move at the start of each, which is what makes the
     // whole of it one shape again when the drawing is opened.
@@ -155,6 +155,7 @@ function designBlock(fills: Fill[], shapes: Shape[], layers: Layer[]): string {
   const texts = shapes.filter((s) => s.kind === "text");
   const turned = shapes.filter((s) => s.rotation);
   const repeated = shapes.filter((s) => s.repeat);
+  const smoothed = shapes.filter((s) => s.smooth && s.kind === "path");
   const data = {
     on: Object.fromEntries(shapes.map((s) => [s.id, nameOf.get(s.layerId) ?? ""])),
     // How far each turned shape is turned. The file already draws it turned; this is what lets it be
@@ -163,6 +164,15 @@ function designBlock(fills: Fill[], shapes: Shape[], layers: Layer[]): string {
     // How each repeated shape repeats. The copies are all in the file for Plot to draw; this is what
     // lets Studio pick them up again as one shape drawn many times.
     ...(repeated.length ? { repeats: Object.fromEntries(repeated.map((s) => [s.id, s.repeat])) } : {}),
+    // The points a smoothed path was drawn through. The file holds the curve itself, as the lines
+    // the pen makes; these are what lets it be picked up again as a few points to drag rather than
+    // as the hundreds they were walked out into.
+    ...(smoothed.length
+      ? { smoothed: Object.fromEntries(smoothed.map((s) => [
+          s.id,
+          pathRuns(s).map((run) => run.map((pt) => [trim(pt.x), trim(pt.y)])),
+        ])) }
+      : {}),
     // What each text says and which font sets it: the letters are in the file as paths already, and
     // this is what lets them be typed into again.
     ...(texts.length

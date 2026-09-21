@@ -75,7 +75,7 @@ export function parseDrawing(text: string): Opened {
   const designEl = svg.getElementsByTagName("nds:design")[0] ?? svg.querySelector("design");
   let design: {
     fills?: unknown; on?: Record<string, string>; curves?: unknown;
-    turned?: Record<string, unknown>; repeats?: Record<string, unknown>;
+    turned?: Record<string, unknown>; repeats?: Record<string, unknown>; smoothed?: Record<string, unknown>;
     texts?: Record<string, { text?: unknown; font?: unknown; box?: unknown; tracking?: unknown; leading?: unknown }>;
   } = {};
   try {
@@ -278,6 +278,25 @@ export function parseDrawing(text: string): Opened {
   for (const s of shapes) {
     const repeat = repeatFromData(design.repeats?.[s.id]);
     if (repeat) s.repeat = repeat;
+  }
+
+  // The points behind each smoothed path. What's in the file is the curve walked out into segments;
+  // these are the few points it was drawn through, which are what there is to edit.
+  for (const s of shapes) {
+    const saved = design.smoothed?.[s.id];
+    if (!Array.isArray(saved)) continue;
+    const runs = (saved as unknown[])
+      .map((run) => (Array.isArray(run)
+        ? run
+          .map((pt) => (Array.isArray(pt) ? { x: Number(pt[0]), y: Number(pt[1]) } : null))
+          .filter((pt): pt is { x: number; y: number } => !!pt && Number.isFinite(pt.x) && Number.isFinite(pt.y))
+        : []))
+      .filter((run) => run.length > 1);
+    if (!runs.length) continue;
+    s.kind = "path";
+    s.smooth = true;
+    s.runs = runs.length > 1 ? runs : undefined;
+    s.points = runs.length > 1 ? undefined : runs[0];
   }
 
   // The angle each turned shape was drawn at. The geometry in the file is already turned, so this

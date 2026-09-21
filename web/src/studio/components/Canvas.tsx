@@ -1,7 +1,7 @@
 import { useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
 import {
   angleFromCenter, boxAround, boxOf, clampToPage, dragHandleTurned, handlePoints, isDegenerate,
-  moveBy, newShapeId, pathRuns, scaleInto, turnAround, turnAttr, turnGrip, CURSOR,
+  drawnRuns, moveBy, newShapeId, scaleInto, turnAround, turnAttr, turnGrip, CURSOR,
   type Handle, type Page, type Shape, type ShapeKind,
 } from "../lib/shapes";
 import { fillRuns, type Fill } from "../lib/hatch";
@@ -372,7 +372,7 @@ export function Canvas({ page, shapes, fills, layers, activeLayer, model, zoom, 
     }
     if (s.kind === "path") {
       // One polyline per run: a joined shape is several strokes that move, scale and turn as one.
-      const runs = pathRuns(s);
+      const runs = drawnRuns(s);
       if (runs.length === 1) return <polyline key={key} {...common} fill="none" points={pointsAttr(runs[0])} />;
       return (
         <g key={key} transform={turnAttr(s)}>

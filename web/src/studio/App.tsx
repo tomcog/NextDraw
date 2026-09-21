@@ -818,6 +818,13 @@ export default function App() {
     setShapes((list) => list.map((s) => (s.id === chosen.id ? { ...s, curve: next } : s)));
   };
 
+  /** Draw the chosen path as a curve through its points, or as the lines between them. */
+  const setSmooth = (on: boolean) => {
+    if (!chosen) return;
+    record();
+    setShapes((list) => list.map((s) => (s.id === chosen.id ? { ...s, smooth: on || undefined } : s)));
+  };
+
   const setOutline = (on: boolean) => {
     if (!chosen) return;
     record();
@@ -1575,6 +1582,19 @@ export default function App() {
                       aria-label="Bake shape, keep the pattern"
                       title="Bake the shape: its own numbers are given up, and every copy follows its points"
                       onClick={() => bakeShape(chosen.id, true)}
+                    />
+                  )}
+                  {/* A path drawn as a curve through its points instead of the lines between them.
+                      Not a panel to open: it is on or it is off. */}
+                  {chosen.kind === "path" && (
+                    <ButtonRound
+                      size="sm"
+                      icon={<Spline />}
+                      className={chosen.smooth ? controls.roundActive : undefined}
+                      aria-label="Smooth"
+                      aria-pressed={chosen.smooth === true}
+                      title="Smooth: draw a curve through the path's points rather than the lines between them"
+                      onClick={() => setSmooth(!chosen.smooth)}
                     />
                   )}
                   {/* A path is the only thing there are points to take out of. */}

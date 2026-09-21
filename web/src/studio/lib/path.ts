@@ -181,6 +181,38 @@ export function flattenPath(d: string, step = 0.01): Point[][] {
 }
 
 /**
+ * A run drawn as a curve through its own points rather than as the straight lines between them: a
+ * Catmull-Rom spline, which passes through every point and takes its direction at each from the
+ * neighbours on either side. The result is walked out in pieces about `step` long, because the
+ * plotter draws segments and Plot reads the drawing back as segments too - the curve is in where
+ * they fall, not in the file saying "curve". A run that ends where it began is smoothed round the
+ * join, so a closed shape has no corner at its start.
+ */
+export function smoothRun(points: Point[], step = 0.01): Point[] {
+  if (points.length < 3) return points;
+  const closed = Math.hypot(points[0].x - points[points.length - 1].x, points[0].y - points[points.length - 1].y) < 1e-9;
+  const loop = closed ? points.slice(0, -1) : points;
+  if (loop.length < 3) return points;
+  const at = (i: number) => (closed
+    ? loop[((i % loop.length) + loop.length) % loop.length]
+    : loop[Math.max(0, Math.min(loop.length - 1, i))]);
+  const out: Point[] = [at(0)];
+  const last = closed ? loop.length : loop.length - 1;
+  for (let i = 0; i < last; i++) {
+    const p0 = at(i - 1);
+    const p1 = at(i);
+    const p2 = at(i + 1);
+    const p3 = at(i + 2);
+    // The tangent at a point is a sixth of the way from the point before it to the one after: the
+    // usual reading of Catmull-Rom as a cubic.
+    const c1 = { x: p1.x + (p2.x - p0.x) / 6, y: p1.y + (p2.y - p0.y) / 6 };
+    const c2 = { x: p2.x - (p3.x - p1.x) / 6, y: p2.y - (p3.y - p1.y) / 6 };
+    out.push(...cubic(p1, c1, c2, p2, step));
+  }
+  return out;
+}
+
+/**
  * A run with the points it doesn't need taken out: Douglas-Peucker, which keeps every point that is
  * further than `tolerance` from the line its neighbours make and drops the rest. The ends are always
  * kept, so a closed run stays closed, and the shape stays within the tolerance of what it was.

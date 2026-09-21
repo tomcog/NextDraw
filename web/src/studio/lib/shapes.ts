@@ -2,6 +2,7 @@
 // Plot measures a drawing's footprint, so what's on the page here is what lands on the paper there.
 
 import { CURVE_LABEL, type Curve, type Point } from "./parametric";
+import { smoothRun } from "./path";
 import type { Repeat } from "./repeat";
 
 export type ShapeKind = "rect" | "ellipse" | "line" | "curve" | "path" | "text";
@@ -33,6 +34,12 @@ export interface Shape {
    * the pen partway. `points` is the whole of it when there is only the one run.
    */
   runs?: Point[][];
+  /**
+   * Whether a path is drawn as a curve through its points rather than as the lines between them.
+   * The points stay what they are - each one can still be dragged, and simplifying leaves fewer of
+   * them - and the curve is worked out from them every time it is drawn or written out.
+   */
+  smooth?: boolean;
   /** Drawn more than once: in rows and columns, or round a ring. The shape itself is the one you
    *  edit, and every copy follows it. */
   repeat?: Repeat;
@@ -83,6 +90,15 @@ export const newShapeId = () => `shape-${++counter}-${Date.now().toString(36)}`;
 /** The box a shape occupies, normalised so x0/y0 is the top-left whichever way it was drawn. */
 /** Every run of a path, the single-run case included: what draws it, and what it is measured by. */
 export const pathRuns = (s: Shape): Point[][] => s.runs ?? (s.points ? [s.points] : []);
+
+/**
+ * The runs as they are actually drawn: the points themselves, or the curve through them for a path
+ * that is smoothed. Everything the pen or the page sees goes through this - the canvas, the file,
+ * and a hatch's outline - so a smoothed path is one thing in all three.
+ */
+export const drawnRuns = (s: Shape): Point[][] => (s.smooth && s.kind === "path"
+  ? pathRuns(s).map((run) => smoothRun(run))
+  : pathRuns(s));
 
 /** All of a path's points in one list, in the order they are drawn. */
 export const allPoints = (s: Shape): Point[] => pathRuns(s).flat();

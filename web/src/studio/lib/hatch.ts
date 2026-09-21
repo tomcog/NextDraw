@@ -1,5 +1,5 @@
 import { curveStrokes, type Point } from "./parametric";
-import { boxOf, outlinePoints, pathRuns, type Shape } from "./shapes";
+import { boxOf, drawnRuns, outlinePoints, pathRuns, type Shape } from "./shapes";
 
 // Hatch fills, kept as parameters rather than as the lines they make (see docs/studio.md). A fill
 // says which shape it fills, at what angle and how far apart - so changing pen or page size
@@ -88,7 +88,7 @@ export const canFill = (s: Shape) =>
 const outlinesOf = (s: Shape): Point[][] => {
   // A rectangle or an ellipse has no points of its own kept anywhere, so its outline is worked out
   // the same way baking works it out: the corners, or the rim.
-  const own = pathRuns(s);
+  const own = drawnRuns(s);
   const runs = s.curve ? curveStrokes(s) : own.length ? own : [outlinePoints(s)];
   return runs
     .filter((pts) => pts.length > 2)
