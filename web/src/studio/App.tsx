@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Button, ButtonRound, Card, Checkbox, ConfirmButton, InputSelect, InputText, InputTextarea, LayerController } from "@tomcoggia/ui";
-import { AlignJustify, ArrowDownToLine, AudioWaveform, Circle, CircleDashed, CircleDot, Copy, Ellipsis, EllipsisVertical, FilePlus, Flame, FlameKindling, FolderOpen, Grid2x2, Layers2, LoaderPinwheel, Menu, Minus, MoveHorizontal, MoveVertical, MousePointer2, Orbit, PaintBucket, PenLine, Pentagon, Plus, Radar, Rainbow, Redo2, Repeat as RepeatIcon, Save, Spline, Square, SquareDimensions, Star, Trash2, Type, Undo2, Waves, Waypoints } from "lucide-react";
+import { AlignJustify, ArrowDownToLine, AudioWaveform, Circle, CircleDashed, CircleDot, Copy, Ellipsis, EllipsisVertical, FilePlus, Flame, FlameKindling, FolderOpen, Grid2x2, Layers2, LoaderPinwheel, Menu, Minus, MoveHorizontal, MoveVertical, MousePointer2, Orbit, PaintBucket, PenLine, Pentagon, Plus, Radar, Rainbow, Redo2, Repeat as RepeatIcon, RotateCw, Save, Spline, Square, SquareDimensions, Star, Trash2, Type, Undo2, Waves, Waypoints } from "lucide-react";
 import { FileBrowser, LAST_FOLDER_KEY, type OpenResult } from "../components/FileBrowser";
 import { Section } from "../components/controls/Section";
 import { NumberField } from "../components/controls/NumberField";
@@ -167,6 +167,8 @@ export default function App() {
   // And whether the repeat settings are open, for the same reason: how many of a shape there are is
   // settled early and then left alone.
   const [repeating, setRepeating] = useState(false);
+  // And whether the rotation field is out. A shape is usually turned once, if at all.
+  const [rotating, setRotating] = useState(false);
   const [model, setModel] = useState<PlotterModel | undefined>();
   // Paper to begin with: the page is what's being drawn on, and the bed is context around it.
   const [zoom, setZoom] = useState<Zoom>("paper");
@@ -1923,6 +1925,18 @@ export default function App() {
               <div className={`${styles.cardBody} ${styles.settings}`}>
                 <Section title="Transform" collapsibleKey="transform">
                 <div className={styles.tools} role="group" aria-label="Transform this shape">
+                  {/* One button per thing that can be done to a shape as a whole, each opening its
+                      own settings: how far it is turned, and how many of it there are. */}
+                  <ButtonRound
+                    size="sm"
+                    icon={<RotateCw />}
+                    className={rotating ? controls.roundActive : undefined}
+                    aria-label="Rotate"
+                    aria-expanded={rotating}
+                    aria-pressed={rotating}
+                    title="Rotate: turn this shape about the middle of its box"
+                    onClick={() => setRotating((on) => !on)}
+                  />
                   <ButtonRound
                     size="sm"
                     icon={<RepeatIcon />}
@@ -1935,13 +1949,15 @@ export default function App() {
                   />
                 </div>
 
-                <NumberField
-                  label="Rotation"
-                  unit="°"
-                  step={5}
-                  value={chosen.rotation ?? 0}
-                  onChange={setRotation}
-                />
+                {rotating && (
+                  <NumberField
+                    label="Rotation"
+                    unit="°"
+                    step={5}
+                    value={chosen.rotation ?? 0}
+                    onChange={setRotation}
+                  />
+                )}
 
                 {repeating && (
                 <>
