@@ -786,7 +786,9 @@ export default function App() {
           const b = pointsBox(points);
           made.push({
             ...shape, id: made.length ? newShapeId() : shape.id,
-            kind: "path", points, curve: undefined,
+            // The curve's numbers are given up, but not its shape: the points are kept as a curve
+            // through them, so simplifying down to a handful still draws what was drawn.
+            kind: "path", points, curve: undefined, smooth: true,
             repeat: keepPattern ? shape.repeat : undefined,
             rotation: keepPattern ? shape.rotation : undefined,
             x: b.x0, y: b.y0, x2: b.x1, y2: b.y1,
