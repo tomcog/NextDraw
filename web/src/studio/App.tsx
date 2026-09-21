@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Button, ButtonRound, Card, Checkbox, InputSelect, InputText, InputTextarea, LayerController } from "@tomcoggia/ui";
-import { AlignJustify, ArrowDownToLine, AudioWaveform, Circle, CircleDashed, CircleDot, Copy, Ellipsis, EllipsisVertical, FilePlus, FolderOpen, Grid2x2, Layers2, LoaderPinwheel, Menu, Minus, MousePointer2, Orbit, Pentagon, Plus, Proportions, Radar, Rainbow, Ratio, Redo2, Spline, Square, Star, Trash2, Type, Undo2, Waves } from "lucide-react";
+import { AlignJustify, ArrowDownToLine, AudioWaveform, Circle, CircleDashed, CircleDot, Copy, Ellipsis, EllipsisVertical, FilePlus, FolderOpen, Grid2x2, Layers2, LoaderPinwheel, Menu, Minus, MousePointer2, Orbit, Pentagon, Plus, Radar, Rainbow, Ratio, Redo2, Spline, Square, SquareDimensions, Star, Trash2, Type, Undo2, Waves } from "lucide-react";
 import { FileBrowser, LAST_FOLDER_KEY, type OpenResult } from "../components/FileBrowser";
 import { Section } from "../components/controls/Section";
 import { NumberField } from "../components/controls/NumberField";
@@ -1406,7 +1406,7 @@ export default function App() {
                                     }}
                                   >
                                     {`${trimNum(b.x1 - b.x0, 2)} × ${trimNum(b.y1 - b.y0, 2)}`}
-                                    <Proportions className={styles.sizeIcon} aria-hidden />
+                                    <SquareDimensions className={styles.sizeIcon} aria-hidden />
                                   </button>
                                 </span>
                               }
