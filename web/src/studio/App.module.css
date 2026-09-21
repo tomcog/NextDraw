@@ -153,6 +153,7 @@
   align-items: baseline;
   justify-content: space-between;
   gap: 0.5rem;
+  width: 100%;
   min-width: 0;
 }
 
@@ -199,7 +200,10 @@
 }
 
 /* The label fills the row so the size can sit at its end. */
-.layerRow [class*="lead"] { flex: 1; min-width: 0; }
+/* The row's own name holds the width, so the size and its icon end up against the right edge. Both
+   the lead and the label inside it are the library's, which sizes them to their words. */
+.layerRow [class*="lead"],
+.layerRow [class*="label"] { flex: 1; min-width: 0; }
 
 .shapeSize {
   flex: none;
