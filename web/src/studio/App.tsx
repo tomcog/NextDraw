@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Button, ButtonRound, Card, Checkbox, InputSelect, InputText, InputTextarea, LayerController } from "@tomcoggia/ui";
-import { AlignJustify, ArrowDownToLine, AudioWaveform, Circle, CircleDashed, CircleDot, Copy, Ellipsis, EllipsisVertical, FilePlus, FolderOpen, Grid2x2, Layers2, LoaderPinwheel, Menu, Minus, MousePointer2, Orbit, Pentagon, Plus, Radar, Rainbow, Ratio, Redo2, Spline, Square, SquareDimensions, Star, Trash2, Type, Undo2, Waves } from "lucide-react";
+import { AlignJustify, ArrowDownToLine, AudioWaveform, Circle, CircleDashed, CircleDot, Copy, Ellipsis, EllipsisVertical, FilePlus, Flame, FlameKindling, FolderOpen, Grid2x2, Layers2, LoaderPinwheel, Menu, Minus, MousePointer2, Orbit, Pentagon, Plus, Radar, Rainbow, Ratio, Redo2, Spline, Square, SquareDimensions, Star, Trash2, Type, Undo2, Waves } from "lucide-react";
 import { FileBrowser, LAST_FOLDER_KEY, type OpenResult } from "../components/FileBrowser";
 import { Section } from "../components/controls/Section";
 import { NumberField } from "../components/controls/NumberField";
@@ -1538,14 +1538,26 @@ export default function App() {
                       {`Split into ${chosen.runs?.length} shapes`}
                     </Button>
                   )}
-                  {chosen.repeat && chosen.kind !== "path" && (
-                    <Button size="md" variant="secondary" onClick={() => bakeShape(chosen.id, true)}>
-                      Bake shape
-                    </Button>
-                  )}
-                  <Button size="md" variant="secondary" onClick={() => bakeShape(chosen.id)}>
-                    {chosen.repeat ? "Bake pattern" : "Bake shape"}
-                  </Button>
+                  <div className={styles.tools} role="group" aria-label="Bake this shape">
+                    {chosen.repeat && chosen.kind !== "path" && (
+                      <ButtonRound
+                        size="sm"
+                        icon={<Flame />}
+                        aria-label="Bake shape"
+                        title="Bake the shape: its own numbers are given up, and every copy follows its points"
+                        onClick={() => bakeShape(chosen.id, true)}
+                      />
+                    )}
+                    <ButtonRound
+                      size="sm"
+                      icon={chosen.repeat ? <FlameKindling /> : <Flame />}
+                      aria-label={chosen.repeat ? "Bake pattern" : "Bake shape"}
+                      title={chosen.repeat
+                        ? "Bake the pattern: every copy becomes a shape of its own"
+                        : "Bake the shape: the numbers behind it are given up, and its points can then be dragged one by one"}
+                      onClick={() => bakeShape(chosen.id)}
+                    />
+                  </div>
                   {/* Only a repeat needs a word: one button there bakes the shape and another the
                       pattern, and the two look alike until the difference is said. */}
                   {chosen.repeat && (
