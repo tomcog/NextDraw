@@ -1,6 +1,6 @@
 import { newFillId, type Fill } from "./hatch";
 import { curveFromData } from "./parametric";
-import { flattenPath } from "./text";
+import { flattenPath } from "./path";
 import { repeatFromData } from "./repeat";
 import { newLayerId, newShapeId, type Layer, type Page, type Shape } from "./shapes";
 import { FILL_GROUP_PREFIX } from "./svg";
@@ -50,11 +50,15 @@ export function parseDrawing(text: string): Opened {
 
   const box = numbers(svg.getAttribute("viewBox"));
   const hasBox = box.length === 4 && box[2] > 0 && box[3] > 0;
+  // A file saved without a page size is sized from its viewBox, which counts in units rather than
+  // inches: 72 to the inch for Illustrator's exports, 96 for everyone else's - the same reading
+  // Plot's normalize_size makes, so the two apps agree on how big a drawing is.
+  const perUnit = /Adobe Illustrator/.test(text.slice(0, 4000)) ? 72 : 96;
   // The page in inches, and how many of the drawing's own units make one inch. A drawing Studio wrote
   // has a viewBox in inches, so the scale is 1; anything else is converted on the way in.
   const page: Page = {
-    w: lengthIn(svg.getAttribute("width")) ?? (hasBox ? box[2] : 11),
-    h: lengthIn(svg.getAttribute("height")) ?? (hasBox ? box[3] : 8.5),
+    w: lengthIn(svg.getAttribute("width")) ?? (hasBox ? box[2] / perUnit : 11),
+    h: lengthIn(svg.getAttribute("height")) ?? (hasBox ? box[3] / perUnit : 8.5),
   };
   const perInchX = hasBox ? box[2] / page.w : 1;
   const perInchY = hasBox ? box[3] / page.h : 1;
@@ -214,7 +218,9 @@ export function parseDrawing(text: string): Opened {
         if (fromText(el.getAttribute("id") || "")) break;
         // Moves, lines and curves become runs of points: a shape that can be edited here, rather
         // than a mark that can only be counted. Anything else in the path is left alone.
-        const runs = flattenPath(el.getAttribute("d") || "")
+        // Curves are walked at a hundredth of an inch, measured in whatever units this file counts
+        // in - a file in points would otherwise be read a hundred times finer than it needs.
+        const runs = flattenPath(el.getAttribute("d") || "", 0.01 * Math.max(perInchX, perInchY))
           .map((run) => run.map((p) => ({ x: toX(p.x), y: toY(p.y) })))
           .filter((run) => run.length > 1);
         if (!runs.length) {
