@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Button, ButtonRound, Card, Checkbox, ConfirmButton, InputSelect, InputText, InputTextarea, LayerController } from "@tomcoggia/ui";
-import { AlignJustify, ArrowDownToLine, AudioWaveform, Circle, CircleDashed, CircleDot, Copy, Ellipsis, EllipsisVertical, FilePlus, Flame, FlameKindling, FolderOpen, Grid2x2, Layers2, LoaderPinwheel, Menu, Minus, MoveHorizontal, MoveVertical, MousePointer2, Orbit, PaintBucket, Pentagon, Plus, Radar, Rainbow, Redo2, Repeat as RepeatIcon, Save, Spline, Square, SquareDimensions, Star, Trash2, Type, Undo2, Waves, Waypoints } from "lucide-react";
+import { AlignJustify, ArrowDownToLine, AudioWaveform, Circle, CircleDashed, CircleDot, Copy, Ellipsis, EllipsisVertical, FilePlus, Flame, FlameKindling, FolderOpen, Grid2x2, Layers2, LoaderPinwheel, Menu, Minus, MoveHorizontal, MoveVertical, MousePointer2, Orbit, PaintBucket, PenLine, Pentagon, Plus, Radar, Rainbow, Redo2, Repeat as RepeatIcon, Save, Spline, Square, SquareDimensions, Star, Trash2, Type, Undo2, Waves, Waypoints } from "lucide-react";
 import { FileBrowser, LAST_FOLDER_KEY, type OpenResult } from "../components/FileBrowser";
 import { Section } from "../components/controls/Section";
 import { NumberField } from "../components/controls/NumberField";
@@ -944,10 +944,34 @@ export default function App() {
 
   // The same for a shape: typed in place, settled when the field is left. A name that is wiped out
   // goes back to being what the shape is and where it sits, rather than being left blank.
+  // Picking from the list: a plain click takes that shape alone, shift adds one or takes it out.
+  // The row's box and its name both do this, which is why it is a function rather than a handler.
+  const pickFromRow = (id: string, add: boolean) =>
+    setSelected((current) => (add
+      ? (current.includes(id) ? current.filter((one) => one !== id) : [...current, id])
+      : [id]));
+
+  // The shape whose name is open for typing into, and what it was called before: renaming is asked
+  // for from the row's menu, and Escape puts the old name back.
+  const [renaming, setRenaming] = useState<string | null>(null);
   const typeShapeName = (id: string, name: string) =>
     setShapes((list) => list.map((s) => (s.id === id ? { ...s, name } : s)));
   const settleShapeName = (id: string) =>
     setShapes((list) => list.map((s) => (s.id === id ? { ...s, name: s.name?.trim() || undefined } : s)));
+
+  // A click anywhere but the field itself settles the name. The field's own blur does this too; this
+  // is what covers the case where it never took focus in the first place, which would otherwise
+  // leave the row typeable for good.
+  useEffect(() => {
+    if (!renaming) return;
+    const away = (e: PointerEvent) => {
+      if ((e.target as Element | null)?.closest?.("[data-renaming]")) return;
+      settleShapeName(renaming);
+      setRenaming(null);
+    };
+    document.addEventListener("pointerdown", away, true);
+    return () => document.removeEventListener("pointerdown", away, true);
+  }, [renaming]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Any colour at all for a layer, from the system colour picker - for a pen that isn't in the tool's
   // palette. Only the colour changes; the layer keeps the name it has.
@@ -1057,6 +1081,16 @@ export default function App() {
               { label: "Delete", icon: <Trash2 />, danger: true, disabled: layers.length < 2, onSelect: () => removeLayer(rowMenu.id) },
             ]
             : [
+              {
+                label: "Rename",
+                icon: <PenLine />,
+                onSelect: () => {
+                  const s = shapes.find((sh) => sh.id === rowMenu.id);
+                  nameBeforeEdit.current = s?.name ?? "";
+                  record();
+                  setRenaming(rowMenu.id);
+                },
+              },
               {
                 label: "Set size",
                 icon: <SquareDimensions />,
@@ -1485,27 +1519,43 @@ export default function App() {
                               onChange={() => {}}
                               onClick={(e) => {
                                 e.preventDefault();
-                                setSelected((current) => (e.shiftKey
-                                  ? (current.includes(sh.id) ? current.filter((id) => id !== sh.id) : [...current, sh.id])
-                                  : [sh.id]));
+                                pickFromRow(sh.id, e.shiftKey);
                               }}
                               label={
                                 <span className={styles.shapeLabel}>
-                                  <input
-                                    className={selected.includes(sh.id)
-                                      ? `${styles.shapeName} ${styles.shapeNameOn}`
-                                      : styles.shapeName}
-                                    value={name}
-                                    aria-label={`Name of ${name}`}
-                                    title="The shape's name: click to change it"
-                                    disabled={busy}
-                                    onFocus={() => record()}
-                                    onChange={(e) => typeShapeName(sh.id, e.target.value)}
-                                    onBlur={() => settleShapeName(sh.id)}
-                                    onKeyDown={(e) => {
-                                      if (e.key === "Enter" || e.key === "Escape") e.currentTarget.blur();
-                                    }}
-                                  />
+                                  {/* The name is text: clicking the row picks the shape, and a field
+                                      sitting here would take the caret and quietly eat whatever was
+                                      typed next. Renaming is asked for from the kebab. */}
+                                  {renaming === sh.id ? (
+                                    <input
+                                      className={`${styles.shapeName} ${styles.shapeNameEdit}`}
+                                      data-renaming
+                                      value={name}
+                                      aria-label={`Name of ${name}`}
+                                      autoFocus
+                                      disabled={busy}
+                                      onFocus={(e) => e.currentTarget.select()}
+                                      onChange={(e) => typeShapeName(sh.id, e.target.value)}
+                                      onBlur={() => {
+                                        settleShapeName(sh.id);
+                                        setRenaming(null);
+                                      }}
+                                      onKeyDown={(e) => {
+                                        if (e.key === "Escape") typeShapeName(sh.id, nameBeforeEdit.current);
+                                        if (e.key === "Enter" || e.key === "Escape") e.currentTarget.blur();
+                                      }}
+                                    />
+                                  ) : (
+                                    <span
+                                      className={selected.includes(sh.id)
+                                        ? `${styles.shapeName} ${styles.shapeNameOn}`
+                                        : styles.shapeName}
+                                      title="Click to pick this shape"
+                                      onClick={(e) => pickFromRow(sh.id, e.shiftKey)}
+                                    >
+                                      {name}
+                                    </span>
+                                  )}
                                   {/* How big it is, at the end of the row. Numbers alone: the page is
                                       inches throughout, and setting them is the kebab's job. */}
                                   <span className={styles.shapeSize}>
