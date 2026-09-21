@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Button, ButtonRound, Card, Checkbox, InputSelect, InputText, InputTextarea, LayerController } from "@tomcoggia/ui";
-import { AlignJustify, ArrowDownToLine, AudioWaveform, Circle, CircleDashed, CircleDot, Copy, Ellipsis, EllipsisVertical, FilePlus, Flame, FlameKindling, FolderOpen, Grid2x2, Layers2, LoaderPinwheel, Menu, Minus, MoveHorizontal, MoveVertical, MousePointer2, Orbit, PaintBucket, Pentagon, Plus, Radar, Rainbow, Redo2, Repeat as RepeatIcon, Spline, Square, SquareDimensions, Star, Trash2, Type, Undo2, Waves, Waypoints } from "lucide-react";
+import { AlignJustify, ArrowDownToLine, AudioWaveform, Circle, CircleDashed, CircleDot, Copy, Ellipsis, EllipsisVertical, FilePlus, Flame, FlameKindling, FolderOpen, Grid2x2, Layers2, LoaderPinwheel, Menu, Minus, MoveHorizontal, MoveVertical, MousePointer2, Orbit, PaintBucket, Pentagon, Plus, Radar, Rainbow, Redo2, Repeat as RepeatIcon, Printer, Save, Spline, Square, SquareDimensions, Star, Trash2, Type, Undo2, Waves, Waypoints } from "lucide-react";
 import { FileBrowser, LAST_FOLDER_KEY, type OpenResult } from "../components/FileBrowser";
 import { Section } from "../components/controls/Section";
 import { NumberField } from "../components/controls/NumberField";
@@ -1160,6 +1160,24 @@ export default function App() {
                       disabled={busy}
                       onClick={() => setBrowserOpen(true)}
                     />
+                    {/* Saving and handing over to Plot are the two things done TO this drawing, so
+                        they sit with the two done to the card. */}
+                    <ButtonRound
+                      size="sm"
+                      icon={<Save />}
+                      aria-label="Save"
+                      title={`Save this drawing${saved ? ` to ${saved.folder}` : ""}`}
+                      disabled={busy || !shapes.length}
+                      onClick={save}
+                    />
+                    <ButtonRound
+                      size="sm"
+                      icon={<Printer />}
+                      aria-label="Open in Plot"
+                      title="Save this drawing and open it in Plot, ready to draw"
+                      disabled={busy || !shapes.length}
+                      onClick={openInPlot}
+                    />
                   </span>
                 }
               >
@@ -1170,14 +1188,6 @@ export default function App() {
                   disabled={busy}
                   onChange={(e) => setName(e.target.value)}
                 />
-                <div className={styles.actions}>
-                  <Button size="sm" variant="secondary" disabled={busy || !shapes.length} onClick={save}>
-                    Save
-                  </Button>
-                  <Button size="sm" disabled={busy || !shapes.length} onClick={openInPlot}>
-                    Open in Plot
-                  </Button>
-                </div>
                 <p className={controls.fileWhere} title={saved?.path ?? undefined}>
                   {saved ? `In ${saved.folder}` : "Not saved yet"}
                 </p>
