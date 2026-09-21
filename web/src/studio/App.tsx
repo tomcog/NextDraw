@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Button, ButtonRound, Card, Checkbox, InputSelect, InputText, InputTextarea, LayerController } from "@tomcoggia/ui";
+import { Button, ButtonRound, Card, Checkbox, ConfirmButton, InputSelect, InputText, InputTextarea, LayerController } from "@tomcoggia/ui";
 import { AlignJustify, ArrowDownToLine, AudioWaveform, Circle, CircleDashed, CircleDot, Copy, Ellipsis, EllipsisVertical, FilePlus, Flame, FlameKindling, FolderOpen, Grid2x2, Layers2, LoaderPinwheel, Menu, Minus, MoveHorizontal, MoveVertical, MousePointer2, Orbit, PaintBucket, Pentagon, Plus, Radar, Rainbow, Redo2, Repeat as RepeatIcon, Save, Spline, Square, SquareDimensions, Star, Trash2, Type, Undo2, Waves, Waypoints } from "lucide-react";
 import { FileBrowser, LAST_FOLDER_KEY, type OpenResult } from "../components/FileBrowser";
 import { Section } from "../components/controls/Section";
@@ -1146,8 +1146,11 @@ export default function App() {
                   <span className={styles.headerTools}>
                     {/* In the order they come up: the drawing in hand is saved, another is opened,
                         a new one is started, and what is finished goes to Plot. */}
-                    <ButtonRound
+                    {/* The library's safety button: the half of "are you sure?" that keeps the
+                        work, and the one button here that writes a file. */}
+                    <ConfirmButton
                       size="sm"
+                      tone="safety"
                       icon={<Save />}
                       aria-label="Save"
                       title={`Save this drawing${saved ? ` to ${saved.folder}` : ""}`}
