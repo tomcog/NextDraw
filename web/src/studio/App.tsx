@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Button, ButtonRound, Card, Checkbox, InputSelect, InputText, InputTextarea, LayerController } from "@tomcoggia/ui";
-import { AlignJustify, ArrowDownToLine, AudioWaveform, Circle, CircleDashed, CircleDot, Copy, Ellipsis, EllipsisVertical, FilePlus, Flame, FlameKindling, FolderOpen, Grid2x2, Layers2, LoaderPinwheel, Menu, Minus, MoveHorizontal, MoveVertical, MousePointer2, Orbit, Pentagon, Plus, Radar, Rainbow, Redo2, Spline, Square, SquareDimensions, Star, Trash2, Type, Undo2, Waves, Waypoints } from "lucide-react";
+import { AlignJustify, ArrowDownToLine, AudioWaveform, Circle, CircleDashed, CircleDot, Copy, Ellipsis, EllipsisVertical, FilePlus, Flame, FlameKindling, FolderOpen, Grid2x2, Layers2, LoaderPinwheel, Menu, Minus, MoveHorizontal, MoveVertical, MousePointer2, Orbit, PaintBucket, Pentagon, Plus, Radar, Rainbow, Redo2, Spline, Square, SquareDimensions, Star, Trash2, Type, Undo2, Waves, Waypoints } from "lucide-react";
 import { FileBrowser, LAST_FOLDER_KEY, type OpenResult } from "../components/FileBrowser";
 import { Section } from "../components/controls/Section";
 import { NumberField } from "../components/controls/NumberField";
@@ -160,6 +160,9 @@ export default function App() {
   // Whether the simplify controls are open. Simplifying is done once to a path and then not thought
   // about again, so its numbers stay behind a button rather than sitting on the card.
   const [simplifying, setSimplifying] = useState(false);
+  // And whether the hatch settings are open. A shape is filled or it isn't, and the numbers behind
+  // the fill are worth looking at only while that is being decided.
+  const [filling, setFilling] = useState(false);
   const [model, setModel] = useState<PlotterModel | undefined>();
   // Paper to begin with: the page is what's being drawn on, and the bed is context around it.
   const [zoom, setZoom] = useState<Zoom>("paper");
@@ -1593,6 +1596,19 @@ export default function App() {
                       onClick={() => setSimplifying((on) => !on)}
                     />
                   )}
+                  {/* Only a shape with an inside can be hatched. */}
+                  {canFill(chosen) && (
+                    <ButtonRound
+                      size="sm"
+                      icon={<PaintBucket />}
+                      className={filling ? controls.roundActive : undefined}
+                      aria-label="Hatch"
+                      aria-expanded={filling}
+                      aria-pressed={filling}
+                      title="Hatch: fill this shape with lines, and set how they run"
+                      onClick={() => setFilling((on) => !on)}
+                    />
+                  )}
                 </div>
                 {/* Only a repeat needs a word: one button there bakes the shape and another the
                     pattern, and the two look alike until the difference is said. */}
@@ -1627,8 +1643,8 @@ export default function App() {
                   );
                 })()}
 
-                {canFill(chosen) && (
-                <Section title="Fill" collapsibleKey="fill">
+                {canFill(chosen) && filling && (
+                <>
                   <Checkbox
                     checked={chosenFills.length > 0}
                     label="Hatch this shape"
@@ -1754,7 +1770,7 @@ export default function App() {
                       onChange={(e) => setOutline(e.target.checked)}
                     />
                   )}
-                </Section>
+                </>
                 )}
                 </Section>
               </div>
