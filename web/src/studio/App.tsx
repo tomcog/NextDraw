@@ -1530,6 +1530,29 @@ export default function App() {
                 </Section>
                 )}
 
+                {/* Baking takes the whole thing - every copy of a repeat, every letter of a text -
+                    and leaves paths whose points can be pulled about one at a time. */}
+                <Section title="Bake" collapsibleKey="bake">
+                  {(chosen.runs?.length ?? 0) > 1 && (
+                    <Button size="md" variant="secondary" onClick={() => splitShape(chosen.id)}>
+                      {`Split into ${chosen.runs?.length} shapes`}
+                    </Button>
+                  )}
+                  {chosen.repeat && chosen.kind !== "path" && (
+                    <Button size="md" variant="secondary" onClick={() => bakeShape(chosen.id, true)}>
+                      Bake shape
+                    </Button>
+                  )}
+                  <Button size="md" variant="secondary" onClick={() => bakeShape(chosen.id)}>
+                    {chosen.repeat ? "Bake pattern" : "Bake shape"}
+                  </Button>
+                  <p className={styles.empty}>
+                    {chosen.repeat
+                      ? `Baking the shape gives up only its own numbers: its points can be dragged and every copy follows. Baking the pattern leaves ${placements(chosen).length} shapes, each free of the others.`
+                      : "The numbers behind it are given up; its points can then be dragged one by one."}
+                  </p>
+                </Section>
+
                 {chosen.kind === "path" && (
                 <Section title="Simplify" collapsibleKey="simplify">
                   {(() => {
@@ -1706,26 +1729,6 @@ export default function App() {
                     value={chosen.rotation ?? 0}
                     onChange={setRotation}
                   />
-                  {/* Baking takes the whole thing - every copy of a repeat, every letter of a text -
-                      and leaves paths whose points can be pulled about one at a time. */}
-                  {(chosen.runs?.length ?? 0) > 1 && (
-                    <Button size="md" variant="secondary" onClick={() => splitShape(chosen.id)}>
-                      {`Split into ${chosen.runs?.length} shapes`}
-                    </Button>
-                  )}
-                  {chosen.repeat && chosen.kind !== "path" && (
-                    <Button size="md" variant="secondary" onClick={() => bakeShape(chosen.id, true)}>
-                      Bake shape
-                    </Button>
-                  )}
-                  <Button size="md" variant="secondary" onClick={() => bakeShape(chosen.id)}>
-                    {chosen.repeat ? "Bake pattern" : "Bake shape"}
-                  </Button>
-                  <p className={styles.empty}>
-                    {chosen.repeat
-                      ? `Baking the shape gives up only its own numbers: its points can be dragged and every copy follows. Baking the pattern leaves ${placements(chosen).length} shapes, each free of the others.`
-                      : "The numbers behind it are given up; its points can then be dragged one by one."}
-                  </p>
                 </Section>
 
                 <Section title="Repeat" collapsibleKey="repeat">
