@@ -26,8 +26,11 @@ import server  # noqa: E402
 # A curve is filled against its own outline rather than its box, so the shapes here carry the curve
 # that makes them: Studio generates the outline from it, and Plot reads the same outline out of the
 # polyline in the file.
+# Every kind of fill, since each one is written twice over - once in Studio, once here.
+KINDS = ("hatch", "concentric", "wavy", "dashes")
+
 CASES = [
-    {"kind": kind, "box": box, "angle": angle, "spacing_mm": spacing, "curve": curve}
+    {"kind": kind, "box": box, "angle": angle, "spacing_mm": spacing, "curve": curve, "fill_kind": fill_kind}
     for kind, box, curve in (
         ("rect", (1, 1, 3.35, 3.36), None),
         ("rect", (0.5, 2, 4.5, 2.8), None),
@@ -40,19 +43,19 @@ CASES = [
     )
     for angle in (0, 30, 45, 90, 100, 135)
     for spacing in (0.3, 1.5, 2.0)
+    for fill_kind in KINDS
 ]
 
 SCRIPT = """
-import { hatchLines, hatchStroke } from "%s";
+import { fillRuns } from "%s";
 import { curveStrokes } from "%s";
 const cases = %s;
 const out = cases.map((c) => {
   const [x0, y0, x1, y1] = c.box;
   const shape = { id: "s", kind: c.curve ? "curve" : c.kind, x: x0, y: y0, x2: x1, y2: y1, layerId: "", ...(c.curve ? { curve: c.curve } : {}) };
-  const fill = { id: "f", shapeId: "s", angle: c.angle, spacingMm: c.spacing_mm, scale: 100, connected: true };
+  const fill = { id: "f", shapeId: "s", angle: c.angle, spacingMm: c.spacing_mm, scale: 100, connected: true, kind: c.fill_kind };
   return {
-    lines: hatchLines(shape, fill).map((l) => [l.x1, l.y1, l.x2, l.y2]),
-    stroke: hatchStroke(shape, fill).map((p) => [p.x, p.y]),
+    runs: fillRuns(shape, fill).map((run) => run.map((p) => [p.x, p.y])),
     // The outline Plot reads out of the file, so both sides hatch the same points.
     outline: c.curve ? (curveStrokes(shape)[0] ?? []).map((p) => [p.x, p.y]) : [],
   };
@@ -76,13 +79,16 @@ def main():
     failures = 0
     for case, ts in zip(CASES, studio()):
         outline = [tuple(p) for p in ts["outline"]]
-        lines = server.hatch_lines(case["kind"], case["box"], case["angle"], case["spacing_mm"] / 25.4, outline)
-        stroke = server.hatch_stroke(case["kind"], case["box"], lines, outline)
-        for name, py, js in (("lines", [list(l) for l in lines], ts["lines"]), ("stroke", [list(p) for p in stroke], ts["stroke"])):
-            same = len(py) == len(js) and all(abs(a - b) < 1e-9 for p, q in zip(py, js) for a, b in zip(p, q))
-            if not same:
-                failures += 1
-                print(f"DIFFERS  {name}: {case}  (python {len(py)}, studio {len(js)})")
+        fill = {"kind": case["fill_kind"], "angle": case["angle"], "scale": 100, "connected": True}
+        runs = server.fill_runs(case["kind"], case["box"], fill, case["spacing_mm"] / 25.4, outline)
+        py = [[list(p) for p in run] for run in runs]
+        js = ts["runs"]
+        same = len(py) == len(js) and all(
+            len(a) == len(b) and all(abs(u - v) < 1e-9 for p, q in zip(a, b) for u, v in zip(p, q))
+            for a, b in zip(py, js))
+        if not same:
+            failures += 1
+            print(f"DIFFERS  {case}  (python {len(py)} runs, studio {len(js)})")
     print(f"{len(CASES)} fills compared, {failures} differences")
     sys.exit(1 if failures else 0)
 

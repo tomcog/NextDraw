@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Button, ButtonRound, Card, Checkbox, InputSelect, InputText, InputTextarea, LayerController } from "@tomcoggia/ui";
-import { ArrowDownToLine, Circle, CircleDot, Copy, Ellipsis, EllipsisVertical, FilePlus, FolderOpen, Grid2x2, Layers2, LoaderPinwheel, Minus, MousePointer2, Orbit, Pentagon, Plus, Radar, Rainbow, Ratio, Redo2, Spline, Square, Star, Trash2, Type, Undo2 } from "lucide-react";
+import { AlignJustify, ArrowDownToLine, AudioWaveform, Circle, CircleDashed, CircleDot, Copy, Ellipsis, EllipsisVertical, FilePlus, FolderOpen, Grid2x2, Layers2, LoaderPinwheel, Menu, Minus, MousePointer2, Orbit, Pentagon, Plus, Radar, Rainbow, Ratio, Redo2, Spline, Square, Star, Trash2, Type, Undo2 } from "lucide-react";
 import { FileBrowser, LAST_FOLDER_KEY, type OpenResult } from "../components/FileBrowser";
 import { Section } from "../components/controls/Section";
 import { NumberField } from "../components/controls/NumberField";
@@ -16,7 +16,7 @@ import type { Zoom } from "../components/BedCanvas";
 import { useRowDrag } from "../lib/useRowDrag";
 import { Canvas, type Tool } from "./components/Canvas";
 import { StudioHeader } from "./components/StudioHeader";
-import { canFill, newFillId, type Fill } from "./lib/hatch";
+import { canConnect, canFill, fillNumbers, newFillId, FILL_LABEL, type Fill, type FillKind } from "./lib/hatch";
 import { closingTurns, curveStrokes, CURVE_FIELDS, type Curve, type Point } from "./lib/parametric";
 import { fontNames, loadFont, type StrokeFont } from "./lib/font";
 import { fitText, flattenPath, textRuns } from "./lib/text";
@@ -57,6 +57,21 @@ const PLAIN_PEN: PenColor = { name: "Black", color: "#262626" };
 const TOOL_KEY = "studio-tool";
 const FONT_KEY = "studio-font";
 const SNAP_KEY = "studio-snap";
+
+// What each kind of fill is, at a glance, and what it costs the pen.
+const FILL_ICON: Record<FillKind, JSX.Element> = {
+  hatch: <Menu />,
+  concentric: <CircleDashed />,
+  wavy: <AudioWaveform />,
+  dashes: <AlignJustify />,
+};
+
+const FILL_HINT: Record<FillKind, string> = {
+  hatch: "Straight lines, the spacing apart",
+  concentric: "The shape's own outline stepped inward",
+  wavy: "The same lines drawn as waves",
+  dashes: "The same lines broken into strokes: lighter, and a pen lift each",
+};
 
 // How a shape repeats, as the row of round buttons in the Repeat card: one of them is always on.
 const REPEATS: { kind: RepeatKind | null; label: string; hint: string; icon: JSX.Element }[] = [
@@ -1512,6 +1527,26 @@ export default function App() {
                     label="Hatch this shape"
                     onChange={(e) => setHatched(e.target.checked)}
                   />
+                  {chosenFills.length > 0 && (
+                    <div className={styles.tools} role="group" aria-label="What the fill is made of">
+                      {(Object.keys(FILL_LABEL) as FillKind[]).map((k) => {
+                        const on = (chosenFills[0].kind ?? "hatch") === k;
+                        return (
+                          <ButtonRound
+                            key={k}
+                            size="sm"
+                            icon={FILL_ICON[k]}
+                            className={on ? controls.roundActive : undefined}
+                            aria-label={FILL_LABEL[k]}
+                            aria-pressed={on}
+                            title={FILL_HINT[k]}
+                            // Both passes of a cross-hatch are the same kind of thing.
+                            onClick={() => chosenFills.forEach((f, at) => setFillAt(at, { ...f, kind: k }))}
+                          />
+                        );
+                      })}
+                    </div>
+                  )}
                   {chosenFills.map((fill, i) => (
                     <div key={fill.id} className={styles.fillRow}>
                       <NumberField
@@ -1539,6 +1574,46 @@ export default function App() {
                       </Button>
                     </p>
                   ) : null))}
+                  {chosenFills.length > 0 && (chosenFills[0].kind ?? "hatch") === "wavy" && (
+                    <div className={styles.fillRow}>
+                      <NumberField
+                        label="Wave"
+                        unit="mm"
+                        step={0.5}
+                        min={0.2}
+                        value={fillNumbers(chosenFills[0]).waveMm}
+                        onChange={(waveMm) => chosenFills.forEach((f, at) => setFillByHand(at, { ...f, waveMm }))}
+                      />
+                      <NumberField
+                        label="Swing"
+                        unit="mm"
+                        step={0.25}
+                        min={0}
+                        value={fillNumbers(chosenFills[0]).swingMm}
+                        onChange={(swingMm) => chosenFills.forEach((f, at) => setFillByHand(at, { ...f, swingMm }))}
+                      />
+                    </div>
+                  )}
+                  {chosenFills.length > 0 && (chosenFills[0].kind ?? "hatch") === "dashes" && (
+                    <div className={styles.fillRow}>
+                      <NumberField
+                        label="Dash"
+                        unit="mm"
+                        step={0.5}
+                        min={0.2}
+                        value={fillNumbers(chosenFills[0]).dashMm}
+                        onChange={(dashMm) => chosenFills.forEach((f, at) => setFillByHand(at, { ...f, dashMm }))}
+                      />
+                      <NumberField
+                        label="Gap"
+                        unit="mm"
+                        step={0.5}
+                        min={0.1}
+                        value={fillNumbers(chosenFills[0]).gapMm}
+                        onChange={(gapMm) => chosenFills.forEach((f, at) => setFillByHand(at, { ...f, gapMm }))}
+                      />
+                    </div>
+                  )}
                   {chosenFills.length > 0 && (
                     <Checkbox
                       checked={chosenFills.length > 1}
@@ -1550,7 +1625,7 @@ export default function App() {
                       }
                     />
                   )}
-                  {chosenFills.length > 0 && (
+                  {chosenFills.length > 0 && canConnect(chosenFills[0]) && (
                     <Checkbox
                       checked={chosenFills[0].connected === true}
                       label="Connect the line ends"

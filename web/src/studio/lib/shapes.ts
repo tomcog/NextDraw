@@ -126,10 +126,11 @@ export const outlinePoints = (s: Shape): Point[] => {
     const rx = (b.x1 - b.x0) / 2;
     const ry = (b.y1 - b.y0) / 2;
     const steps = 72;
-    return Array.from({ length: steps + 1 }, (_, i) => {
+    const rim = Array.from({ length: steps }, (_, i) => {
       const a = (i / steps) * 2 * Math.PI - Math.PI / 2;
       return { x: cx + rx * Math.cos(a), y: cy + ry * Math.sin(a) };
     });
+    return [...rim, rim[0]]; // closed on the point it started from, exactly
   }
   return allPoints(s);
 };

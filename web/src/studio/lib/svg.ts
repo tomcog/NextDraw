@@ -1,4 +1,4 @@
-import { hatchLines, hatchStroke, type Fill } from "./hatch";
+import { fillRuns, type Fill } from "./hatch";
 import { curveStrokes, pointsAttr } from "./parametric";
 import { textRuns, type StrokeFont } from "./text";
 import { placementAttr, placements } from "./repeat";
@@ -101,14 +101,15 @@ function fillMarkup(shapes: Shape[], fills: Fill[]): string {
     .map((fill) => {
       const shape = shapes.find((s) => s.id === fill.shapeId);
       if (!shape) return "";
-      const lines = hatchLines(shape, fill);
-      if (!lines.length) return "";
-      // Connected, the pass is one stroke; otherwise every line is its own.
-      const body = fill.connected
-        ? `        <polyline points="${hatchStroke(shape, fill).map((p) => `${num(p.x)},${num(p.y)}`).join(" ")}"/>`
-        : lines
-          .map((l) => `        <line x1="${num(l.x1)}" y1="${num(l.y1)}" x2="${num(l.x2)}" y2="${num(l.y2)}"/>`)
-          .join("\n");
+      const runs = fillRuns(shape, fill);
+      if (!runs.length) return "";
+      // A run of two points is a line, which says plainly what the pen does; anything longer is a
+      // polyline, as a wave or a ring of a concentric fill has to be.
+      const body = runs
+        .map((run) => (run.length === 2
+          ? `        <line x1="${num(run[0].x)}" y1="${num(run[0].y)}" x2="${num(run[1].x)}" y2="${num(run[1].y)}"/>`
+          : `        <polyline points="${run.map((p) => `${num(p.x)},${num(p.y)}`).join(" ")}"/>`))
+        .join("\n");
       const turn = turnAttr(shape);
       const group = (n: number) =>
         `      <g id="${FILL_GROUP_PREFIX}${escapeAttr(fill.id)}${n ? `-r${n + 1}` : ""}"${turn ? ` transform="${escapeAttr(turn)}"` : ""}>\n${body}\n      </g>`;
@@ -182,6 +183,11 @@ function designBlock(fills: Fill[], shapes: Shape[], layers: Layer[]): string {
       angle: f.angle,
       spacing_mm: f.spacingMm,
       scale: f.scale,
+      ...(f.kind && f.kind !== "hatch" ? { kind: f.kind } : {}),
+      ...(f.waveMm !== undefined ? { wave_mm: f.waveMm } : {}),
+      ...(f.swingMm !== undefined ? { swing_mm: f.swingMm } : {}),
+      ...(f.dashMm !== undefined ? { dash_mm: f.dashMm } : {}),
+      ...(f.gapMm !== undefined ? { gap_mm: f.gapMm } : {}),
       ...(f.connected ? { connected: true } : {}),
       ...(f.custom ? { custom: true } : {}),
     })),

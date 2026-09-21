@@ -309,6 +309,11 @@ export function parseDrawing(text: string): Opened {
             scale: Number(f.scale) || 100,
             connected: f.connected === true,
             custom: f.custom === true,
+            ...(typeof f.kind === "string" ? { kind: f.kind as Fill["kind"] } : {}),
+            ...(Number.isFinite(Number(f.wave_mm)) ? { waveMm: Number(f.wave_mm) } : {}),
+            ...(Number.isFinite(Number(f.swing_mm)) ? { swingMm: Number(f.swing_mm) } : {}),
+            ...(Number.isFinite(Number(f.dash_mm)) ? { dashMm: Number(f.dash_mm) } : {}),
+            ...(Number.isFinite(Number(f.gap_mm)) ? { gapMm: Number(f.gap_mm) } : {}),
           }));
       }
     }

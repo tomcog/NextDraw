@@ -1,5 +1,5 @@
 import { curveStrokes, type Point } from "./parametric";
-import { boxOf, pathRuns, type Shape } from "./shapes";
+import { boxOf, outlinePoints, pathRuns, type Shape } from "./shapes";
 
 // Hatch fills, kept as parameters rather than as the lines they make (see docs/studio.md). A fill
 // says which shape it fills, at what angle and how far apart - so changing pen or page size
@@ -10,10 +10,35 @@ import { boxOf, pathRuns, type Shape } from "./shapes";
 // generating the lines means dividing by that scale. `scale` is the one the lines were made for; if
 // Plot's scale ever differs from it, the fill is stale and wants regenerating.
 
+/**
+ * What a fill is made of. Straight lines by default; the others trade pen lifts for texture, which
+ * on a plotter is the whole of the choice:
+ * - `hatch`: straight lines, the spacing apart.
+ * - `concentric`: the shape's own outline stepped inward, so the fill follows its edges.
+ * - `wavy`: the same lines drawn as waves.
+ * - `dashes`: the same lines broken into strokes, for a lighter tone.
+ */
+export type FillKind = "hatch" | "concentric" | "wavy" | "dashes";
+
+export const FILL_LABEL: Record<FillKind, string> = {
+  hatch: "Hatch",
+  concentric: "Concentric",
+  wavy: "Wavy",
+  dashes: "Dashes",
+};
+
 export interface Fill {
   /** Its own id, because a shape can carry more than one - two angles make a cross-hatch. */
   id: string;
   shapeId: string;
+  /** What the fill is made of. Absent means straight lines, which is what fills were to begin with. */
+  kind?: FillKind;
+  /** Wavy: how long one wave is and how far it swings, both in millimetres on the paper. */
+  waveMm?: number;
+  swingMm?: number;
+  /** Dashes: the length of a stroke and of the gap after it, in millimetres on the paper. */
+  dashMm?: number;
+  gapMm?: number;
   /** Degrees, clockwise, relative to the artwork rather than to the paper. */
   angle: number;
   /** Millimetres between lines, measured on the paper. */
@@ -61,7 +86,10 @@ export const canFill = (s: Shape) =>
  * than one where shapes have been joined - counted together, so a ring inside a ring leaves a hole.
  */
 const outlinesOf = (s: Shape): Point[][] => {
-  const runs = s.curve ? curveStrokes(s) : pathRuns(s);
+  // A rectangle or an ellipse has no points of its own kept anywhere, so its outline is worked out
+  // the same way baking works it out: the corners, or the rim.
+  const own = pathRuns(s);
+  const runs = s.curve ? curveStrokes(s) : own.length ? own : [outlinePoints(s)];
   return runs
     .filter((pts) => pts.length > 2)
     .map((pts) => {
@@ -103,6 +131,74 @@ function clipToOutline(px: number, py: number, dx: number, dy: number, outlines:
 
 /** Spacing in the drawing's own inches, which is what the lines are drawn in. */
 export const stepInches = (fill: Fill) => fill.spacingMm / 25.4 / (fill.scale / 100);
+
+/** Any of a fill's millimetre measurements, in the drawing's own inches. */
+const inches = (mm: number, fill: Fill) => mm / 25.4 / (fill.scale / 100);
+
+/** What each fill's own numbers come to, with the defaults filled in. */
+export const fillNumbers = (fill: Fill) => ({
+  kind: fill.kind ?? "hatch",
+  waveMm: fill.waveMm ?? 6,
+  swingMm: fill.swingMm ?? 1.5,
+  dashMm: fill.dashMm ?? 3,
+  gapMm: fill.gapMm ?? 2,
+});
+
+/** A straight span drawn as a wave: a point every few degrees, swinging across the line. */
+function waved(seg: Seg, wave: number, swing: number): Point[] {
+  const dx = seg.x2 - seg.x1;
+  const dy = seg.y2 - seg.y1;
+  const len = Math.hypot(dx, dy);
+  if (len < 1e-9 || wave <= 0) return [{ x: seg.x1, y: seg.y1 }, { x: seg.x2, y: seg.y2 }];
+  const ux = dx / len;
+  const uy = dy / len;
+  const steps = Math.max(2, Math.min(400, Math.ceil((len / wave) * 12)));
+  return Array.from({ length: steps + 1 }, (_, i) => {
+    const t = (i / steps) * len;
+    const swingAt = swing * Math.sin((2 * Math.PI * t) / wave);
+    return { x: seg.x1 + ux * t - uy * swingAt, y: seg.y1 + uy * t + ux * swingAt };
+  });
+}
+
+/** A straight span broken into strokes: `dash` long, `gap` apart, starting at its beginning. */
+function dashed(seg: Seg, dash: number, gap: number): Seg[] {
+  const dx = seg.x2 - seg.x1;
+  const dy = seg.y2 - seg.y1;
+  const len = Math.hypot(dx, dy);
+  const step = dash + gap;
+  if (len < 1e-9 || dash <= 0 || step <= 0) return [seg];
+  const ux = dx / len;
+  const uy = dy / len;
+  const out: Seg[] = [];
+  for (let at = 0; at < len - 1e-9 && out.length < 2000; at += step) {
+    const end = Math.min(at + dash, len);
+    out.push({ x1: seg.x1 + ux * at, y1: seg.y1 + uy * at, x2: seg.x1 + ux * end, y2: seg.y1 + uy * end });
+  }
+  return out;
+}
+
+/**
+ * The shape's outline stepped inward: each ring is the outline with every edge brought in by the
+ * same distance, which for a box or an ellipse is exactly an inset and for anything else is close
+ * enough that the rings read as following the shape.
+ */
+function concentricRuns(outlines: Point[][], box: ReturnType<typeof boxOf>, step: number): Point[][] {
+  const w = box.x1 - box.x0;
+  const h = box.y1 - box.y0;
+  const cx = (box.x0 + box.x1) / 2;
+  const cy = (box.y0 + box.y1) / 2;
+  const runs: Point[][] = [];
+  for (let i = 0; i < 2000; i++) {
+    const inset = i * step;
+    const kx = w > 1e-9 ? (w - 2 * inset) / w : 0;
+    const ky = h > 1e-9 ? (h - 2 * inset) / h : 0;
+    if (kx <= 0.01 || ky <= 0.01) break;
+    for (const outline of outlines) {
+      runs.push(outline.map((p) => ({ x: cx + (p.x - cx) * kx, y: cy + (p.y - cy) * ky })));
+    }
+  }
+  return runs;
+}
 
 /** Where a line through (px,py) in direction (dx,dy) enters and leaves an axis-aligned box. */
 function clipToBox(px: number, py: number, dx: number, dy: number, b: ReturnType<typeof boxOf>): Seg | null {
@@ -182,6 +278,38 @@ export function hatchLines(shape: Shape, fill: Fill): Seg[] {
   }
   return segs;
 }
+
+/**
+ * Everything a fill draws, as runs of points in the drawing's inches: one run per stroke the pen
+ * makes. Straight lines are two points each, or one long zigzag when the ends are joined; the other
+ * kinds have runs of their own making.
+ */
+export function fillRuns(shape: Shape, fill: Fill): Point[][] {
+  const n = fillNumbers(fill);
+  if (n.kind === "concentric") {
+    const outlines = outlinesOf(shape);
+    return outlines.length ? concentricRuns(outlines, boxOf(shape), stepInches(fill)) : [];
+  }
+  const lines = hatchLines(shape, fill);
+  if (n.kind === "wavy") {
+    const wave = inches(n.waveMm, fill);
+    const swing = inches(n.swingMm, fill);
+    return lines.map((seg) => waved(seg, wave, swing));
+  }
+  if (n.kind === "dashes") {
+    const dash = inches(n.dashMm, fill);
+    const gap = inches(n.gapMm, fill);
+    return lines.flatMap((seg) => dashed(seg, dash, gap).map((d) => [{ x: d.x1, y: d.y1 }, { x: d.x2, y: d.y2 }]));
+  }
+  if (fill.connected) {
+    const stroke = hatchStroke(shape, fill);
+    return stroke.length > 1 ? [stroke] : [];
+  }
+  return lines.map((seg) => [{ x: seg.x1, y: seg.y1 }, { x: seg.x2, y: seg.y2 }]);
+}
+
+/** Whether joining the line ends means anything for this kind of fill. */
+export const canConnect = (fill: Fill) => (fill.kind ?? "hatch") === "hatch";
 
 /**
  * A connected fill as one stroke, in inches on the page: the lines taken alternately forwards and

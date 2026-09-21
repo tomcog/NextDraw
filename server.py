@@ -749,6 +749,92 @@ def hatch_lines(kind, box, angle, step, outline=None):
     return lines
 
 
+def waved(seg, wave, swing):
+    """waved: a straight span drawn as a wave, a point every few degrees across the line."""
+    x1, y1, x2, y2 = seg
+    dx, dy = x2 - x1, y2 - y1
+    length = math.hypot(dx, dy)
+    if length < 1e-9 or wave <= 0:
+        return [(x1, y1), (x2, y2)]
+    ux, uy = dx / length, dy / length
+    steps = max(2, min(400, math.ceil((length / wave) * 12)))
+    out = []
+    for i in range(steps + 1):
+        t = (i / steps) * length
+        swing_at = swing * math.sin(2 * math.pi * t / wave)
+        out.append((x1 + ux * t - uy * swing_at, y1 + uy * t + ux * swing_at))
+    return out
+
+
+def dashed(seg, dash, gap):
+    """dashed: a straight span broken into strokes, `dash` long and `gap` apart."""
+    x1, y1, x2, y2 = seg
+    dx, dy = x2 - x1, y2 - y1
+    length = math.hypot(dx, dy)
+    step = dash + gap
+    if length < 1e-9 or dash <= 0 or step <= 0:
+        return [seg]
+    ux, uy = dx / length, dy / length
+    out, at = [], 0.0
+    while at < length - 1e-9 and len(out) < 2000:
+        end = min(at + dash, length)
+        out.append((x1 + ux * at, y1 + uy * at, x1 + ux * end, y1 + uy * end))
+        at += step
+    return out
+
+
+def concentric_runs(outlines, box, step):
+    """concentricRuns: the outline stepped inward, every edge brought in by the same distance."""
+    x0, y0, x1, y1 = box
+    w, h = x1 - x0, y1 - y0
+    cx, cy = (x0 + x1) / 2, (y0 + y1) / 2
+    runs = []
+    for i in range(2000):
+        inset = i * step
+        kx = (w - 2 * inset) / w if w > 1e-9 else 0
+        ky = (h - 2 * inset) / h if h > 1e-9 else 0
+        if kx <= 0.01 or ky <= 0.01:
+            break
+        for outline in outlines:
+            runs.append([(cx + (px - cx) * kx, cy + (py - cy) * ky) for px, py in outline])
+    return runs
+
+
+def closed_outlines(kind, box, outline):
+    """The outlines a concentric fill steps inward from: a curve's own points, or the box's edges."""
+    if kind == "polygon" and outline:
+        return [list(outline)]
+    x0, y0, x1, y1 = box
+    if kind == "rect":
+        return [[(x0, y0), (x1, y0), (x1, y1), (x0, y1), (x0, y0)]]
+    cx, cy, rx, ry = (x0 + x1) / 2, (y0 + y1) / 2, (x1 - x0) / 2, (y1 - y0) / 2
+    steps = 72
+    rim = [(cx + rx * math.cos(-math.pi / 2 + 2 * math.pi * i / steps),
+            cy + ry * math.sin(-math.pi / 2 + 2 * math.pi * i / steps)) for i in range(steps)]
+    return [rim + [rim[0]]]  # closed on the point it started from, exactly
+
+
+def fill_runs(kind, box, fill, step, outline=None):
+    """fillRuns: everything a fill draws, as runs of points - one run per stroke the pen makes."""
+    what = fill.get("kind") or "hatch"
+    inches = lambda mm: float(mm) / 25.4 / (float(fill.get("scale") or 100) / 100)  # noqa: E731
+    if what == "concentric":
+        return concentric_runs(closed_outlines(kind, box, outline), box, step)
+    lines = hatch_lines(kind, box, float(fill.get("angle") or 0), step, outline)
+    if what == "wavy":
+        wave = inches(fill.get("wave_mm", 6))
+        swing = inches(fill.get("swing_mm", 1.5))
+        return [waved(seg, wave, swing) for seg in lines]
+    if what == "dashes":
+        dash = inches(fill.get("dash_mm", 3))
+        gap = inches(fill.get("gap_mm", 2))
+        return [[(d[0], d[1]), (d[2], d[3])] for seg in lines for d in dashed(seg, dash, gap)]
+    if fill.get("connected"):
+        stroke = hatch_stroke(kind, box, lines, outline)
+        return [stroke] if len(stroke) > 1 else []
+    return [[(x1, y1), (x2, y2)] for x1, y1, x2, y2 in lines]
+
+
 def hatch_stroke(kind, box, lines, outline=None):
     """hatchStroke: the lines as one zigzag, each end joined to the next line's start along the
     shape's edge - by the corner of a rect, along the curve of an ellipse, round the outline itself
@@ -867,17 +953,19 @@ def regenerate_hatches(root, spacing_by_layer, scale):
             kind = ("rect" if shape.tag == SVG_NS + "rect"
                     else "polygon" if shape.tag == SVG_NS + "polyline" else "ellipse")
             outline = outline_points(shape)
-            lines = hatch_lines(kind, box, angle, spacing / 25.4 / (scale / 100), outline)
+            runs = fill_runs(kind, box, {**fill, "angle": angle, "scale": scale},
+                             spacing / 25.4 / (scale / 100), outline)
             for child in list(g):
                 g.remove(child)
-            if fill.get("connected") and lines:
-                el = etree.SubElement(g, SVG_NS + "polyline")
-                el.set("points", " ".join(f"{num(x)},{num(y)}" for x, y in hatch_stroke(kind, box, lines, outline)))
-            else:
-                for x1, y1, x2, y2 in lines:
+            # A run of two points is a line, as Studio writes it; anything longer is a polyline.
+            for run in runs:
+                if len(run) == 2:
                     el = etree.SubElement(g, SVG_NS + "line")
-                    for k, v in (("x1", x1), ("y1", y1), ("x2", x2), ("y2", y2)):
+                    for k, v in (("x1", run[0][0]), ("y1", run[0][1]), ("x2", run[1][0]), ("y2", run[1][1])):
                         el.set(k, num(v))
+                elif len(run) > 2:
+                    el = etree.SubElement(g, SVG_NS + "polyline")
+                    el.set("points", " ".join(f"{num(x)},{num(y)}" for x, y in run))
 
 
 def clean_hatch(raw):
