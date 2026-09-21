@@ -1187,6 +1187,9 @@ export default function App() {
                 <InputText
                   size="md"
                   label="Name"
+                  // The card is called Drawing and the field holds its name: saying so twice under
+                  // the words themselves helps nobody who can see them.
+                  hideLabel
                   value={name}
                   disabled={busy}
                   onChange={(e) => setName(e.target.value)}
