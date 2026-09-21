@@ -1492,7 +1492,9 @@ export default function App() {
                               label={
                                 <span className={styles.shapeLabel}>
                                   <input
-                                    className={styles.shapeName}
+                                    className={selected.includes(sh.id)
+                                      ? `${styles.shapeName} ${styles.shapeNameOn}`
+                                      : styles.shapeName}
                                     value={name}
                                     aria-label={`Name of ${name}`}
                                     title="The shape's name: click to change it"

@@ -180,6 +180,10 @@
 
 .shapeName:focus { outline: none; }
 
+/* The shape being worked on, in the green of the nib beside it - the same token the library's row
+   marks its chosen layer with, so the two greens in a row are one green. */
+.shapeNameOn { color: var(--ui-layer-controller-target-color, var(--ui-safety)); }
+
 .shapeRow {
   display: flex;
   align-items: center;
