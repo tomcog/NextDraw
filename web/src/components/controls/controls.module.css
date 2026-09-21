@@ -328,6 +328,14 @@
   box-shadow: inset 0 0 0 1px rgb(0 0 0 / 0.15);
 }
 
+/* The same dot at the size a heading wants: a chip's is read beside its label, a heading's is read
+   against words a size larger. */
+.legendDot {
+  composes: layerChipDot;
+  width: 10px;
+  height: 10px;
+}
+
 /* Small paths: the switch, and how much slower when it's on. */
 /* The checkbox stays put when the slider appears under it: the rows stack from the top. */
 .smallPaths {

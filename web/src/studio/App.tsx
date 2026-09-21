@@ -1624,12 +1624,14 @@ export default function App() {
                   nothing under it is two lines to say one thing. */}
               {active && onActive.length > 0 && (
                 <Section
-                  // The layer's ink in front of its name, the way the preset's layers show theirs.
-                  // A mark to read, not a control: picking the colour is the swatch in the row above.
+                  // The layer's ink in front of its name - after the "On", so the dot reads as part
+                  // of the name rather than as a bullet before the whole heading. A mark to read,
+                  // not a control: picking the colour is the swatch in the row above.
                   title={(
                     <>
-                      <span className={controls.layerChipDot} style={{ background: active.color }} aria-hidden />
-                      {`On ${active.name}`}
+                      On
+                      <span className={controls.legendDot} style={{ background: active.color }} aria-hidden />
+                      {active.name}
                     </>
                   )}
                   collapsibleKey="shapes-on-layer"
