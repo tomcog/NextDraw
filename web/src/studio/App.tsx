@@ -822,6 +822,7 @@ export default function App() {
     setShapes((list) => list.map((s) => (s.id === id
       ? { ...s, smooth: true, ...(s.runs ? { runs: simpler } : { points: simpler[0] }) }
       : s)));
+    setSimplifying(false); // asked for, done, and out of the way again
   };
 
   /** Take a joined shape apart again: each run becomes a shape of its own. */
@@ -856,10 +857,9 @@ export default function App() {
   };
 
   /** Draw the chosen path as a curve through its points, or as the lines between them. */
-  const setSmooth = (on: boolean) => {
-    if (!chosen) return;
+  const setSmooth = (id: string, on: boolean) => {
     record();
-    setShapes((list) => list.map((s) => (s.id === chosen.id ? { ...s, smooth: on || undefined } : s)));
+    setShapes((list) => list.map((s) => (s.id === id ? { ...s, smooth: on || undefined } : s)));
   };
 
   const setOutline = (on: boolean) => {
@@ -1132,6 +1132,27 @@ export default function App() {
                   setRenaming(rowMenu.id);
                 },
               },
+              ...(shapes.find((s) => s.id === rowMenu.id)?.kind === "path"
+                ? [
+                  {
+                    // A path is either drawn through its points or between them; the label says
+                    // which it would become rather than which it is.
+                    label: shapes.find((s) => s.id === rowMenu.id)?.smooth ? "Draw straight" : "Smooth",
+                    icon: <Spline />,
+                    onSelect: () => setSmooth(rowMenu.id, !shapes.find((s) => s.id === rowMenu.id)?.smooth),
+                  },
+                  {
+                    // Opens the tolerance and the button in the shape's card: how far it may stray
+                    // is a number, and a menu has nowhere to type one.
+                    label: "Simplify…",
+                    icon: <Waypoints />,
+                    onSelect: () => {
+                      pick(rowMenu.id);
+                      setSimplifying(true);
+                    },
+                  },
+                ]
+                : []),
               {
                 label: "Set size",
                 icon: <SquareDimensions />,
@@ -1772,32 +1793,6 @@ export default function App() {
                       aria-label="Bake shape, keep the pattern"
                       title="Bake the shape: its own numbers are given up, and every copy follows its points"
                       onClick={() => bakeShape(chosen.id, true)}
-                    />
-                  )}
-                  {/* A path drawn as a curve through its points instead of the lines between them.
-                      Not a panel to open: it is on or it is off. */}
-                  {chosen.kind === "path" && (
-                    <ButtonRound
-                      size="sm"
-                      icon={<Spline />}
-                      className={chosen.smooth ? controls.roundActive : undefined}
-                      aria-label="Smooth"
-                      aria-pressed={chosen.smooth === true}
-                      title="Smooth: draw a curve through the path's points rather than the lines between them"
-                      onClick={() => setSmooth(!chosen.smooth)}
-                    />
-                  )}
-                  {/* A path is the only thing there are points to take out of. */}
-                  {chosen.kind === "path" && (
-                    <ButtonRound
-                      size="sm"
-                      icon={<Waypoints />}
-                      className={simplifying ? controls.roundActive : undefined}
-                      aria-label="Simplify"
-                      aria-expanded={simplifying}
-                      aria-pressed={simplifying}
-                      title="Simplify: take out the points the path can do without"
-                      onClick={() => setSimplifying((on) => !on)}
                     />
                   )}
                   {/* Only a shape with an inside can be hatched. */}
