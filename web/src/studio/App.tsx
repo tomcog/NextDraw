@@ -42,9 +42,9 @@ const SIZES = PAPER_SIZES.filter((p) => p.w && p.h).map((p) => ({
 
 const TOOLS: { kind: Tool; label: string; hint: string; icon: JSX.Element }[] = [
   { kind: "select", label: "Select", hint: "Select (V): drag a shape to move it, its corners to resize", icon: <MousePointer2 /> },
-  { kind: "rect", label: "Rectangle", hint: "Draw a rectangle: drag on the page", icon: <Square /> },
-  { kind: "ellipse", label: "Ellipse", hint: "Draw an ellipse: drag on the page", icon: <Circle /> },
-  { kind: "line", label: "Line", hint: "Draw a line: drag on the page", icon: <Minus /> },
+  { kind: "rect", label: "Rectangle", hint: "Rectangle (R): drag on the page", icon: <Square /> },
+  { kind: "ellipse", label: "Ellipse", hint: "Oval (O): drag on the page", icon: <Circle /> },
+  { kind: "line", label: "Line", hint: "Line (L): drag on the page", icon: <Minus /> },
   // Parametric shapes: drawn as a box like the rest, then tuned by their numbers in the Curve card.
   { kind: "hypotrochoid", label: "Spirograph", hint: "Draw a spirograph: drag on the page, then set its circles", icon: <LoaderPinwheel /> },
   { kind: "parabolic", label: "Parabolic curve", hint: "Draw curve stitching: drag on the page, then set its strings", icon: <Spline /> },
@@ -64,6 +64,14 @@ const SNAP_KEY = "studio-snap";
 const SIMPLIFY_KEY = "studio-simplify";
 
 // What each kind of fill is, at a glance, and what it costs the pen.
+/** The letter that picks each tool. Lower case: the key is read that way, so Shift makes no odds. */
+const TOOL_KEYS: Record<string, Tool> = {
+  v: "select",
+  r: "rect",
+  o: "ellipse",
+  l: "line",
+};
+
 const FILL_ICON: Record<FillKind, JSX.Element> = {
   hatch: <Menu />,
   concentric: <CircleDashed />,
@@ -343,15 +351,16 @@ export default function App() {
     return () => window.removeEventListener("keydown", onKey);
   }, []);
 
-  // V for the select tool, the way every drawing program does it: the pointer is what you want back
-  // after drawing something, and reaching for the toolbar to get it is the long way round.
+  // A letter per tool, the way every drawing program has it: the pointer after drawing something,
+  // and the three plain shapes without reaching for the toolbar.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key !== "v" && e.key !== "V") return;
+      const picked = TOOL_KEYS[e.key.toLowerCase()];
+      if (!picked) return;
       if (e.metaKey || e.ctrlKey || e.altKey) return; // paste, and whatever else the system has
       const el = document.activeElement;
       if (el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement || (el as HTMLElement)?.isContentEditable) return;
-      setTool("select");
+      setTool(picked);
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
