@@ -1546,7 +1546,9 @@ export default function App() {
           {chosen && (chosen.curve || canFill(chosen) || chosen.kind === "path") && (
             <Card variant="flat" className={styles.controls}>
               <div className={`${styles.cardBody} ${styles.settings}`}>
-                <Section title="Shape" collapsibleKey="shape">
+                {/* Named after the shape it is about, which is what the card is: the chosen shape,
+                    and what can be done to it. The fold is remembered under one key all the same. */}
+                <Section title={shapeName(chosen, onActive.indexOf(chosen))} collapsibleKey="shape">
                 {chosen.curve && (
                 <Section
                   title="Curve"
