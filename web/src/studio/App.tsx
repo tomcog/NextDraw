@@ -1545,7 +1545,21 @@ export default function App() {
               <div className={`${styles.cardBody} ${styles.settings}`}>
                 <Section title="Shape" collapsibleKey="shape">
                 {chosen.curve && (
-                <Section title="Curve" collapsibleKey="curve">
+                <Section
+                  title="Curve"
+                  collapsibleKey="curve"
+                  // Beside the numbers that made it: the one thing that gives them up and leaves the
+                  // curve as points to drag.
+                  action={(
+                    <ButtonRound
+                      size="sm"
+                      icon={<Flame />}
+                      aria-label="Bake curve"
+                      title="Bake the curve: its numbers are given up, and it becomes points to drag"
+                      onClick={() => bakeShape(chosen.id)}
+                    />
+                  )}
+                >
                   <div className={styles.fillRow}>
                     {CURVE_FIELDS[chosen.curve.kind].map((f) => (
                       <NumberField
