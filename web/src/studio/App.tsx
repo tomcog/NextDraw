@@ -26,7 +26,7 @@ import { defaultRepeat, placements, REPEAT_FIELDS, type Repeat, type RepeatKind 
 import { parseDrawing } from "./lib/parse";
 import { PaletteMenu } from "../components/controls/PaletteMenu";
 import { RowMenu } from "../components/controls/RowMenu";
-import { boxOf, centerOf, clampToPage, moveBy, newLayerId, newShapeId, outlinePoints, pathRuns, pointsBox, resizeTo, shapeName, turnPoint, POINT_HANDLE_LIMIT, type Layer, type Page, type Shape } from "./lib/shapes";
+import { boxOf, centerOf, clampToPage, drawnRuns, moveBy, newLayerId, newShapeId, outlinePoints, pathRuns, pointsBox, resizeTo, shapeName, turnPoint, POINT_HANDLE_LIMIT, type Layer, type Page, type Shape } from "./lib/shapes";
 import { buildSvg, cleanFileName } from "./lib/svg";
 import styles from "./App.module.css";
 
@@ -701,13 +701,17 @@ export default function App() {
         }
       } else {
         // A rectangle, an ellipse, a line or a path: flattened to its own points, so each one can be
-        // pulled about point by point afterwards.
-        const points = outlinePoints(shape).map(put);
-        if (points.length < 2) continue;
-        const b = pointsBox(points);
+        // pulled about point by point afterwards. A smoothed path gives up the curve here - what is
+        // left is the points the pen was going to be walked through anyway.
+        const runs = (shape.kind === "path" ? drawnRuns(shape) : [outlinePoints(shape)])
+          .map((run) => run.map(put))
+          .filter((run) => run.length > 1);
+        if (!runs.length) continue;
+        const b = pointsBox(runs.flat());
         made.push({
           ...shape, id: made.length ? newShapeId() : shape.id,
-          kind: "path", points,
+          kind: "path", smooth: undefined,
+          ...(runs.length > 1 ? { runs, points: undefined } : { runs: undefined, points: runs[0] }),
           repeat: keepPattern ? shape.repeat : undefined,
           rotation: keepPattern ? shape.rotation : undefined,
           x: b.x0, y: b.y0, x2: b.x1, y2: b.y1,
@@ -1047,7 +1051,9 @@ export default function App() {
                 // Nothing to give up in a path that stands still: it is already its own points.
                 disabled: (() => {
                   const s = shapes.find((sh) => sh.id === rowMenu.id);
-                  return !s || (s.kind === "path" && !s.repeat && !s.rotation);
+                  // A path that stands still, drawn as the lines between its own points, is already
+                  // what baking would leave. A smoothed one isn't: baking gives up its curve.
+                  return !s || (s.kind === "path" && !s.smooth && !s.repeat && !s.rotation);
                 })(),
                 onSelect: () => bakeShape(rowMenu.id),
               },
