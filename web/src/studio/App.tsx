@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ToolNote } from "../components/controls/ToolNote";
 import { TipMark } from "../components/controls/TipMark";
 import { Button, ButtonRound, Card, Checkbox, ConfirmButton, InputSelect, InputText, InputTextarea, LayerController } from "@tomcoggia/ui";
-import { AlignJustify, ArrowDownToLine, AudioWaveform, Circle, CircleDashed, CircleDot, ClipboardCopy, ClipboardPaste, Copy, Ellipsis, EllipsisVertical, FilePlus, Flame, FlameKindling, FolderOpen, Grid2x2, Layers2, LoaderPinwheel, Menu, Minus, MoveHorizontal, MoveVertical, MousePointer2, Orbit, PaintBucket, PenLine, Pentagon, Plus, Rainbow, Redo2, Repeat as RepeatIcon, RotateCw, Save, Shell, Spline, Square, SquareDimensions, Star, Trash2, Type, Undo2, Waves, Waypoints } from "lucide-react";
+import { AlignJustify, ArrowDownToLine, AudioWaveform, Circle, CircleDashed, CircleDot, ClipboardCopy, ClipboardPaste, Copy, Ellipsis, EllipsisVertical, FilePlus, Flame, FlameKindling, FolderOpen, Grid2x2, Layers2, LoaderPinwheel, Menu, Minus, MoveHorizontal, MoveVertical, MousePointer2, Orbit, PaintBucket, PenLine, Pentagon, Plus, Rainbow, Redo2, Repeat as RepeatIcon, RotateCw, Save, Shell, Signal, Spline, Square, SquareDimensions, Star, Trash2, Type, Undo2, Waves, Waypoints } from "lucide-react";
 import { FileBrowser, LAST_FOLDER_KEY, type OpenResult } from "../components/FileBrowser";
 import { Section } from "../components/controls/Section";
 import { NumberField } from "../components/controls/NumberField";
@@ -49,7 +49,7 @@ const TOOLS: { kind: Tool; label: string; hint: string; icon: JSX.Element }[] = 
   { kind: "line", label: "Line", hint: "Line (L): drag on the page", icon: <Minus /> },
   // Parametric shapes: drawn as a box like the rest, then tuned by their numbers in the Curve card.
   { kind: "hypotrochoid", label: "Spirograph", hint: "Draw a spirograph: drag on the page, then set its circles", icon: <LoaderPinwheel /> },
-  { kind: "parabolic", label: "Parabolic curve", hint: "Draw curve stitching: drag on the page, then set its strings", icon: <Spline /> },
+  { kind: "parabolic", label: "Parabolic curve", hint: "Draw curve stitching: drag on the page, then set its strings", icon: <Signal /> },
   { kind: "polygon", label: "Polygon", hint: "Polygon (P): drag on the page, then set how many sides", icon: <Pentagon /> },
   { kind: "star", label: "Star", hint: "Star (S): drag on the page, then set its points", icon: <Star /> },
   { kind: "spiral", label: "Spiral", hint: "Draw a spiral: drag on the page, then set its turns", icon: <Shell /> },
