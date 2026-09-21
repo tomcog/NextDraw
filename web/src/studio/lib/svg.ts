@@ -1,5 +1,5 @@
 import { fillRuns, type Fill } from "./hatch";
-import { curveStrokes, pointsAttr } from "./parametric";
+import { curveStrokes, pointsAttr, type Point } from "./parametric";
 import { textRuns, type StrokeFont } from "./text";
 import { placementAttr, placements } from "./repeat";
 import { boxOf, drawnRuns, pathRuns, turnAttr, type Layer, type Page, type Shape } from "./shapes";
@@ -117,6 +117,35 @@ function fillMarkup(shapes: Shape[], fills: Fill[]): string {
     })
     .filter(Boolean)
     .join("\n");
+}
+
+/**
+ * A few runs of points as a file of their own, in inches, sized to what they cover: what goes on the
+ * system clipboard when a shape is copied, so it can be pasted into a drawing program. No layers, no
+ * design block, nothing of Studio's - just the lines, at the size they were drawn.
+ */
+export function svgForMarks(runs: Point[][], strokeIn = STROKE_IN): string {
+  const points = runs.flat();
+  if (points.length < 2) return "";
+  const x0 = Math.min(...points.map((p) => p.x));
+  const y0 = Math.min(...points.map((p) => p.y));
+  const x1 = Math.max(...points.map((p) => p.x));
+  const y1 = Math.max(...points.map((p) => p.y));
+  // A hairline still has width; half of it sits outside the line, so the box grows by that much or
+  // the outermost stroke is cut in half by the edge of the file.
+  const pad = strokeIn / 2;
+  const w = x1 - x0 + strokeIn;
+  const h = y1 - y0 + strokeIn;
+  const body = runs
+    .map((run) => `  <polyline points="${run.map((p) => `${trim(p.x - x0 + pad)},${trim(p.y - y0 + pad)}`).join(" ")}"/>`)
+    .join("\n");
+  return [
+    `<svg xmlns="${SVG_NS}" width="${num(w)}in" height="${num(h)}in" viewBox="0 0 ${num(w)} ${num(h)}">`,
+    `  <g fill="none" stroke="#000000" stroke-width="${num(strokeIn)}" stroke-linecap="round" stroke-linejoin="round">`,
+    body,
+    "  </g>",
+    "</svg>",
+  ].join("\n");
 }
 
 /** What Plot reads out of a drawing: the paper it was made for, at home, at full size. */

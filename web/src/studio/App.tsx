@@ -17,7 +17,7 @@ import { useRowDrag } from "../lib/useRowDrag";
 import { Canvas, type Tool } from "./components/Canvas";
 import { SizePopover } from "./components/SizePopover";
 import { StudioHeader } from "./components/StudioHeader";
-import { canConnect, canFill, fillNumbers, newFillId, FILL_LABEL, type Fill, type FillKind } from "./lib/hatch";
+import { canConnect, canFill, fillNumbers, fillRuns, newFillId, FILL_LABEL, type Fill, type FillKind } from "./lib/hatch";
 import { closingTurns, curveStrokes, CURVE_FIELDS, type Curve, type Point } from "./lib/parametric";
 import { fontNames, loadFont, type StrokeFont } from "./lib/font";
 import { flattenPath, simplifyRun } from "./lib/path";
@@ -28,7 +28,7 @@ import { PaletteMenu } from "../components/controls/PaletteMenu";
 import { Hints } from "../components/controls/Hints";
 import { RowMenu } from "../components/controls/RowMenu";
 import { boxOf, centerOf, clampToPage, drawnRuns, moveBy, newLayerId, newShapeId, outlinePoints, pathRuns, pointsBox, resizeTo, shapeName, turnPoint, POINT_HANDLE_LIMIT, type Layer, type Page, type Shape } from "./lib/shapes";
-import { buildSvg, cleanFileName } from "./lib/svg";
+import { buildSvg, svgForMarks, cleanFileName } from "./lib/svg";
 import styles from "./App.module.css";
 
 // Page sizes, in inches, from the list Plot already offers. Stored width-first the way they're drawn
@@ -287,6 +287,23 @@ export default function App() {
     const shape = shapes.find((s) => s.id === id);
     if (!shape) return;
     setClipboard({ shape, fills: fills.filter((f) => f.shapeId === id) });
+    // And on the system clipboard as a file another program can open: the lines, at the size they
+    // were drawn, with the hatch if there is one. Written as an SVG file and as the same text,
+    // because a browser may refuse the first and every drawing program takes pasted SVG source.
+    const file = svgForMarks(runsOf(shape, true), penWidthMm / 25.4);
+    if (!file || !navigator.clipboard) return;
+    const write = navigator.clipboard.write?.bind(navigator.clipboard);
+    const asText = () => navigator.clipboard.writeText?.(file).catch(() => {});
+    if (!write || typeof ClipboardItem === "undefined") {
+      void asText();
+      return;
+    }
+    void write([
+      new ClipboardItem({
+        "image/svg+xml": new Blob([file], { type: "image/svg+xml" }),
+        "text/plain": new Blob([file], { type: "text/plain" }),
+      }),
+    ]).catch(asText);
   };
 
   /** Put the copied shape down on a layer - the one being drawn on unless another is named. */
@@ -804,7 +821,7 @@ export default function App() {
   };
 
   /** Every run of marks a shape makes, in inches on the page: its copies, its turn and all. */
-  const runsOf = (shape: Shape): Point[][] => {
+  const runsOf = (shape: Shape, withFills = false): Point[][] => {
     const centre = centerOf(shape);
     const runs: Point[][] = [];
     for (const place of placements(shape)) {
@@ -815,10 +832,21 @@ export default function App() {
       const own = shape.kind === "text"
         ? textRuns(shape, fonts[shape.font ?? ""]).flatMap((g) => flattenPath(g.d))
         : shape.curve ? curveStrokes(shape)
-        : shape.kind === "path" ? pathRuns(shape)
+        : shape.kind === "path" ? drawnRuns(shape)
         : [outlinePoints(shape)];
-      for (const run of own) {
-        if (run.length > 1) runs.push(run.map(put));
+      // Its own outline, unless the shape is only there to be filled - and then its fill, for the
+      // callers that want everything the pen draws rather than the shape's own line.
+      if (!withFills || shape.outline !== false) {
+        for (const run of own) {
+          if (run.length > 1) runs.push(run.map(put));
+        }
+      }
+      if (withFills) {
+        for (const fill of fills.filter((f) => f.shapeId === shape.id)) {
+          for (const run of fillRuns(shape, fill)) {
+            if (run.length > 1) runs.push(run.map(put));
+          }
+        }
       }
     }
     return runs;
@@ -832,7 +860,7 @@ export default function App() {
   const joinShapes = () => {
     const picked = shapes.filter((s) => selected.includes(s.id));
     if (picked.length < 2) return;
-    const runs = picked.flatMap(runsOf);
+    const runs = picked.flatMap((s) => runsOf(s));
     if (!runs.length) return;
     record();
     const first = picked[0];
