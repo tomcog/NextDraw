@@ -959,6 +959,15 @@ export default function App() {
 
   // The same for a shape: typed in place, settled when the field is left. A name that is wiped out
   // goes back to being what the shape is and where it sits, rather than being left blank.
+  // Picked on the page rather than in the list. The layer follows the shape: the list under it shows
+  // one layer at a time, so a shape picked from another one would otherwise be held but not shown,
+  // and what was drawn next would land on a layer nobody had chosen.
+  const selectOnCanvas = (ids: string[]) => {
+    setSelected(ids);
+    const first = shapes.find((s) => s.id === ids[0]);
+    if (first?.layerId && first.layerId !== activeLayer) setActiveLayer(first.layerId);
+  };
+
   // Picking from the list: a plain click takes that shape alone, shift adds one or takes it out.
   // The row's box and its name both do this, which is why it is a function rather than a handler.
   const pickFromRow = (id: string, add: boolean) =>
@@ -1212,7 +1221,7 @@ export default function App() {
             font={font}
             snap={snapping ? snapStep : 0}
             selected={selected}
-            onSelect={setSelected}
+            onSelect={selectOnCanvas}
             onUpdateMany={updateShapes}
             onAdd={addShape}
             onUpdate={updateShape}
