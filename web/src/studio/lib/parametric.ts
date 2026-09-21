@@ -7,7 +7,7 @@
 
 import { boxOf, type Shape } from "./shapes";
 
-export type CurveKind = "hypotrochoid" | "parabolic" | "polygon" | "star" | "spiral" | "arc";
+export type CurveKind = "hypotrochoid" | "parabolic" | "polygon" | "star" | "spiral" | "arc" | "wave";
 
 /** A spirograph: a circle of radius `r` rolling inside one of radius `R`, pen `d` from its centre. */
 export interface Hypotrochoid {
@@ -58,7 +58,14 @@ export interface Arc {
   inner: number;
 }
 
-export type Curve = Hypotrochoid | Parabolic | Polygon | Star | Spiral | Arc;
+/** A wave across the box: `waves` of them, swinging `swing` percent of the box's height. */
+export interface Wave {
+  kind: "wave";
+  waves: number;
+  swing: number;
+}
+
+export type Curve = Hypotrochoid | Parabolic | Polygon | Star | Spiral | Arc | Wave;
 
 export interface Point {
   x: number;
@@ -72,6 +79,7 @@ export const DEFAULT_CURVE: Record<CurveKind, Curve> = {
   star: { kind: "star", points: 5, inner: 40 },
   spiral: { kind: "spiral", turns: 4, inner: 5 },
   arc: { kind: "arc", start: 0, sweep: 180, arcs: 1, inner: 40 },
+  wave: { kind: "wave", waves: 3, swing: 100 },
 };
 
 export const CURVE_LABEL: Record<CurveKind, string> = {
@@ -81,6 +89,7 @@ export const CURVE_LABEL: Record<CurveKind, string> = {
   star: "Star",
   spiral: "Spiral",
   arc: "Arc",
+  wave: "Wave",
 };
 
 /** The numbers a curve shows in the panel: what to call each one and how far it may go. */
@@ -103,6 +112,10 @@ export const CURVE_FIELDS: Record<CurveKind, { key: string; label: string; min: 
   spiral: [
     { key: "turns", label: "Turns", min: 0.25, max: 100, step: 0.5 },
     { key: "inner", label: "Starts at", min: 0, max: 95, step: 5, unit: "%" },
+  ],
+  wave: [
+    { key: "waves", label: "Waves", min: 0.25, max: 200, step: 0.5 },
+    { key: "swing", label: "Swing", min: 1, max: 100, step: 5, unit: "%" },
   ],
   arc: [
     { key: "start", label: "From", min: -360, max: 360, step: 15, unit: "°" },
@@ -159,6 +172,19 @@ function cornerPoints(c: Polygon | Star): Point[] {
   }
   points.push(points[0]); // closed, so the pen finishes where it started
   return points;
+}
+
+/** A wave from one side of the box to the other, in the box's own inches. */
+function wavePoints(c: Wave, b: ReturnType<typeof boxOf>): Point[] {
+  const waves = Math.max(0.05, c.waves);
+  const swing = Math.max(0, Math.min(100, c.swing)) / 100;
+  const cy = (b.y0 + b.y1) / 2;
+  const height = ((b.y1 - b.y0) / 2) * swing;
+  const steps = Math.max(16, Math.min(8000, Math.ceil(waves * 24)));
+  return Array.from({ length: steps + 1 }, (_, i) => {
+    const t = i / steps;
+    return { x: b.x0 + t * (b.x1 - b.x0), y: cy - height * Math.sin(2 * Math.PI * waves * t) };
+  });
 }
 
 /** One arc of the unit circle, at `radius`: the ring an arc shape draws, before it is fitted. */
@@ -275,6 +301,7 @@ export function curveStrokes(shape: Shape): Point[][] {
   if (curve.kind === "parabolic") return parabolicPoints(curve, b);
   if (curve.kind === "polygon" || curve.kind === "star") return [fitToBox(cornerPoints(curve), b, true)];
   // A spiral and an arc are drawn round the box the way an ellipse is, so a wide box gives a wide one.
+  if (curve.kind === "wave") return [wavePoints(curve, b)];
   if (curve.kind === "arc") return arcRings(curve, b);
   if (curve.kind === "spiral") return [fitToBox(roundPoints(curve), b, true)];
   return [fitToBox(hypotrochoidPoints(curve), b)];
@@ -298,6 +325,7 @@ export function curveFromData(raw: unknown): Curve | null {
   if (d.kind === "polygon") return { kind: "polygon", sides: n("sides", 6) };
   if (d.kind === "star") return { kind: "star", points: n("points", 5), inner: n("inner", 40) };
   if (d.kind === "spiral") return { kind: "spiral", turns: n("turns", 4), inner: n("inner", 5) };
+  if (d.kind === "wave") return { kind: "wave", waves: n("waves", 3), swing: n("swing", 100) };
   if (d.kind === "arc") {
     return { kind: "arc", start: n("start", 0), sweep: n("sweep", 180), arcs: n("arcs", 1), inner: n("inner", 40) };
   }

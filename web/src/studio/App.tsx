@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Button, ButtonRound, Card, Checkbox, InputSelect, InputText, InputTextarea, LayerController } from "@tomcoggia/ui";
-import { AlignJustify, ArrowDownToLine, AudioWaveform, Circle, CircleDashed, CircleDot, Copy, Ellipsis, EllipsisVertical, FilePlus, FolderOpen, Grid2x2, Layers2, LoaderPinwheel, Menu, Minus, MousePointer2, Orbit, Pentagon, Plus, Radar, Rainbow, Ratio, Redo2, Spline, Square, Star, Trash2, Type, Undo2 } from "lucide-react";
+import { AlignJustify, ArrowDownToLine, AudioWaveform, Circle, CircleDashed, CircleDot, Copy, Ellipsis, EllipsisVertical, FilePlus, FolderOpen, Grid2x2, Layers2, LoaderPinwheel, Menu, Minus, MousePointer2, Orbit, Pentagon, Plus, Radar, Rainbow, Ratio, Redo2, Spline, Square, Star, Trash2, Type, Undo2, Waves } from "lucide-react";
 import { FileBrowser, LAST_FOLDER_KEY, type OpenResult } from "../components/FileBrowser";
 import { Section } from "../components/controls/Section";
 import { NumberField } from "../components/controls/NumberField";
@@ -49,6 +49,7 @@ const TOOLS: { kind: Tool; label: string; hint: string; icon: JSX.Element }[] = 
   { kind: "star", label: "Star", hint: "Draw a star: drag on the page, then set its points", icon: <Star /> },
   { kind: "spiral", label: "Spiral", hint: "Draw a spiral: drag on the page, then set its turns", icon: <Radar /> },
   { kind: "arc", label: "Arc", hint: "Draw an arc: drag on the page, then set where it starts and how far it goes", icon: <Rainbow /> },
+  { kind: "wave", label: "Wave", hint: "Draw a wave: drag on the page, then set how many", icon: <Waves /> },
   { kind: "text", label: "Text", hint: "Set some words: drag to say how tall, then type them", icon: <Type /> },
 ];
 

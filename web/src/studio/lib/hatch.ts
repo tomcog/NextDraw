@@ -75,7 +75,7 @@ export interface Seg {
  */
 // A parabolic's strings are the drawing rather than an outline round anything, and a spiral and an
 // arc are lines that never close, so there is no inside for a fill to be in.
-const OPEN_CURVES = ["parabolic", "spiral", "arc"];
+const OPEN_CURVES = ["parabolic", "spiral", "arc", "wave"];
 
 export const canFill = (s: Shape) =>
   s.kind !== "line" && s.kind !== "text" && !OPEN_CURVES.includes(s.curve?.kind ?? "")
