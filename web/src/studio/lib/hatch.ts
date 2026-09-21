@@ -135,16 +135,33 @@ export const stepInches = (fill: Fill) => fill.spacingMm / 25.4 / (fill.scale / 
 /** Any of a fill's millimetre measurements, in the drawing's own inches. */
 const inches = (mm: number, fill: Fill) => mm / 25.4 / (fill.scale / 100);
 
+/**
+ * The swing a wave is given when nobody has set one: a fraction of the line spacing, so the waves
+ * stay between their neighbours instead of weaving through them. A fixed default can't do that -
+ * spacing follows the pen, and 1.5 mm of swing on a 0.4 mm pen is four lines' worth of wander,
+ * which reads as noise rather than as hatching drawn with a wave in it.
+ */
+const DEFAULT_SWING = 0.4;
+// Rounded to the hundredth of a millimetre, because this number is shown in a field and typed
+// over: 0.14 is a swing, 0.13999999999999999 is arithmetic.
+export const defaultSwingMm = (fill: Fill) => Math.round(fill.spacingMm * DEFAULT_SWING * 100) / 100;
+
 /** What each fill's own numbers come to, with the defaults filled in. */
 export const fillNumbers = (fill: Fill) => ({
   kind: fill.kind ?? "hatch",
   waveMm: fill.waveMm ?? 6,
-  swingMm: fill.swingMm ?? 1.5,
+  swingMm: fill.swingMm ?? defaultSwingMm(fill),
   dashMm: fill.dashMm ?? 3,
   gapMm: fill.gapMm ?? 2,
 });
 
-/** A straight span drawn as a wave: a point every few degrees, swinging across the line. */
+/**
+ * A straight span drawn as a wave: a point every few degrees, swinging across the line. Like the
+ * dashes, the wave is counted from where the line itself starts rather than from where the shape
+ * cuts it, so every line in a fill crests together and the waves stand in straight rows across it.
+ * Counting from the span instead put neighbouring lines out of step wherever a chord began on a
+ * different edge, and the crests then read as bands running the other way.
+ */
 function waved(seg: Seg, wave: number, swing: number): Point[] {
   const dx = seg.x2 - seg.x1;
   const dy = seg.y2 - seg.y1;
@@ -152,10 +169,12 @@ function waved(seg: Seg, wave: number, swing: number): Point[] {
   if (len < 1e-9 || wave <= 0) return [{ x: seg.x1, y: seg.y1 }, { x: seg.x2, y: seg.y2 }];
   const ux = dx / len;
   const uy = dy / len;
+  // How far along the line this span begins, measured in the drawing rather than in the span.
+  const from = seg.x1 * ux + seg.y1 * uy;
   const steps = Math.max(2, Math.min(400, Math.ceil((len / wave) * 12)));
   return Array.from({ length: steps + 1 }, (_, i) => {
     const t = (i / steps) * len;
-    const swingAt = swing * Math.sin((2 * Math.PI * t) / wave);
+    const swingAt = swing * Math.sin((2 * Math.PI * (from + t)) / wave);
     return { x: seg.x1 + ux * t - uy * swingAt, y: seg.y1 + uy * t + ux * swingAt };
   });
 }
@@ -184,6 +203,29 @@ function dashed(seg: Seg, dash: number, gap: number): Seg[] {
     out.push({ x1: seg.x1 + ux * start, y1: seg.y1 + uy * start, x2: seg.x1 + ux * end, y2: seg.y1 + uy * end });
   }
   return out;
+}
+
+/** A box brought in by the same distance on every side. Never past its own middle. */
+function insetBox(box: ReturnType<typeof boxOf>, by: number) {
+  if (by <= 0) return box;
+  const x = Math.min(by, (box.x1 - box.x0) / 2);
+  const y = Math.min(by, (box.y1 - box.y0) / 2);
+  return { x0: box.x0 + x, y0: box.y0 + y, x1: box.x1 - x, y1: box.y1 - y };
+}
+
+/**
+ * Outlines brought inward by the same distance, the way the concentric rings are: every edge in by
+ * `by`, which for a box or an ellipse is exactly an inset and for anything else is close enough.
+ */
+function insetOutlines(outlines: Point[][], box: ReturnType<typeof boxOf>, by: number): Point[][] {
+  const w = box.x1 - box.x0;
+  const h = box.y1 - box.y0;
+  if (by <= 0 || w <= 1e-9 || h <= 1e-9) return outlines;
+  const cx = (box.x0 + box.x1) / 2;
+  const cy = (box.y0 + box.y1) / 2;
+  const kx = Math.max(0, (w - 2 * by) / w);
+  const ky = Math.max(0, (h - 2 * by) / h);
+  return outlines.map((pts) => pts.map((p) => ({ x: cx + (p.x - cx) * kx, y: cy + (p.y - cy) * ky })));
 }
 
 /**
@@ -248,9 +290,9 @@ function clipToEllipse(px: number, py: number, dx: number, dy: number, cx: numbe
  * The lines a fill makes, in inches on the page. They're swept out from the middle of the shape, so
  * growing it from one side doesn't shift every line in the pattern.
  */
-export function hatchLines(shape: Shape, fill: Fill): Seg[] {
+export function hatchLines(shape: Shape, fill: Fill, inset = 0): Seg[] {
   if (!canFill(shape)) return [];
-  const b = boxOf(shape);
+  const b = insetBox(boxOf(shape), inset);
   const w = b.x1 - b.x0;
   const h = b.y1 - b.y0;
   const step = stepInches(fill);
@@ -265,7 +307,7 @@ export function hatchLines(shape: Shape, fill: Fill): Seg[] {
   const cx = (b.x0 + b.x1) / 2;
   const cy = (b.y0 + b.y1) / 2;
   const reach = Math.hypot(w, h) / 2;
-  const outlines = outlinesOf(shape);
+  const outlines = insetOutlines(outlinesOf(shape), boxOf(shape), inset);
   if ((shape.curve || shape.kind === "path") && !outlines.length) return [];
 
   const segs: Seg[] = [];
@@ -299,12 +341,16 @@ export function fillRuns(shape: Shape, fill: Fill): Point[][] {
     const outlines = outlinesOf(shape);
     return outlines.length ? concentricRuns(outlines, boxOf(shape), stepInches(fill)) : [];
   }
-  const lines = hatchLines(shape, fill);
   if (n.kind === "wavy") {
     const wave = inches(n.waveMm, fill);
     const swing = inches(n.swingMm, fill);
-    return lines.map((seg) => waved(seg, wave, swing));
+    // The wave swings sideways after the line has been cut to the shape, so a line cut to the
+    // outline itself crests over it by the swing. The lines are cut to a shape brought in by that
+    // much instead, which puts the crests on the outline rather than beyond it - what a thick pen
+    // would otherwise carry past the shape's own stroke.
+    return hatchLines(shape, fill, swing).map((seg) => waved(seg, wave, swing));
   }
+  const lines = hatchLines(shape, fill);
   if (n.kind === "dashes") {
     const dash = inches(n.dashMm, fill);
     const gap = inches(n.gapMm, fill);

@@ -675,10 +675,37 @@ def fill_spacing_of(group, fills):
     return None
 
 
-def hatch_lines(kind, box, angle, step, outline=None):
+def inset_box(box, by):
+    """insetBox: a box brought in by the same distance on every side, never past its own middle."""
+    x0, y0, x1, y1 = box
+    if by <= 0:
+        return box
+    x = min(by, (x1 - x0) / 2)
+    y = min(by, (y1 - y0) / 2)
+    return (x0 + x, y0 + y, x1 - x, y1 - y)
+
+
+def inset_outline(outline, box, by):
+    """insetOutlines: an outline brought inward the way the concentric rings are."""
+    x0, y0, x1, y1 = box
+    w, h = x1 - x0, y1 - y0
+    if by <= 0 or w <= 1e-9 or h <= 1e-9 or not outline:
+        return outline
+    cx, cy = (x0 + x1) / 2, (y0 + y1) / 2
+    kx = max(0.0, (w - 2 * by) / w)
+    ky = max(0.0, (h - 2 * by) / h)
+    return [(cx + (px - cx) * kx, cy + (py - cy) * ky) for px, py in outline]
+
+
+def hatch_lines(kind, box, angle, step, outline=None, inset=0):
     """hatchLines: the lines across a rect or ellipse box (x0, y0, x1, y1), `step` apart, swept out
     from the middle. Each is (x1, y1, x2, y2), running in the direction of the angle. A "polygon"
-    is clipped to `outline` - the shape's own points - rather than to the box around it."""
+    is clipped to `outline` - the shape's own points - rather than to the box around it.
+    `inset` brings the region the lines are cut to inward all round, which is what keeps a wave's
+    crests inside the shape instead of across its outline."""
+    whole = box
+    box = inset_box(box, inset)
+    outline = inset_outline(outline, whole, inset)
     x0, y0, x1, y1 = box
     w, h = x1 - x0, y1 - y0
     if w <= 0 or h <= 0 or not step > 0.002:
@@ -750,18 +777,24 @@ def hatch_lines(kind, box, angle, step, outline=None):
 
 
 def waved(seg, wave, swing):
-    """waved: a straight span drawn as a wave, a point every few degrees across the line."""
+    """waved: a straight span drawn as a wave, a point every few degrees across the line.
+
+    The wave is counted from where the line itself starts rather than from where the shape cuts it,
+    the way the dashes are, so every line in a fill crests together and the waves stand in straight
+    rows across it.
+    """
     x1, y1, x2, y2 = seg
     dx, dy = x2 - x1, y2 - y1
     length = math.hypot(dx, dy)
     if length < 1e-9 or wave <= 0:
         return [(x1, y1), (x2, y2)]
     ux, uy = dx / length, dy / length
+    frm = x1 * ux + y1 * uy
     steps = max(2, min(400, math.ceil((length / wave) * 12)))
     out = []
     for i in range(steps + 1):
         t = (i / steps) * length
-        swing_at = swing * math.sin(2 * math.pi * t / wave)
+        swing_at = swing * math.sin(2 * math.pi * (frm + t) / wave)
         out.append((x1 + ux * t - uy * swing_at, y1 + uy * t + ux * swing_at))
     return out
 
@@ -824,11 +857,18 @@ def fill_runs(kind, box, fill, step, outline=None):
     inches = lambda mm: float(mm) / 25.4 / (float(fill.get("scale") or 100) / 100)  # noqa: E731
     if what == "concentric":
         return concentric_runs(closed_outlines(kind, box, outline), box, step)
-    lines = hatch_lines(kind, box, float(fill.get("angle") or 0), step, outline)
+    angle = float(fill.get("angle") or 0)
     if what == "wavy":
         wave = inches(fill.get("wave_mm", 6))
-        swing = inches(fill.get("swing_mm", 1.5))
-        return [waved(seg, wave, swing) for seg in lines]
+        # Kept in step with defaultSwingMm in hatch.ts: a swing nobody set is a fraction of the
+        # spacing, so the waves stay between their neighbours whatever pen the spacing came from.
+        # Taken from `step` rather than from the fill's own spacing because that is the spacing the
+        # lines are actually being drawn at - the tool's, when Plot is regenerating at its own.
+        swing = (inches(fill["swing_mm"]) if fill.get("swing_mm") is not None
+                 else inches(round(step * 25.4 * float(fill.get("scale") or 100) / 100 * 0.4, 2)))
+        # Cut to a shape brought in by the swing, so the crests land on the outline, not across it.
+        return [waved(seg, wave, swing) for seg in hatch_lines(kind, box, angle, step, outline, swing)]
+    lines = hatch_lines(kind, box, angle, step, outline)
     if what == "dashes":
         dash = inches(fill.get("dash_mm", 3))
         gap = inches(fill.get("gap_mm", 2))
