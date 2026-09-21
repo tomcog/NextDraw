@@ -9,7 +9,7 @@ import { api, postJSON } from "../lib/api";
 import { load, save as remember } from "../lib/storage";
 import { DEFAULT_SETTINGS, PAPER_SIZES, PLOT_CHANNEL, STORAGE } from "../lib/constants";
 import type { Info, PenColor, PlotterModel, Preset } from "../lib/types";
-import { fmtIn } from "../lib/format";
+import { trimNum } from "../lib/format";
 import { ZoomControl } from "../components/ZoomControl";
 import { InkSimControl } from "../components/InkSimControl";
 import type { Zoom } from "../components/BedCanvas";
@@ -1419,7 +1419,9 @@ export default function App() {
                                       title="Set this shape's size"
                                       onClick={() => { pick(sh.id); setSizing(sh.id); }}
                                     >
-                                      {`${fmtIn(b.x1 - b.x0)} × ${fmtIn(b.y1 - b.y0)}`}
+                                      {/* Numbers alone: the row has no room to say "in" twice, and
+                                          the page is measured in inches throughout. */}
+                                      {`${trimNum(b.x1 - b.x0, 2)} × ${trimNum(b.y1 - b.y0, 2)}`}
                                     </button>
                                   )}
                                 </span>
