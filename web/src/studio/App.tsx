@@ -1546,11 +1546,13 @@ export default function App() {
                   <Button size="md" variant="secondary" onClick={() => bakeShape(chosen.id)}>
                     {chosen.repeat ? "Bake pattern" : "Bake shape"}
                   </Button>
-                  <p className={styles.empty}>
-                    {chosen.repeat
-                      ? `Baking the shape gives up only its own numbers: its points can be dragged and every copy follows. Baking the pattern leaves ${placements(chosen).length} shapes, each free of the others.`
-                      : "The numbers behind it are given up; its points can then be dragged one by one."}
-                  </p>
+                  {/* Only a repeat needs a word: one button there bakes the shape and another the
+                      pattern, and the two look alike until the difference is said. */}
+                  {chosen.repeat && (
+                    <p className={styles.empty}>
+                      {`Baking the shape gives up only its own numbers: its points can be dragged and every copy follows. Baking the pattern leaves ${placements(chosen).length} shapes, each free of the others.`}
+                    </p>
+                  )}
                 </Section>
 
                 {chosen.kind === "path" && (
