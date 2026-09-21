@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Button, ButtonRound, Card, Checkbox, InputSelect, InputText, InputTextarea, LayerController } from "@tomcoggia/ui";
-import { AlignJustify, ArrowDownToLine, AudioWaveform, Circle, CircleDashed, CircleDot, Copy, Ellipsis, EllipsisVertical, FilePlus, Flame, FlameKindling, FolderOpen, Grid2x2, Layers2, LoaderPinwheel, Menu, Minus, MoveHorizontal, MoveVertical, MousePointer2, Orbit, PaintBucket, Pentagon, Plus, Radar, Rainbow, Redo2, Repeat as RepeatIcon, Printer, Save, Spline, Square, SquareDimensions, Star, Trash2, Type, Undo2, Waves, Waypoints } from "lucide-react";
+import { AlignJustify, ArrowDownToLine, AudioWaveform, Circle, CircleDashed, CircleDot, Copy, Ellipsis, EllipsisVertical, FilePlus, Flame, FlameKindling, FolderOpen, Grid2x2, Layers2, LoaderPinwheel, Menu, Minus, MoveHorizontal, MoveVertical, MousePointer2, Orbit, PaintBucket, Pentagon, Plus, Radar, Rainbow, Redo2, Repeat as RepeatIcon, Save, Spline, Square, SquareDimensions, Star, Trash2, Type, Undo2, Waves, Waypoints } from "lucide-react";
 import { FileBrowser, LAST_FOLDER_KEY, type OpenResult } from "../components/FileBrowser";
 import { Section } from "../components/controls/Section";
 import { NumberField } from "../components/controls/NumberField";
@@ -1144,24 +1144,8 @@ export default function App() {
                 title="Drawing"
                 action={
                   <span className={styles.headerTools}>
-                    <ButtonRound
-                      size="sm"
-                      icon={<FilePlus />}
-                      aria-label="New drawing"
-                      title="Close this drawing and start a new one"
-                      disabled={busy}
-                      onClick={startNew}
-                    />
-                    <ButtonRound
-                      size="sm"
-                      icon={<FolderOpen />}
-                      aria-label="Open a drawing"
-                      title="Open a drawing to carry on with"
-                      disabled={busy}
-                      onClick={() => setBrowserOpen(true)}
-                    />
-                    {/* Saving and handing over to Plot are the two things done TO this drawing, so
-                        they sit with the two done to the card. */}
+                    {/* In the order they come up: the drawing in hand is saved, another is opened,
+                        a new one is started, and what is finished goes to Plot. */}
                     <ButtonRound
                       size="sm"
                       icon={<Save />}
@@ -1172,8 +1156,24 @@ export default function App() {
                     />
                     <ButtonRound
                       size="sm"
-                      icon={<Printer />}
-                      aria-label="Open in Plot"
+                      icon={<FolderOpen />}
+                      aria-label="Open a drawing"
+                      title="Open a drawing to carry on with"
+                      disabled={busy}
+                      onClick={() => setBrowserOpen(true)}
+                    />
+                    <ButtonRound
+                      size="sm"
+                      icon={<FilePlus />}
+                      aria-label="New drawing"
+                      title="Close this drawing and start a new one"
+                      disabled={busy}
+                      onClick={startNew}
+                    />
+                    <ButtonRound
+                      size="sm"
+                      icon={<Waypoints />}
+                      aria-label="Send to Plot"
                       title="Save this drawing and open it in Plot, ready to draw"
                       disabled={busy || !shapes.length}
                       onClick={openInPlot}
