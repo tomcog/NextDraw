@@ -249,10 +249,14 @@ export function Canvas({ page, shapes, fills, layers, activeLayer, model, zoom, 
     const p = pointAt(e);
     if (!p) return;
     if (drag.mode === "new") {
-      // Shift holds a line to the square and diagonal directions, the way a set square would.
-      const end = drag.shape.kind === "line" && e.shiftKey
+      // Shift holds a line to the square and diagonal directions, the way a set square would, and
+      // squares off anything else: an ellipse drawn with it held comes out a circle.
+      const to = drag.shape.kind === "line" && e.shiftKey
         ? straighten(drag.shape.x, drag.shape.y, p.x, p.y)
         : gridPoint(p);
+      const end = e.shiftKey && drag.shape.kind !== "line"
+        ? keepProportions({ x: drag.shape.x, y: drag.shape.y }, to, 1)
+        : to;
       setDrag({ ...drag, shape: clampToPage({ ...drag.shape, x2: end.x, y2: end.y }, page) });
     } else if (drag.mode === "marquee") {
       setDrag({ ...drag, to: p });
