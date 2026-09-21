@@ -1139,7 +1139,7 @@ export default function App() {
 
         <div className={styles.side}>
           <Card variant="flat" className={styles.controls}>
-            <div className={styles.cardBody}>
+            <div className={`${styles.cardBody} ${styles.settings}`}>
               <Section
                 title="Drawing"
                 action={
@@ -1195,7 +1195,7 @@ export default function App() {
                   onChange={(e) => setName(e.target.value)}
                 />
                 <p className={controls.fileWhere} title={saved?.path ?? undefined}>
-                  {saved ? `In ${saved.folder}` : "Not saved yet"}
+                  {saved ? saved.folder : "Not saved yet"}
                 </p>
 
                 {/* Asked here rather than in a dialog: the question is about this card's drawing, and
@@ -1227,13 +1227,9 @@ export default function App() {
                 )}
 
               </Section>
-            </div>
-          </Card>
 
-          {/* What the drawing is made on and with: two settings under one lid, each of which
-              folds on its own, as does the card around them. */}
-          <Card variant="flat" className={styles.controls}>
-            <div className={`${styles.cardBody} ${styles.settings}`}>
+              {/* What the drawing is made on and with, in the same card as the drawing itself:
+                  each folds on its own, as does the card around them. */}
               <Section title="Settings" collapsibleKey="settings">
                 <Section title="Paper" collapsibleKey="paper">
                   <div className={styles.pageRow}>
