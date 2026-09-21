@@ -782,8 +782,11 @@ export default function App() {
     const simpler = runs.map((run) => simplifyRun(run, tolerance)).filter((run) => run.length > 1);
     if (!simpler.length || simpler.reduce((n, r) => n + r.length, 0) >= runs.reduce((n, r) => n + r.length, 0)) return;
     record();
+    // Simplifying is for keeping the shape while dropping the points, so what comes out is drawn as
+    // a curve through them: straight lines between a tenth as many points would be a different
+    // drawing. The Smooth button turns that off again for a path that really is straight.
     setShapes((list) => list.map((s) => (s.id === id
-      ? { ...s, ...(s.runs ? { runs: simpler } : { points: simpler[0] }) }
+      ? { ...s, smooth: true, ...(s.runs ? { runs: simpler } : { points: simpler[0] }) }
       : s)));
   };
 
