@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Button, ButtonRound, Card, Checkbox, InputSelect, InputText, InputTextarea, LayerController } from "@tomcoggia/ui";
-import { AlignJustify, ArrowDownToLine, AudioWaveform, Circle, CircleDashed, CircleDot, Copy, Ellipsis, EllipsisVertical, FilePlus, Flame, FlameKindling, FolderOpen, Grid2x2, Layers2, LoaderPinwheel, Menu, Minus, MousePointer2, Orbit, Pentagon, Plus, Radar, Rainbow, Ratio, Redo2, Spline, Square, SquareDimensions, Star, Trash2, Type, Undo2, Waves } from "lucide-react";
+import { AlignJustify, ArrowDownToLine, AudioWaveform, Circle, CircleDashed, CircleDot, Copy, Ellipsis, EllipsisVertical, FilePlus, Flame, FlameKindling, FolderOpen, Grid2x2, Layers2, LoaderPinwheel, Menu, Minus, MousePointer2, Orbit, Pentagon, Plus, Radar, Rainbow, Ratio, Redo2, Spline, Square, SquareDimensions, Star, Trash2, Type, Undo2, Waves, Waypoints } from "lucide-react";
 import { FileBrowser, LAST_FOLDER_KEY, type OpenResult } from "../components/FileBrowser";
 import { Section } from "../components/controls/Section";
 import { NumberField } from "../components/controls/NumberField";
@@ -157,6 +157,9 @@ export default function App() {
   const [snapStep, setSnapStep] = useState<number>(() => load<number>(SNAP_KEY) ?? 0.25);
   // How far a simplified path may stray from the one it was, in millimetres on the paper.
   const [simplifyMm, setSimplifyMm] = useState<number>(() => load<number>(SIMPLIFY_KEY) ?? 0.2);
+  // Whether the simplify controls are open. Simplifying is done once to a path and then not thought
+  // about again, so its numbers stay behind a button rather than sitting on the card.
+  const [simplifying, setSimplifying] = useState(false);
   const [model, setModel] = useState<PlotterModel | undefined>();
   // Paper to begin with: the page is what's being drawn on, and the bed is context around it.
   const [zoom, setZoom] = useState<Zoom>("paper");
@@ -1557,6 +1560,19 @@ export default function App() {
                       : "Bake the shape: the numbers behind it are given up, and its points can then be dragged one by one"}
                     onClick={() => bakeShape(chosen.id)}
                   />
+                  {/* A path is the only thing there are points to take out of. */}
+                  {chosen.kind === "path" && (
+                    <ButtonRound
+                      size="sm"
+                      icon={<Waypoints />}
+                      className={simplifying ? controls.roundActive : undefined}
+                      aria-label="Simplify"
+                      aria-expanded={simplifying}
+                      aria-pressed={simplifying}
+                      title="Simplify: take out the points the path can do without"
+                      onClick={() => setSimplifying((on) => !on)}
+                    />
+                  )}
                 </div>
                 {/* Only a repeat needs a word: one button there bakes the shape and another the
                     pattern, and the two look alike until the difference is said. */}
@@ -1566,34 +1582,30 @@ export default function App() {
                   </p>
                 )}
 
-                {chosen.kind === "path" && (
-                <Section title="Simplify" collapsibleKey="simplify">
-                  {(() => {
-                    const points = pathRuns(chosen).reduce((n, r) => n + r.length, 0);
-                    return (
-                      <>
-                        <div className={styles.fillRow}>
-                          <Button size="md" variant="secondary" onClick={() => simplifyShape(chosen.id)}>
-                            Simplify
-                          </Button>
-                          <NumberField
-                            label="Within"
-                            unit="mm"
-                            min={0.01}
-                            max={10}
-                            step={0.05}
-                            value={simplifyMm}
-                            onChange={setSimplifyMm}
-                          />
-                        </div>
-                        <p className={styles.empty}>
-                          {`${points} point${points === 1 ? "" : "s"}${points > POINT_HANDLE_LIMIT ? " - too many to drag one by one" : ""}`}
-                        </p>
-                      </>
-                    );
-                  })()}
-                </Section>
-                )}
+                {chosen.kind === "path" && simplifying && (() => {
+                  const points = pathRuns(chosen).reduce((n, r) => n + r.length, 0);
+                  return (
+                    <>
+                      <div className={styles.fillRow}>
+                        <Button size="md" variant="secondary" onClick={() => simplifyShape(chosen.id)}>
+                          Simplify
+                        </Button>
+                        <NumberField
+                          label="Within"
+                          unit="mm"
+                          min={0.01}
+                          max={10}
+                          step={0.05}
+                          value={simplifyMm}
+                          onChange={setSimplifyMm}
+                        />
+                      </div>
+                      <p className={styles.empty}>
+                        {`${points} point${points === 1 ? "" : "s"}${points > POINT_HANDLE_LIMIT ? " - too many to drag one by one" : ""}`}
+                      </p>
+                    </>
+                  );
+                })()}
 
                 {canFill(chosen) && (
                 <Section title="Fill" collapsibleKey="fill">
