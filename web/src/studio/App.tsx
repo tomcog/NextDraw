@@ -1014,6 +1014,27 @@ export default function App() {
               { label: "Delete", icon: <Trash2 />, danger: true, disabled: layers.length < 2, onSelect: () => removeLayer(rowMenu.id) },
             ]
             : [
+              {
+                label: "Set size",
+                icon: <SquareDimensions />,
+                // It opens off the kebab that asked for it, and needs the shape picked to know what
+                // it is sizing.
+                onSelect: () => {
+                  pick(rowMenu.id);
+                  setSizeAnchor(rowMenu.anchor);
+                  setSizing(rowMenu.id);
+                },
+              },
+              {
+                label: "Bake",
+                icon: <Flame />,
+                // Nothing to give up in a path that stands still: it is already its own points.
+                disabled: (() => {
+                  const s = shapes.find((sh) => sh.id === rowMenu.id);
+                  return !s || (s.kind === "path" && !s.repeat && !s.rotation);
+                })(),
+                onSelect: () => bakeShape(rowMenu.id),
+              },
               { label: "Duplicate", icon: <Copy />, onSelect: () => duplicateShape(rowMenu.id) },
               // One entry per other layer: a layer is a pen, so this is "draw this in that pen".
               ...layers
@@ -1405,26 +1426,11 @@ export default function App() {
                               label={
                                 <span className={styles.shapeLabel}>
                                   <span className={styles.shapeName}>{name}</span>
-                                  {/* The size sits at the end of the row, against the button that
-                                      opens it. Numbers alone: the page is inches throughout, and the
-                                      boxes that open say so. */}
-                                  <button
-                                    type="button"
-                                    className={styles.shapeSize}
-                                    aria-label={`Size of ${name}`}
-                                    aria-haspopup="dialog"
-                                    aria-expanded={sizing === sh.id}
-                                    title="Set this shape's size"
-                                    onClick={(e) => {
-                                      const anchor = e.currentTarget;
-                                      pick(sh.id);
-                                      setSizing((open) => (open === sh.id ? null : sh.id));
-                                      setSizeAnchor(anchor);
-                                    }}
-                                  >
+                                  {/* How big it is, at the end of the row. Numbers alone: the page is
+                                      inches throughout, and setting them is the kebab's job. */}
+                                  <span className={styles.shapeSize}>
                                     {`${trimNum(b.x1 - b.x0, 2)} × ${trimNum(b.y1 - b.y0, 2)}`}
-                                    <SquareDimensions className={styles.sizeIcon} aria-hidden />
-                                  </button>
+                                  </span>
                                 </span>
                               }
                             />

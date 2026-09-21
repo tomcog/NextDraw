@@ -199,7 +199,6 @@
   font-size: 12px;
 }
 
-/* The label fills the row so the size can sit at its end. */
 /* The row's own name holds the width, so the size and its icon end up against the right edge. Both
    the lead and the label inside it are the library's, which sizes them to their words. */
 .layerRow [class*="lead"],
@@ -207,28 +206,11 @@
 
 .shapeSize {
   flex: none;
-  display: inline-flex;
-  align-items: center;
-  gap: 0.25rem;
   padding: 0.125rem 0.25rem;
-  border: 0;
-  border-radius: 3px;
-  background: none;
-  font: inherit;
   font-size: 10px;
   color: var(--ui-text-muted);
   font-variant-numeric: tabular-nums;
-  cursor: text;
 }
-
-.shapeSize:hover { background: var(--ui-surface-raised); color: var(--ui-text-default); }
-
-.sizeIcon {
-  width: 11px;
-  height: 11px;
-  opacity: 0.7;
-}
-
 
 @media (max-width: 860px) {
   .layout { grid-template-columns: minmax(0, 1fr); padding-inline: 1rem; }
