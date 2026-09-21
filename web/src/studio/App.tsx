@@ -1624,7 +1624,14 @@ export default function App() {
                   nothing under it is two lines to say one thing. */}
               {active && onActive.length > 0 && (
                 <Section
-                  title={`On ${active.name}`}
+                  // The layer's ink in front of its name, the way the preset's layers show theirs.
+                  // A mark to read, not a control: picking the colour is the swatch in the row above.
+                  title={(
+                    <>
+                      <span className={controls.layerChipDot} style={{ background: active.color }} aria-hidden />
+                      {`On ${active.name}`}
+                    </>
+                  )}
                   collapsibleKey="shapes-on-layer"
                   action={
                     onActive.length ? (

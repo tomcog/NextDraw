@@ -4,7 +4,8 @@ import { load, save } from "../../lib/storage";
 import styles from "./controls.module.css";
 
 interface Props {
-  title: string;
+  /** A node rather than a string, so a heading can carry a mark - a layer's ink, say - before it. */
+  title: ReactNode;
   action?: ReactNode;
   children: ReactNode;
   /**
