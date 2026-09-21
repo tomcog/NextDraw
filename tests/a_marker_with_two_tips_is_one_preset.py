@@ -98,11 +98,35 @@ def main():
           sorted(next(v for v in marker["variants"] if v["name"] == "Dot")["settings"]),
           ["pen_pos_down", "pen_width", "speed_pendown"])
 
+    print("\na tip that comes in only some of the colours")
+    marker = next(p for p in json.loads(tmp.read_text()) if p["name"] == "Betem Acrylic")
+    marker["palette"] = [{"name": "Black", "color": "#262626"}, {"name": "Red", "color": "#d6322b"},
+                         {"name": "Yellow", "color": "#fee338"}]
+    next(v for v in marker["variants"] if v["name"] == "Fine")["colors"] = ["Black", "Yellow"]
+    tmp.write_text(json.dumps([marker] + [p for p in json.loads(tmp.read_text()) if p["name"] != "Betem Acrylic"], indent=2))
+    got = tools(client.get("/api/presets"))
+    check("the whole marker's colours for the tip that has them",
+          [c["name"] for c in got["Betem Acrylic Dot"]["palette"]], ["Black", "Red", "Yellow"])
+    check("only its own for the tip that doesn't",
+          [c["name"] for c in got["Betem Acrylic Fine"]["palette"]], ["Black", "Yellow"])
+    check("in the marker's order, not the order they were named",
+          [c["color"] for c in got["Betem Acrylic Fine"]["palette"]], ["#262626", "#fee338"])
+
+    print("\nediting a restricted tip's palette leaves the marker whole")
+    edit = [{"name": "Black", "color": "#111111"}, {"name": "Green", "color": "#054d17"}]
+    after = tools(client.put("/api/presets/Betem Acrylic Fine/palette", json={"palette": edit}))
+    check("the colour it changed changed for both",
+          next(c["color"] for c in after["Betem Acrylic Dot"]["palette"] if c["name"] == "Black"), "#111111")
+    check("the colour it dropped is still the marker's",
+          [c["name"] for c in after["Betem Acrylic Dot"]["palette"]], ["Black", "Red", "Yellow", "Green"])
+    check("but is no longer offered for that tip",
+          [c["name"] for c in after["Betem Acrylic Fine"]["palette"]], ["Black", "Green"])
+
     print("\nthe palette is the marker's")
     one = [{"name": "Only", "color": "#123456"}]
-    after = tools(client.put("/api/presets/Betem Acrylic Fine/palette", json={"palette": one}))
-    check("set on one tip, both tips have it",
-          after["Betem Acrylic Dot"]["palette"] == one and after["Betem Acrylic Fine"]["palette"] == one, True)
+    after = tools(client.put("/api/presets/Betem Acrylic Dot/palette", json={"palette": one}))
+    check("set on an unrestricted tip, that tip has it",
+          after["Betem Acrylic Dot"]["palette"], one)
 
     print("\ndeleting a tip")
     after = tools(client.delete("/api/presets/Betem Acrylic Dot"))

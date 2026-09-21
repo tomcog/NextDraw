@@ -1860,6 +1860,13 @@ def resolve_presets(saved):
                         entry.pop(key, None)  # the marker has one, this tip hasn't
                     else:
                         entry[key] = variant[key]
+            # Some markers come in two weights that don't sell the same colours - the bolder one in a
+            # handful, the finer in the whole range. That is one marker and one palette still, so the
+            # tip names the colours it comes in and the rest are simply not offered for it. Filtered
+            # rather than listed again, so the marker's order is kept and a colour is described once.
+            if "colors" in variant:
+                allowed = [str(c) for c in (variant["colors"] or [])]
+                entry["palette"] = [c for c in (entry.get("palette") or []) if c.get("name") in allowed]
             out.append(entry)
     return out
 
@@ -2971,6 +2978,18 @@ def put_palette(name):
     if preset is None:
         return jsonify(error="That drawing tool isn't on this Mac."), 404
     colors = clean_palette((request.json or {}).get("palette"))
+    # A tip that comes in only some of the marker's colours is editing a filtered view of the
+    # marker's palette, so saving it must not take the others off the marker. What it saves is
+    # folded back in - a colour it changed is changed for both, one it adds is added to the marker,
+    # and one it drops is only dropped from what this tip is offered.
+    if tip is not None and "colors" in tip:
+        by_name = {c["name"]: c for c in colors}
+        merged = [by_name.pop(c["name"], c) for c in (marker.get("palette") or [])]
+        merged += by_name.values()  # colours this tip has that the marker hadn't heard of
+        marker["palette"] = merged
+        tip["colors"] = [c["name"] for c in colors]
+        save_presets(presets)
+        return jsonify(presets=resolve_presets(presets))
     if colors:
         preset["palette"] = colors
     else:
