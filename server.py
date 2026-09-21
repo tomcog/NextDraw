@@ -767,7 +767,8 @@ def waved(seg, wave, swing):
 
 
 def dashed(seg, dash, gap):
-    """dashed: a straight span broken into strokes, `dash` long and `gap` apart."""
+    """dashed: a straight span broken into strokes, `dash` long and `gap` apart, measured from where
+    the line starts rather than from where the shape cuts it - so the dashes stand in straight rows."""
     x1, y1, x2, y2 = seg
     dx, dy = x2 - x1, y2 - y1
     length = math.hypot(dx, dy)
@@ -775,10 +776,13 @@ def dashed(seg, dash, gap):
     if length < 1e-9 or dash <= 0 or step <= 0:
         return [seg]
     ux, uy = dx / length, dy / length
-    out, at = [], 0.0
+    start_at = x1 * ux + y1 * uy
+    out = []
+    at = -(((start_at % step) + step) % step)
     while at < length - 1e-9 and len(out) < 2000:
-        end = min(at + dash, length)
-        out.append((x1 + ux * at, y1 + uy * at, x1 + ux * end, y1 + uy * end))
+        begin, end = max(at, 0.0), min(at + dash, length)
+        if end > begin + 1e-9:
+            out.append((x1 + ux * begin, y1 + uy * begin, x1 + ux * end, y1 + uy * end))
         at += step
     return out
 

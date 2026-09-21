@@ -160,7 +160,11 @@ function waved(seg: Seg, wave: number, swing: number): Point[] {
   });
 }
 
-/** A straight span broken into strokes: `dash` long, `gap` apart, starting at its beginning. */
+/**
+ * A straight span broken into strokes, `dash` long and `gap` apart. The pattern is measured from
+ * where the line itself starts rather than from where the shape cuts it, so the dashes stand in
+ * straight rows across the fill instead of following the outline in and out.
+ */
 function dashed(seg: Seg, dash: number, gap: number): Seg[] {
   const dx = seg.x2 - seg.x1;
   const dy = seg.y2 - seg.y1;
@@ -169,10 +173,15 @@ function dashed(seg: Seg, dash: number, gap: number): Seg[] {
   if (len < 1e-9 || dash <= 0 || step <= 0) return [seg];
   const ux = dx / len;
   const uy = dy / len;
+  // How far along the line this span begins, measured in the drawing rather than in the span.
+  const from = seg.x1 * ux + seg.y1 * uy;
   const out: Seg[] = [];
-  for (let at = 0; at < len - 1e-9 && out.length < 2000; at += step) {
+  let at = -(((from % step) + step) % step);
+  for (; at < len - 1e-9 && out.length < 2000; at += step) {
+    const start = Math.max(at, 0);
     const end = Math.min(at + dash, len);
-    out.push({ x1: seg.x1 + ux * at, y1: seg.y1 + uy * at, x2: seg.x1 + ux * end, y2: seg.y1 + uy * end });
+    if (end <= start + 1e-9) continue; // the gap, or a dash that ended before this span did
+    out.push({ x1: seg.x1 + ux * start, y1: seg.y1 + uy * start, x2: seg.x1 + ux * end, y2: seg.y1 + uy * end });
   }
   return out;
 }
