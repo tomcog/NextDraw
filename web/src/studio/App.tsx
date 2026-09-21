@@ -1531,41 +1531,40 @@ export default function App() {
                 )}
 
                 {/* Baking takes the whole thing - every copy of a repeat, every letter of a text -
-                    and leaves paths whose points can be pulled about one at a time. */}
-                <Section title="Bake" collapsibleKey="bake">
-                  {(chosen.runs?.length ?? 0) > 1 && (
-                    <Button size="md" variant="secondary" onClick={() => splitShape(chosen.id)}>
-                      {`Split into ${chosen.runs?.length} shapes`}
-                    </Button>
-                  )}
-                  <div className={styles.tools} role="group" aria-label="Bake this shape">
-                    {chosen.repeat && chosen.kind !== "path" && (
-                      <ButtonRound
-                        size="sm"
-                        icon={<Flame />}
-                        aria-label="Bake shape"
-                        title="Bake the shape: its own numbers are given up, and every copy follows its points"
-                        onClick={() => bakeShape(chosen.id, true)}
-                      />
-                    )}
+                    and leaves paths whose points can be pulled about one at a time. It is a button
+                    or two, which is less than a section heading is worth. */}
+                {(chosen.runs?.length ?? 0) > 1 && (
+                  <Button size="md" variant="secondary" onClick={() => splitShape(chosen.id)}>
+                    {`Split into ${chosen.runs?.length} shapes`}
+                  </Button>
+                )}
+                <div className={styles.tools} role="group" aria-label="Bake this shape">
+                  {chosen.repeat && chosen.kind !== "path" && (
                     <ButtonRound
                       size="sm"
-                      icon={chosen.repeat ? <FlameKindling /> : <Flame />}
-                      aria-label={chosen.repeat ? "Bake pattern" : "Bake shape"}
-                      title={chosen.repeat
-                        ? "Bake the pattern: every copy becomes a shape of its own"
-                        : "Bake the shape: the numbers behind it are given up, and its points can then be dragged one by one"}
-                      onClick={() => bakeShape(chosen.id)}
+                      icon={<Flame />}
+                      aria-label="Bake shape"
+                      title="Bake the shape: its own numbers are given up, and every copy follows its points"
+                      onClick={() => bakeShape(chosen.id, true)}
                     />
-                  </div>
-                  {/* Only a repeat needs a word: one button there bakes the shape and another the
-                      pattern, and the two look alike until the difference is said. */}
-                  {chosen.repeat && (
-                    <p className={styles.empty}>
-                      {`Baking the shape gives up only its own numbers: its points can be dragged and every copy follows. Baking the pattern leaves ${placements(chosen).length} shapes, each free of the others.`}
-                    </p>
                   )}
-                </Section>
+                  <ButtonRound
+                    size="sm"
+                    icon={chosen.repeat ? <FlameKindling /> : <Flame />}
+                    aria-label={chosen.repeat ? "Bake pattern" : "Bake shape"}
+                    title={chosen.repeat
+                      ? "Bake the pattern: every copy becomes a shape of its own"
+                      : "Bake the shape: the numbers behind it are given up, and its points can then be dragged one by one"}
+                    onClick={() => bakeShape(chosen.id)}
+                  />
+                </div>
+                {/* Only a repeat needs a word: one button there bakes the shape and another the
+                    pattern, and the two look alike until the difference is said. */}
+                {chosen.repeat && (
+                  <p className={styles.empty}>
+                    {`Baking the shape gives up only its own numbers: its points can be dragged and every copy follows. Baking the pattern leaves ${placements(chosen).length} shapes, each free of the others.`}
+                  </p>
+                )}
 
                 {chosen.kind === "path" && (
                 <Section title="Simplify" collapsibleKey="simplify">
