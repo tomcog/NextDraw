@@ -1547,7 +1547,9 @@ export default function App() {
                 </ul>
               </Section>
 
-              {active && (
+              {/* Only while there is something on the layer: a heading over a line saying there is
+                  nothing under it is two lines to say one thing. */}
+              {active && onActive.length > 0 && (
                 <Section
                   title={`On ${active.name}`}
                   collapsibleKey="shapes-on-layer"
@@ -1565,10 +1567,7 @@ export default function App() {
                     ) : undefined
                   }
                 >
-                  {onActive.length === 0 ? (
-                    <p className={styles.empty}>No shapes on layer</p>
-                  ) : (
-                    <ul className={styles.shapeList}>
+                  <ul className={styles.shapeList}>
                       {onActive.map((sh, i) => {
                         const b = boxOf(sh);
                         const name = shapeName(sh, i);
@@ -1655,8 +1654,7 @@ export default function App() {
                           </li>
                         );
                       })}
-                    </ul>
-                  )}
+                  </ul>
                 </Section>
               )}
               </Section>
