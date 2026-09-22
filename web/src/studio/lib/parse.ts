@@ -1,6 +1,7 @@
 import { newFillId, type Fill } from "./hatch";
 import { curveFromData } from "./parametric";
-import { flattenRun, mapNode, parsePath } from "./path";
+import { flattenRun, mapNode, parsePath, type Node } from "./path";
+import { apply, axisAligned, multiply, parseTransform, IDENTITY, type Matrix } from "./transform";
 import { repeatFromData } from "./repeat";
 import { newLayerId, newShapeId, type Layer, type Page, type Shape } from "./shapes";
 import { FILL_GROUP_PREFIX } from "./svg";
@@ -66,6 +67,38 @@ export function parseDrawing(text: string): Opened {
   const originY = hasBox ? box[1] : 0;
   const toX = (v: number) => (v - originX) / perInchX;
   const toY = (v: number) => (v - originY) / perInchY;
+
+  // Every transform above an element, composed: a drawing program scales, moves and turns whole
+  // groups this way, and Studio has no transforms to keep, so each one is baked into the
+  // coordinates it governs on the way in. Cached per element, since a layer of thousands of marks
+  // shares its group's matrix.
+  const ctms = new Map<Element, Matrix>();
+  const ctmOf = (el: Element): Matrix => {
+    const known = ctms.get(el);
+    if (known) return known;
+    const parent = el.parentElement;
+    const above = parent && parent !== svg ? ctmOf(parent) : IDENTITY;
+    const m = multiply(above, parseTransform(el.getAttribute("transform")));
+    ctms.set(el, m);
+    return m;
+  };
+  // A point of an element, on the page in inches: through its transforms, then out of the file's units.
+  const placer = (el: Element) => {
+    const m = ctmOf(el);
+    return (p: { x: number; y: number }) => {
+      const q = apply(m, p);
+      return { x: toX(q.x), y: toY(q.y) };
+    };
+  };
+  // A box that has been turned or skewed is no longer a box: it is read as a path through its corners.
+  const asPath = (id: string, points: Node[]): Shape => {
+    const pts = flattenRun(points);
+    return {
+      id, layerId: "", kind: "path", points,
+      x: Math.min(...pts.map((p) => p.x)), y: Math.min(...pts.map((p) => p.y)),
+      x2: Math.max(...pts.map((p) => p.x)), y2: Math.max(...pts.map((p) => p.y)),
+    };
+  };
 
   const shapes: Shape[] = [];
   let unsupported = 0;
@@ -222,11 +255,17 @@ export function parseDrawing(text: string): Opened {
       case "rect": {
         const x = attr(el, "x");
         const y = attr(el, "y");
-        shapes.push({
-          id: noteSource(el), layerId: "", kind: "rect",
-          x: toX(x), y: toY(y),
-          x2: toX(x + attr(el, "width")), y2: toY(y + attr(el, "height")),
-        });
+        const w = attr(el, "width");
+        const h = attr(el, "height");
+        const place = placer(el);
+        if (!axisAligned(ctmOf(el))) {
+          const corners = [{ x, y }, { x: x + w, y }, { x: x + w, y: y + h }, { x, y: y + h }, { x, y }];
+          shapes.push(asPath(noteSource(el), corners.map(place)));
+          break;
+        }
+        const a = place({ x, y });
+        const b = place({ x: x + w, y: y + h });
+        shapes.push({ id: noteSource(el), layerId: "", kind: "rect", x: a.x, y: a.y, x2: b.x, y2: b.y });
         break;
       }
       case "ellipse":
@@ -235,19 +274,29 @@ export function parseDrawing(text: string): Opened {
         const cy = attr(el, "cy");
         const rx = el.nodeName.toLowerCase() === "circle" ? attr(el, "r") : attr(el, "rx");
         const ry = el.nodeName.toLowerCase() === "circle" ? attr(el, "r") : attr(el, "ry");
-        shapes.push({
-          id: noteSource(el), layerId: "", kind: "ellipse",
-          x: toX(cx - rx), y: toY(cy - ry), x2: toX(cx + rx), y2: toY(cy + ry),
-        });
+        const place = placer(el);
+        if (!axisAligned(ctmOf(el))) {
+          // A point every five degrees round the rim, which is how Studio draws an ellipse anyway.
+          const steps = 72;
+          const rim = Array.from({ length: steps + 1 }, (_, i) => {
+            const a = ((i % steps) / steps) * 2 * Math.PI - Math.PI / 2;
+            return place({ x: cx + rx * Math.cos(a), y: cy + ry * Math.sin(a) });
+          });
+          shapes.push(asPath(noteSource(el), rim));
+          break;
+        }
+        const a = place({ x: cx - rx, y: cy - ry });
+        const b = place({ x: cx + rx, y: cy + ry });
+        shapes.push({ id: noteSource(el), layerId: "", kind: "ellipse", x: a.x, y: a.y, x2: b.x, y2: b.y });
         break;
       }
-      case "line":
-        shapes.push({
-          id: noteSource(el), layerId: "", kind: "line",
-          x: toX(attr(el, "x1")), y: toY(attr(el, "y1")),
-          x2: toX(attr(el, "x2")), y2: toY(attr(el, "y2")),
-        });
+      case "line": {
+        const place = placer(el);
+        const a = place({ x: attr(el, "x1"), y: attr(el, "y1") });
+        const b = place({ x: attr(el, "x2"), y: attr(el, "y2") });
+        shapes.push({ id: noteSource(el), layerId: "", kind: "line", x: a.x, y: a.y, x2: b.x, y2: b.y });
         break;
+      }
       case "polyline":
       case "polygon": {
         // A curve's own lines: rebuilt from the design block below, like a fill's. A curve drawn in
@@ -255,9 +304,10 @@ export function parseDrawing(text: string): Opened {
         if (fromCurve(el.getAttribute("id") || "")) break;
         // Anything else drawn through points is a path: every point of it can be dragged.
         const nums = numbers(el.getAttribute("points"));
+        const place = placer(el);
         const points = nums.slice(0, nums.length - (nums.length % 2))
           .reduce<{ x: number; y: number }[]>((acc, v, i) => {
-            if (i % 2) acc.push({ x: toX(nums[i - 1]), y: toY(v) });
+            if (i % 2) acc.push(place({ x: nums[i - 1], y: v }));
             return acc;
           }, []);
         if (points.length < 2) {
@@ -281,8 +331,13 @@ export function parseDrawing(text: string): Opened {
         // than a mark that can only be counted, with every curve kept as the handles the file drew
         // it with - so what is read is what was written, point for point. Only an arc is walked
         // out, at a hundredth of an inch measured in whatever units this file counts in.
-        const runs = parsePath(el.getAttribute("d") || "", 0.01 * Math.max(perInchX, perInchY))
-          .map((run) => run.map((n) => mapNode(n, (p) => ({ x: toX(p.x), y: toY(p.y) }))))
+        const m = ctmOf(el);
+        // An arc is walked out in the file's units, so the step allows for how much the transform
+        // will then grow or shrink it.
+        const grow = Math.sqrt(Math.abs(m[0] * m[3] - m[1] * m[2])) || 1;
+        const place = placer(el);
+        const runs = parsePath(el.getAttribute("d") || "", (0.01 * Math.max(perInchX, perInchY)) / grow)
+          .map((run) => run.map((n) => mapNode(n, place)))
           .filter((run) => run.length > 1);
         if (!runs.length) {
           unsupported++;
