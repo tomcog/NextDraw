@@ -99,15 +99,53 @@ export function parseDrawing(text: string): Opened {
   const generated = (el: Element) => Boolean(el.closest(`[id^="${FILL_GROUP_PREFIX}"]`));
   const idOf = (el: Element) => el.getAttribute("id") || newShapeId();
 
+  // What a layer is called. Its label, where the file has one. Otherwise its id, which is how
+  // Illustrator writes a layer's name: with the characters an id can't hold escaped (_x31_ is "1"),
+  // a long number on the end where a name was used twice, and spaces as underscores. Read the way
+  // Plot reads them (layer_name in server.py), so both apps call the same layer the same thing.
+  const illustrator = /Generator:\s*Adobe Illustrator/.test(text);
+  const labelOf = (g: Element) => (g.getAttribute("inkscape:label") ?? g.getAttribute("label"))?.trim() || undefined;
+  const nameOf = (g: Element) => {
+    const label = labelOf(g) ?? g.getAttribute("data-name")?.trim();
+    if (label) return label;
+    let name = g.getAttribute("id") ?? "";
+    if (illustrator) {
+      name = name
+        .replace(/_\d{8,}_$/, "")
+        .replace(/_x([0-9A-Fa-f]{2,4})_/g, (_, hex: string) => String.fromCharCode(parseInt(hex, 16)))
+        .replace(/_/g, " ");
+    }
+    return name.trim();
+  };
+
   // Which shapes are on a layer NextDraw skips. Read from the file rather than from the parameters,
   // because the layer is what actually decides whether a shape reaches the paper.
   const sources = new Set<string>();
   const onSkippedLayer = (el: Element) => {
     for (let up = el.parentElement; up; up = up.parentElement) {
-      const label = up.getAttribute("inkscape:label") ?? up.getAttribute("label");
-      if (label?.trim().startsWith("%")) return true;
+      if (nameOf(up).startsWith("%")) return true;
     }
     return false;
+  };
+
+  // The stroke a mark is drawn in: its own attribute, its own style, or a class in the file's
+  // stylesheet - the three ways a drawing program writes it.
+  const classStrokes = new Map<string, string>();
+  for (const sheet of Array.from(svg.querySelectorAll("style"))) {
+    for (const m of (sheet.textContent ?? "").matchAll(/\.([\w-]+)\s*\{[^}]*?stroke\s*:\s*([^;}]+)/g)) {
+      classStrokes.set(m[1], m[2].trim());
+    }
+  }
+  const ownStroke = (el: Element): string | null => {
+    const attr = el.getAttribute("stroke");
+    if (attr) return attr;
+    const styled = el.getAttribute("style")?.match(/(?:^|;)\s*stroke\s*:\s*([^;]+)/)?.[1]?.trim();
+    if (styled) return styled;
+    for (const cls of (el.getAttribute("class") ?? "").split(/\s+/)) {
+      const found = classStrokes.get(cls);
+      if (found) return found;
+    }
+    return null;
   };
 
   // The layer a shape sits in names the pen that draws it - that's the whole point of naming layers
@@ -115,24 +153,46 @@ export function parseDrawing(text: string): Opened {
   // A layer's colour comes off the group that holds it, since that's where buildSvg puts it.
   const strokeOf = (el: Element) => {
     for (let up: Element | null = el; up; up = up.parentElement) {
-      const stroke = up.getAttribute("stroke");
+      const stroke = ownStroke(up);
       if (stroke && stroke !== "none") return stroke;
     }
     return null;
   };
 
+  const ART = "path, line, polyline, polygon, rect, ellipse, circle";
+  // A layer's colour: the stroke on the group where Studio put one, else the stroke most of its
+  // marks are drawn in - which is where Illustrator puts it, on each mark rather than the group.
+  const colorOf = (g: Element) => {
+    if (g.getAttribute("stroke")) return g.getAttribute("stroke")!;
+    const counts = new Map<string, number>();
+    for (const mark of Array.from(g.querySelectorAll(ART))) {
+      let stroke: string | null = null;
+      for (let up: Element | null = mark; up && up !== g.parentElement && !stroke; up = up.parentElement) stroke = ownStroke(up);
+      if (stroke && stroke !== "none") counts.set(stroke.toLowerCase(), (counts.get(stroke.toLowerCase()) ?? 0) + 1);
+    }
+    const most = Array.from(counts).sort((a, b) => b[1] - a[1])[0]?.[0];
+    return most || strokeOf(g) || "#262626";
+  };
+
   // Layers come from the groups themselves, in the order the file stacks them - not from the shapes
   // inside them. A layer holding nothing but a hatch fill has no shapes to be found by, and those
   // are skipped on the way past, so building layers from shapes would lose it entirely.
+  // Labelled groups where the file has any - Studio's own files and Inkscape's - and otherwise the
+  // top-level groups that hold something to draw, which is how Illustrator writes its layers. The
+  // same choice Plot makes (layer_groups in server.py), so both apps see the same layers.
+  const labelled = Array.from(svg.querySelectorAll("g")).filter((g) => labelOf(g));
+  const groups = labelled.length
+    ? labelled
+    : Array.from(svg.children).filter((g) => g.nodeName.toLowerCase() === "g" && g.querySelector(ART));
   const layers: Layer[] = [];
   const byGroup = new Map<Element, string>();
-  for (const g of Array.from(svg.querySelectorAll("g"))) {
-    const label = (g.getAttribute("inkscape:label") ?? g.getAttribute("label"))?.trim();
-    if (!label || label.startsWith("%")) continue;
+  groups.forEach((g, i) => {
+    const name = nameOf(g) || `Layer ${i + 1}`;
+    if (name.startsWith("%")) return;
     const id = newLayerId();
     byGroup.set(g, id);
-    layers.push({ id, name: label, color: g.getAttribute("stroke") || strokeOf(g) || "#262626" });
-  }
+    layers.push({ id, name, color: colorOf(g) });
+  });
   const layerOf = new Map<string, string>(); // shape id -> layer id
   const layerFor = (el: Element) => {
     for (let up = el.parentElement; up; up = up.parentElement) {
