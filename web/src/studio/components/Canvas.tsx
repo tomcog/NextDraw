@@ -61,7 +61,8 @@ interface Props {
   inkBuilds: boolean;
   inkBuild: number;
   /** Simulate the ink, or draw each layer flat. Off is also much cheaper on a heavy hatch. */
-  inkSim: boolean;
+  /** Outline: every path a thin line in its layer's colour. Preview: the ink, at the pen's width. */
+  view: "outline" | "preview";
   tool: Tool;
   /** Round what is drawn and dragged to this many inches, or 0 to leave it where the pointer is. */
   snap: number;
@@ -124,7 +125,7 @@ function straighten(x: number, y: number, toX: number, toY: number) {
 // The page at true proportions, with a one-inch grid. It keeps the page's own proportions and is
 // sized to them (--canvas-aspect), so the drawing gets as large as the space allows - the same way
 // Plot's preview fills its column.
-export function Canvas({ page, shapes, fills, layers, activeLayer, model, zoom, toolbar, toolbarLeft, fonts, font, snap, penWidthMm, inkOpacity, inkBuilds, inkBuild, inkSim, tool, selected, onSelect, onAdd, onUpdate, onUpdateMany, onEditStart }: Props) {
+export function Canvas({ page, shapes, fills, layers, activeLayer, model, zoom, toolbar, toolbarLeft, fonts, font, snap, penWidthMm, inkOpacity, inkBuilds, inkBuild, view, tool, selected, onSelect, onAdd, onUpdate, onUpdateMany, onEditStart }: Props) {
   const bed = useRef<BedCanvasHandle>(null);
   const [drag, setDrag] = useState<Drag | null>(null);
   const pointer = useRef<number | null>(null);
@@ -151,6 +152,7 @@ export function Canvas({ page, shapes, fills, layers, activeLayer, model, zoom, 
   // Where a pointer is on the page, in inches from its top-left corner.
   // The pen's real width in inches, so the line on screen is the line on paper.
   const penIn = penWidthMm / 25.4;
+  const inkSim = view === "preview";
   const layerOf = (id: string) => layers.find((l) => l.id === id);
   const shown = shapes.filter((sh) => !layerOf(sh.layerId)?.hidden);
 
@@ -486,7 +488,9 @@ export function Canvas({ page, shapes, fills, layers, activeLayer, model, zoom, 
                 same in both apps rather than merely similar. Nothing in here is clickable - what you
                 grab is below, so how a mark is painted never changes what you can do to it. */}
             <g
-              className={`pv-colored pv-true-width${inkSim ? "" : " pv-flat"} ${styles.ink}`}
+              // Outline is the preview rules' hairline: one screen pixel whatever the zoom, flat, no
+              // blending - the paths themselves. Preview is the ink, at the pen's real width.
+              className={`pv-colored ${inkSim ? "pv-true-width" : "pv-hairline pv-flat"} ${styles.ink}`}
               style={{ "--pen-art": String(penIn), "--ink-build-alpha": String(inkBuild) } as CSSProperties}
             >
               {layers.map((layer) => {

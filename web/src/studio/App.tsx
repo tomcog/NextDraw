@@ -9,11 +9,11 @@ import { NumberField } from "../components/controls/NumberField";
 import controls from "../components/controls/controls.module.css";
 import { api, postJSON } from "../lib/api";
 import { load, save as remember } from "../lib/storage";
-import { DEFAULT_SETTINGS, PAPER_SIZES, PLOT_CHANNEL, STORAGE } from "../lib/constants";
+import { DEFAULT_SETTINGS, PAPER_SIZES, PLOT_CHANNEL } from "../lib/constants";
 import type { Info, PenColor, PlotterModel, Preset } from "../lib/types";
 import { trimNum } from "../lib/format";
 import { ZoomControl } from "../components/ZoomControl";
-import { InkSimControl } from "../components/InkSimControl";
+import { ViewControl, type View } from "../components/ViewControl";
 import type { Zoom } from "../components/BedCanvas";
 import { useRowDrag } from "../lib/useRowDrag";
 import { Canvas, type Tool } from "./components/Canvas";
@@ -617,10 +617,10 @@ export default function App() {
       .catch(() => {}); // no presets is not a reason to stop; the fallbacks below stand
   }, []);
 
-  // Shown or not, the drawing is the same; this is only how it's painted. Remembered per browser,
-  // under Plot's key, so turning it on in one app turns it on in the other.
-  const [inkSim, setInkSim] = useState(() => load<boolean>(STORAGE.inkSim) ?? false);
-  useEffect(() => remember(STORAGE.inkSim, inkSim), [inkSim]);
+  // How the drawing is drawn: its paths as thin lines, or the ink they will make. Only how it's
+  // painted - the drawing is the same either way. Not remembered: a drawing always opens in
+  // Outline, which is quick whatever its size, and Preview is asked for when it is wanted.
+  const [view, setView] = useState<View>("outline");
 
   const tool2 = presets.find((t) => t.name === toolName) ?? null;
   // The menu lists markers, not tips: a marker that comes with more than one tip is one line with a
@@ -1328,7 +1328,7 @@ export default function App() {
                   title="Undo the last change" disabled={busy || !past.length} onClick={undo} />
                 <ButtonRound size="sm" icon={<Redo2 />} aria-label="Redo"
                   title="Redo the change just undone" disabled={busy || !future.length} onClick={redo} />
-                <InkSimControl on={inkSim} onChange={setInkSim} />
+                <ViewControl view={view} onView={setView} />
               </span>
             )}
             toolbar={
@@ -1348,7 +1348,7 @@ export default function App() {
             inkOpacity={inkOpacity}
             inkBuilds={inkBuilds}
             inkBuild={inkBuild}
-            inkSim={inkSim}
+            view={view}
             tool={tool}
             fonts={fonts}
             font={font}
