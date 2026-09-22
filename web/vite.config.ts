@@ -21,7 +21,9 @@ export default defineConfig({
     },
   },
   server: {
-    port: 5173,
+    // The port the harness assigns, or the usual one when nothing names it: this dev server has no
+    // claim on 5173 - the API proxy below is what matters, and that points at Flask either way.
+    port: Number(process.env.PORT) || 5173,
     // /fonts and /tips too: the single-stroke fonts and the drawings of each tool's tip are served
     // by Flask from the repository's fonts/ and tips/ folders.
     proxy: {

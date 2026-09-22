@@ -103,22 +103,32 @@ const outlinesOf = (s: Shape): Point[][] => {
  * Where a line crosses a closed outline, as the spans that lie inside it. Crossings are counted the
  * even-odd way, which is what makes a star's points fill and the middle of a self-crossing
  * spirograph read as a pattern rather than as one solid lump.
+ *
+ * Each edge is judged by which side of the line its two ends are on, rather than by where along the
+ * edge the two meet. The difference only shows at a corner the line passes exactly through, and
+ * there it is the whole game: both edges at that corner read the same number for it, so the corner
+ * is counted once and the count stays even. Deciding it from how far along each edge the crossing
+ * fell let a corner land a hair past the end of one edge and a hair before the start of the next,
+ * which dropped it from both, left the line with an odd number of crossings, and lost it entirely -
+ * a line missing from the middle of a fill wherever a corner happened to sit on one.
  */
 function clipToOutline(px: number, py: number, dx: number, dy: number, outlines: Point[][]): Seg[] {
+  // Across the line: how far off it a point sits, and so which side it is on. A point exactly on
+  // the line counts as the far side, which is what makes a corner the outline passes through count
+  // once and a corner it only touches count twice, for a span of no length that is dropped later.
+  const nx = -dy;
+  const ny = dx;
   const hits: number[] = [];
   for (const pts of outlines) {
     for (let i = 0; i < pts.length - 1; i++) {
       const a = pts[i];
       const b = pts[i + 1];
-      const ex = b.x - a.x;
-      const ey = b.y - a.y;
-      const denom = dx * ey - dy * ex;
-      if (Math.abs(denom) < 1e-12) continue; // the edge runs along the line: no crossing to count
-      // How far along the edge (u) and along the line (t) they meet.
-      const u = (dx * (a.y - py) - dy * (a.x - px)) / -denom;
-      const t = (ex * (a.y - py) - ey * (a.x - px)) / -denom;
-      // Half-open, so a crossing exactly on a corner is counted once rather than twice.
-      if (u >= 0 && u < 1) hits.push(t);
+      const sa = (a.x - px) * nx + (a.y - py) * ny;
+      const sb = (b.x - px) * nx + (b.y - py) * ny;
+      if ((sa < 0) === (sb < 0)) continue; // both ends the same side, edges along the line included
+      // Where between the ends it crosses, and so how far along the line that is.
+      const u = sa / (sa - sb);
+      hits.push((a.x + (b.x - a.x) * u - px) * dx + (a.y + (b.y - a.y) * u - py) * dy);
     }
   }
   hits.sort((m, n) => m - n);

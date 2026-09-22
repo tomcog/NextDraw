@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ToolNote } from "../components/controls/ToolNote";
 import { TipMark } from "../components/controls/TipMark";
 import { Button, ButtonRound, Card, Checkbox, ConfirmButton, InputSelect, InputText, InputTextarea, LayerController } from "@tomcoggia/ui";
-import { AlignJustify, ArrowDownToLine, AudioWaveform, Circle, CircleDashed, CircleDot, ClipboardCopy, ClipboardPaste, Copy, Ellipsis, EllipsisVertical, FilePlus, Flame, FlameKindling, FolderOpen, Grid2x2, Layers2, LoaderPinwheel, Menu, Minus, MoveHorizontal, MoveVertical, MousePointer2, Orbit, PaintBucket, PenLine, Pentagon, Plus, Rainbow, Redo2, Repeat as RepeatIcon, RotateCw, Save, Send, Shell, Signal, Spline, Square, SquareDimensions, Star, Trash2, Type, Undo2, Waves, Waypoints } from "lucide-react";
+import { AlignJustify, ArrowDownToLine, AudioWaveform, Circle, CircleDashed, ClipboardCopy, ClipboardPaste, Copy, Ellipsis, EllipsisVertical, FilePlus, FlameKindling, FolderOpen, Grid2x2, Layers2, LayersArrowDown, LayersArrowUp, LineStyle, LoaderPinwheel, Menu, Minus, MoveHorizontal, MoveVertical, MousePointer2, Orbit, PaintBucket, PenLine, Pentagon, Plus, Rainbow, Redo2, RotateCw, Save, Send, Shell, Signal, Spline, Square, SquareDimensions, SquareStack, Star, Trash2, Type, Undo2, Waves } from "lucide-react";
 import { FileBrowser, LAST_FOLDER_KEY, type OpenResult } from "../components/FileBrowser";
 import { Section } from "../components/controls/Section";
 import { NumberField } from "../components/controls/NumberField";
@@ -12,6 +12,7 @@ import { load, save as remember } from "../lib/storage";
 import { DEFAULT_SETTINGS, PAPER_SIZES, PLOT_CHANNEL } from "../lib/constants";
 import type { Info, PenColor, PlotterModel, Preset } from "../lib/types";
 import { trimNum } from "../lib/format";
+import { lightness } from "../lib/color";
 import { ZoomControl } from "../components/ZoomControl";
 import { ViewControl, type View } from "../components/ViewControl";
 import type { Zoom } from "../components/BedCanvas";
@@ -93,8 +94,7 @@ const FILL_HINT: Record<FillKind, string> = {
 };
 
 // How a shape repeats, as the row of round buttons in the Repeat card: one of them is always on.
-const REPEATS: { kind: RepeatKind | null; label: string; hint: string; icon: JSX.Element }[] = [
-  { kind: null, label: "Just the one", hint: "Draw this shape once", icon: <CircleDot /> },
+const REPEATS: { kind: RepeatKind; label: string; hint: string; icon: JSX.Element }[] = [
   { kind: "line", label: "Row", hint: "Repeat it in a row, in whatever direction you point it", icon: <Ellipsis /> },
   { kind: "grid", label: "Grid", hint: "Repeat it in rows and columns", icon: <Grid2x2 /> },
   { kind: "ring", label: "Ring", hint: "Repeat it round a circle, with this shape at the top", icon: <Orbit /> },
@@ -115,6 +115,12 @@ interface Snapshot {
 const HISTORY_LIMIT = 60;
 
 type Saved = { path: string; folder: string } | null;
+
+/** The one set of a shape's settings on show, or none at all. */
+type ShapePanel = "simplify" | "fill" | "rotate" | "repeat" | null;
+
+/** The drawing as it was last read from or written to a file: what "no changes to save" means. */
+type OnDisk = { shapes: Shape[]; fills: Fill[]; layers: Layer[]; page: Page; name: string };
 
 /**
  * A layer name nothing else in the drawing has. Studio finds a filled shape's layer by name when the
@@ -147,6 +153,12 @@ function plotPageAnswers(): Promise<boolean> {
   });
 }
 
+/**
+ * Whether a shape still has numbers to give up. Points drawn as the lines between them are already
+ * what flattening would leave; a turn and a set of copies are not given up by it, so neither counts.
+ */
+const canFlatten = (s: Shape) => !(s.kind === "path" && !s.smooth);
+
 export default function App() {
   const [page, setPage] = useState<Page>({ w: 11, h: 8.5 });
   const [shapes, setShapes] = useState<Shape[]>([]);
@@ -172,17 +184,17 @@ export default function App() {
   const [snapStep, setSnapStep] = useState<number>(() => load<number>(SNAP_KEY) ?? 0.25);
   // How far a simplified path may stray from the one it was, in millimetres on the paper.
   const [simplifyMm, setSimplifyMm] = useState<number>(() => load<number>(SIMPLIFY_KEY) ?? 0.2);
-  // Whether the simplify controls are open. Simplifying is done once to a path and then not thought
-  // about again, so its numbers stay behind a button rather than sitting on the card.
-  const [simplifying, setSimplifying] = useState(false);
-  // And whether the hatch settings are open. A shape is filled or it isn't, and the numbers behind
-  // the fill are worth looking at only while that is being decided.
-  const [filling, setFilling] = useState(false);
-  // And whether the repeat settings are open, for the same reason: how many of a shape there are is
-  // settled early and then left alone.
-  const [repeating, setRepeating] = useState(false);
-  // And whether the rotation field is out. A shape is usually turned once, if at all.
-  const [rotating, setRotating] = useState(false);
+  // Which of the shape's settings are on show, if any. One at a time, the way a row of tabs works:
+  // each of these is settled once and then left alone - a shape is turned, or filled, or thinned
+  // out - and all four sets of numbers at once buries the shape they are about. Pressing the one
+  // that is open closes it, so the card can also be left with none of them showing.
+  const [panel, setPanel] = useState<ShapePanel>(null);
+  const showPanel = (which: Exclude<ShapePanel, null>) =>
+    setPanel((open) => (open === which ? null : which));
+  const simplifying = panel === "simplify";
+  const filling = panel === "fill";
+  const repeating = panel === "repeat";
+  const rotating = panel === "rotate";
   const [model, setModel] = useState<PlotterModel | undefined>();
   // Paper to begin with: the page is what's being drawn on, and the bed is context around it.
   const [zoom, setZoom] = useState<Zoom>("paper");
@@ -206,12 +218,46 @@ export default function App() {
     text: "Nothing saved yet",
     ok: false,
   });
-  const dirty = useRef(false);
+  // Anything drawn since the last save has to be written again before Plot can print it. State
+  // rather than a ref, because the Save button is disabled while it's false and so has to re-render
+  // when it changes.
+  const [dirty, setDirty] = useState(false);
 
-  // Anything drawn since the last save has to be written again before Plot can print it.
+  // What the file on disk was written from. Every edit replaces one of these arrays and leaves the
+  // rest alone, so comparing them by identity answers "is there anything to save" in five pointer
+  // comparisons - no deep compare of every path on every drag.
+  const onDisk = useRef<OnDisk | null>(null);
+
+  // Asking the question here, rather than raising a flag on a change and lowering it after a save,
+  // is what makes the answer reliable: a save can rename the drawing and an open lands in its own
+  // good time, and this doesn't care which order any of that happens in. A value missing from the
+  // list is a change that would leave Save greyed out with the work still only on screen.
   useEffect(() => {
-    dirty.current = true;
-  }, [shapes, fills, page, name]);
+    const was = onDisk.current;
+    setDirty(
+      !was ||
+        was.shapes !== shapes ||
+        was.fills !== fills ||
+        was.layers !== layers ||
+        was.page !== page ||
+        was.name !== name,
+    );
+  }, [shapes, fills, layers, page, name]);
+
+  // Called by whoever just read or wrote the file, with the very values that went to disk.
+  const markClean = useCallback((written: OnDisk) => {
+    onDisk.current = written;
+    setDirty(false);
+  }, []);
+
+  // The drawing tool is written into the file too, so picking one is a change - but only when it's
+  // picked here. On startup the stored tool is reconciled against Plot's presets, and that
+  // correction arrives after the drawing has been read: counting it would leave a drawing that was
+  // only just opened looking unsaved.
+  const pickTool = useCallback((pen: string) => {
+    setToolName(pen);
+    setDirty(true);
+  }, []);
 
   const sizeId = useMemo(() => {
     const match = SIZES.find(
@@ -479,14 +525,15 @@ export default function App() {
         ...(saved ? { folder: saved.path.slice(0, saved.path.lastIndexOf("/")) } : {}),
       });
       const where = { path: res.path, folder: res.folder };
-      setName(res.name.replace(/\.svg$/i, ""));
+      const savedName = res.name.replace(/\.svg$/i, "");
+      setName(savedName);
       setSaved(where);
       // What's on disk now is exactly what Studio holds, whatever the file used to contain.
       setForeign(0);
       setOpenedAs(res.name);
       remember(LAST_FILE_KEY, res.path);
       remember(LAST_FOLDER_KEY, res.path.slice(0, res.path.lastIndexOf("/")));
-      dirty.current = false;
+      markClean({ shapes, fills, layers, page, name: savedName });
       setMessage({ text: `Saved to ${res.folder}`, ok: true });
       return where;
     } catch (err) {
@@ -501,7 +548,7 @@ export default function App() {
   // tab takes it from there - it shows whatever drawing was opened last - and Studio stays put. With no
   // Plot page open, one opens in a new tab; only if the browser won't allow that does this tab go.
   const openInPlot = async () => {
-    const where = dirty.current || !saved ? await save() : saved;
+    const where = dirty || !saved ? await save() : saved;
     if (!where) return;
     setBusy(true);
     try {
@@ -523,10 +570,13 @@ export default function App() {
   // paper you're working on today, and a new drawing is almost always for the same sheet.
   const [confirmNew, setConfirmNew] = useState(false);
   const newDrawing = useCallback(() => {
-    setShapes([]);
-    setFills([]);
+    const noShapes: Shape[] = [];
+    const noFills: Fill[] = [];
     const first = { id: newLayerId(), name: "Black", color: "#262626" };
-    setLayers([first]);
+    const onlyLayer = [first];
+    setShapes(noShapes);
+    setFills(noFills);
+    setLayers(onlyLayer);
     setActiveLayer(first.id);
     setSelected([]);
     setPast([]);
@@ -538,14 +588,13 @@ export default function App() {
     setConfirmNew(false);
     remember(LAST_FILE_KEY, null); // don't reopen the old drawing next time Studio starts
     setMessage({ text: "New drawing", ok: true });
-    window.setTimeout(() => {
-      dirty.current = false; // an empty page is not unsaved work
-    }, 0);
-  }, []);
+    // An empty page is not unsaved work, and the paper it's on came from the drawing before it.
+    markClean({ shapes: noShapes, fills: noFills, layers: onlyLayer, page, name: "Untitled" });
+  }, [markClean, page]);
 
   // Undo can't bring back which file was open - a snapshot is the drawing, not the drawing's name -
   // so unsaved work gets a question rather than a silent discard.
-  const startNew = () => (dirty.current && shapes.length ? setConfirmNew(true) : newDrawing());
+  const startNew = () => (dirty && shapes.length ? setConfirmNew(true) : newDrawing());
 
   const openDrawing = useCallback((res: OpenResult, note: (n: number) => string) => {
     const drawing = parseDrawing(res.svg ?? "");
@@ -573,10 +622,14 @@ export default function App() {
         : { text: note(drawing.shapes.length), ok: true },
     );
     // What's on screen is what's in the file, so there's nothing new to write yet.
-    window.setTimeout(() => {
-      dirty.current = false;
-    }, 0);
-  }, []);
+    markClean({
+      shapes: drawing.shapes,
+      fills: drawing.fills,
+      layers: drawing.layers,
+      page: drawing.page,
+      name: res.name.replace(/\.svg$/i, ""),
+    });
+  }, [markClean]);
 
   // Say so if the server isn't there, rather than only failing at the moment of saving. Then pick up
   // the drawing this browser was last working on, so coming back from Plot lands where you left off.
@@ -756,83 +809,103 @@ export default function App() {
   };
 
   /**
-   * Bake a shape: give up the numbers behind it and keep what they drew. A curve becomes a path with
-   * every point draggable, and a repeat becomes its copies, each its own shape. What was one thing
-   * following its parameters becomes several things to edit by hand - which is the point, and why it
-   * can't be undone except with undo.
+   * Flatten a shape: give up the numbers behind what it is, and keep what they drew. A curve becomes
+   * a path with every point draggable, a word becomes the strokes of its font, a rectangle becomes
+   * its four corners. What the shape IS becomes points; where its marks LAND is left alone, so the
+   * turn and the copies stay settings and the copies go on following the points that can now be
+   * dragged. Nothing is flattened for the sake of another app - the file always carries the marks
+   * themselves - so this is only ever about being able to edit a thing by hand.
    */
-  const bakeShape = (id: string, keepPattern = false) => {
+  const flattenShape = (id: string) => {
     const shape = shapes.find((s) => s.id === id);
     if (!shape) return;
     record();
-    const centre = centerOf(shape);
     const made: Shape[] = [];
-    // Keeping the pattern bakes the shape itself and leaves the repeat - and the turn - in place, so
-    // the copies go on following it and the points that can now be dragged are the ones they follow.
-    const places = keepPattern ? [{ dx: 0, dy: 0, deg: 0 }] : placements(shape);
-    for (const place of places) {
-      // The shape's own turn first, then the copy's: the same order the drawing is written in.
-      const put = (p: Point) => {
-        if (keepPattern) return p; // the turn stays a setting, so the points are left as they are
-        const turned = turnPoint(turnPoint(p, centre, shape.rotation ?? 0), centre, place.deg);
-        return { x: turned.x + place.dx, y: turned.y + place.dy };
-      };
-      if (shape.kind === "text") {
-        // Every stroke of every letter becomes its own path: the words are given up, the marks stay.
-        for (const glyph of textRuns(shape, fonts[shape.font ?? ""])) {
-          // The letter's own curves, kept as curves: a baked word is the strokes of its font, not
-          // the font walked out into segments.
-          for (const run of parsePath(glyph.d)) {
-            const points = run.map((n) => mapNode(n, put));
-            if (points.length < 2) continue;
-            const b = pointsBox(flattenRun(points));
-            made.push({
-              ...shape, id: made.length ? newShapeId() : shape.id,
-              kind: "path", points, text: undefined, font: undefined, tracking: undefined,
-              leading: undefined,
-              repeat: keepPattern ? shape.repeat : undefined,
-              rotation: keepPattern ? shape.rotation : undefined,
-              x: b.x0, y: b.y0, x2: b.x1, y2: b.y1,
-            });
-          }
-        }
-      } else if (shape.curve) {
-        for (const run of curveStrokes(shape)) {
-          const points = run.map(put);
+    if (shape.kind === "text") {
+      // Every stroke of every letter becomes its own path: the words are given up, the marks stay.
+      for (const glyph of textRuns(shape, fonts[shape.font ?? ""])) {
+        // The letter's own curves, kept as curves: a flattened word is the strokes of its font, not
+        // the font walked out into segments.
+        for (const points of parsePath(glyph.d)) {
           if (points.length < 2) continue;
-          const b = pointsBox(points);
+          const b = pointsBox(flattenRun(points));
           made.push({
             ...shape, id: made.length ? newShapeId() : shape.id,
-            // The curve's numbers are given up, but not its shape: the points are kept as a curve
-            // through them, so simplifying down to a handful still draws what was drawn.
-            kind: "path", points, curve: undefined, smooth: true,
-            repeat: keepPattern ? shape.repeat : undefined,
-            rotation: keepPattern ? shape.rotation : undefined,
+            kind: "path", points, text: undefined, font: undefined, tracking: undefined,
+            leading: undefined,
             x: b.x0, y: b.y0, x2: b.x1, y2: b.y1,
           });
         }
-      } else {
-        // A rectangle, an ellipse, a line or a path: flattened to its own points, so each one can be
-        // pulled about point by point afterwards. A smoothed path gives up the curve here - what is
-        // left is the points the pen was going to be walked through anyway.
-        const runs = (shape.kind === "path" ? drawnRuns(shape) : [outlinePoints(shape)])
-          .map((run) => run.map(put))
-          .filter((run) => run.length > 1);
-        if (!runs.length) continue;
-        const b = pointsBox(runs.flat());
+      }
+    } else if (shape.curve) {
+      for (const points of curveStrokes(shape)) {
+        if (points.length < 2) continue;
+        const b = pointsBox(points);
         made.push({
           ...shape, id: made.length ? newShapeId() : shape.id,
-          kind: "path", smooth: undefined,
-          ...(runs.length > 1 ? { runs, points: undefined } : { runs: undefined, points: runs[0] }),
-          repeat: keepPattern ? shape.repeat : undefined,
-          rotation: keepPattern ? shape.rotation : undefined,
+          // The curve's numbers are given up, but not its shape: the points are kept as a curve
+          // through them, so simplifying down to a handful still draws what was drawn.
+          kind: "path", points, curve: undefined, smooth: true,
           x: b.x0, y: b.y0, x2: b.x1, y2: b.y1,
         });
       }
+    } else {
+      // A rectangle, an ellipse, a line or a path: left as its own points, so each one can be
+      // pulled about point by point afterwards. A smoothed path gives up the curve here - what is
+      // left is the points the pen was going to be walked through anyway.
+      const runs = (shape.kind === "path" ? drawnRuns(shape) : [outlinePoints(shape)])
+        .filter((run) => run.length > 1);
+      if (!runs.length) return;
+      const b = pointsBox(runs.flat());
+      made.push({
+        ...shape, id: shape.id,
+        kind: "path", smooth: undefined,
+        ...(runs.length > 1 ? { runs, points: undefined } : { runs: undefined, points: runs[0] }),
+        x: b.x0, y: b.y0, x2: b.x1, y2: b.y1,
+      });
     }
     if (!made.length) return;
     setShapes((list) => list.flatMap((s) => (s.id === id ? made : [s])));
     // Each new shape gets the fills the original had, so the drawing looks the same afterwards.
+    setFills((list) => list.flatMap((f) => (f.shapeId === id
+      ? made.map((s) => ({ ...f, id: s.id === id ? f.id : newFillId(), shapeId: s.id }))
+      : [f])));
+    pick(made[0].id);
+  };
+
+  /**
+   * Bake a shape's copies: each one becomes a shape of its own, keeping the numbers behind it. A
+   * ring of eight spirographs becomes eight spirographs, each still a spirograph to edit, rather
+   * than eight paths - baking says where the marks land, not what they are made of. The turn a ring
+   * gave a copy becomes that copy's own turn, and the shape's own turn stays the setting it was, so
+   * all this changes is how many shapes there are and where they sit.
+   */
+  const bakeRepeat = (id: string) => {
+    const shape = shapes.find((s) => s.id === id);
+    if (!shape?.repeat) return;
+    record();
+    // Turning about the middle and then moving is the same as moving and then turning about the
+    // middle where it landed, which is why each copy can be its own shape at its own angle.
+    const shift = (run: Node[], dx: number, dy: number) =>
+      run.map((n) => mapNode(n, (p) => ({ x: p.x + dx, y: p.y + dy })));
+    const made: Shape[] = placements(shape).map((place, i) => {
+      const turn = (shape.rotation ?? 0) + place.deg;
+      return {
+        ...shape,
+        id: i ? newShapeId() : shape.id,
+        repeat: undefined,
+        rotation: turn || undefined,
+        x: shape.x + place.dx, y: shape.y + place.dy,
+        x2: shape.x2 + place.dx, y2: shape.y2 + place.dy,
+        ...(shape.runs
+          ? { runs: shape.runs.map((run) => shift(run, place.dx, place.dy)) }
+          : shape.points
+            ? { points: shift(shape.points, place.dx, place.dy) }
+            : {}),
+      };
+    });
+    if (made.length < 2) return; // one copy is the shape itself: nothing to hand out
+    setShapes((list) => list.flatMap((s) => (s.id === id ? made : [s])));
     setFills((list) => list.flatMap((f) => (f.shapeId === id
       ? made.map((s) => ({ ...f, id: s.id === id ? f.id : newFillId(), shapeId: s.id }))
       : [f])));
@@ -937,7 +1010,7 @@ export default function App() {
     setShapes((list) => list.map((s) => (s.id === id
       ? { ...s, smooth: true, ...(s.runs ? { runs: simpler } : { points: simpler[0] }) }
       : s)));
-    setSimplifying(false); // asked for, done, and out of the way again
+    setPanel(null); // asked for, done, and out of the way again
   };
 
   /** Take a joined shape apart again: each run becomes a shape of its own. */
@@ -1028,6 +1101,25 @@ export default function App() {
     const layer: Layer = { id: newLayerId(), name: pen.name, color: pen.color };
     setLayers((list) => [...list, layer]);
     setActiveLayer(layer.id);
+  };
+
+  // The layers in the order their inks want to be laid down: the lightest drawn first, everything
+  // darker over it. Layer 1 is the bottom of the list, so that reads as lightest at the bottom. A
+  // layer whose ink can't be read keeps to the bottom rather than being guessed at, and layers of
+  // the same lightness stay in the order they were already in. The same sort Plot does, from the
+  // same reading of the colour, so a drawing arrives there already stacked the way it will plot.
+  const sortLayersByLightness = () => {
+    record();
+    setLayers((list) => {
+      const ranked = list.map((l, i) => ({ l, i, light: lightness(l.color) }));
+      ranked.sort((a, b) => {
+        if (a.light === null || b.light === null) {
+          return a.light === null && b.light === null ? a.i - b.i : a.light === null ? -1 : 1;
+        }
+        return b.light - a.light || a.i - b.i;
+      });
+      return ranked.map((r) => r.l);
+    });
   };
 
   // A copy of a layer, directly above it: the same colour and every shape and fill on it, in the same
@@ -1211,7 +1303,7 @@ export default function App() {
           actions={rowMenu.kind === "layer"
             ? [
               {
-                label: "Select everything on it",
+                label: "Select all on layer",
                 icon: <MousePointer2 />,
                 disabled: !shapes.some((s) => s.layerId === rowMenu.id),
                 // Picked as one, they move as one: the way a whole layer is shifted about the page.
@@ -1232,10 +1324,10 @@ export default function App() {
                 disabled: !clipboard,
                 onSelect: () => pasteShape(rowMenu.id),
               },
-              { label: "Duplicate", icon: <Copy />, onSelect: () => duplicateLayer(rowMenu.id) },
+              { label: "Duplicate layer", icon: <Copy />, onSelect: () => duplicateLayer(rowMenu.id) },
               {
                 label: "Merge with below",
-                icon: <ArrowDownToLine />,
+                icon: <LayersArrowDown />,
                 disabled: layers.findIndex((l) => l.id === rowMenu.id) < 1,
                 onSelect: () => mergeDown(rowMenu.id),
               },
@@ -1264,7 +1356,7 @@ export default function App() {
                   },
                 ]
                 : []),
-              { label: "Copy", icon: <ClipboardCopy />, onSelect: () => copyShape(rowMenu.id) },
+              { label: "Copy shape", icon: <ClipboardCopy />, onSelect: () => copyShape(rowMenu.id) },
               {
                 label: "Set size",
                 icon: <SquareDimensions />,
@@ -1277,18 +1369,17 @@ export default function App() {
                 },
               },
               {
-                label: "Bake",
-                icon: <Flame />,
-                // Nothing to give up in a path that stands still: it is already its own points.
+                label: "Flatten",
+                icon: <ArrowDownToLine />,
+                // A path drawn as the lines between its own points has nothing left to give up. A
+                // smoothed one has: flattening gives up the curve drawn through them.
                 disabled: (() => {
                   const s = shapes.find((sh) => sh.id === rowMenu.id);
-                  // A path that stands still, drawn as the lines between its own points, is already
-                  // what baking would leave. A smoothed one isn't: baking gives up its curve.
-                  return !s || (s.kind === "path" && !s.smooth && !s.repeat && !s.rotation);
+                  return !s || !canFlatten(s);
                 })(),
-                onSelect: () => bakeShape(rowMenu.id),
+                onSelect: () => flattenShape(rowMenu.id),
               },
-              { label: "Duplicate", icon: <Copy />, onSelect: () => duplicateShape(rowMenu.id) },
+              { label: "Duplicate shape", icon: <Copy />, onSelect: () => duplicateShape(rowMenu.id) },
               // One entry per other layer: a layer is a pen, so this is "draw this in that pen".
               ...layers
                 .filter((l) => l.id !== shapes.find((s) => s.id === rowMenu.id)?.layerId)
@@ -1379,7 +1470,7 @@ export default function App() {
                       icon={<Save />}
                       aria-label="Save"
                       title={`Save this drawing${saved ? ` to ${saved.folder}` : ""}`}
-                      disabled={busy || !shapes.length}
+                      disabled={busy || !shapes.length || !dirty}
                       onClick={save}
                     />
                     <ButtonRound
@@ -1529,7 +1620,7 @@ export default function App() {
                     onChange={(e) => {
                       const picked = families.find((f) => f.name === e.target.value)?.tips ?? [];
                       const same = picked.find((t) => t.variant && t.variant === tool2?.variant);
-                      setToolName((same ?? picked[0])?.name ?? "");
+                      pickTool((same ?? picked[0])?.name ?? "");
                     }}
                   >
                     {families.map((f) => (
@@ -1556,7 +1647,7 @@ export default function App() {
                           variant={t.name === toolName ? "primary" : "ghost"}
                           aria-pressed={t.name === toolName}
                           title={`${t.variant}: draws a ${t.settings.pen_width ?? "?"} mm line`}
-                          onClick={() => setToolName(t.name)}
+                          onClick={() => pickTool(t.name)}
                         >
                           {t.variant}
                         </Button>
@@ -1565,12 +1656,10 @@ export default function App() {
                   )}
                   </div>
                   </div>
-                  <p className={styles.empty}>
-                    {`Draws a ${penWidthMm} mm line${palette.length > 1 ? ` in ${palette.length} colors` : ""}`}
-                  </p>
-                  {/* What the tool is always set up for - the clip angle, and one-way strokes. The
-                      same note Plot shows, from the same place, because it is a fact about the tool
-                      rather than about plotting: it says what to do before a drawing is made with it. */}
+                  {/* What the tool is always set up for - how wide it draws, the clip angle, and
+                      one-way strokes. The same note Plot shows, from the same place, because it is a
+                      fact about the tool rather than about plotting: it says what to do before a
+                      drawing is made with it. */}
                   <ToolNote tool={tool2 ?? undefined} />
                 </Section>
               </Section>
@@ -1605,6 +1694,11 @@ export default function App() {
                 collapsibleKey="layers"
                 action={
                   <span className={styles.headerTools}>
+                    {layers.length > 1 && (
+                      <ButtonRound size="sm" icon={<LayersArrowUp />} aria-label="Sort layers by darkness"
+                        title="Sort by darkness: the lightest ink is layer 1 and drawn first, with darker inks over it"
+                        disabled={busy} onClick={sortLayersByLightness} />
+                    )}
                     <ButtonRound size="sm" icon={<Plus />} aria-label="Add a layer"
                       title="Add a layer: one more pen to draw with" disabled={busy} onClick={addLayer} />
                   </span>
@@ -1898,23 +1992,27 @@ export default function App() {
               <div className={`${styles.cardBody} ${styles.settings}`}>
                 {/* Named after the shape it is about, which is what the card is: the chosen shape,
                     and what can be done to it. The fold is remembered under one key all the same. */}
-                <Section title={shapeName(chosen, onActive.indexOf(chosen))} collapsibleKey="shape">
-                {chosen.curve && (
                 <Section
-                  title="Curve"
-                  collapsibleKey="curve"
-                  // Beside the numbers that made it: the one thing that gives them up and leaves the
-                  // curve as points to drag.
-                  action={(
+                  title={shapeName(chosen, onActive.indexOf(chosen))}
+                  collapsibleKey="shape"
+                  // Beside the shape's name rather than in the row below it: every button in that
+                  // row opens something to adjust, and this one is done the moment it is pressed.
+                  // Anything still made of numbers can be flattened, so the button stands here for
+                  // every kind of shape rather than being repeated inside each one's settings.
+                  action={canFlatten(chosen) ? (
                     <ButtonRound
                       size="sm"
-                      icon={<Flame />}
-                      aria-label="Bake curve"
-                      title="Bake the curve: its numbers are given up, and it becomes points to drag"
-                      onClick={() => bakeShape(chosen.id)}
+                      icon={<ArrowDownToLine />}
+                      aria-label="Flatten shape"
+                      title="Flatten: the numbers behind this shape are given up and it becomes points to drag. Its turn and its copies are left as they are."
+                      onClick={() => flattenShape(chosen.id)}
                     />
-                  )}
+                  ) : undefined}
                 >
+                {/* No flatten of its own: giving up these numbers is what Flatten does, and the
+                    card says that once, beside the shape's name, for every kind of shape. */}
+                {chosen.curve && (
+                <Section title="Curve" collapsibleKey="curve">
                   <div className={styles.fillRow}>
                     {CURVE_FIELDS[chosen.curve.kind].map((f) => (
                       <NumberField
@@ -1944,31 +2042,19 @@ export default function App() {
                   </Button>
                 )}
                 <div className={styles.tools} role="group" aria-label="What is done to this shape">
-                  {/* Baking a shape is in its own row's menu. The one kept here is the other kind:
-                      it gives up the shape's numbers and leaves the pattern following its points,
-                      which is not a thing the menu can say in a word. */}
-                  {chosen.repeat && chosen.kind !== "path" && (
-                    <ButtonRound
-                      size="sm"
-                      icon={<Flame />}
-                      aria-label="Bake shape, keep the pattern"
-                      title="Bake the shape: its own numbers are given up, and every copy follows its points"
-                      onClick={() => bakeShape(chosen.id, true)}
-                    />
-                  )}
                   {/* Simplify keeps its button here rather than in the row's menu: it opens a
                       tolerance to type, and you come back to it until the points are where you
                       want them. */}
                   {chosen.kind === "path" && (
                     <ButtonRound
                       size="sm"
-                      icon={<Waypoints />}
+                      icon={<LineStyle />}
                       className={simplifying ? controls.roundActive : undefined}
                       aria-label="Simplify"
                       aria-expanded={simplifying}
                       aria-pressed={simplifying}
                       title="Simplify: take out the points the path can do without"
-                      onClick={() => setSimplifying((on) => !on)}
+                      onClick={() => showPanel("simplify")}
                     />
                   )}
                   {/* Only a shape with an inside can be hatched. */}
@@ -1981,7 +2067,7 @@ export default function App() {
                       aria-expanded={filling}
                       aria-pressed={filling}
                       title="Hatch: fill this shape with lines, and set how they run"
-                      onClick={() => setFilling((on) => !on)}
+                      onClick={() => showPanel("fill")}
                     />
                   )}
                   {/* One button per thing that can be done to a shape as a whole, each opening its
@@ -1994,17 +2080,17 @@ export default function App() {
                     aria-expanded={rotating}
                     aria-pressed={rotating}
                     title="Rotate: turn this shape about the middle of its box"
-                    onClick={() => setRotating((on) => !on)}
+                    onClick={() => showPanel("rotate")}
                   />
                   <ButtonRound
                     size="sm"
-                    icon={<RepeatIcon />}
+                    icon={<SquareStack />}
                     className={repeating ? controls.roundActive : undefined}
                     aria-label="Repeat"
                     aria-expanded={repeating}
                     aria-pressed={repeating}
                     title="Repeat: draw this shape more than once, in a row, a grid or a ring"
-                    onClick={() => setRepeating((on) => !on)}
+                    onClick={() => showPanel("repeat")}
                   />
                 </div>
 
@@ -2037,7 +2123,7 @@ export default function App() {
                 <>
                   <Checkbox
                     checked={chosenFills.length > 0}
-                    label="Hatch this shape"
+                    label="Fill shape"
                     onChange={(e) => setHatched(e.target.checked)}
                   />
                   {chosenFills.length > 0 && (
@@ -2079,9 +2165,10 @@ export default function App() {
                       />
                     </div>
                   ))}
+                  {/* No sentence saying the spacing was set by hand: the field above says the number,
+                      and the way back to the tool's own is the only part of it worth the room. */}
                   {chosenFills.map((fill, i) => (fill.custom ? (
                     <p key={`${fill.id}-note`} className={styles.empty}>
-                      {`Set by hand, so it stays at ${fill.spacingMm} mm`}
                       <Button size="sm" variant="ghost" onClick={() => followTool(i, fill)}>
                         {toolName ? `Follow ${toolName}` : "Follow the tool"}
                       </Button>
@@ -2141,7 +2228,7 @@ export default function App() {
                   {chosenFills.length > 0 && canConnect(chosenFills[0]) && (
                     <Checkbox
                       checked={chosenFills[0].connected === true}
-                      label="Connect the line ends"
+                      label="Connect ends"
                       // Each pass becomes one zigzag stroke, joined along the shape's edge. Both passes
                       // of a cross-hatch follow the one switch.
                       onChange={(e) => {
@@ -2174,9 +2261,19 @@ export default function App() {
 
               {repeating && (
               <>
+                {/* Whether there is more than one of it, then how they are laid out - the same two
+                    questions in the same order as a fill, which asks whether the shape is filled
+                    before it asks what the filling is made of. A row is the plainest of the three,
+                    so that is what ticking the box gives you to adjust. */}
+                <Checkbox
+                  checked={!!chosen.repeat}
+                  label="Duplicate"
+                  onChange={(e) => setRepeat(e.target.checked ? defaultRepeat("line", chosen) : undefined)}
+                />
+                {chosen.repeat && (
                 <div className={styles.tools} role="group" aria-label="How this shape repeats">
                   {REPEATS.map((r) => {
-                    const on = (chosen.repeat?.kind ?? null) === r.kind;
+                    const on = chosen.repeat?.kind === r.kind;
                     return (
                       <ButtonRound
                         key={r.label}
@@ -2186,22 +2283,21 @@ export default function App() {
                         aria-label={r.label}
                         aria-pressed={on}
                         title={r.hint}
-                        onClick={() => setRepeat(r.kind ? defaultRepeat(r.kind, chosen) : undefined)}
+                        onClick={() => setRepeat(defaultRepeat(r.kind, chosen))}
                       />
                     );
                   })}
                   {/* At the end of the row that made the copies: the one thing that gives them up
                       and leaves each as a shape of its own. */}
-                  {chosen.repeat && (
-                    <ButtonRound
-                      size="sm"
-                      icon={<FlameKindling />}
-                      aria-label="Bake pattern"
-                      title={`Bake the pattern: all ${placements(chosen).length} copies become shapes of their own`}
-                      onClick={() => bakeShape(chosen.id)}
-                    />
-                  )}
+                  <ButtonRound
+                    size="sm"
+                    icon={<FlameKindling />}
+                    aria-label="Bake the copies"
+                    title={`Bake: all ${placements(chosen).length} copies become shapes of their own, each still made of its own numbers`}
+                    onClick={() => bakeRepeat(chosen.id)}
+                  />
                 </div>
+                )}
                 {chosen.repeat && (
                   <div className={styles.fillRow}>
                     {REPEAT_FIELDS[chosen.repeat.kind].map((f) => (

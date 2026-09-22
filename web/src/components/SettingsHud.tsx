@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type PointerEvent, type ReactNode } from "react";
+import { useCallback, useEffect, useRef, useState, type PointerEvent, type ReactNode } from "react";
 import { GripHorizontal } from "lucide-react";
 import { barrelOffsetMm, STORAGE } from "../lib/constants";
 import { load, save } from "../lib/storage";
@@ -47,32 +47,38 @@ type Offset = { x: number; y: number };
 export function SettingsHud({ settings: s, own, handling, tool, preset, secondTool, smallPaths, units, disabled, onToolValues }: Props) {
   const mode = handling.find((h) => h.id === s.handling);
 
-  // Dragged by its grip to uncover whatever it sits on. The offset is from its usual corner, kept in
-  // this browser, and held inside the bed so it can't be lost off an edge.
+  // Dragged by its grip to uncover whatever it sits on. The offset is from its usual corner and is
+  // kept in this browser, which is the whole reason it is held to anything: a place that suited a
+  // wide window can be off the screen in a narrow one, and being remembered it would stay there,
+  // with the grip that resets it out of reach. The window is what it is held inside, not the bed.
+  // Nothing around the bed clips what hangs over it, so the panel may sit over the controls if
+  // that is where it is wanted, and the only promise kept is that it can always be got hold of.
   const ref = useRef<HTMLDListElement>(null);
   const [offset, setOffset] = useState<Offset>(() => load<Offset>(STORAGE.hudOffset) ?? { x: 0, y: 0 });
+  // The offset as it stands, for the handlers that run outside a render and must not read a stale one.
+  const at = useRef(offset);
+  at.current = offset;
   const drag = useRef<{ px: number; py: number; from: Offset } | null>(null);
-  const clamp = (o: Offset): Offset => {
+  const clamp = useCallback((o: Offset): Offset => {
     const el = ref.current;
-    const bed = el?.offsetParent as HTMLElement | null;
-    if (!el || !bed) return o;
+    if (!el) return o;
     const r = el.getBoundingClientRect();
-    const b = bed.getBoundingClientRect();
     // Where it would sit with no offset, from where it sits now.
-    const left0 = r.left - offset.x;
-    const top0 = r.top - offset.y;
+    const left0 = r.left - at.current.x;
+    const top0 = r.top - at.current.y;
     return {
-      x: Math.min(b.right - (left0 + r.width), Math.max(b.left - left0, o.x)),
-      y: Math.min(b.bottom - (top0 + r.height), Math.max(b.top - top0, o.y)),
+      x: Math.min(window.innerWidth - (left0 + r.width), Math.max(-left0, o.x)),
+      y: Math.min(window.innerHeight - (top0 + r.height), Math.max(-top0, o.y)),
     };
-  };
+  }, []);
   useEffect(() => save(STORAGE.hudOffset, offset.x || offset.y ? offset : null), [offset]);
-  // A window made smaller can leave a moved panel past the bed's edge; bring it back.
+  // A window made smaller can leave a moved panel off the edge of it; bring it back. Registered once,
+  // since everything the clamp reads it reads live.
   useEffect(() => {
     const fit = () => setOffset((o) => clamp(o));
     window.addEventListener("resize", fit);
     return () => window.removeEventListener("resize", fit);
-  });
+  }, [clamp]);
   const grip = {
     onPointerDown: (e: PointerEvent<HTMLDivElement>) => {
       e.currentTarget.setPointerCapture(e.pointerId);
