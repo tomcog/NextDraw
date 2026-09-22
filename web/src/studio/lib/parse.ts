@@ -1,6 +1,6 @@
 import { newFillId, type Fill } from "./hatch";
 import { curveFromData } from "./parametric";
-import { flattenPath } from "./path";
+import { flattenRun, mapNode, parsePath } from "./path";
 import { repeatFromData } from "./repeat";
 import { newLayerId, newShapeId, type Layer, type Page, type Shape } from "./shapes";
 import { FILL_GROUP_PREFIX } from "./svg";
@@ -217,18 +217,19 @@ export function parseDrawing(text: string): Opened {
       }
       case "path": {
         if (fromText(el.getAttribute("id") || "")) break;
-        // Moves, lines and curves become runs of points: a shape that can be edited here, rather
-        // than a mark that can only be counted. Anything else in the path is left alone.
-        // Curves are walked at a hundredth of an inch, measured in whatever units this file counts
-        // in - a file in points would otherwise be read a hundred times finer than it needs.
-        const runs = flattenPath(el.getAttribute("d") || "", 0.01 * Math.max(perInchX, perInchY))
-          .map((run) => run.map((p) => ({ x: toX(p.x), y: toY(p.y) })))
+        // Moves, lines and curves become runs of nodes: a shape that can be edited here, rather
+        // than a mark that can only be counted, with every curve kept as the handles the file drew
+        // it with - so what is read is what was written, point for point. Only an arc is walked
+        // out, at a hundredth of an inch measured in whatever units this file counts in.
+        const runs = parsePath(el.getAttribute("d") || "", 0.01 * Math.max(perInchX, perInchY))
+          .map((run) => run.map((n) => mapNode(n, (p) => ({ x: toX(p.x), y: toY(p.y) }))))
           .filter((run) => run.length > 1);
         if (!runs.length) {
           unsupported++;
           break;
         }
-        const all = runs.flat();
+        // The box round what is drawn, curves included: a curve can bulge past its nodes.
+        const all = runs.flatMap((run) => flattenRun(run));
         shapes.push({
           id: noteSource(el), layerId: "", kind: "path",
           ...(runs.length > 1 ? { runs } : { points: runs[0] }),

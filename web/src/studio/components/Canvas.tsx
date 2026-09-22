@@ -1,10 +1,11 @@
 import { useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
 import {
   angleFromCenter, boxAround, boxOf, clampToPage, dragHandleTurned, handlePoints, isDegenerate,
-  drawnRuns, moveBy, newShapeId, scaleInto, turnAround, turnAttr, turnGrip, CURSOR,
+  drawnNodes, moveBy, newShapeId, scaleInto, turnAround, turnAttr, turnGrip, CURSOR,
   type Handle, type Page, type Shape, type ShapeKind,
 } from "../lib/shapes";
 import { fillRuns, type Fill } from "../lib/hatch";
+import { pathData } from "../lib/path";
 import { curveStrokes, pointsAttr, DEFAULT_CURVE, type CurveKind } from "../lib/parametric";
 import { placementAttr, placements } from "../lib/repeat";
 import { textRuns, type StrokeFont } from "../lib/text";
@@ -371,14 +372,9 @@ export function Canvas({ page, shapes, fills, layers, activeLayer, model, zoom, 
       );
     }
     if (s.kind === "path") {
-      // One polyline per run: a joined shape is several strokes that move, scale and turn as one.
-      const runs = drawnRuns(s);
-      if (runs.length === 1) return <polyline key={key} {...common} fill="none" points={pointsAttr(runs[0])} />;
-      return (
-        <g key={key} transform={turnAttr(s)}>
-          {runs.map((run, i) => <polyline key={i} {...props} fill="none" points={pointsAttr(run)} />)}
-        </g>
-      );
+      // One element for the whole path, every run a subpath of it: the browser draws its curves as
+      // curves, from the same handles the file gave them, and a joined shape is one thing to grab.
+      return <path key={key} {...common} fill="none" d={pathData(drawnNodes(s))} />;
     }
     if (s.kind === "curve") {
       // Several strokes where the curve lifts the pen (a parabolic's corners), so what's on screen

@@ -1,11 +1,36 @@
-// Reading SVG path data into the runs of points a pen actually travels.
+// Reading SVG path data into what a pen actually travels, and writing it back out unchanged.
 //
 // This is what lets a drawing made somewhere else be edited here: Illustrator, Inkscape and the rest
 // write paths in every command the format allows, relative ones included, so a reader that only
-// understood absolute moves and lines would drop most of what it was given. Curves are walked in
-// pieces about `step` inches long, which is finer than the plotter's own resolution.
+// understood absolute moves and lines would drop most of what it was given. A curve is kept as the
+// curve the file drew - its two handles - rather than walked out into points, so what comes in goes
+// back out point for point. Walking it out happens only where points are what is wanted: the hatch
+// that clips to it, the box round it, the plotter's own resolution.
 
 import type { Point } from "./parametric";
+
+/**
+ * One node of a path: where the pen is, and - when the way in or out of it is curved - the handle
+ * that bends it. A corner has neither. The handles are absolute, in the same inches as the node,
+ * so moving, scaling and turning treat them like any other point. This is the SVG cubic's own
+ * shape: the `C` from one node to the next is (this.out, next.in, next).
+ */
+export interface Node extends Point {
+  in?: Point;
+  out?: Point;
+}
+
+/** The same node with every point of it - the node and its handles - put through `f`. */
+export const mapNode = (n: Node, f: (p: Point) => Point): Node => {
+  const at = f(n);
+  const out: Node = { x: at.x, y: at.y };
+  if (n.in) out.in = f(n.in);
+  if (n.out) out.out = f(n.out);
+  return out;
+};
+
+/** Whether any run bends: the writer and the canvas draw curves only where there are curves. */
+export const hasCurves = (runs: Node[][]) => runs.some((run) => run.some((n) => n.in || n.out));
 
 const NUMBERS = /-?\d*\.?\d+(?:e[-+]?\d+)?/gi;
 const COMMANDS = /[MmLlHhVvCcSsQqTtAaZz]/;
@@ -71,14 +96,16 @@ function arc(from: Point, rx: number, ry: number, deg: number, large: number, sw
 }
 
 /**
- * Every run of points a path draws: one run per stroke, in the path's own coordinates. Curves are
- * walked at about `step`; a command this doesn't know ends the run rather than bending it wrongly.
+ * Every run a path draws, as nodes: one run per stroke, in the path's own coordinates, with each
+ * curve kept as the handles that bend it. A quadratic is lifted to the cubic it exactly is; an arc,
+ * which no single cubic is, is walked out at about `step` - the one place the file's own words are
+ * not kept. A command this doesn't know ends the run rather than bending it wrongly.
  */
-export function flattenPath(d: string, step = 0.01): Point[][] {
+export function parsePath(d: string, step = 0.01): Node[][] {
   const tokens = d.match(new RegExp(`${COMMANDS.source}|${NUMBERS.source}`, "g"));
   if (!tokens) return [];
-  const runs: Point[][] = [];
-  let run: Point[] = [];
+  const runs: Node[][] = [];
+  let run: Node[] = [];
   let at: Point = { x: 0, y: 0 };
   let start: Point = { x: 0, y: 0 };
   let lastControl: Point | null = null; // for S and T, which reflect the one before
@@ -88,6 +115,15 @@ export function flattenPath(d: string, step = 0.01): Point[][] {
   const flush = () => {
     if (run.length > 1) runs.push(run);
     run = [];
+  };
+  // Every node is its own object: the same point written twice - a closed run's two ends - must
+  // not share a handle just because it shares a place.
+  const node = (p: Point): Node => ({ x: p.x, y: p.y });
+  const bend = (c1: Point, c2: Point, to: Point) => {
+    if (run.length) run[run.length - 1].out = { x: c1.x, y: c1.y };
+    const n = node(to);
+    n.in = { x: c2.x, y: c2.y };
+    run.push(n);
   };
 
   const apply = () => {
@@ -105,23 +141,23 @@ export function flattenPath(d: string, step = 0.01): Point[][] {
         if (first) {
           flush();
           start = to;
-          run = [to];
+          run = [node(to)];
         } else {
-          run.push(to); // the rest of a move is a line
+          run.push(node(to)); // the rest of a move is a line
         }
         at = to;
         lastControl = null;
       } else if (upper === "L") {
         at = { x: rx(n[0]), y: ry(n[1]) };
-        run.push(at);
+        run.push(node(at));
         lastControl = null;
       } else if (upper === "H") {
         at = { x: rx(n[0]), y: at.y };
-        run.push(at);
+        run.push(node(at));
         lastControl = null;
       } else if (upper === "V") {
         at = { x: at.x, y: ry(n[0]) };
-        run.push(at);
+        run.push(node(at));
         lastControl = null;
       } else if (upper === "C" || upper === "S") {
         const c1 = upper === "C"
@@ -131,7 +167,7 @@ export function flattenPath(d: string, step = 0.01): Point[][] {
             : at;
         const c2 = upper === "C" ? { x: rx(n[2]), y: ry(n[3]) } : { x: rx(n[0]), y: ry(n[1]) };
         const to = upper === "C" ? { x: rx(n[4]), y: ry(n[5]) } : { x: rx(n[2]), y: ry(n[3]) };
-        run.push(...cubic(at, c1, c2, to, step));
+        bend(c1, c2, to);
         lastControl = c2;
         at = to;
       } else if (upper === "Q" || upper === "T") {
@@ -141,21 +177,21 @@ export function flattenPath(d: string, step = 0.01): Point[][] {
             ? { x: 2 * at.x - lastControl.x, y: 2 * at.y - lastControl.y }
             : at;
         const to = upper === "Q" ? { x: rx(n[2]), y: ry(n[3]) } : { x: rx(n[0]), y: ry(n[1]) };
-        // A quadratic is a cubic whose controls sit two thirds of the way to its own.
+        // A quadratic is a cubic whose controls sit two thirds of the way to its own - exactly.
         const c1 = { x: at.x + (2 / 3) * (q.x - at.x), y: at.y + (2 / 3) * (q.y - at.y) };
         const c2 = { x: to.x + (2 / 3) * (q.x - to.x), y: to.y + (2 / 3) * (q.y - to.y) };
-        run.push(...cubic(at, c1, c2, to, step));
+        bend(c1, c2, to);
         lastControl = q;
         at = to;
       } else if (upper === "A") {
         const to = { x: rx(n[5]), y: ry(n[6]) };
-        run.push(...arc(at, n[0], n[1], n[2], n[3], n[4], to, step));
+        run.push(...arc(at, n[0], n[1], n[2], n[3], n[4], to, step).map(node));
         lastControl = null;
         at = to;
       } else if (upper === "Z") {
-        run.push(start);
+        run.push(node(start));
         flush();
-        run = [start];
+        run = [node(start)];
         at = start;
         lastControl = null;
       }
@@ -181,22 +217,73 @@ export function flattenPath(d: string, step = 0.01): Point[][] {
 }
 
 /**
- * A run drawn as a curve through its own points rather than as the straight lines between them: a
- * Catmull-Rom spline, which passes through every point and takes its direction at each from the
- * neighbours on either side. The result is walked out in pieces about `step` long, because the
- * plotter draws segments and Plot reads the drawing back as segments too - the curve is in where
- * they fall, not in the file saying "curve". A run that ends where it began is smoothed round the
- * join, so a closed shape has no corner at its start.
+ * A run walked out into the points a pen travels: each curved stretch in pieces of about `step`,
+ * each straight one as its two ends. What every consumer of points asks for - the hatch that clips
+ * to a shape, the box round it, a copy for the clipboard - so the curve is kept in one place and
+ * walked out wherever it is needed.
  */
-export function smoothRun(points: Point[], step = 0.01): Point[] {
-  if (points.length < 3) return points;
+export function flattenRun(run: Node[], step = 0.01): Point[] {
+  if (!run.length) return [];
+  const out: Point[] = [{ x: run[0].x, y: run[0].y }];
+  for (let i = 1; i < run.length; i++) {
+    const from = run[i - 1];
+    const to = run[i];
+    if (from.out || to.in) out.push(...cubic(from, from.out ?? from, to.in ?? to, to, step));
+    else out.push({ x: to.x, y: to.y });
+  }
+  return out;
+}
+
+/** Every run of points a path draws, walked out at about `step`. */
+export function flattenPath(d: string, step = 0.01): Point[][] {
+  return parsePath(d, step).map((run) => flattenRun(run, step));
+}
+
+/** How many decimals a path is written to: a millionth of an inch, which is exact for any pen. */
+const PATH_DECIMALS = 6;
+const fmt = (v: number) => Number(v.toFixed(PATH_DECIMALS)).toString();
+
+/**
+ * Runs written back as path data: a move to each run's start, then a cubic wherever either end of
+ * a stretch has a handle and a line where neither does. A curve that came in as a `C` goes out as
+ * the same `C`, to the same numbers.
+ */
+export function pathData(runs: Node[][]): string {
+  return runs
+    .filter((run) => run.length > 1)
+    .map((run) => {
+      const parts = [`M ${fmt(run[0].x)} ${fmt(run[0].y)}`];
+      for (let i = 1; i < run.length; i++) {
+        const from = run[i - 1];
+        const to = run[i];
+        if (from.out || to.in) {
+          const c1 = from.out ?? from;
+          const c2 = to.in ?? to;
+          parts.push(`C ${fmt(c1.x)} ${fmt(c1.y)} ${fmt(c2.x)} ${fmt(c2.y)} ${fmt(to.x)} ${fmt(to.y)}`);
+        } else {
+          parts.push(`L ${fmt(to.x)} ${fmt(to.y)}`);
+        }
+      }
+      return parts.join(" ");
+    })
+    .join(" ");
+}
+
+/**
+ * A run drawn as a curve through its own points rather than as the lines between them: a
+ * Catmull-Rom spline, which passes through every point and takes its direction at each from the
+ * neighbours on either side, given as the handles that bend each stretch. A run that ends where it
+ * began is smoothed round the join, so a closed shape has no corner at its start.
+ */
+export function catmullNodes(points: Point[]): Node[] {
+  if (points.length < 3) return points.map((p) => ({ x: p.x, y: p.y }));
   const closed = Math.hypot(points[0].x - points[points.length - 1].x, points[0].y - points[points.length - 1].y) < 1e-9;
   const loop = closed ? points.slice(0, -1) : points;
-  if (loop.length < 3) return points;
+  if (loop.length < 3) return points.map((p) => ({ x: p.x, y: p.y }));
   const at = (i: number) => (closed
     ? loop[((i % loop.length) + loop.length) % loop.length]
     : loop[Math.max(0, Math.min(loop.length - 1, i))]);
-  const out: Point[] = [at(0)];
+  const out: Node[] = [{ x: at(0).x, y: at(0).y }];
   const last = closed ? loop.length : loop.length - 1;
   for (let i = 0; i < last; i++) {
     const p0 = at(i - 1);
@@ -205,11 +292,15 @@ export function smoothRun(points: Point[], step = 0.01): Point[] {
     const p3 = at(i + 2);
     // The tangent at a point is a sixth of the way from the point before it to the one after: the
     // usual reading of Catmull-Rom as a cubic.
-    const c1 = { x: p1.x + (p2.x - p0.x) / 6, y: p1.y + (p2.y - p0.y) / 6 };
-    const c2 = { x: p2.x - (p3.x - p1.x) / 6, y: p2.y - (p3.y - p1.y) / 6 };
-    out.push(...cubic(p1, c1, c2, p2, step));
+    out[out.length - 1].out = { x: p1.x + (p2.x - p0.x) / 6, y: p1.y + (p2.y - p0.y) / 6 };
+    out.push({ x: p2.x, y: p2.y, in: { x: p2.x - (p3.x - p1.x) / 6, y: p2.y - (p3.y - p1.y) / 6 } });
   }
   return out;
+}
+
+/** The smoothed run walked out in pieces about `step` long. */
+export function smoothRun(points: Point[], step = 0.01): Point[] {
+  return flattenRun(catmullNodes(points), step);
 }
 
 /**

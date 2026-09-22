@@ -2,7 +2,8 @@ import { fillRuns, type Fill } from "./hatch";
 import { curveStrokes, pointsAttr, type Point } from "./parametric";
 import { textRuns, type StrokeFont } from "./text";
 import { placementAttr, placements } from "./repeat";
-import { boxOf, drawnRuns, pathRuns, turnAttr, type Layer, type Page, type Shape } from "./shapes";
+import { hasCurves, pathData } from "./path";
+import { boxOf, drawnNodes, drawnRuns, pathRuns, turnAttr, type Layer, type Page, type Shape } from "./shapes";
 
 // The drawing Studio writes out. Two things matter to Plot at the other end:
 //
@@ -51,6 +52,12 @@ function shapeMarkup(s: Shape, fonts: Record<string, StrokeFont> = {}): string {
   // they are copies rather than shapes of their own.
   if (s.repeat) return allCopies(s, (i) => shapeMarkup({ ...s, repeat: undefined, id: i ? `${s.id}-r${i + 1}` : s.id }, fonts));
   if (s.kind === "path") {
+    // A path that curves is written as the curves themselves - the same `C`s, to the same numbers,
+    // that it was read from - so a drawing that came in goes out unchanged. A smoothed path is not:
+    // it is still walked out, because Plot regenerates a fill by reading the shape's own points
+    // out of the file, and it reads polylines. Until it reads path data too, a curve of Studio's
+    // own making goes out as the lines the pen makes, as it always has.
+    if (!s.smooth && hasCurves(pathRuns(s))) return `<path id="${escapeAttr(s.id)}" d="${escapeAttr(pathData(drawnNodes(s)))}"/>`;
     const runs = drawnRuns(s);
     if (runs.length === 1) return `<polyline id="${escapeAttr(s.id)}" points="${pointsAttr(runs[0])}"/>`;
     // Several runs in one element: a path with a move at the start of each, which is what makes the

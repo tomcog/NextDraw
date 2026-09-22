@@ -2,7 +2,9 @@
 // Plot measures a drawing's footprint, so what's on the page here is what lands on the paper there.
 
 import { CURVE_LABEL, type Curve, type Point } from "./parametric";
-import { smoothRun } from "./path";
+import { catmullNodes, flattenRun, mapNode, type Node } from "./path";
+
+export type { Node } from "./path";
 import type { Repeat } from "./repeat";
 
 export type ShapeKind = "rect" | "ellipse" | "line" | "curve" | "path" | "text";
@@ -25,15 +27,16 @@ export interface Shape {
   /** Space from one line to the next, as a multiple of the font's own: 1 is what the font says. */
   leading?: number;
   /**
-   * A path: the points it is drawn through, in inches on the page. A curve becomes one when it is
+   * A path: the nodes it is drawn through, in inches on the page - each a point, with the handles
+   * that bend the way in and out of it where the path curves there. A curve becomes one when it is
    * baked - the numbers behind it are given up, and every point can be dragged instead.
    */
-  points?: Point[];
+  points?: Node[];
   /**
    * A path drawn in more than one go: several shapes joined into one thing, or one shape that lifts
    * the pen partway. `points` is the whole of it when there is only the one run.
    */
-  runs?: Point[][];
+  runs?: Node[][];
   /**
    * What it is called in the list, when it has been given a name. Without one the list says what it
    * is and where it sits - Path 3 - which is enough until a drawing has enough in it that it isn't.
@@ -94,19 +97,26 @@ export const newShapeId = () => `shape-${++counter}-${Date.now().toString(36)}`;
 
 /** The box a shape occupies, normalised so x0/y0 is the top-left whichever way it was drawn. */
 /** Every run of a path, the single-run case included: what draws it, and what it is measured by. */
-export const pathRuns = (s: Shape): Point[][] => s.runs ?? (s.points ? [s.points] : []);
+export const pathRuns = (s: Shape): Node[][] => s.runs ?? (s.points ? [s.points] : []);
 
 /**
- * The runs as they are actually drawn: the points themselves, or the curve through them for a path
- * that is smoothed. Everything the pen or the page sees goes through this - the canvas, the file,
- * and a hatch's outline - so a smoothed path is one thing in all three.
+ * The runs as they are actually drawn, as nodes: the path's own, or the curve through its points
+ * for a path that is smoothed - given as handles, so a smoothed path is a curve in the same words
+ * as an imported one. What the canvas draws and the file writes.
  */
-export const drawnRuns = (s: Shape): Point[][] => (s.smooth && s.kind === "path"
-  ? pathRuns(s).map((run) => smoothRun(run))
+export const drawnNodes = (s: Shape): Node[][] => (s.smooth && s.kind === "path"
+  ? pathRuns(s).map((run) => catmullNodes(run))
   : pathRuns(s));
 
-/** All of a path's points in one list, in the order they are drawn. */
-export const allPoints = (s: Shape): Point[] => pathRuns(s).flat();
+/**
+ * The same, walked out into points: what a hatch clips to, what a box is measured round, what a
+ * copy holds. The curve is kept in the nodes and walked out here, in one place, for everything
+ * that needs points rather than curves.
+ */
+export const drawnRuns = (s: Shape): Point[][] => drawnNodes(s).map((run) => flattenRun(run));
+
+/** All of a path's own points in one list, in the order they are drawn - the nodes, not the curves. */
+export const allPoints = (s: Shape): Node[] => pathRuns(s).flat();
 
 /** The box a path's own points occupy, which is what its handles and its fill are measured against. */
 export const pointsBox = (points: Point[]) => ({
@@ -202,7 +212,9 @@ export const turnAround = (shapes: Shape[], about: { x: number; y: number }, deg
       ...s,
       rotation: ((((s.rotation ?? 0) + deg) % 360) + 360) % 360 || undefined,
       x: s.x + dx, y: s.y + dy, x2: s.x2 + dx, y2: s.y2 + dy,
-      ...(s.points ? { points: s.points.map((p) => ({ x: p.x + dx, y: p.y + dy })) } : {}),
+      ...(s.runs
+        ? { runs: s.runs.map((run) => run.map((n) => mapNode(n, (p) => ({ x: p.x + dx, y: p.y + dy })))) }
+        : s.points ? { points: s.points.map((n) => mapNode(n, (p) => ({ x: p.x + dx, y: p.y + dy }))) } : {}),
     };
   });
 
@@ -214,7 +226,7 @@ export const withBox = (s: Shape, box: { x0: number; y0: number; x1: number; y1:
   const from = boxOf(s);
   const kx = from.x1 - from.x0 > 1e-9 ? (box.x1 - box.x0) / (from.x1 - from.x0) : 1;
   const ky = from.y1 - from.y0 > 1e-9 ? (box.y1 - box.y0) / (from.y1 - from.y0) : 1;
-  const moved = runs.map((run) => run.map((p) => ({ x: box.x0 + (p.x - from.x0) * kx, y: box.y0 + (p.y - from.y0) * ky })));
+  const moved = runs.map((run) => run.map((n) => mapNode(n, (p) => ({ x: box.x0 + (p.x - from.x0) * kx, y: box.y0 + (p.y - from.y0) * ky }))));
   return { ...next, ...(s.runs ? { runs: moved } : { points: moved[0] }) };
 };
 
@@ -253,7 +265,7 @@ export const moveBy = (s: Shape, dx: number, dy: number, page: Page): Shape => {
   const b = boxOf(s);
   const byX = Math.max(-b.x0, Math.min(page.w - b.x1, dx));
   const byY = Math.max(-b.y0, Math.min(page.h - b.y1, dy));
-  const shift = (run: Point[]) => run.map((p) => ({ x: p.x + byX, y: p.y + byY }));
+  const shift = (run: Node[]) => run.map((n) => mapNode(n, (p) => ({ x: p.x + byX, y: p.y + byY })));
   return {
     ...s,
     x: s.x + byX, y: s.y + byY, x2: s.x2 + byX, y2: s.y2 + byY,
@@ -351,9 +363,13 @@ export const dragHandle = (s: Shape, handle: Handle, x: number, y: number): Shap
         && Math.abs(run[0].x - run[last].x) < 1e-9
         && Math.abs(run[0].y - run[last].y) < 1e-9;
       const ends = shut && (i === 0 || i === last);
-      return run.map((p, k) => ((k === i || (ends && (k === 0 || k === last))) ? { x, y } : p));
+      // The node goes where the pointer is and its handles go with it, so a curve keeps its shape
+      // through the node rather than being flattened by the move.
+      return run.map((n, k) => ((k === i || (ends && (k === 0 || k === last)))
+        ? mapNode(n, (p) => ({ x: p.x + (x - n.x), y: p.y + (y - n.y) }))
+        : n));
     });
-    const b = pointsBox(runs.flat());
+    const b = pointsBox(runs.flatMap((run) => flattenRun(run)));
     return { ...s, ...(s.runs ? { runs } : { points: runs[0] }), x: b.x0, y: b.y0, x2: b.x1, y2: b.y1 };
   }
   const n = normalized(s);

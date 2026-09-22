@@ -22,14 +22,14 @@ import { StudioHeader } from "./components/StudioHeader";
 import { canConnect, canFill, fillNumbers, fillRuns, newFillId, FILL_LABEL, type Fill, type FillKind } from "./lib/hatch";
 import { closingTurns, curveStrokes, CURVE_FIELDS, type Curve, type Point } from "./lib/parametric";
 import { fontNames, loadFont, type StrokeFont } from "./lib/font";
-import { flattenPath, simplifyRun } from "./lib/path";
+import { flattenPath, flattenRun, mapNode, parsePath, simplifyRun, type Node } from "./lib/path";
 import { fitText, textRuns } from "./lib/text";
 import { defaultRepeat, placements, REPEAT_FIELDS, type Repeat, type RepeatKind } from "./lib/repeat";
 import { parseDrawing } from "./lib/parse";
 import { PaletteMenu } from "../components/controls/PaletteMenu";
 import { Hints } from "../components/controls/Hints";
 import { RowMenu } from "../components/controls/RowMenu";
-import { boxOf, centerOf, clampToPage, drawnRuns, moveBy, newLayerId, newShapeId, outlinePoints, pathRuns, pointsBox, resizeTo, shapeName, turnPoint, POINT_HANDLE_LIMIT, type Layer, type Page, type Shape } from "./lib/shapes";
+import { boxOf, centerOf, clampToPage, drawnNodes, drawnRuns, moveBy, newLayerId, newShapeId, outlinePoints, pathRuns, pointsBox, resizeTo, shapeName, turnPoint, POINT_HANDLE_LIMIT, type Layer, type Page, type Shape } from "./lib/shapes";
 import { buildSvg, svgForMarks, cleanFileName } from "./lib/svg";
 import styles from "./App.module.css";
 
@@ -780,10 +780,12 @@ export default function App() {
       if (shape.kind === "text") {
         // Every stroke of every letter becomes its own path: the words are given up, the marks stay.
         for (const glyph of textRuns(shape, fonts[shape.font ?? ""])) {
-          for (const run of flattenPath(glyph.d)) {
-            const points = run.map(put);
+          // The letter's own curves, kept as curves: a baked word is the strokes of its font, not
+          // the font walked out into segments.
+          for (const run of parsePath(glyph.d)) {
+            const points = run.map((n) => mapNode(n, put));
             if (points.length < 2) continue;
-            const b = pointsBox(points);
+            const b = pointsBox(flattenRun(points));
             made.push({
               ...shape, id: made.length ? newShapeId() : shape.id,
               kind: "path", points, text: undefined, font: undefined, tracking: undefined,
@@ -869,6 +871,26 @@ export default function App() {
     return runs;
   };
 
+  /** Every run a shape makes, as nodes: like runsOf, but a curve stays a curve rather than being
+   *  walked out - what joining wants, so a joined shape is no less exact than its parts. */
+  const nodesOf = (shape: Shape): Node[][] => {
+    const centre = centerOf(shape);
+    const out: Node[][] = [];
+    for (const place of placements(shape)) {
+      const put = (p: Point): Point => {
+        const turned = turnPoint(turnPoint(p, centre, shape.rotation ?? 0), centre, place.deg);
+        return { x: turned.x + place.dx, y: turned.y + place.dy };
+      };
+      const own: Node[][] = shape.kind === "text"
+        ? textRuns(shape, fonts[shape.font ?? ""]).flatMap((g) => parsePath(g.d))
+        : shape.curve ? curveStrokes(shape)
+        : shape.kind === "path" ? drawnNodes(shape)
+        : [outlinePoints(shape)];
+      if (shape.outline !== false) out.push(...own.map((run) => run.map((n) => mapNode(n, put))));
+    }
+    return out;
+  };
+
   /**
    * Join what's picked into one shape: every mark of every one of them becomes a run of a single
    * path, which then moves, scales and turns as one thing. A fill on the first of them is kept, and
@@ -877,11 +899,11 @@ export default function App() {
   const joinShapes = () => {
     const picked = shapes.filter((s) => selected.includes(s.id));
     if (picked.length < 2) return;
-    const runs = picked.flatMap((s) => runsOf(s));
+    const runs = picked.flatMap((s) => nodesOf(s));
     if (!runs.length) return;
     record();
     const first = picked[0];
-    const b = pointsBox(runs.flat());
+    const b = pointsBox(runs.flatMap((run) => flattenRun(run)));
     const joined: Shape = {
       ...first, kind: "path", runs, points: undefined,
       curve: undefined, repeat: undefined, rotation: undefined,
@@ -904,7 +926,9 @@ export default function App() {
     const runs = shape ? pathRuns(shape) : [];
     if (!shape || !runs.length) return;
     const tolerance = simplifyMm / 25.4;
-    const simpler = runs.map((run) => simplifyRun(run, tolerance)).filter((run) => run.length > 1);
+    // Simplified from the points the path draws - its curves walked out - so a curved path is
+    // thinned by what is on the page, not by its handles.
+    const simpler = runs.map((run) => simplifyRun(flattenRun(run), tolerance)).filter((run) => run.length > 1);
     if (!simpler.length || simpler.reduce((n, r) => n + r.length, 0) >= runs.reduce((n, r) => n + r.length, 0)) return;
     record();
     // Simplifying is for keeping the shape while dropping the points, so what comes out is drawn as
