@@ -306,15 +306,12 @@ export function parseDrawing(text: string): Opened {
     s.points = runs.length > 1 ? undefined : runs[0];
   }
 
-  // A drawing from somewhere else has no design block to say which of its paths were drawn as
-  // curves, so every one of them is taken as one: what a drawing program exports is curves walked
-  // out into segments, and reading them back as a curve is nearer to what was drawn than joining
-  // the points with straight lines. A path that really is straight says so from its row's menu.
-  // Studio's own files are left alone - there the block is the record, and a path it doesn't list
-  // as smoothed was meant to be straight.
-  if (!designEl) {
-    for (const s of shapes) if (s.kind === "path") s.smooth = true;
-  }
+  // A path from somewhere else is drawn as the points it came with, and nothing is guessed about
+  // them. Its curves were walked out into those points on the way in, exactly as the file drew
+  // them; a curve fitted back through the samples would be a second, different curve, and on a
+  // drawing of many short strokes it costs more than everything else the preview does. Only what
+  // Studio makes itself is smoothed - a baked curve, a simplified path - where the points are sparse
+  // and the curve is the intent.
 
   // The angle each turned shape was drawn at. The geometry in the file is already turned, so this
   // is what puts the shape back the way Studio holds it: a square box plus an angle.
