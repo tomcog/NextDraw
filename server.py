@@ -931,12 +931,188 @@ def hatch_stroke(kind, box, lines, outline=None):
     return points
 
 
+# Reading path data, as web/src/studio/lib/path.ts reads it - a port, kept in step by
+# tests/plot_walks_a_path_out_as_studio_does.py. Studio keeps a curve as the curve, and writes it back
+# as one; to hatch a curved shape here the curve is walked out into points at the same step Studio
+# walks it at, so the outline Plot clips to is the outline Studio clipped to.
+PATH_TOKENS = re.compile(r"[MmLlHhVvCcSsQqTtAaZz]|-?\d*\.?\d+(?:e[-+]?\d+)?", re.I)
+PATH_ARITY = {"M": 2, "L": 2, "H": 1, "V": 1, "C": 6, "S": 4, "Q": 4, "T": 2, "A": 7, "Z": 0}
+
+
+def cubic_points(fr, c1, c2, to, step):
+    """cubic: a cubic walked in pieces of about `step`, the first point left to whatever drew it."""
+    rough = (math.hypot(c1[0] - fr[0], c1[1] - fr[1]) + math.hypot(c2[0] - c1[0], c2[1] - c1[1])
+             + math.hypot(to[0] - c2[0], to[1] - c2[1]))
+    steps = max(2, min(200, math.ceil(rough / step)))
+    out = []
+    for i in range(steps):
+        t = (i + 1) / steps
+        u = 1 - t
+        out.append((u * u * u * fr[0] + 3 * u * u * t * c1[0] + 3 * u * t * t * c2[0] + t * t * t * to[0],
+                    u * u * u * fr[1] + 3 * u * u * t * c1[1] + 3 * u * t * t * c2[1] + t * t * t * to[1]))
+    return out
+
+
+def arc_points(fr, rx, ry, deg, large, sweep, to, step):
+    """arc: an elliptical arc as the format describes it, walked out at about `step`."""
+    if not rx or not ry:
+        return [to]
+    rad = deg * math.pi / 180
+    cos, sin = math.cos(rad), math.sin(rad)
+    dx, dy = (fr[0] - to[0]) / 2, (fr[1] - to[1]) / 2
+    x1 = cos * dx + sin * dy
+    y1 = -sin * dx + cos * dy
+    ax, ay = abs(rx), abs(ry)
+    big = (x1 * x1) / (ax * ax) + (y1 * y1) / (ay * ay)
+    if big > 1:
+        ax *= math.sqrt(big)
+        ay *= math.sqrt(big)
+    denom = ax * ax * y1 * y1 + ay * ay * x1 * x1
+    factor = math.sqrt(max(0.0, (ax * ax * ay * ay - denom) / denom)) * (-1 if large == sweep else 1)
+    cx1 = factor * ax * y1 / ay
+    cy1 = -factor * ay * x1 / ax
+    cx = cos * cx1 - sin * cy1 + (fr[0] + to[0]) / 2
+    cy = sin * cx1 + cos * cy1 + (fr[1] + to[1]) / 2
+    start = math.atan2((y1 - cy1) / ay, (x1 - cx1) / ax)
+    sweep_angle = math.atan2((-y1 - cy1) / ay, (-x1 - cx1) / ax) - start
+    if not sweep and sweep_angle > 0:
+        sweep_angle -= 2 * math.pi
+    if sweep and sweep_angle < 0:
+        sweep_angle += 2 * math.pi
+    around = abs(sweep_angle) * max(ax, ay)
+    steps = max(2, min(400, math.ceil(around / step)))
+    out = []
+    for i in range(steps):
+        a = start + sweep_angle * (i + 1) / steps
+        px, py = ax * math.cos(a), ay * math.sin(a)
+        out.append((cos * px - sin * py + cx, sin * px + cos * py + cy))
+    return out
+
+
+def flatten_path_data(d, step=0.01):
+    """flattenPath: every run of points a path draws, its curves walked out at about `step`."""
+    tokens = PATH_TOKENS.findall(d or "")
+    runs, run = [], []
+    at = (0.0, 0.0)
+    start = (0.0, 0.0)
+    last_control = None  # for S and T, which reflect the one before
+    state = {"command": "", "numbers": []}
+
+    def flush():
+        nonlocal run
+        if len(run) > 1:
+            runs.append(run)
+        run = []
+
+    def apply():
+        nonlocal run, at, start, last_control
+        command = state["command"]
+        upper = command.upper()
+        rel = command != upper
+        take = PATH_ARITY.get(upper, 0)
+        numbers = state["numbers"]
+        first = True
+        while take == 0 or len(numbers) >= take:
+            n = numbers[:take]
+            del numbers[:take]
+            rx = (lambda v: at[0] + v) if rel else (lambda v: v)
+            ry = (lambda v: at[1] + v) if rel else (lambda v: v)
+            if upper == "M":
+                to = (rx(n[0]), ry(n[1]))
+                if first:
+                    flush()
+                    start = to
+                    run = [to]
+                else:
+                    run.append(to)
+                at = to
+                last_control = None
+            elif upper == "L":
+                at = (rx(n[0]), ry(n[1]))
+                run.append(at)
+                last_control = None
+            elif upper == "H":
+                at = (rx(n[0]), at[1])
+                run.append(at)
+                last_control = None
+            elif upper == "V":
+                at = (at[0], ry(n[0]))
+                run.append(at)
+                last_control = None
+            elif upper in ("C", "S"):
+                if upper == "C":
+                    c1 = (rx(n[0]), ry(n[1]))
+                elif last_control:
+                    c1 = (2 * at[0] - last_control[0], 2 * at[1] - last_control[1])
+                else:
+                    c1 = at
+                c2 = (rx(n[2]), ry(n[3])) if upper == "C" else (rx(n[0]), ry(n[1]))
+                to = (rx(n[4]), ry(n[5])) if upper == "C" else (rx(n[2]), ry(n[3]))
+                run.extend(cubic_points(at, c1, c2, to, step))
+                last_control = c2
+                at = to
+            elif upper in ("Q", "T"):
+                if upper == "Q":
+                    q = (rx(n[0]), ry(n[1]))
+                elif last_control:
+                    q = (2 * at[0] - last_control[0], 2 * at[1] - last_control[1])
+                else:
+                    q = at
+                to = (rx(n[2]), ry(n[3])) if upper == "Q" else (rx(n[0]), ry(n[1]))
+                c1 = (at[0] + (2 / 3) * (q[0] - at[0]), at[1] + (2 / 3) * (q[1] - at[1]))
+                c2 = (to[0] + (2 / 3) * (q[0] - to[0]), to[1] + (2 / 3) * (q[1] - to[1]))
+                run.extend(cubic_points(at, c1, c2, to, step))
+                last_control = q
+                at = to
+            elif upper == "A":
+                to = (rx(n[5]), ry(n[6]))
+                run.extend(arc_points(at, n[0], n[1], n[2], n[3], n[4], to, step))
+                last_control = None
+                at = to
+            elif upper == "Z":
+                run.append(start)
+                flush()
+                run = [start]
+                at = start
+                last_control = None
+            first = False
+            if take == 0:
+                break
+        state["numbers"] = []
+
+    for token in tokens:
+        if PATH_ARITY.get(token.upper()) is not None and len(token) == 1 and token.isalpha():
+            if state["command"]:
+                apply()
+            state["command"] = token
+            if token.upper() == "Z":
+                apply()
+            continue
+        state["numbers"].append(float(token))
+        if state["command"] and len(state["numbers"]) >= PATH_ARITY.get(state["command"].upper(), 0):
+            apply()
+    if state["command"]:
+        apply()
+    flush()
+    return runs
+
+
 def outline_points(el):
-    """A Studio curve's own points (a polyline's), as a closed list of (x, y). Empty for anything else."""
-    if el is None or el.tag != SVG_NS + "polyline":
+    """A Studio shape's own points, as a closed list of (x, y): a polyline's, or a path's with its
+    curves walked out as Studio walks them. Empty for anything else, and for a path drawn in more
+    than one run, which is not one outline to clip to."""
+    if el is None:
         return []
-    nums = [float(v) for v in re.findall(r"-?\d*\.?\d+(?:e[-+]?\d+)?", el.get("points") or "")]
-    pts = list(zip(nums[0::2], nums[1::2]))
+    if el.tag == SVG_NS + "polyline":
+        nums = [float(v) for v in re.findall(r"-?\d*\.?\d+(?:e[-+]?\d+)?", el.get("points") or "")]
+        pts = list(zip(nums[0::2], nums[1::2]))
+    elif el.tag == SVG_NS + "path":
+        runs = [r for r in flatten_path_data(el.get("d") or "") if len(r) > 1]
+        if len(runs) != 1:
+            return []
+        pts = list(runs[0])
+    else:
+        return []
     if len(pts) > 2 and pts[0] != pts[-1]:
         pts.append(pts[0])  # a fill needs a closed outline to count crossings against
     return pts
@@ -945,7 +1121,7 @@ def outline_points(el):
 def shape_box(el):
     """The box a Studio rect, ellipse or curve is drawn in, as (x0, y0, x1, y1), or None."""
     try:
-        if el is not None and el.tag == SVG_NS + "polyline":
+        if el is not None and el.tag in (SVG_NS + "polyline", SVG_NS + "path"):
             pts = outline_points(el)
             if len(pts) < 3:
                 return None
@@ -970,9 +1146,11 @@ def regenerate_hatches(root, spacing_by_layer, scale):
     fills = studio_fills(root)
     if not fills:
         return
-    # Curves are polylines, and a repeat's copies carry the shape's id with -r2, -r3 after it: the
-    # copies are the same geometry moved, so the first of them is the one a fill is made from.
-    shapes = {el.get("id"): el for el in root.iter(SVG_NS + "rect", SVG_NS + "ellipse", SVG_NS + "polyline")
+    # Curves are polylines, a curved path is path data, and a repeat's copies carry the shape's id
+    # with -r2, -r3 after it: the copies are the same geometry moved, so the first of them is the
+    # one a fill is made from.
+    shapes = {el.get("id"): el
+              for el in root.iter(SVG_NS + "rect", SVG_NS + "ellipse", SVG_NS + "polyline", SVG_NS + "path")
               if el.get("id")}
     num = lambda v: f"{v:.4f}".rstrip("0").rstrip(".")  # noqa: E731 - Studio's own rounding
     for layer in layer_groups(root):
@@ -995,7 +1173,7 @@ def regenerate_hatches(root, spacing_by_layer, scale):
             if override is None and abs(made_for - scale) < 1e-9:
                 continue  # the file's own lines are already right
             kind = ("rect" if shape.tag == SVG_NS + "rect"
-                    else "polygon" if shape.tag == SVG_NS + "polyline" else "ellipse")
+                    else "polygon" if shape.tag in (SVG_NS + "polyline", SVG_NS + "path") else "ellipse")
             outline = outline_points(shape)
             runs = fill_runs(kind, box, {**fill, "angle": angle, "scale": scale},
                              spacing / 25.4 / (scale / 100), outline)

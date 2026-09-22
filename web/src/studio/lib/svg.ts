@@ -53,11 +53,11 @@ function shapeMarkup(s: Shape, fonts: Record<string, StrokeFont> = {}): string {
   if (s.repeat) return allCopies(s, (i) => shapeMarkup({ ...s, repeat: undefined, id: i ? `${s.id}-r${i + 1}` : s.id }, fonts));
   if (s.kind === "path") {
     // A path that curves is written as the curves themselves - the same `C`s, to the same numbers,
-    // that it was read from - so a drawing that came in goes out unchanged. A smoothed path is not:
-    // it is still walked out, because Plot regenerates a fill by reading the shape's own points
-    // out of the file, and it reads polylines. Until it reads path data too, a curve of Studio's
-    // own making goes out as the lines the pen makes, as it always has.
-    if (!s.smooth && hasCurves(pathRuns(s))) return `<path id="${escapeAttr(s.id)}" d="${escapeAttr(pathData(drawnNodes(s)))}"/>`;
+    // that it was read from, or the handles a smoothed path is drawn by - so a drawing that came in
+    // goes out unchanged, and one of Studio's own goes out as the curve it is rather than the lines
+    // it would be walked out into. Plot walks it out itself when it needs points: to regenerate a
+    // fill, it reads path data the way Studio does (flatten_path_data in server.py).
+    if (hasCurves(drawnNodes(s))) return `<path id="${escapeAttr(s.id)}" d="${escapeAttr(pathData(drawnNodes(s)))}"/>`;
     const runs = drawnRuns(s);
     if (runs.length === 1) return `<polyline id="${escapeAttr(s.id)}" points="${pointsAttr(runs[0])}"/>`;
     // Several runs in one element: a path with a move at the start of each, which is what makes the
