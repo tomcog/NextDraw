@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ToolNote } from "../components/controls/ToolNote";
 import { TipMark } from "../components/controls/TipMark";
 import { Button, ButtonRound, Card, Checkbox, ConfirmButton, InputSelect, InputText, InputTextarea, LayerController } from "@tomcoggia/ui";
-import { AlignJustify, ArrowDownToLine, AudioWaveform, Circle, CircleDashed, CircleDot, ClipboardCopy, ClipboardPaste, Copy, Ellipsis, EllipsisVertical, FilePlus, Flame, FlameKindling, FolderOpen, Grid2x2, Layers2, LoaderPinwheel, Menu, Minus, MoveHorizontal, MoveVertical, MousePointer2, Orbit, PaintBucket, PenLine, Pentagon, Plus, Rainbow, Redo2, Repeat as RepeatIcon, RotateCw, Save, Shell, Signal, Spline, Square, SquareDimensions, Star, Trash2, Type, Undo2, Waves, Waypoints } from "lucide-react";
+import { AlignJustify, ArrowDownToLine, AudioWaveform, Circle, CircleDashed, CircleDot, ClipboardCopy, ClipboardPaste, Copy, Ellipsis, EllipsisVertical, FilePlus, Flame, FlameKindling, FolderOpen, Grid2x2, Layers2, LoaderPinwheel, Menu, Minus, MoveHorizontal, MoveVertical, MousePointer2, Orbit, PaintBucket, PenLine, Pentagon, Plus, Rainbow, Redo2, Repeat as RepeatIcon, RotateCw, Save, Send, Shell, Signal, Spline, Square, SquareDimensions, Star, Trash2, Type, Undo2, Waves, Waypoints } from "lucide-react";
 import { FileBrowser, LAST_FOLDER_KEY, type OpenResult } from "../components/FileBrowser";
 import { Section } from "../components/controls/Section";
 import { NumberField } from "../components/controls/NumberField";
@@ -1376,7 +1376,7 @@ export default function App() {
                     />
                     <ButtonRound
                       size="sm"
-                      icon={<Waypoints />}
+                      icon={<Send />}
                       aria-label="Send to Plot"
                       title="Save this drawing and open it in Plot, ready to draw"
                       disabled={busy || !shapes.length}
