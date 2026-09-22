@@ -1,7 +1,7 @@
 import { Tag } from "@tomcoggia/ui";
 import { PenTool } from "lucide-react";
-import { ThemeToggle } from "../../components/ThemeToggle";
-import styles from "../../components/Header.module.css";
+import { ThemeToggle } from "../../shared/components/ThemeToggle";
+import styles from "../../shared/components/Header.module.css";
 
 interface Props {
   message: string;

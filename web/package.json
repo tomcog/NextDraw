@@ -5,11 +5,12 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "tsc --noEmit && vite build",
-    "typecheck": "tsc --noEmit"
+    "build": "node scripts/check-boundaries.mjs && tsc --noEmit && vite build",
+    "typecheck": "tsc --noEmit",
+    "check": "node scripts/check-boundaries.mjs"
   },
   "dependencies": {
-    "@tomcoggia/ui": "github:tomcog/component-library#v0.50.0",
+    "@tomcoggia/ui": "github:tomcog/component-library#v0.53.0",
     "lucide-react": "^1.46.0",
     "react": "18.3.1",
     "react-dom": "18.3.1"

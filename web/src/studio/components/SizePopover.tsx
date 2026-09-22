@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import menu from "../../components/controls/PaletteMenu.module.css";
-import { NumberField } from "../../components/controls/NumberField";
+import menu from "../../shared/components/controls/PaletteMenu.module.css";
+import { NumberField } from "../../shared/components/controls/NumberField";
 import styles from "./SizePopover.module.css";
 
 interface Props {

@@ -10,10 +10,10 @@ import { curveStrokes, pointsAttr, DEFAULT_CURVE, type CurveKind } from "../lib/
 import { placementAttr, placements } from "../lib/repeat";
 import { textRuns, type StrokeFont } from "../lib/text";
 import type { Layer } from "../lib/shapes";
-import { BedCanvas, type BedCanvasHandle, type Box, type Zoom } from "../../components/BedCanvas";
-import { DEFAULT_SETTINGS, UNITS } from "../../lib/constants";
-import type { PlotterModel } from "../../lib/types";
-import { inkLayer } from "../../lib/ink";
+import { BedCanvas, type BedCanvasHandle, type Box, type Zoom } from "../../shared/components/BedCanvas";
+import { DEFAULT_SETTINGS, UNITS } from "../../shared/lib/constants";
+import type { PlotterModel } from "../../shared/lib/types";
+import { inkLayer } from "../../shared/lib/ink";
 import styles from "./Canvas.module.css";
 
 /** Select picks shapes up; the rest draw. Without the distinction a shape covering the page would
