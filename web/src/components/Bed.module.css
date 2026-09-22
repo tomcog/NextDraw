@@ -75,6 +75,6 @@
 .bedWrap[data-dragging-file="true"] .dropzone {
   pointer-events: auto;
   opacity: 1;
-  border-color: var(--ui-primary);
-  background: color-mix(in srgb, var(--ui-primary) 6%, transparent);
+  border-color: var(--ui-action);
+  background: color-mix(in srgb, var(--ui-action) 6%, transparent);
 }

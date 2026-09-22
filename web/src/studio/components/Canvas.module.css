@@ -56,7 +56,7 @@
 .handles circle {
   /* Filled like the paper, not like the panel: the page is white in both themes. */
   fill: #ffffff;
-  stroke: var(--ui-primary);
+  stroke: var(--ui-action);
   stroke-width: 1.5;
   vector-effect: non-scaling-stroke;
 }
@@ -72,12 +72,12 @@
 /* The turn grip and the stalk it stands on: the same grip as a corner, filled instead of hollow so
    it says it does something else. */
 .handles circle.turn {
-  fill: var(--ui-primary);
+  fill: var(--ui-action);
   stroke: #ffffff;
 }
 
 .stalk {
-  stroke: var(--ui-primary);
+  stroke: var(--ui-action);
   stroke-width: 1.5;
   vector-effect: non-scaling-stroke;
   pointer-events: none;
@@ -86,7 +86,7 @@
 /* The shape being dragged out, before it's committed. */
 .draft {
   fill: none;
-  stroke: var(--ui-primary);
+  stroke: var(--ui-action);
   stroke-width: 1.5;
   /* interface, not ink: a screen-width line while it's being dragged out */
   stroke-dasharray: 4 3;

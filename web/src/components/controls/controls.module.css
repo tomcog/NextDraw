@@ -195,7 +195,7 @@
    loudest thing in the row while nothing is about to happen.
 
    Naming --ui-danger rather than letting the hover fall through to
-   --ui-primary is the point - the two resolve to the same red today and would
+   --ui-action is the point - the two resolve to the same red today and would
    diverge the moment the app splits the roles. */
 .clearFile {
   --ui-button-round-bg-hover: var(--ui-danger);
@@ -246,13 +246,13 @@
 }
 
 .paperSwatch[aria-checked="true"] {
-  outline: 2px solid var(--ui-primary);
+  outline: 2px solid var(--ui-action);
   outline-offset: 2px;
 }
 
 .paperSwatch:focus-visible,
 .paperSwatch:has(input:focus-visible) {
-  outline: 2px solid var(--ui-primary);
+  outline: 2px solid var(--ui-action);
   outline-offset: 2px;
 }
 
@@ -319,7 +319,7 @@
 }
 
 .layerChip:disabled { cursor: default; opacity: 0.5; }
-.layerChip:focus-visible { outline: 2px solid var(--ui-primary); outline-offset: 2px; }
+.layerChip:focus-visible { outline: 2px solid var(--ui-action); outline-offset: 2px; }
 
 .layerChipDot {
   width: 8px;
@@ -418,13 +418,13 @@
 .slider input[type="range"]::-webkit-slider-runnable-track {
   height: 3px;
   border-radius: 2px;
-  background: linear-gradient(to right, var(--ui-primary) var(--fill), var(--ui-surface-muted) var(--fill));
+  background: linear-gradient(to right, var(--ui-action) var(--fill), var(--ui-surface-muted) var(--fill));
 }
 
 .slider input[type="range"]::-moz-range-track {
   height: 3px;
   border-radius: 2px;
-  background: linear-gradient(to right, var(--ui-primary) var(--fill), var(--ui-surface-muted) var(--fill));
+  background: linear-gradient(to right, var(--ui-action) var(--fill), var(--ui-surface-muted) var(--fill));
 }
 
 .slider input[type="range"]::-webkit-slider-thumb {
@@ -434,7 +434,7 @@
   margin-top: calc(-0.45rem + 1.5px);
   border-radius: 50%;
   background: var(--ui-surface-raised);
-  border: 3px solid var(--ui-primary);
+  border: 3px solid var(--ui-action);
 }
 
 .slider input[type="range"]::-moz-range-thumb {
@@ -442,7 +442,7 @@
   height: 0.55rem;
   border-radius: 50%;
   background: var(--ui-surface-raised);
-  border: 3px solid var(--ui-primary);
+  border: 3px solid var(--ui-action);
 }
 
 .slider input[type="range"]:disabled { opacity: 0.45; }

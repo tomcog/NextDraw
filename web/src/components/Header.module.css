@@ -36,7 +36,7 @@
 }
 
 /* Which app this is, in the brand colour: "NextDraw" is the family, the second word is the tool. */
-.titleApp { color: var(--ui-accent); }
+.titleApp { color: var(--ui-brand); }
 
 .status {
   gap: 0.45rem;

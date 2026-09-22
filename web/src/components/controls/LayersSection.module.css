@@ -69,7 +69,7 @@
 }
 
 /* The link button once the layers are linked: the glyph in Primary, on no fill. */
-.linkOn { --ui-button-round-ghost-icon: var(--ui-primary); }
+.linkOn { --ui-button-round-ghost-icon: var(--ui-action); }
 
 /* The chosen layer's hatch spacing, under the list. */
 .hatch { margin-top: 12px; }
