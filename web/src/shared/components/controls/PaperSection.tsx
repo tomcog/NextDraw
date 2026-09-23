@@ -3,6 +3,7 @@ import { ButtonRound, InputSelect, Segment, SegmentedControl } from "@tomcoggia/
 import { MoveHorizontal, MoveVertical, Palette, Pipette } from "lucide-react";
 import styles from "./controls.module.css";
 import { LengthField } from "./LengthField";
+import { UnitSwitch } from "./UnitSwitch";
 import { Section } from "./Section";
 import { PAPER_SIZES } from "../../lib/constants";
 import { fmtLen } from "../../lib/format";
@@ -77,12 +78,7 @@ export function PaperSection({ w, h, sizeId, units, color, collapsibleKey, disab
         <InputSelect size="md" label="Paper size" hideLabel value={sizeId} disabled={disabled} onChange={(e) => onSize(e.target.value)}>
           {PAPER_SIZES.map((p) => <option key={p.id} value={p.id}>{sizeName(p)}</option>)}
         </InputSelect>
-        {onUnits && (
-          <SegmentedControl size="sm" aria-label="Units">
-            <Segment selected={units === "in"} disabled={disabled} onClick={() => onUnits("in")}>in</Segment>
-            <Segment selected={units === "mm"} disabled={disabled} onClick={() => onUnits("mm")}>mm</Segment>
-          </SegmentedControl>
-        )}
+        {onUnits && <UnitSwitch units={units} disabled={disabled} onChange={onUnits} />}
         {/* The paper lies one way or the other, never both: a choice of two, like the toolbar's.
             A square sheet lies neither way, so neither is chosen. */}
         <SegmentedControl size="sm" variant="dark" aria-label="Which way the paper lies">
