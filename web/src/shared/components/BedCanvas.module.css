@@ -63,6 +63,12 @@
   font-weight: 500;
 }
 
+/* The pill a measurement sits in, in the page's own background: it hides the line under the words. */
+.dimPill {
+  fill: var(--ui-surface-pale);
+  stroke: none;
+}
+
 .dim .axisLabel {
   letter-spacing: 0.05em;
   fill: var(--ui-text-faint);

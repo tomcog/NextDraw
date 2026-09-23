@@ -35,7 +35,8 @@ interface Props {
  * the page is looked at.
  *
  * Three SegmentedControls, as the mock draws them, each keeping the library's own grey well against
- * the white bar. Nothing here overrides the components.
+ * the white bar. Nothing here overrides the components. Icons only: what each does is in its
+ * tooltip and read out by name, and the bar leaves more of the line for the measurement.
  *
  * The history pair takes the control's `actions` mode: undo and redo are things you do, never a
  * choice one of which holds, so the track is a group of plain buttons rather than a radiogroup.
@@ -52,17 +53,15 @@ export function PreviewToolbar({ view, onView, canProgress, zoom, onZoom, canPap
               title="Undo the last change"
               disabled={disabled || !history.canUndo}
               onClick={history.onUndo}
-            >
-              Undo
-            </Segment>
+              aria-label="Undo"
+            />
             <Segment
               icon={<Redo2 />}
               title="Redo the change just undone"
               disabled={disabled || !history.canRedo}
               onClick={history.onRedo}
-            >
-              Redo
-            </Segment>
+              aria-label="Redo"
+            />
           </SegmentedControl>
         )}
 
@@ -72,17 +71,15 @@ export function PreviewToolbar({ view, onView, canProgress, zoom, onZoom, canPap
             onClick={() => onView("outline")}
             icon={<EyeDashed />}
             title="Outline: every path as a thin line in its layer's colour - the paths themselves, quick to draw however many there are"
-          >
-            Outline
-          </Segment>
+            aria-label="Outline"
+          />
           <Segment
             selected={view === "preview"}
             onClick={() => onView("preview")}
             icon={<Eye />}
             title="Preview: the ink - each tool's real width, how solid it is and how it darkens where strokes cross. Slow on a very large drawing"
-          >
-            Preview
-          </Segment>
+            aria-label="Preview"
+          />
           {canProgress !== undefined && (
             <Segment
               selected={view === "progress"}
@@ -90,9 +87,8 @@ export function PreviewToolbar({ view, onView, canProgress, zoom, onZoom, canPap
               onClick={() => onView("progress")}
               icon={<Route />}
               title="Progress: what's left to draw - lines already drawn turn green"
-            >
-              Progress
-            </Segment>
+              aria-label="Progress"
+            />
           )}
         </SegmentedControl>
 
@@ -102,27 +98,24 @@ export function PreviewToolbar({ view, onView, canProgress, zoom, onZoom, canPap
             onClick={() => onZoom("plotter")}
             icon={<Grid3x3 />}
             title="Zoom out to the plotter's full drawing area"
-          >
-            Plotter
-          </Segment>
+            aria-label="Plotter"
+          />
           <Segment
             selected={zoom === "paper"}
             disabled={!canPaper}
             onClick={() => onZoom("paper")}
             icon={<StickyNote />}
             title="Zoom to the paper"
-          >
-            Paper
-          </Segment>
+            aria-label="Paper"
+          />
           <Segment
             selected={zoom === "drawing"}
             disabled={!canDrawing}
             onClick={() => onZoom("drawing")}
             icon={<ImageIcon />}
             title="Zoom to the drawing"
-          >
-            Drawing
-          </Segment>
+            aria-label="Drawing"
+          />
         </SegmentedControl>
       </Toolbar>
       {working && (

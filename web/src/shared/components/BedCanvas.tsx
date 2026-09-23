@@ -1,4 +1,4 @@
-import { useEffect, useImperativeHandle, useRef, useState, type CSSProperties, type ReactNode, type Ref } from "react";
+import { useEffect, useImperativeHandle, useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode, type Ref } from "react";
 import styles from "./BedCanvas.module.css";
 import { MM, UNITS } from "../lib/constants";
 import { fmtIn } from "../lib/format";
@@ -73,6 +73,33 @@ export function fit(box: Box) {
   };
 }
 
+/**
+ * A measurement, centred on its dimension line the way the toolbar is: in a pill of the page's own
+ * background, so the line stops either side of it and only the words show. Sized to the words, which
+ * are measured once drawn - the number and the unit change, and a guessed width would either clip
+ * them or leave the line broken for nothing. `upright` turns it to run up the height line.
+ */
+function DimLabel({ x, y, font, upright, children }: { x: number; y: number; font: number; upright?: boolean; children: string }) {
+  const textRef = useRef<SVGTextElement | null>(null);
+  const [size, setSize] = useState({ w: 0, h: 0 });
+  useLayoutEffect(() => {
+    const box = textRef.current?.getBBox();
+    if (box) setSize({ w: box.width, h: box.height });
+  }, [children, font]);
+  const padX = font * 0.6;
+  const padY = font * 0.25;
+  const w = size.w + padX * 2;
+  const h = size.h + padY * 2;
+  return (
+    <g transform={`translate(${x} ${y})${upright ? " rotate(-90)" : ""}`}>
+      {size.w > 0 && <rect className={styles.dimPill} x={-w / 2} y={-h / 2} width={w} height={h} rx={h / 2} />}
+      <text ref={textRef} className={styles.axisLabel} x={0} y={0} textAnchor="middle" dominantBaseline="central" fontSize={font}>
+        {children}
+      </text>
+    </g>
+  );
+}
+
 export function BedCanvas(props: Props) {
   const { model, settings: s, zoom, drawingBox } = props;
   const ownRef = useRef<SVGSVGElement>(null);
@@ -108,7 +135,9 @@ export function BedCanvas(props: Props) {
     if (toolsRef.current) watch.observe(toolsRef.current);
     if (ownRef.current) watch.observe(ownRef.current);
     return () => watch.disconnect();
-  }, []);
+    // Again once the plotter is known: until then there's no bed and no bar to measure, and a
+    // measurement taken then left the label placed as if the bar weren't there.
+  }, [Boolean(model), Boolean(props.toolbarLeft)]); // eslint-disable-line react-hooks/exhaustive-deps
 
   if (!model) return <div className={styles.wrap} />;
 
@@ -156,12 +185,13 @@ export function BedCanvas(props: Props) {
   } as CSSProperties;
 
   // What the toolbar occupies, in the bed's own units, and the middle of what is left beside it.
-  // With no room to speak of - a narrow window, a very wide bar - it falls back to the line's
-  // middle rather than being squeezed against the end tick.
+  // Only with no room for the label there - a narrow window, a very wide bar - does it fall back to
+  // the line's middle. Judged by the label's own size ("34.02 in" is about four and a half of its
+  // font sizes across), not by a share of the line: a long bar left a fifth of the line or less,
+  // plenty for the label, and the fallback put it under the bar.
   const toolsEnd = widths.bed > 0 ? vx + widths.tools * (vw / widths.bed) : dimX0;
   const beside = dimX1 - toolsEnd;
-  const widthLabelX =
-    beside > (dimX1 - dimX0) * 0.2 ? dimX1 - beside / 2 : (dimX0 + dimX1) / 2;
+  const widthLabelX = beside > labelFont * 6 ? dimX1 - beside / 2 : (dimX0 + dimX1) / 2;
 
   const gridLines = (count: number, axis: "x" | "y") =>
     Array.from({ length: Math.max(0, Math.ceil(count) - 1) }, (_, i) =>
@@ -223,22 +253,11 @@ export function BedCanvas(props: Props) {
           <line x1={dimX0} y1={dy} x2={dimX1} y2={dy} />
           <line x1={dimX0} y1={dy - tick} x2={dimX0} y2={dy + tick} />
           <line x1={dimX1} y1={dy - tick} x2={dimX1} y2={dy + tick} />
-          <text className={styles.axisLabel} x={widthLabelX} y={dy - tick * 0.25} textAnchor="middle" fontSize={labelFont}>
-            {fmtIn((dimX1 - dimX0) / UNITS)}
-          </text>
+          <DimLabel x={widthLabelX} y={dy} font={labelFont}>{fmtIn((dimX1 - dimX0) / UNITS)}</DimLabel>
           <line x1={dx} y1={dimY0} x2={dx} y2={dimY1} />
           <line x1={dx - tick} y1={dimY0} x2={dx + tick} y2={dimY0} />
           <line x1={dx - tick} y1={dimY1} x2={dx + tick} y2={dimY1} />
-          <text
-            className={styles.axisLabel}
-            x={dx - tick * 0.9}
-            y={(dimY0 + dimY1) / 2}
-            textAnchor="middle"
-            fontSize={labelFont}
-            transform={`rotate(-90 ${dx - tick * 0.9} ${(dimY0 + dimY1) / 2})`}
-          >
-            {fmtIn((dimY1 - dimY0) / UNITS)}
-          </text>
+          <DimLabel x={dx} y={(dimY0 + dimY1) / 2} font={labelFont} upright>{fmtIn((dimY1 - dimY0) / UNITS)}</DimLabel>
         </g>
 
         {typeof props.children === "function" ? props.children({ mark: font, viewBox }) : props.children}
