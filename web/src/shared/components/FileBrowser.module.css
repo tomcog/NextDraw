@@ -130,8 +130,40 @@
 
 .footer {
   display: flex;
+  flex-wrap: wrap;
   justify-content: flex-end;
+  align-items: center;
+  gap: 0.5rem;
   padding: 0.75rem 1.25rem;
+}
+
+/* How many are ticked, at the start of the row the actions for them end. */
+.ticked {
+  margin-right: auto;
+  font-size: 0.8125rem;
+  color: var(--ui-text-muted);
+}
+
+.hint {
+  margin: 0;
+  font-size: 0.8125rem;
+  color: var(--ui-text-muted);
+}
+
+/* A file's box to tick sits before its row, outside it: the row opens the file, the box doesn't. */
+.tickable {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding-left: 0.5rem;
+}
+
+.tickable > .row { flex: 1; min-width: 0; }
+
+/* A ticked file says which layer it will be. */
+.meta[data-layer] {
+  color: var(--ui-brand);
+  font-weight: 500;
 }
 
 @media (max-width: 600px) {

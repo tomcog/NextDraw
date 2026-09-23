@@ -1,7 +1,7 @@
 import { useRef, useState } from "react";
 import { ToolPicker } from "../../../shared/components/controls/ToolPicker";
 import { Button, ButtonRound, Checkbox, InputText } from "@tomcoggia/ui";
-import { CirclePlus, Palette, X } from "lucide-react";
+import { CirclePlus, Palette, SlidersHorizontal, X } from "lucide-react";
 import styles from "../../../shared/components/controls/controls.module.css";
 import { Section } from "../../../shared/components/controls/Section";
 import { Slider } from "./Slider";
@@ -24,6 +24,8 @@ interface Props {
   onRemoveSecond: () => void;
   onAssign: (id: string, second: boolean) => void;
   paletteOpen: boolean; // the palette view stands in for the drawing preview
+  hudOpen: boolean; // the tool's settings are showing over the preview, for setting it up
+  onHud: () => void;
   onPalette: () => void;
   onInk: (patch: { ink_opacity?: number; ink_build?: number }) => void;
   smallPaths: number | null; // percent slower, or null when off
@@ -44,7 +46,7 @@ const SHOW_INK_TUNING = false;
 export function PresetSection({
   presets, active, changed, disabled, onApply, onSave, onDelete,
   secondTool, secondLayers, layers, inUse, onAddSecond, onSecondTool, onRemoveSecond, onAssign,
-  smallPaths, onSmallPaths, tiltOn, onTilt, dragOn, onDrag, paletteOpen, onPalette, onInk,
+  smallPaths, onSmallPaths, tiltOn, onTilt, dragOn, onDrag, paletteOpen, onPalette, hudOpen, onHud, onInk,
 }: Props) {
   // A tool used at more than one angle keeps its switch. The label gives the angle to set.
   const tiltSwitch = (tool: Preset | undefined) => tool?.tilt && !tool.tilt.fixed && (
@@ -108,6 +110,19 @@ export function PresetSection({
       title="Drawing tool"
       collapsibleKey="plot-pen"
       action={
+        <span className={styles.headerTools}>
+          {/* Setting a tool up: its heights, speeds and offsets over the preview, to change while
+              watching a test. Put away the rest of the time - plotting with a tool needs none of it. */}
+          <ButtonRound
+            size="sm"
+            icon={<SlidersHorizontal />}
+            className={hudOpen ? styles.roundActive : undefined}
+            aria-label={`${hudOpen ? "Hide" : "Show"} the drawing tool's settings`}
+            aria-pressed={hudOpen}
+            title={hudOpen ? "Hide the tool's settings" : "Set up the tool: its heights, speeds and offsets, over the preview"}
+            disabled={!presets.length}
+            onClick={onHud}
+          />
           <ButtonRound
             size="sm"
             icon={<Palette />}
@@ -118,6 +133,7 @@ export function PresetSection({
             disabled={!presets.length}
             onClick={onPalette}
           />
+        </span>
       }
     >
       <div className={styles.toolBlock} data-in-use={inUse === "first"}>

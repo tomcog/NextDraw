@@ -349,6 +349,10 @@ export default function App() {
   // the file, so a drawing always opens in it - or Preview, the ink at each tool's width, which is
   // asked for. The same choice Studio offers, from the same bar; Progress is Plot's alone.
   const [view, setView] = useState<View>("outline");
+  // The tool's settings over the preview are for setting a tool up, not for plotting with one, so
+  // they're hidden until asked for from the Drawing tool card - and stay asked for until put away.
+  const [hudOpen, setHudOpen] = useState(() => load<boolean>(STORAGE.hudOpen) ?? false);
+  useEffect(() => save(STORAGE.hudOpen, hudOpen), [hudOpen]);
   const [zoomChoice, setZoomChoice] = useState<Zoom>(() => load<Zoom>(STORAGE.zoom) ?? "plotter");
   useEffect(() => save(STORAGE.zoom, zoomChoice), [zoomChoice]);
 
@@ -1259,7 +1263,21 @@ export default function App() {
   return (
     <div className={styles.app}>
       <Hints />
-      <FileBrowser open={browserOpen} onClose={() => setBrowserOpen(false)} onOpened={onOpened} />
+      <FileBrowser
+        open={browserOpen}
+        onClose={() => setBrowserOpen(false)}
+        onOpened={onOpened}
+        // Files ticked in the browser open as one drawing, a layer each, or go on top of this one.
+        // The server saves the result and opens it, so it arrives like any other opened drawing.
+        combine={{
+          endpoint: "/api/combine",
+          canAdd: Boolean(fileName),
+          onCombined: (res) => {
+            refs.current.opened = res.opened;
+            startNewDrawing(res.name, res.plot ?? null);
+          },
+        }}
+      />
       <Header plotterFound={Boolean(status?.plotter_found)} lostContact={lostContact} />
 
       <main className={styles.layout}>
@@ -1324,7 +1342,7 @@ export default function App() {
               }
             />
             )}
-            {!paletteOpen && (
+            {!paletteOpen && hudOpen && (
               <SettingsHud
                 settings={plotSettings}
                 handling={info?.handling ?? []}
@@ -1468,6 +1486,8 @@ export default function App() {
                   dragOn={dragOn}
                   onDrag={(name, on) => setDragChoice((c) => ({ ...c, [name]: on }))}
                   paletteOpen={paletteOpen}
+                  hudOpen={hudOpen}
+                  onHud={() => setHudOpen((open) => !open)}
                   onPalette={() => setPaletteOpen((open) => !open)}
                   onInk={setInk}
                   changed={presetChanged}

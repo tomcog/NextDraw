@@ -1,6 +1,6 @@
 import type { Plot } from "../lib/types";
 import { useEffect, useRef, useState } from "react";
-import { Button, ButtonRound, InputText, Segment, SegmentedControl, Spinner } from "@tomcoggia/ui";
+import { Button, ButtonRound, Checkbox, InputText, Segment, SegmentedControl, Spinner } from "@tomcoggia/ui";
 import { ArrowUp, FileImage, Folder, FolderPlus, PenTool, X } from "lucide-react";
 import styles from "./FileBrowser.module.css";
 import { api, postJSON } from "../lib/api";
@@ -34,12 +34,36 @@ export interface OpenResult {
   opened?: string; // which opening this is, to tell it from any other load of the same file
 }
 
+/** Several files stacked into one drawing, a layer each (the server's combine routes). */
+export interface CombineResult extends Omit<OpenResult, "path"> {
+  path?: string; // Plot's: the combined file it saved and opened. Studio's isn't saved yet.
+  folder_path?: string; // Studio's: where it would be saved, next to the first file
+  /** Files whose page isn't the size of the first's: they will need lining up, in Studio. */
+  mismatched: string[];
+  /** Whether the files went on top of the drawing that was open, rather than starting a new one. */
+  added: boolean;
+}
+
+/**
+ * Ticking files to stack them as layers. Given, each file gets a box to tick, and the ticked ones
+ * open as one drawing or go on top of the drawing that's open. Left out, the browser opens one file.
+ */
+export interface Combine {
+  endpoint: string;
+  /** A drawing is open, so there is something to add layers to. */
+  canAdd: boolean;
+  /** Studio: the drawing it has open, as its SVG, for the files to go on top of. Plot's is on the server. */
+  base?: () => string;
+  onCombined: (result: CombineResult) => void;
+}
+
 interface Props {
   open: boolean;
   onClose: () => void;
   onOpened: (result: OpenResult) => void;
   /** What picking a file means. Plot loads it; Studio reads it for editing. */
   endpoint?: string;
+  combine?: Combine;
 }
 
 // Where the browser opens, in both apps: the last folder browsed, or the folder of the drawing last
@@ -53,12 +77,16 @@ const fmtDate = (seconds = 0) =>
   new Date(seconds * 1000).toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
 
 // Browse the folders the server allows and open an SVG, or import an Illustrator file as SVG.
-export function FileBrowser({ open, onClose, onOpened, endpoint = "/api/open" }: Props) {
+export function FileBrowser({ open, onClose, onOpened, endpoint = "/api/open", combine }: Props) {
   const dialog = useRef<HTMLDialogElement>(null);
   const [listing, setListing] = useState<Listing | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [working, setWorking] = useState<string | null>(null); // what's happening, while busy
   const [choice, setChoice] = useState<{ file: Entry; svgName: string } | null>(null);
+  // Ticked files, in the order they were ticked: the first is the bottom layer, as it plots first.
+  // Kept by path, so files from more than one folder can go into one drawing.
+  const [ticked, setTicked] = useState<Entry[]>([]);
+  const [stackChoice, setStackChoice] = useState<{ add: boolean; svgNames: string[] } | null>(null);
   const [adding, setAdding] = useState(false); // the "add a folder" row is open
   const [newFolder, setNewFolder] = useState("");
 
@@ -81,6 +109,8 @@ export function FileBrowser({ open, onClose, onOpened, endpoint = "/api/open" }:
     if (open && !el.open) {
       el.showModal();
       setChoice(null);
+      setStackChoice(null);
+      setTicked([]);
       setWorking(null);
       browse(load<string>(LAST_FOLDER_KEY) ?? undefined);
     } else if (!open && el.open) {
@@ -153,10 +183,48 @@ export function FileBrowser({ open, onClose, onOpened, endpoint = "/api/open" }:
     }
   };
 
+  const tick = (file: Entry, on: boolean) =>
+    setTicked((list) => (on ? [...list, file] : list.filter((f) => f.path !== file.path)));
+
+  const stack = async (add: boolean, mode?: "existing" | "import") => {
+    if (!combine || !ticked.length) return;
+    setError(null);
+    setStackChoice(null);
+    const importing = mode !== "existing" && ticked.some((f) => f.kind === "ai");
+    const what = ticked.length === 1 ? ticked[0].name : `${ticked.length} files`;
+    setWorking(importing
+      ? `Importing from Illustrator… This can take a few seconds a file.`
+      : add ? `Adding ${what} as ${ticked.length === 1 ? "a layer" : "layers"}…` : `Opening ${what} as layers…`);
+    try {
+      type Answer = Omit<CombineResult, "added"> & { choice?: boolean; svg_names?: string[] };
+      const res = await postJSON<Answer>(combine.endpoint, {
+        paths: ticked.map((f) => f.path),
+        mode,
+        add,
+        ...(add && combine.base ? { base: combine.base() } : {}),
+      });
+      if (res.choice) {
+        setStackChoice({ add, svgNames: res.svg_names ?? [] });
+        return;
+      }
+      combine.onCombined({ ...res, mismatched: res.mismatched ?? [], added: add });
+      onClose();
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setWorking(null);
+    }
+  };
+
   return (
     <dialog ref={dialog} className={styles.dialog} onClose={onClose} onCancel={(e) => { if (working) e.preventDefault(); }}>
       <div className={styles.header}>
         <h2 className={styles.title}>Open drawing</h2>
+        {combine && (
+          <p className={styles.hint}>
+            Tick files to stack them as layers, one layer each, in the order they're ticked: the first is layer 1 and plots first.
+          </p>
+        )}
         {listing && (
           <div className={styles.roots}>
             <SegmentedControl size="sm" aria-label="Folder">
@@ -231,7 +299,17 @@ export function FileBrowser({ open, onClose, onOpened, endpoint = "/api/open" }:
 
       {error && <p className={styles.error} role="alert">{error}</p>}
 
-      {choice ? (
+      {stackChoice ? (
+        <div className={styles.panel}>
+          <p>{`${stackChoice.svgNames.join(", ")} already ${stackChoice.svgNames.length === 1 ? "exists" : "exist"} next to ${stackChoice.svgNames.length === 1 ? "its Illustrator file" : "their Illustrator files"}.`}</p>
+          <p className={styles.muted}>Use them to keep the changes saved in them, or import again if you’ve changed the artwork in Illustrator.</p>
+          <div className={styles.buttons}>
+            <Button size="md" variant="ghost" onClick={() => setStackChoice(null)}>Back</Button>
+            <Button size="md" variant="secondary" onClick={() => stack(stackChoice.add, "import")}>Import again</Button>
+            <Button size="md" variant="primary" autoFocus onClick={() => stack(stackChoice.add, "existing")}>Use existing</Button>
+          </div>
+        </div>
+      ) : choice ? (
         <div className={styles.panel}>
           <p>{`${choice.svgName} already exists next to ${choice.file.name}.`}</p>
           <p className={styles.muted}>Open it to keep the changes saved in it, or import again if you’ve changed the artwork in Illustrator.</p>
@@ -256,20 +334,32 @@ export function FileBrowser({ open, onClose, onOpened, endpoint = "/api/open" }:
               </button>
             </li>
           ))}
-          {listing?.files.map((file) => (
-            <li key={file.path}>
+          {listing?.files.map((file) => {
+            const at = ticked.findIndex((f) => f.path === file.path);
+            return (
+            <li key={file.path} className={combine ? styles.tickable : undefined}>
+              {combine && (
+                <Checkbox
+                  size="md"
+                  label={`Stack ${file.name} as a layer`}
+                  hideLabel
+                  checked={at >= 0}
+                  onChange={(e) => tick(file, e.target.checked)}
+                />
+              )}
               <button type="button" className={styles.row} onClick={() => openFile(file)}>
                 {file.kind === "ai"
                   ? <PenTool className={styles.icon} aria-hidden="true" />
                   : <FileImage className={styles.icon} aria-hidden="true" />}
                 <span className={styles.name}>{file.name}</span>
-                <span className={styles.meta}>
-                  {file.kind === "ai" ? "Illustrator, imports as SVG" : "SVG"}
+                <span className={styles.meta} data-layer={at >= 0 || undefined}>
+                  {at >= 0 ? `Layer ${at + 1}` : file.kind === "ai" ? "Illustrator, imports as SVG" : "SVG"}
                 </span>
                 <span className={styles.meta}>{`${fmtSize(file.size)}, ${fmtDate(file.modified)}`}</span>
               </button>
             </li>
-          ))}
+            );
+          })}
           {listing && !listing.folders.length && !listing.files.length && (
             <li className={styles.empty}>No SVG or Illustrator files in this folder.</li>
           )}
@@ -277,6 +367,35 @@ export function FileBrowser({ open, onClose, onOpened, endpoint = "/api/open" }:
       )}
 
       <div className={styles.footer}>
+        {combine && ticked.length > 0 && (
+          <>
+            <span className={styles.ticked}>
+              {ticked.length === 1 ? "1 file ticked" : `${ticked.length} files ticked`}
+            </span>
+            <Button size="md" variant="ghost" disabled={Boolean(working)} onClick={() => setTicked([])}>Clear</Button>
+            {combine.canAdd && (
+              <Button
+                size="md"
+                variant="secondary"
+                disabled={Boolean(working)}
+                title="Put the ticked files on top of the drawing that's open, a layer each"
+                onClick={() => stack(true)}
+              >
+                {ticked.length === 1 ? "Add as layer" : "Add as layers"}
+              </Button>
+            )}
+            {/* One file is simply opened: it is already a drawing of one layer. */}
+            <Button
+              size="md"
+              variant="primary"
+              disabled={Boolean(working) || ticked.length < 2}
+              title={ticked.length < 2 ? "Tick another file to stack them" : "Open the ticked files as one drawing, a layer each"}
+              onClick={() => stack(false)}
+            >
+              Open as layers
+            </Button>
+          </>
+        )}
         <Button size="md" variant="ghost" disabled={Boolean(working)} onClick={onClose}>Cancel</Button>
       </div>
     </dialog>
