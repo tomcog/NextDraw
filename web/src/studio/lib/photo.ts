@@ -21,6 +21,30 @@ export interface Photo {
   /** How many passes of lines build up the darks, 1 to 4: two directions, then each again between. */
   levels: number;
   /**
+   * What the tone is drawn as: hatching, lines crossing and filling in as it darkens; or tone lines,
+   * one line along each row that waves harder and tighter where it's darker. Absent, hatching.
+   */
+  style?: "hatch" | "waves";
+  /** Tone lines: how far apart the rows are, in mm. */
+  rowMm?: number;
+  /** Tone lines: the length of one wave where the photo is darkest, in mm. Lighter tones stretch it. */
+  waveMm?: number;
+  /**
+   * Split by colour: the photo's colours gathered into groups of similar colours, `regions`, each
+   * the average colour of its group. This layer draws group number `region`'s area, in its pen, `ink`
+   * - the palette's nearest to that group, or whichever pen its layer has been given since. Absent,
+   * the photo is read by its lightness alone, as black and white.
+   */
+  ink?: string;
+  regions?: string[];
+  region?: number;
+  /**
+   * How far this layer's lines are shifted from where the photo puts them, in mm across and down:
+   * to bring one layer into register with another, or to set it deliberately out of register. Each
+   * layer's own; the photo and the other layers stay where they are.
+   */
+  offsetMm?: [number, number];
+  /**
    * A photo split into tone bands is several photo shapes, one per band, each on a layer of its own:
    * the same picture in the same place, each drawing only the part of it whose tone is in its band.
    * They share this, so they move and size as one photo.
@@ -77,12 +101,20 @@ export const BAND_NAMES: Record<number, string[]> = {
   2: ["light", "dark"],
   3: ["light", "mid", "dark"],
   4: ["lightest", "light", "dark", "darkest"],
+  5: ["lightest", "light", "mid", "dark", "darkest"],
+  6: ["lightest", "lighter", "light", "dark", "darker", "darkest"],
 };
+
+/** The most layers a photo is split into, by tone or by ink. */
+export const MOST_LAYERS = 6;
 
 /** The longer side of the working copy, in pixels: enough for lines a pen width apart across a big sheet. */
 export const WORKING_EDGE = 1600;
 
 export const PHOTO_DEFAULTS = { brightness: 0, contrast: 0, angle: 45, levels: 4 };
+
+/** What tone lines start from: rows a couple of millimetres apart, waves a millimetre long at black. */
+export const WAVE_DEFAULTS = { rowMm: 2, waveMm: 1 };
 
 // ---------- Reading the photo ----------
 
@@ -91,6 +123,8 @@ interface Tones {
   h: number;
   /** Lightness of each pixel, 0 black to 1 white, row by row. */
   light: Float32Array;
+  /** The pixels themselves, red, green, blue and alpha, for splitting by colour. */
+  rgba: Uint8ClampedArray;
 }
 
 const tonesCache = new Map<string, Tones>();
@@ -106,20 +140,20 @@ export function readTones(src: string): Promise<Tones> {
   const pending = reading.get(src);
   if (pending) return pending;
   const job = (async () => {
-    const img = new Image();
-    img.src = src;
-    await img.decode();
+    // Decoded as a bitmap, away from the page: quicker, and it doesn't wait on the tab being in view.
+    const bitmap = await createImageBitmap(await (await fetch(src)).blob());
     const canvas = document.createElement("canvas");
-    canvas.width = img.naturalWidth;
-    canvas.height = img.naturalHeight;
+    canvas.width = bitmap.width;
+    canvas.height = bitmap.height;
     const ctx = canvas.getContext("2d", { willReadFrequently: true })!;
-    ctx.drawImage(img, 0, 0);
+    ctx.drawImage(bitmap, 0, 0);
+    bitmap.close();
     const { data } = ctx.getImageData(0, 0, canvas.width, canvas.height);
     const light = new Float32Array(canvas.width * canvas.height);
     for (let i = 0, p = 0; p < light.length; i += 4, p++) {
       light[p] = (0.2126 * data[i] + 0.7152 * data[i + 1] + 0.0722 * data[i + 2]) / 255;
     }
-    const tones = { w: canvas.width, h: canvas.height, light };
+    const tones = { w: canvas.width, h: canvas.height, light, rgba: data };
     tonesCache.set(src, tones);
     reading.delete(src);
     return tones;
@@ -134,18 +168,16 @@ export function readTones(src: string): Promise<Tones> {
  * to show when the browser can't read the file - an iPhone's HEIC, in most of them.
  */
 export async function workingCopy(file: File): Promise<Pick<Photo, "src" | "width" | "height">> {
-  const url = URL.createObjectURL(file);
+  let img: ImageBitmap;
   try {
-    const img = new Image();
-    img.src = url;
-    try {
-      await img.decode();
-    } catch {
-      throw new Error(`${file.name} is a kind of picture this browser can’t read. Save it as a JPEG or PNG and add that.`);
-    }
-    const scale = Math.min(1, WORKING_EDGE / Math.max(img.naturalWidth, img.naturalHeight));
-    const width = Math.max(1, Math.round(img.naturalWidth * scale));
-    const height = Math.max(1, Math.round(img.naturalHeight * scale));
+    img = await createImageBitmap(file);
+  } catch {
+    throw new Error(`${file.name} is a kind of picture this browser can’t read. Save it as a JPEG or PNG and add that.`);
+  }
+  try {
+    const scale = Math.min(1, WORKING_EDGE / Math.max(img.width, img.height));
+    const width = Math.max(1, Math.round(img.width * scale));
+    const height = Math.max(1, Math.round(img.height * scale));
     const canvas = document.createElement("canvas");
     canvas.width = width;
     canvas.height = height;
@@ -155,7 +187,7 @@ export async function workingCopy(file: File): Promise<Pick<Photo, "src" | "widt
     ctx.drawImage(img, 0, 0, width, height);
     return { src: canvas.toDataURL("image/jpeg", 0.85), width, height };
   } finally {
-    URL.revokeObjectURL(url);
+    img.close();
   }
 }
 
@@ -177,10 +209,10 @@ const marksCache = new Map<string, PhotoMarks>();
 export function photoMarks(photo: Photo, w: number, h: number): PhotoMarks | null {
   const tones = tonesOf(photo.src);
   if (!tones || w <= 0 || h <= 0) return null;
-  const key = [photo.src.length, photo.src.slice(-32), w.toFixed(4), h.toFixed(4), photo.brightness, photo.contrast, photo.angle, photo.spacingMm, photo.levels, photo.band?.join(",") ?? "", photo.crop?.join(",") ?? "", photo.bleed ?? 0].join("|");
+  const key = [photo.src.length, photo.src.slice(-32), w.toFixed(4), h.toFixed(4), photo.brightness, photo.contrast, photo.angle, photo.spacingMm, photo.levels, photo.band?.join(",") ?? "", photo.crop?.join(",") ?? "", photo.bleed ?? 0, photo.style ?? "hatch", photo.rowMm ?? "", photo.waveMm ?? "", photo.ink ?? "", photo.regions?.join(",") ?? "", photo.region ?? ""].join("|");
   const known = marksCache.get(key);
   if (known) return known;
-  const made = hatch(tones, photo, w, h);
+  const made = photo.style === "waves" ? waves(tones, photo, w, h) : hatch(tones, photo, w, h);
   if (marksCache.size > 24) marksCache.delete(marksCache.keys().next().value!);
   marksCache.set(key, made);
   return made;
@@ -203,6 +235,313 @@ function darknessAt(tones: Tones, u: number, v: number, lift: number, gain: numb
   return 1 - Math.min(1, Math.max(0, light));
 }
 
+// ---------- Splitting by colour ----------
+
+/** Light let through by an sRGB channel value, 0 to 255: what multiplies when inks are layered. */
+const linear = (v: number) => {
+  const c = Math.min(1, Math.max(0, v / 255));
+  return c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
+};
+
+/**
+ * How much light a channel value stops: its optical density, which adds as inks are layered. Held
+ * to where an ink reads as solid - past about a tenth of the light through, more density is nothing
+ * the eye sees, and left unheld a yellow's near-empty blue would count for more than all the rest.
+ */
+const MAX_DENSITY = 2.3;
+const density = (v: number) => Math.min(MAX_DENSITY, -Math.log(Math.max(1e-3, linear(v))));
+
+/** An ink's density in each channel. */
+const densityOf = (hex: string): [number, number, number] => {
+  const n = parseInt(hex.replace("#", "").padEnd(6, "0").slice(0, 6), 16);
+  return [(n >> 16) & 255, (n >> 8) & 255, n & 255].map(density) as [number, number, number];
+};
+
+/** The longer side the photo's colour areas are worked out at: finer than any pen, and quick to redo. */
+const COVER_EDGE = 800;
+
+/** sRGB to CIELAB, where a distance is near enough how different two colours look. */
+function lab(r: number, g: number, b: number): [number, number, number] {
+  const [R, G, B] = [linear(r), linear(g), linear(b)];
+  const x = (0.4124 * R + 0.3576 * G + 0.1805 * B) / 0.9505;
+  const y = 0.2126 * R + 0.7152 * G + 0.0722 * B;
+  const z = (0.0193 * R + 0.1192 * G + 0.9505 * B) / 1.089;
+  const f = (t: number) => (t > 0.008856 ? Math.cbrt(t) : 7.787 * t + 16 / 116);
+  return [116 * f(y) - 16, 500 * (f(x) - f(y)), 200 * (f(y) - f(z))];
+}
+const hexLab = (hex: string) => {
+  const n = parseInt(hex.replace("#", "").padEnd(6, "0").slice(0, 6), 16);
+  return lab((n >> 16) & 255, (n >> 8) & 255, n & 255);
+};
+const dist2 = (a: number[], b: number[]) => (a[0] - b[0]) ** 2 + (a[1] - b[1]) ** 2 + (a[2] - b[2]) ** 2;
+const toHex = (rgb: number[]) => `#${rgb.map((v) => Math.round(Math.min(255, Math.max(0, v))).toString(16).padStart(2, "0")).join("")}`;
+
+/** Brightness and contrast, applied to a channel value 0 to 255. */
+const adjuster = (brightness: number, contrast: number) => {
+  const lift = brightness / 200;
+  const c = Math.max(-99, Math.min(99, contrast)) / 100;
+  const gain = c >= 0 ? 1 / (1 - c) : 1 + c;
+  return (v: number) => Math.min(255, Math.max(0, ((v / 255 - 0.5) * gain + 0.5 + lift) * 255));
+};
+
+/**
+ * Whether a photo is in colour to speak of: enough of it far enough from grey. A black and white
+ * photo - or a colour one that's nearly so - is split by value; one in colour, by its colours.
+ */
+export function isColourful(src: string): boolean {
+  const tones = tonesOf(src);
+  if (!tones) return false;
+  const total = tones.w * tones.h;
+  let coloured = 0;
+  const probes = 2000;
+  for (let i = 0; i < probes; i++) {
+    const p = Math.floor((((i * 2654435761) % 4294967296) / 4294967296) * total) * 4;
+    const [, a, b] = lab(tones.rgba[p], tones.rgba[p + 1], tones.rgba[p + 2]);
+    if (Math.hypot(a, b) > 20) coloured++;
+  }
+  return coloured > probes * 0.1;
+}
+
+/** The darkest colour of a photo to speak of - a dark shade, not its one blackest pixel - as a hex. */
+export function darkestOf(src: string): string {
+  const tones = tonesOf(src);
+  if (!tones) return "#000000";
+  const total = tones.w * tones.h;
+  const picks: { l: number; p: number }[] = [];
+  for (let i = 0; i < 2000; i++) {
+    const p = Math.floor((((i * 2654435761) % 4294967296) / 4294967296) * total) * 4;
+    picks.push({ l: tones.light[p / 4], p });
+  }
+  picks.sort((a, b) => a.l - b.l);
+  const dark = picks.slice(0, Math.max(1, Math.round(picks.length * 0.05)));
+  const avg = [0, 1, 2].map((ch) => dark.reduce((sum, d) => sum + tones.rgba[d.p + ch], 0) / dark.length);
+  return toHex(avg);
+}
+
+/** Lighter than this, a colour group is the paper showing, and gets no layer of its own. */
+const PAPER_LIGHTNESS = 92;
+
+/**
+ * The photo's colours gathered into this many groups of similar colours: each group's average
+ * colour, lightest first, leaving out any group so light it's the paper. Gathered from a scattering
+ * of the photo's pixels, the way a painter mixes a limited palette from a scene: start from colours
+ * far apart, then settle each group on the average of what's nearest it, a few times over.
+ */
+export function colourGroups(src: string, count: number, brightness: number, contrast: number): string[] {
+  const tones = tonesOf(src);
+  if (!tones) return [];
+  const adjust = adjuster(brightness, contrast);
+  const total = tones.w * tones.h;
+  const pixels: { rgb: number[]; lab: [number, number, number] }[] = [];
+  for (let i = 0; i < 4000; i++) {
+    const p = Math.floor((((i * 2654435761) % 4294967296) / 4294967296) * total) * 4;
+    const rgb = [adjust(tones.rgba[p]), adjust(tones.rgba[p + 1]), adjust(tones.rgba[p + 2])];
+    pixels.push({ rgb, lab: lab(rgb[0], rgb[1], rgb[2]) });
+  }
+  const k = Math.max(1, Math.min(count + 1, pixels.length)); // one more, in case one is the paper
+  // Starting colours as far apart as the photo allows: each next one the pixel furthest from all so far.
+  const centres: [number, number, number][] = [pixels[0].lab];
+  while (centres.length < k) {
+    let far = pixels[0];
+    let farthest = -1;
+    for (const px of pixels) {
+      const d = Math.min(...centres.map((c) => dist2(px.lab, c)));
+      if (d > farthest) { farthest = d; far = px; }
+    }
+    centres.push(far.lab);
+  }
+  const sums = centres.map(() => ({ lab: [0, 0, 0], rgb: [0, 0, 0], n: 0 }));
+  for (let pass = 0; pass < 12; pass++) {
+    sums.forEach((s) => { s.lab = [0, 0, 0]; s.rgb = [0, 0, 0]; s.n = 0; });
+    for (const px of pixels) {
+      let best = 0;
+      let nearest = Infinity;
+      centres.forEach((c, i) => { const d = dist2(px.lab, c); if (d < nearest) { nearest = d; best = i; } });
+      const s = sums[best];
+      for (let ch = 0; ch < 3; ch++) { s.lab[ch] += px.lab[ch]; s.rgb[ch] += px.rgb[ch]; }
+      s.n++;
+    }
+    sums.forEach((s, i) => { if (s.n) centres[i] = [s.lab[0] / s.n, s.lab[1] / s.n, s.lab[2] / s.n]; });
+  }
+  const groups = sums
+    .map((s, i) => ({ lab: centres[i], hex: s.n ? toHex(s.rgb.map((v) => v / s.n)) : "#ffffff", n: s.n }))
+    .filter((g) => g.n > 0);
+  // Drop the paper, then keep the biggest groups if there are still more than asked for.
+  const inked = groups.filter((g) => g.lab[0] < PAPER_LIGHTNESS).sort((a, b) => b.n - a.n).slice(0, count);
+  return inked.sort((a, b) => b.lab[0] - a.lab[0]).map((g) => g.hex);
+}
+
+/**
+ * The pen of a palette nearest each colour group, each pen used once: the closest pairs are matched
+ * first, so a group only settles for a further pen when a nearer group has taken its own.
+ */
+export function matchPens<P extends { color: string }>(groups: string[], palette: P[]): (P | undefined)[] {
+  const pairs: { g: number; p: number; d: number }[] = [];
+  groups.forEach((hex, g) => palette.forEach((pen, p) => pairs.push({ g, p, d: dist2(hexLab(hex), hexLab(pen.color)) })));
+  pairs.sort((a, b) => a.d - b.d);
+  const out: (P | undefined)[] = groups.map(() => undefined);
+  const used = new Set<number>();
+  for (const { g, p } of pairs) {
+    if (out[g] || used.has(p)) continue;
+    out[g] = palette[p];
+    used.add(p);
+  }
+  return out;
+}
+
+interface Areas { w: number; h: number; group: Uint8Array; want: Float32Array }
+const areasCache = new Map<string, Areas>();
+
+/**
+ * Which colour group each point of the photo belongs to - the nearest - and the density of its
+ * colour, worked out small and read at its nearest pixel. What each layer draws is its group's area.
+ */
+function areasOf(tones: Tones, groups: string[], brightness: number, contrast: number): Areas {
+  const key = [tones.w, tones.h, tones.light[0], tones.light[tones.light.length >> 1], groups.join(","), brightness, contrast].join("|");
+  const known = areasCache.get(key);
+  if (known) return known;
+  const adjust = adjuster(brightness, contrast);
+  const scale = Math.min(1, COVER_EDGE / Math.max(tones.w, tones.h));
+  const w = Math.max(1, Math.round(tones.w * scale));
+  const h = Math.max(1, Math.round(tones.h * scale));
+  const centres = groups.map(hexLab);
+  // The paper is a group of its own here, so pale areas belong to it and no layer draws them.
+  centres.push(lab(255, 255, 255));
+  const group = new Uint8Array(w * h);
+  const want = new Float32Array(w * h * 3);
+  for (let y = 0; y < h; y++) {
+    const sy = Math.min(tones.h - 1, Math.round((y / Math.max(1, h - 1)) * (tones.h - 1)));
+    for (let x = 0; x < w; x++) {
+      const sx = Math.min(tones.w - 1, Math.round((x / Math.max(1, w - 1)) * (tones.w - 1)));
+      const i = (sy * tones.w + sx) * 4;
+      const r = adjust(tones.rgba[i]);
+      const g = adjust(tones.rgba[i + 1]);
+      const b = adjust(tones.rgba[i + 2]);
+      const here = lab(r, g, b);
+      let best = 0;
+      let nearest = Infinity;
+      centres.forEach((c, k) => { const d = dist2(here, c); if (d < nearest) { nearest = d; best = k; } });
+      const at = y * w + x;
+      group[at] = best;
+      want[at * 3] = density(r);
+      want[at * 3 + 1] = density(g);
+      want[at * 3 + 2] = density(b);
+    }
+  }
+  const made = { w, h, group, want };
+  if (areasCache.size > 8) areasCache.delete(areasCache.keys().next().value!);
+  areasCache.set(key, made);
+  return made;
+}
+
+/**
+ * How a photo's tone is read at a point of its box, in inches from its corner: -1 outside its band,
+ * otherwise how far through the band it is, 0 to 1. Brightness, contrast and the crop are applied.
+ * A band draws only where the photo's tone falls in it, and grades its lines across its own range;
+ * `fromWhite` says whether it's the lightest, which leaves white as paper where the others draw
+ * something everywhere in their band, so two bands meet without a gap. Widened by the bleed, into
+ * the bands either side: graded across the wider range, what spills over starts sparse and builds,
+ * like a haze rather than a second edge.
+ */
+function toneSampler(tones: Tones, photo: Photo, w: number, h: number) {
+  const lift = photo.brightness / 200;
+  const c = Math.max(-99, Math.min(99, photo.contrast)) / 100;
+  const gain = c >= 0 ? 1 / (1 - c) : 1 + c;
+  const [c0, c1, c2, c3] = photo.crop ?? [0, 0, 1, 1];
+  // Split by colour: this layer draws its colour group's area, as much of its pen's ink there as
+  // comes nearest the photo's colour - so a pale part of its area gets few lines.
+  if (photo.ink && photo.regions && photo.region !== undefined) {
+    const areas = areasOf(tones, photo.regions, photo.brightness, photo.contrast);
+    const d = densityOf(photo.ink);
+    const dd = d[0] * d[0] + d[1] * d[1] + d[2] * d[2];
+    const mine = photo.region;
+    return {
+      toneAt: (x: number, y: number) => {
+        if (x < 0 || x > w || y < 0 || y > h) return -1;
+        const u = c0 + (x / w) * (c2 - c0);
+        const v = c1 + (y / h) * (c3 - c1);
+        const at = Math.min(areas.h - 1, Math.round(v * (areas.h - 1))) * areas.w + Math.min(areas.w - 1, Math.round(u * (areas.w - 1)));
+        if (areas.group[at] !== mine || dd < 1e-9) return -1;
+        const want = areas.want;
+        return Math.min(1, Math.max(0, (want[at * 3] * d[0] + want[at * 3 + 1] * d[1] + want[at * 3 + 2] * d[2]) / dd));
+      },
+      fromWhite: true,
+    };
+  }
+  const bleed = photo.band ? Math.max(0, photo.bleed ?? 0) : 0;
+  const lo = photo.band ? Math.max(0, photo.band[0] - (photo.band[0] > 0 ? bleed : 0)) : 0;
+  const hi = photo.band ? Math.min(1, photo.band[1] + (photo.band[1] < 1 ? bleed : 0)) : 1;
+  const toneAt = (x: number, y: number) => {
+    if (x < 0 || x > w || y < 0 || y > h) return -1;
+    const d = darknessAt(tones, c0 + (x / w) * (c2 - c0), c1 + (y / h) * (c3 - c1), lift, gain);
+    if (d < lo || d > hi || (d === hi && hi < 1)) return -1;
+    return hi > lo ? (d - lo) / (hi - lo) : 1;
+  };
+  return { toneAt, fromWhite: lo <= 0 };
+}
+
+/**
+ * Tone as tone lines: one line along each row, waving across it - harder and tighter where the photo
+ * is darker, flattening out as it lightens, and lifted off the paper where there's nothing to draw.
+ * At black, neighbouring rows' waves just meet. Every other row runs back the way the last came, so
+ * the pen goes on from where it stopped. One path, one stroke per run of line.
+ */
+function waves(tones: Tones, photo: Photo, w: number, h: number): PhotoMarks {
+  const row = Math.max(0.2, photo.rowMm ?? WAVE_DEFAULTS.rowMm) / 25.4;
+  const shortestWave = Math.max(0.2, photo.waveMm ?? WAVE_DEFAULTS.waveMm) / 25.4;
+  const { toneAt, fromWhite } = toneSampler(tones, photo, w, h);
+  const rad = (photo.angle * Math.PI) / 180;
+  const dx = Math.cos(rad);
+  const dy = Math.sin(rad);
+  const cx = w / 2;
+  const cy = h / 2;
+  const reach = Math.hypot(w, h) / 2;
+  // Eight looks at the photo to the tightest wave: enough for the wave to read as a curve.
+  const step = shortestWave / 8;
+  const n = (v: number) => Number(v.toFixed(4));
+  // How strongly the line waves for a tone through the band. The lightest band flattens to nothing at
+  // white, so white is paper; the others keep a little wave throughout, so bands meet without a gap.
+  const strength = (t: number) => (fromWhite ? t : 0.15 + 0.85 * t);
+  const parts: string[] = [];
+  let strokes = 0;
+  let line = 0;
+  for (let o = -reach + row / 2; o <= reach; o += row, line++) {
+    const back = line % 2 === 1;
+    let phase = 0;
+    let run: string[] = [];
+    const close = () => {
+      if (run.length > 2) {
+        parts.push(`M${run.join("L")}`);
+        strokes++;
+      }
+      run = [];
+    };
+    for (let i = 0; i <= (reach * 2) / step; i++) {
+      const t = back ? reach - i * step : -reach + i * step;
+      const bx = cx - dy * o + dx * t;
+      const by = cy + dx * o + dy * t;
+      const tone = toneAt(bx, by);
+      const s = tone < 0 ? 0 : strength(tone);
+      if (s < 0.03) {
+        close();
+        continue;
+      }
+      // Darker waves are tighter: at black a wave is the shortest; toward white, four times as long.
+      phase += (2 * Math.PI * step) / (shortestWave * (1 + 3 * (1 - s)));
+      const swing = (row / 2) * s * Math.sin(phase);
+      const x = bx - dy * swing;
+      const y = by + dx * swing;
+      if (x < 0 || x > w || y < 0 || y > h) {
+        close();
+        continue;
+      }
+      run.push(`${n(x)} ${n(y)}`);
+    }
+    close();
+  }
+  return { passes: [parts.join("")], strokes };
+}
+
 /**
  * Tone as hatching, the way an engraver builds it: a first set of lines where the photo is darker
  * than a fifth of the way to black, a second set across it past two fifths, and each set again
@@ -212,9 +551,6 @@ function darknessAt(tones: Tones, u: number, v: number, lift: number, gain: numb
 function hatch(tones: Tones, photo: Photo, w: number, h: number): PhotoMarks {
   const spacing = Math.max(0.05, photo.spacingMm) / 25.4;
   const levels = Math.min(4, Math.max(1, Math.round(photo.levels)));
-  const lift = photo.brightness / 200;
-  const c = Math.max(-99, Math.min(99, photo.contrast)) / 100;
-  const gain = c >= 0 ? 1 / (1 - c) : 1 + c;
   // Along each line, a look at the photo every half a line-spacing: fine enough that a line stops
   // where the tone does, coarse enough that a big sheet is still quick.
   const step = spacing / 2;
@@ -226,21 +562,7 @@ function hatch(tones: Tones, photo: Photo, w: number, h: number): PhotoMarks {
   const n = (v: number) => Number(v.toFixed(4));
   const passes: string[] = [];
   let strokes = 0;
-  // A band draws only where the photo's tone falls in it, and grades its lines across its own range.
-  // Every part of a band gets at least its first set of lines, so two bands meet without a gap -
-  // except the lightest, where white is still left as paper.
-  // Widened by the bleed, into the bands either side: the lines are graded across the wider range,
-  // so what spills over starts sparse and builds, like a haze rather than a second edge.
-  const bleed = photo.band ? Math.max(0, photo.bleed ?? 0) : 0;
-  const lo = photo.band ? Math.max(0, photo.band[0] - (photo.band[0] > 0 ? bleed : 0)) : 0;
-  const hi = photo.band ? Math.min(1, photo.band[1] + (photo.band[1] < 1 ? bleed : 0)) : 1;
-  const fromWhite = lo <= 0;
-  const [c0, c1, c2, c3] = photo.crop ?? [0, 0, 1, 1];
-  const toneAt = (x: number, y: number) => {
-    const d = darknessAt(tones, c0 + (x / w) * (c2 - c0), c1 + (y / h) * (c3 - c1), lift, gain);
-    if (d < lo || d > hi || (d === hi && hi < 1)) return -1;
-    return hi > lo ? (d - lo) / (hi - lo) : 1;
-  };
+  const { toneAt, fromWhite } = toneSampler(tones, photo, w, h);
 
   for (let k = 0; k < levels; k++) {
     const threshold = fromWhite ? (k + 1) / (levels + 1) : k / levels;
@@ -269,8 +591,7 @@ function hatch(tones: Tones, photo: Photo, w: number, h: number): PhotoMarks {
       for (let t = -reach; t <= reach; t += step) {
         const x = cx - dy * o + dx * t;
         const y = cy + dx * o + dy * t;
-        const inside = x >= 0 && x <= w && y >= 0 && y <= h;
-        const tone = inside ? toneAt(x, y) : -1;
+        const tone = toneAt(x, y);
         if (tone >= 0 && (tone > threshold || (!fromWhite && k === 0))) {
           if (start === null) start = t;
           end = t;
@@ -304,6 +625,15 @@ export function photoFromData(raw: Record<string, unknown>): Photo | null {
       ? { crop: raw.crop.map(Number) as [number, number, number, number] }
       : {}),
     ...(raw.fit === "fit" || raw.fit === "fill" ? { fit: raw.fit } : {}),
+    ...(raw.style === "waves" ? { style: "waves" as const } : {}),
+    ...(typeof raw.ink === "string" ? { ink: raw.ink } : {}),
+    ...(Array.isArray(raw.offset_mm) && raw.offset_mm.length === 2 && raw.offset_mm.every((v) => Number.isFinite(Number(v)))
+      ? { offsetMm: [Number(raw.offset_mm[0]), Number(raw.offset_mm[1])] as [number, number] }
+      : {}),
+    ...(Array.isArray(raw.regions) && raw.regions.every((v) => typeof v === "string") ? { regions: raw.regions as string[] } : {}),
+    ...(Number.isInteger(Number(raw.region)) && raw.region !== undefined ? { region: Number(raw.region) } : {}),
+    ...(Number.isFinite(Number(raw.row_mm)) && raw.row_mm !== undefined ? { rowMm: Number(raw.row_mm) } : {}),
+    ...(Number.isFinite(Number(raw.wave_mm)) && raw.wave_mm !== undefined ? { waveMm: Number(raw.wave_mm) } : {}),
     ...(Number.isFinite(Number(raw.bleed)) && raw.bleed !== undefined ? { bleed: Number(raw.bleed) } : {}),
     ...(Number.isFinite(Number(raw.margin)) && raw.margin !== undefined ? { margin: Number(raw.margin) } : {}),
     ...(Array.isArray(raw.band) && raw.band.length === 2 && raw.band.every((v) => Number.isFinite(Number(v)))
@@ -320,6 +650,17 @@ export const photoData = (p: Photo) => ({
   ...(p.band ? { band: p.band } : {}),
   ...(p.crop ? { crop: p.crop } : {}),
   ...(p.fit ? { fit: p.fit } : {}),
+  ...(p.style === "waves" ? { style: "waves" } : {}),
+  ...(p.ink ? { ink: p.ink, regions: p.regions, region: p.region } : {}),
+  ...(p.offsetMm && (p.offsetMm[0] || p.offsetMm[1]) ? { offset_mm: p.offsetMm } : {}),
+  ...(p.rowMm !== undefined ? { row_mm: p.rowMm } : {}),
+  ...(p.waveMm !== undefined ? { wave_mm: p.waveMm } : {}),
   ...(p.bleed ? { bleed: p.bleed } : {}),
   ...(p.margin !== undefined ? { margin: p.margin } : {}),
+});
+
+/** Where a photo layer's lines start on the page, in inches: its box's corner, moved by its offset. */
+export const photoOrigin = (photo: Photo, x0: number, y0: number) => ({
+  x: x0 + (photo.offsetMm?.[0] ?? 0) / 25.4,
+  y: y0 + (photo.offsetMm?.[1] ?? 0) / 25.4,
 });

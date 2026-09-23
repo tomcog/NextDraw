@@ -4,7 +4,7 @@ import { textRuns, type StrokeFont } from "./text";
 import { placementAttr, placements } from "./repeat";
 import { hasCurves, pathData } from "./path";
 import { boxOf, drawnNodes, drawnRuns, pathRuns, turnAttr, type Layer, type Page, type Shape } from "./shapes";
-import { photoData, photoMarks } from "./photo";
+import { photoData, photoMarks, photoOrigin } from "./photo";
 
 // The drawing Studio writes out. Two things matter to Plot at the other end:
 //
@@ -58,7 +58,8 @@ function shapeMarkup(s: Shape, fonts: Record<string, StrokeFont> = {}): string {
     // again from the photo rather than listing tens of thousands of them as shapes.
     const marks = photoMarks(s.photo, b.x1 - b.x0, b.y1 - b.y0);
     const paths = (marks?.passes ?? []).filter(Boolean).map((d) => `<path d="${escapeAttr(d)}"/>`).join("");
-    return `<g id="${PHOTO_GROUP_PREFIX}${escapeAttr(s.id)}" transform="translate(${num(b.x0)} ${num(b.y0)})">${paths}</g>`;
+    const at = photoOrigin(s.photo, b.x0, b.y0);
+    return `<g id="${PHOTO_GROUP_PREFIX}${escapeAttr(s.id)}" transform="translate(${num(at.x)} ${num(at.y)})">${paths}</g>`;
   }
   if (s.kind === "path") {
     // A path that curves is written as the curves themselves - the same `C`s, to the same numbers,

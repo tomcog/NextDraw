@@ -5,7 +5,7 @@ import {
   type Handle, type Page, type Shape, type ShapeKind,
 } from "../lib/shapes";
 import { fillRuns, type Fill } from "../lib/hatch";
-import { photoMarks } from "../lib/photo";
+import { photoMarks, photoOrigin } from "../lib/photo";
 import { usePhotoRead } from "../lib/usePhotoRead";
 import { pathData } from "../lib/path";
 import { curveStrokes, pointsAttr, DEFAULT_CURVE, type CurveKind } from "../lib/parametric";
@@ -189,9 +189,10 @@ function PhotoInk({ shape }: { shape: Shape }) {
   usePhotoRead(photo.src);
   const b = boxOf(shape);
   const marks = photoMarks(photo, b.x1 - b.x0, b.y1 - b.y0);
+  const at = photoOrigin(photo, b.x0, b.y0);
   return (
     <g transform={turnAttr(shape)}>
-      <g transform={`translate(${b.x0} ${b.y0})`}>
+      <g transform={`translate(${at.x} ${at.y})`}>
         {marks?.passes.map((d, i) => (d ? <path key={i} d={d} fill="none" /> : null))}
       </g>
     </g>
