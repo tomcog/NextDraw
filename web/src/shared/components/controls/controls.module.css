@@ -217,11 +217,11 @@
   font-weight: 500;
 }
 
-/* The paper's size, then the two buttons for the way it lies: one row while it fits. */
+/* The paper's size, Plot's units, then the way it lies: one row while it fits. */
 .paperRow {
   display: flex;
   flex-wrap: wrap;
-  align-items: flex-end;
+  align-items: center;
   gap: 0.5rem;
 }
 

@@ -62,52 +62,50 @@ export function PaperSection({ w, h, sizeId, units, color, collapsibleKey, disab
       title="Paper"
       collapsibleKey={collapsibleKey}
       action={
-        <span className={styles.headerTools}>
-          {onUnits && (
-            <SegmentedControl size="sm" aria-label="Units">
-              <Segment selected={units === "in"} disabled={disabled} onClick={() => onUnits("in")}>in</Segment>
-              <Segment selected={units === "mm"} disabled={disabled} onClick={() => onUnits("mm")}>mm</Segment>
-            </SegmentedControl>
-          )}
-          <ButtonRound
-            size="sm"
-            icon={<Palette />}
-            className={colorsOpen ? styles.roundActive : undefined}
-            aria-label="Paper color"
-            aria-expanded={colorsOpen}
-            title={colorsOpen ? "Hide paper colors" : "Paper color"}
-            onClick={() => setColorsOpen((open) => !open)}
-          />
-        </span>
+        <ButtonRound
+          size="sm"
+          icon={<Palette />}
+          className={colorsOpen ? styles.roundActive : undefined}
+          aria-label="Paper color"
+          aria-expanded={colorsOpen}
+          title={colorsOpen ? "Hide paper colors" : "Paper color"}
+          onClick={() => setColorsOpen((open) => !open)}
+        />
       }
     >
       <div className={styles.paperRow}>
         <InputSelect size="md" label="Paper size" hideLabel value={sizeId} disabled={disabled} onChange={(e) => onSize(e.target.value)}>
           {PAPER_SIZES.map((p) => <option key={p.id} value={p.id}>{sizeName(p)}</option>)}
         </InputSelect>
-        {/* The paper lies one way or the other; two buttons say which, and the one it already lies
-            in stays pressed. */}
-        {[
-          { wide: true, icon: <MoveHorizontal />, label: "Landscape", hint: "Landscape: the paper lies on its side" },
-          { wide: false, icon: <MoveVertical />, label: "Portrait", hint: "Portrait: the paper stands up" },
-        ].map(({ wide, icon, label, hint }) => {
-          const on = landscape === wide && w !== h;
-          return (
-            <ButtonRound
-              key={label}
-              size="sm"
-              icon={icon}
-              className={on ? styles.roundActive : undefined}
-              aria-label={label}
-              aria-pressed={on}
-              title={hint}
-              disabled={disabled}
-              onClick={() => {
-                if (!on) onDimensions(h, w); // already lying that way otherwise
-              }}
-            />
-          );
-        })}
+        {onUnits && (
+          <SegmentedControl size="sm" aria-label="Units">
+            <Segment selected={units === "in"} disabled={disabled} onClick={() => onUnits("in")}>in</Segment>
+            <Segment selected={units === "mm"} disabled={disabled} onClick={() => onUnits("mm")}>mm</Segment>
+          </SegmentedControl>
+        )}
+        {/* The paper lies one way or the other, never both: a choice of two, like the toolbar's.
+            A square sheet lies neither way, so neither is chosen. */}
+        <SegmentedControl size="sm" variant="dark" aria-label="Which way the paper lies">
+          {[
+            { wide: true, icon: <MoveHorizontal />, label: "Landscape", hint: "Landscape: the paper lies on its side" },
+            { wide: false, icon: <MoveVertical />, label: "Portrait", hint: "Portrait: the paper stands up" },
+          ].map(({ wide, icon, label, hint }) => {
+            const on = landscape === wide && w !== h;
+            return (
+              <Segment
+                key={label}
+                selected={on}
+                icon={icon}
+                aria-label={label}
+                title={hint}
+                disabled={disabled}
+                onClick={() => {
+                  if (!on) onDimensions(h, w); // already lying that way otherwise
+                }}
+              />
+            );
+          })}
+        </SegmentedControl>
       </div>
 
       {colorsOpen && (
