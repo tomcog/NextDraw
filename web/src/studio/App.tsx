@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ToolPicker } from "../shared/components/controls/ToolPicker";
+import { DrawingToolSection } from "../shared/components/controls/DrawingToolSection";
+import { PaperSection } from "../shared/components/controls/PaperSection";
+import { SettingsSection } from "../shared/components/controls/SettingsSection";
 import { Button, ButtonRound, Card, Checkbox, ConfirmButton, InputSelect, InputText, InputTextarea, LayerController } from "@tomcoggia/ui";
-import { ArrowDownToLine, AudioWaveform, Circle, ClipboardCopy, ClipboardPaste, Copy, Ellipsis, EllipsisVertical, FilePlus, FlameKindling, FolderOpen, Grid2x2, Layers2, LayersArrowDown, LayersArrowUp, LineStyle, LoaderPinwheel, Menu, Minus, MoveHorizontal, MoveVertical, MousePointer2, Orbit, PaintBucket, PenLine, Pentagon, Plus, Rainbow, RotateCw, Save, Send, Shell, Signal, Spline, Square, SquareDimensions, SquareStack, Star, Target, Trash2, Type, Waves } from "lucide-react";
+import { ArrowDownToLine, AudioWaveform, Circle, ClipboardCopy, ClipboardPaste, Copy, Ellipsis, EllipsisVertical, FilePlus, FlameKindling, FolderOpen, Grid2x2, Layers2, LayersArrowDown, LayersArrowUp, LineStyle, LoaderPinwheel, Menu, Minus, MousePointer2, Orbit, PaintBucket, PenLine, Pentagon, Plus, Rainbow, RotateCw, Save, Send, Shell, Signal, Spline, Square, SquareDimensions, SquareStack, Star, Target, Trash2, Type, Waves } from "lucide-react";
 import { FileBrowser, LAST_FOLDER_KEY, type CombineResult, type OpenResult } from "../shared/components/FileBrowser";
 import { Section } from "../shared/components/controls/Section";
 import { NumberField } from "../shared/components/controls/NumberField";
@@ -103,6 +105,7 @@ const REPEATS: { kind: RepeatKind; label: string; hint: string; icon: JSX.Elemen
 // The drawing being worked on, remembered so that handing one to Plot - which navigates away - isn't
 // the same as losing it. Its own key: Plot's keys share this origin and still carry the old name.
 const LAST_FILE_KEY = "studio-last-file";
+const PAPER_COLOR_KEY = "studio-paper-color";
 /** The most shapes the Shapes card lists a row for. */
 const SHAPE_LIST_LIMIT = 200;
 
@@ -273,14 +276,21 @@ export default function App() {
   setDirty(true);
  }, []);
 
+ // Custom stays chosen while its width and height are typed, even through a size that happens to be
+ // one of the list's on the way.
+ const [customPaper, setCustomPaper] = useState(false);
+ // The paper's colour: the page is drawn in it and the inks blend with it, as they do in Plot. This
+ // browser's choice, like the grid - it's the sheet on the plotter today, not part of the drawing.
+ const [paperColor, setPaperColor] = useState(() => load<string>(PAPER_COLOR_KEY) ?? "#ffffff");
+ useEffect(() => remember(PAPER_COLOR_KEY, paperColor), [paperColor]);
  const sizeId = useMemo(() => {
   const match = SIZES.find(
    (s) =>
     (Math.abs(s.w - page.w) < 0.01 && Math.abs(s.h - page.h) < 0.01) ||
     (Math.abs(s.h - page.w) < 0.01 && Math.abs(s.w - page.h) < 0.01),
   );
-  return match?.id ?? "";
- }, [page]);
+  return customPaper || !match ? "custom" : match.id;
+ }, [page, customPaper]);
 
  // Called just before a change, never during one: a drag records once, when it starts.
  const record = useCallback(() => {
@@ -1297,6 +1307,7 @@ export default function App() {
  };
 
  const setSize = (id: string) => {
+  setCustomPaper(id === "custom");
   const size = SIZES.find((s) => s.id === id);
   if (!size) return;
   record();
@@ -1458,6 +1469,7 @@ export default function App() {
     <section className={styles.stage} aria-label="Drawing page">
      <Canvas
       page={page}
+      paperColor={paperColor}
       shapes={shapes}
       fills={fills}
       model={model}
@@ -1587,50 +1599,23 @@ export default function App() {
 
        </Section>
 
-       {/* What the drawing is made on and with, in the same card as the drawing itself:
-         each folds on its own, as does the card around them. */}
-       <Section
-        title="Settings"
-        // The tool sits here rather than on its own heading: this row is the one still showing when
-        // the whole card is folded, which is when knowing the pen matters most.
-        action={toolName ? <span className={controls.toolInTitle}>{toolName}</span> : undefined}
-        collapsibleKey="settings"
-       >
-        <Section title="Paper" collapsibleKey="paper">
-         <div className={styles.pageRow}>
-          <InputSelect size="md" label="Page size" hideLabel value={sizeId} onChange={(e) => setSize(e.target.value)}>
-           {SIZES.map((size) => (
-            <option key={size.id} value={size.id}>
-             {size.name}
-            </option>
-           ))}
-          </InputSelect>
-          {/* The page lies one way or the other; two buttons say which, and the one the
-            page is already in stays pressed. */}
-          {[
-           { wide: true, icon: <MoveHorizontal />, label: "Landscape", hint: "Landscape: the page lies on its side" },
-           { wide: false, icon: <MoveVertical />, label: "Portrait", hint: "Portrait: the page stands up" },
-          ].map(({ wide, icon, label, hint }) => {
-           const on = page.w > page.h === wide;
-           return (
-            <ButtonRound
-             key={label}
-             size="sm"
-             icon={icon}
-             className={on ? controls.roundActive : undefined}
-             aria-label={label}
-             aria-pressed={on}
-             title={hint}
-             onClick={() => {
-              if (on) return; // already lying that way
-              record();
-              setPage((p) => ({ w: wide ? Math.max(p.w, p.h) : Math.min(p.w, p.h), h: wide ? Math.min(p.w, p.h) : Math.max(p.w, p.h) }));
-             }}
-            />
-           );
-          })}
-         </div>
-        </Section>
+       {/* What the drawing is made on and with, in the same card as the drawing itself: the same
+         Settings, Paper and Drawing tool cards as Plot's, with the grid, which is Studio's alone. */}
+       <SettingsSection tool={toolName} collapsibleKey="settings">
+        <PaperSection
+         w={page.w * 25.4}
+         h={page.h * 25.4}
+         sizeId={sizeId}
+         units="in"
+         color={paperColor}
+         collapsibleKey="paper"
+         onSize={setSize}
+         onDimensions={(w, h) => {
+          record();
+          setPage({ w: w / 25.4, h: h / 25.4 });
+         }}
+         onColor={setPaperColor}
+        />
 
         <Section title="Grid" collapsibleKey="grid">
          <Checkbox
@@ -1652,16 +1637,8 @@ export default function App() {
          )}
         </Section>
 
-        <Section title="Drawing tool" collapsibleKey="pen">
-         <ToolPicker
-          tools={presets}
-          value={toolName}
-          onPick={pickTool}
-          label="Tool"
-          disabled={busy}
-         />
-        </Section>
-       </Section>
+        <DrawingToolSection tools={presets} value={toolName} onPick={pickTool} collapsibleKey="pen" disabled={busy} />
+       </SettingsSection>
       </div>
      </Card>
 

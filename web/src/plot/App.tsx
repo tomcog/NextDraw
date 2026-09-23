@@ -29,7 +29,8 @@ import { FileSection } from "./components/controls/FileSection";
 import { LayersSection } from "./components/controls/LayersSection";
 import { PositionSection } from "./components/controls/PositionSection";
 import { PresetSection } from "./components/controls/PresetSection";
-import { PaperSection } from "./components/controls/PaperSection";
+import { PaperSection } from "../shared/components/controls/PaperSection";
+import { SettingsSection } from "../shared/components/controls/SettingsSection";
 import { PenSection } from "./components/controls/PenSection";
 import { SpeedSection } from "./components/controls/SpeedSection";
 import { PlotOptionsSection } from "./components/controls/PlotOptionsSection";
@@ -1475,16 +1476,21 @@ export default function App() {
                   </Button>
                 </div>
               )}
-              <Section
-                title="Settings"
-                action={toolLabel ? <span className={controls.toolInTitle}>{toolLabel}</span> : undefined}
-                collapsibleKey="plot-settings"
-              >
+              {/* The same Settings, Paper and Drawing tool cards as Studio's. Grid is Studio's alone;
+                  the units, and the plotting-only rows of the tool card, are Plot's alone. */}
+              <SettingsSection tool={toolLabel} collapsibleKey="plot-settings">
                 <PaperSection
-                  settings={settings}
+                  w={settings.paper_w}
+                  h={settings.paper_h}
+                  sizeId={settings.paper_size}
+                  units={settings.units}
+                  color={settings.paper_color}
+                  collapsibleKey="plot-paper"
                   disabled={plotting}
-                  onPickSize={pickPaperSize}
-                  onChange={(patch) => updateSettings(patch)}
+                  onSize={pickPaperSize}
+                  onDimensions={(paper_w, paper_h) => updateSettings({ paper_w, paper_h })}
+                  onColor={(paper_color) => updateSettings({ paper_color })}
+                  onUnits={(units) => updateSettings({ units })}
                 />
                 <PresetSection
                   presets={presets}
@@ -1517,7 +1523,7 @@ export default function App() {
                   onSave={savePreset}
                   onDelete={deletePreset}
                 />
-              </Section>
+              </SettingsSection>
             </div>
           </Card>
           {fileName && layerViews.length > 0 && (

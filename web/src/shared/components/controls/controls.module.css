@@ -217,12 +217,15 @@
   font-weight: 500;
 }
 
-.paperHead {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  gap: 0.75rem;
-  align-items: center;
+/* The paper's size, then the two buttons for the way it lies: one row while it fits. */
+.paperRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 0.5rem;
 }
+
+.paperRow > :first-child { flex: 1; min-width: 0; }
 
 /* Paper color: round swatches, the chosen one ringed. The last opens the system color picker. */
 .paperColors {
@@ -345,12 +348,6 @@
   align-items: center;
   justify-content: space-between;
   gap: 0.5rem;
-}
-
-.unitsGroup {
-  display: flex;
-  align-items: center;
-  gap: 0.375rem;
 }
 
 .more {
@@ -532,7 +529,7 @@
 
 .cardSections fieldset fieldset + fieldset { padding-top: 0.5rem; }
 
-.cardSections > fieldset > legend { font-size: 13px; }
+.cardSections > fieldset > legend { font-size: 15px; }
 
 .cardSections fieldset fieldset legend { font-size: 12px; font-weight: 500; }
 

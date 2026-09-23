@@ -1,8 +1,8 @@
 import { useEffect, useState } from "react";
 import { InputText } from "@tomcoggia/ui";
-import styles from "../../../shared/components/controls/controls.module.css";
-import { trimNum } from "../../../shared/lib/format";
-import type { Units } from "../../../shared/lib/types";
+import styles from "./controls.module.css";
+import { trimNum } from "../../lib/format";
+import type { Units } from "../../lib/types";
 
 interface Props {
   label: string;

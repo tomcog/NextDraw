@@ -1,7 +1,7 @@
 import { ButtonRound } from "@tomcoggia/ui";
 import { RotateCcw } from "lucide-react";
 import styles from "../../../shared/components/controls/controls.module.css";
-import { LengthField } from "./LengthField";
+import { LengthField } from "../../../shared/components/controls/LengthField";
 import type { Placement, Settings, Units } from "../../../shared/lib/types";
 
 interface Props {

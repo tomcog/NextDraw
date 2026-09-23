@@ -39,6 +39,8 @@ const shapeFor = (tool: Exclude<Tool, "select">, layerId: string, x: number, y: 
 
 interface Props {
   page: Page;
+  /** The paper's colour, as Plot draws it: the page is this colour and the inks blend with it. */
+  paperColor: string;
   shapes: Shape[];
   fills: Fill[];
   /** The plotter the drawing is for, so the page is shown on the bed it will be drawn on. */
@@ -268,7 +270,7 @@ const LayerMarks = memo(function LayerMarks({ shapes, fills, fonts }: { shapes: 
 // The page at true proportions, with a one-inch grid. It keeps the page's own proportions and is
 // sized to them (--canvas-aspect), so the drawing gets as large as the space allows - the same way
 // Plot's preview fills its column.
-export function Canvas({ page, shapes, fills, layers, activeLayer, model, zoom, toolbar, toolbarLeft, fonts, font, snap, penWidthMm, inkOpacity, inkBuilds, inkBuild, view, tool, selected, onSelect, onAdd, onUpdate, onUpdateMany, onEditStart }: Props) {
+export function Canvas({ page, paperColor, shapes, fills, layers, activeLayer, model, zoom, toolbar, toolbarLeft, fonts, font, snap, penWidthMm, inkOpacity, inkBuilds, inkBuild, view, tool, selected, onSelect, onAdd, onUpdate, onUpdateMany, onEditStart }: Props) {
   const bed = useRef<BedCanvasHandle>(null);
   const [drag, setDrag] = useState<Drag | null>(null);
   const pointer = useRef<number | null>(null);
@@ -280,7 +282,7 @@ export function Canvas({ page, shapes, fills, layers, activeLayer, model, zoom, 
     paper_h: page.h * 25.4,
     paper_x: 0,
     paper_y: 0,
-    paper_color: "#ffffff",
+    paper_color: paperColor,
   };
   // Worked out when the drawing changes, not on every render: a render happens on every pointer move.
   const drawingBox: Box | null = useMemo(() => {

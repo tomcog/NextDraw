@@ -3,7 +3,7 @@ import { ToolPicker } from "../../../shared/components/controls/ToolPicker";
 import { Button, ButtonRound, Checkbox, InputText } from "@tomcoggia/ui";
 import { CirclePlus, Palette, SlidersHorizontal, X } from "lucide-react";
 import styles from "../../../shared/components/controls/controls.module.css";
-import { Section } from "../../../shared/components/controls/Section";
+import { DrawingToolSection } from "../../../shared/components/controls/DrawingToolSection";
 import { Slider } from "./Slider";
 import type { Preset } from "../../../shared/lib/types";
 
@@ -106,9 +106,24 @@ export function PresetSection({
   };
 
   return (
-    <Section
-      title="Drawing tool"
+    // The same card as Studio's (DrawingToolSection); everything else here is Plot's alone, passed in.
+    <DrawingToolSection
+      tools={presets}
+      value={active?.name ?? ""}
+      onPick={onApply}
       collapsibleKey="plot-pen"
+      // A tool is always chosen once presets load, so this only shows if none is.
+      placeholder={presets.length ? "Choose a preset" : "No presets saved yet"}
+      changed={changed}
+      disabled={disabled}
+      inUse={inUse === "first"}
+      under={
+        <>
+          {tiltSwitch(active)}
+          {dragSwitch(active)}
+          {mixed && layers.length > 0 && chips(false)}
+        </>
+      }
       action={
         <span className={styles.headerTools}>
           {/* Setting a tool up: its heights, speeds and offsets over the preview, to change while
@@ -136,22 +151,6 @@ export function PresetSection({
         </span>
       }
     >
-      <div className={styles.toolBlock} data-in-use={inUse === "first"}>
-      <ToolPicker
-        tools={presets}
-        value={active?.name ?? ""}
-        onPick={onApply}
-        label="Drawing tool"
-        // A tool is always chosen once presets load, so this only shows if none is.
-        placeholder={presets.length ? "Choose a preset" : "No presets saved yet"}
-        changed={changed}
-        disabled={disabled}
-      />
-      {tiltSwitch(active)}
-      {dragSwitch(active)}
-      {mixed && layers.length > 0 && chips(false)}
-      </div>
-
 
       {mixed && (
         <div className={styles.toolBlock} data-in-use={inUse === "second"}>
@@ -273,6 +272,6 @@ export function PresetSection({
           )}
         </div>
       ))}
-    </Section>
+    </DrawingToolSection>
   );
 }
