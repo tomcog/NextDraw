@@ -129,8 +129,23 @@ export function parseDrawing(text: string): Opened {
   const isCopy = (id: string) => repeatIds.some((base) => /^-r\d+$/.test(id.slice(base.length)) && id.startsWith(base));
 
   // A fill's lines are regenerated from its parameters, so reading them back as hundreds of separate
-  // line shapes would both double the drawing and cut it loose from the fill that made it.
-  const generated = (el: Element) => Boolean(el.closest(`[id^="${FILL_GROUP_PREFIX}"], [id^="${PHOTO_GROUP_PREFIX}"]`));
+  // line shapes would both double the drawing and cut it loose from the fill that made it. Only when
+  // those parameters came along, though: a drawing that has been through Illustrator keeps the
+  // groups' ids but loses the design block, and then the lines are all there is to read.
+  const savedPhotos = new Set(
+    (Array.isArray(design.photos) ? design.photos : []).map((p) => String((p as Record<string, unknown>).shape)),
+  );
+  const savedFills = new Set(
+    (Array.isArray(design.fills) ? design.fills : []).map((f) => String((f as Record<string, unknown>).id)),
+  );
+  const generated = (el: Element) => {
+    const group = el.closest(`[id^="${FILL_GROUP_PREFIX}"], [id^="${PHOTO_GROUP_PREFIX}"]`);
+    if (!group) return false;
+    const id = group.getAttribute("id")!;
+    return id.startsWith(PHOTO_GROUP_PREFIX)
+      ? savedPhotos.has(id.slice(PHOTO_GROUP_PREFIX.length))
+      : savedFills.has(id.slice(FILL_GROUP_PREFIX.length).replace(/-r\d+$/, ""));
+  };
   const idOf = (el: Element) => el.getAttribute("id") || newShapeId();
 
   // What a layer is called. Its label, where the file has one. Otherwise its id, which is how
