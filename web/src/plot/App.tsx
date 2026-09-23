@@ -15,12 +15,12 @@ import { Hints } from "../shared/components/controls/Hints";
 import { Header } from "./components/Header";
 import { Bed, type Zoom } from "../shared/components/Bed";
 import { PaletteEditor } from "./components/PaletteEditor";
-import { ZoomControl } from "../shared/components/ZoomControl";
+import { PreviewToolbar, type View } from "../shared/components/PreviewToolbar";
 import { FileBrowser, type OpenResult } from "../shared/components/FileBrowser";
 import { MachinePanel } from "./components/MachinePanel";
-import { Disclosure } from "./components/Disclosure";
+import { Section } from "../shared/components/controls/Section";
+import controls from "../shared/components/controls/controls.module.css";
 import { DrawingNotes } from "./components/DrawingNotes";
-import { InkSimControl } from "./components/InkSimControl";
 import { SettingsHud } from "./components/SettingsHud";
 import { PlotSummary } from "./components/PlotSummary";
 import { PlotProgress } from "./components/PlotProgress";
@@ -345,11 +345,10 @@ export default function App() {
   // The dashed pen-up travel lines on the preview are off unless turned on under Utilities.
   const [showPenUp, setShowPenUp] = useState(() => load<boolean>(STORAGE.penUpMoves) ?? false);
   useEffect(() => save(STORAGE.penUpMoves, showPenUp), [showPenUp]);
-  // Ink simulation: how solid each tool's ink is and how it builds up where strokes cross. Blending
-  // every stroke costs the browser real work on a drawing of many thousands of paths, so it's off
-  // until asked for (the Blend button on the Layers card); flat means each layer in its own color.
-  const [inkSim, setInkSim] = useState(() => load<boolean>(STORAGE.inkSim) ?? false);
-  useEffect(() => save(STORAGE.inkSim, inkSim), [inkSim]);
+  // How the preview draws the drawing: Outline, every path a thin line - what can be afforded whatever
+  // the file, so a drawing always opens in it - or Preview, the ink at each tool's width, which is
+  // asked for. The same choice Studio offers, from the same bar; Progress is Plot's alone.
+  const [view, setView] = useState<View>("outline");
   const [zoomChoice, setZoomChoice] = useState<Zoom>(() => load<Zoom>(STORAGE.zoom) ?? "plotter");
   useEffect(() => save(STORAGE.zoom, zoomChoice), [zoomChoice]);
 
@@ -949,13 +948,14 @@ export default function App() {
 
   /* ---------- What's left of the plot in progress ---------- */
 
-  // Off unless asked for. The paths are fetched when it's turned on, and again for a new plot.
-  const [showLeft, setShowLeft] = useState(false);
+  // One of the ways the preview can draw the drawing (see the view below), so it's off unless asked
+  // for. The paths are fetched when it's turned on, and again for a new plot.
+  const showLeft = view === "progress";
   const [plotPaths, setPlotPaths] = useState<{ version: number; paths: PlotPaths } | null>(null);
   const pathsVersion = status?.plot_paths ?? null;
   useEffect(() => {
     if (!pathsVersion) {
-      setShowLeft(false);
+      if (showLeft) setView("outline");
       setPlotPaths(null);
       return;
     }
@@ -967,7 +967,7 @@ export default function App() {
         const paths = parsePlotPaths(text);
         if (!cancelled && paths) setPlotPaths({ version: pathsVersion, paths });
       })
-      .catch(() => { if (!cancelled) setShowLeft(false); });
+      .catch(() => { if (!cancelled) setView("outline"); });
     return () => { cancelled = true; };
   }, [showLeft, pathsVersion, plotPaths?.version]);
   const shownPlotPaths = showLeft && plotPaths?.version === pathsVersion ? plotPaths.paths : null;
@@ -988,6 +988,8 @@ export default function App() {
   // second, and each layer is then assigned to one of the two by its number. Plotting, the preview's
   // line width and the layer's color menu follow the layer's tool; unassigned layers use the first.
   const secondPreset = secondTool ? presets.find((p) => p.name === secondTool) : undefined;
+  // Named on the Settings row, so the pen shows while the card is folded: both, when a drawing mixes two.
+  const toolLabel = [active?.name, secondTool].filter(Boolean).join(" + ");
   const usesSecond = (id: string | null) => Boolean(secondTool && id && secondToolLayers.includes(id));
   // Angle compensation: on or off per tool, starting from its preset. Only tools set up tilted have it.
   const [tiltChoice, setTiltChoice] = useState<Record<string, boolean>>({});
@@ -1300,22 +1302,24 @@ export default function App() {
               // tool without a build-up value has none.
               inkBuild={active ? active.settings.ink_build : settings.ink_build}
               layerInkBuild={secondTool ? layerInkBuild : undefined}
-              inkSim={inkSim}
+              inkSim={view === "preview"}
               layerInkBuilds={secondTool ? layerInkBuilds : undefined}
               layerPenWidths={secondTool ? layerPenWidths : undefined}
               plotPaths={shownPlotPaths}
-              hairlines={layerMode === "work"}
+              hairlines={view === "outline" || layerMode === "work"}
               plotFraction={plotFraction}
-              toolbarLeft={<InkSimControl on={inkSim} onChange={setInkSim} />}
-              toolbar={
-                <ZoomControl
+              // The same bar as Studio's, over the same bed: how the drawing is drawn and how close
+              // the view sits, and while a plot has paths to show, how far it has got.
+              toolbarLeft={
+                <PreviewToolbar
+                  view={view}
+                  onView={setView}
+                  canProgress={status?.plot_paths ? true : undefined}
                   zoom={zoom}
+                  onZoom={setZoomChoice}
                   canPaper={settings.paper_w > 0 && settings.paper_h > 0}
                   canDrawing={Boolean(fp)}
-                  onZoom={setZoomChoice}
-                  updating={updating}
-                  showLeft={status?.plot_paths ? showLeft : null}
-                  onShowLeft={setShowLeft}
+                  working={updating && fp ? "Updating plot time…" : undefined}
                 />
               }
             />
@@ -1336,50 +1340,58 @@ export default function App() {
             )}
           </div>
 
-          {!paletteOpen && <>
-          <Disclosure title="Drawing position">
-            <PositionSection
-              placement={placement}
-              units={settings.units}
-              disabled={plotting}
-              onChange={(p) => setPlacement(p)}
-              paperX={settings.paper_x}
-              paperY={settings.paper_y}
-              onPaperChange={updateSettings}
-            />
-          </Disclosure>
+          {/* What is set less often, in one card of sections that start folded - the same sections
+            as the cards beside the preview, rather than rows of their own. */}
+          {(!paletteOpen || (preview && estimate)) && (
+          <Card variant="flat" className={styles.controls}>
+            <div className={`${styles.cardBody} ${controls.cardSections}`}>
+              {!paletteOpen && <>
+              <Section title="Drawing position" collapsibleKey="plot-position" defaultOpen={false}>
+                <PositionSection
+                  placement={placement}
+                  units={settings.units}
+                  disabled={plotting}
+                  onChange={(p) => setPlacement(p)}
+                  paperX={settings.paper_x}
+                  paperY={settings.paper_y}
+                  onPaperChange={updateSettings}
+                />
+              </Section>
 
-          <Disclosure title="Plot options">
-            <PlotOptionsSection settings={settings} disabled={plotting} onChange={updateSettings} handling={info?.handling ?? []} />
-          </Disclosure>
+              <Section title="Plot options" collapsibleKey="plot-options" defaultOpen={false}>
+                <PlotOptionsSection settings={settings} disabled={plotting} onChange={updateSettings} handling={info?.handling ?? []} />
+              </Section>
 
-          <MachinePanel
-            model={model}
-            units={settings.units}
-            carriage={status?.carriage}
-            stepIndex={stepIndex}
-            onStepIndex={setStepIndex}
-            busy={busy}
-            walkSupported={info?.walk_supported ?? true}
-            message={machineMessage}
-            onWalk={walk}
-            onHome={() => manual("home")}
-            onRaise={() => manual("raise_pen")}
-            onLower={() => manual("lower_pen")}
-            onRelease={() => manual("release")}
-            onSetupHeight={() => manual("pen_setup")}
-            onTestPen={() => manual("pen_test")}
-            showPenUp={showPenUp}
-            onShowPenUp={setShowPenUp}
-          />
-          </>}
+              <MachinePanel
+                model={model}
+                units={settings.units}
+                carriage={status?.carriage}
+                stepIndex={stepIndex}
+                onStepIndex={setStepIndex}
+                busy={busy}
+                walkSupported={info?.walk_supported ?? true}
+                message={machineMessage}
+                onWalk={walk}
+                onHome={() => manual("home")}
+                onRaise={() => manual("raise_pen")}
+                onLower={() => manual("lower_pen")}
+                onRelease={() => manual("release")}
+                onSetupHeight={() => manual("pen_setup")}
+                onTestPen={() => manual("pen_test")}
+                showPenUp={showPenUp}
+                onShowPenUp={setShowPenUp}
+              />
+              </>}
 
-          <PlotSummary
-            estimate={preview ? estimate : null}
-            preview={preview}
-            units={settings.units}
-            rotated={Boolean(fp?.rotated)}
-          />
+              <PlotSummary
+                estimate={preview ? estimate : null}
+                preview={preview}
+                units={settings.units}
+                rotated={Boolean(fp?.rotated)}
+              />
+            </div>
+          </Card>
+          )}
         </section>
 
         <div className={styles.side}>
@@ -1401,9 +1413,11 @@ export default function App() {
             speedPct={plotting ? shownSpeed(status?.speed_pct ?? 100) : resume ? shownSpeed(resume.speed_pct ?? 100) : null}
             onSpeed={setPlotSpeed}
           />
+          {/* The drawing, and what it is plotted on and with: one card, as in Studio. The
+            settings fold away together, and each on its own. */}
           <Card variant="flat" className={`${styles.controls} ${styles.fileCard}`}>
             <DrawingNotes notes={notes} className={styles.fileNotes} />
-            <div className={styles.cardBody}>
+            <div className={`${styles.cardBody} ${controls.cardSections}`}>
               <FileSection
                 fileName={fileName}
                 busy={busy}
@@ -1422,11 +1436,52 @@ export default function App() {
                 onTrim={trimPage}
                 onRotate={(turn) => setRotation((r) => (((r + turn * 90) % 360) + 360) % 360)}
               />
+              <Section
+                title="Settings"
+                action={toolLabel ? <span className={controls.toolInTitle}>{toolLabel}</span> : undefined}
+                collapsibleKey="plot-settings"
+              >
+                <PaperSection
+                  settings={settings}
+                  disabled={plotting}
+                  onPickSize={pickPaperSize}
+                  onChange={(patch) => updateSettings(patch)}
+                />
+                <PresetSection
+                  presets={presets}
+                  active={active}
+                  secondTool={secondTool}
+                  secondLayers={secondToolLayers}
+                  layers={layerViews.map((l, i) => ({ id: l.id, number: i + 1, color: l.color }))}
+                  inUse={layerMode === "work" && printTarget ? (usesSecond(printTarget.id) ? "second" : "first") : null}
+                  onAddSecond={() => setSecondTool("")}
+                  onSecondTool={(name) => setSecondTool(name)}
+                  onRemoveSecond={() => {
+                    setSecondTool(null);
+                    setSecondToolLayers([]);
+                  }}
+                  onAssign={assignLayerTool}
+                  smallPaths={smallPaths}
+                  onSmallPaths={setSmallPaths}
+                  tiltOn={tiltOn}
+                  onTilt={(name, on) => setTiltChoice((c) => ({ ...c, [name]: on }))}
+                  dragOn={dragOn}
+                  onDrag={(name, on) => setDragChoice((c) => ({ ...c, [name]: on }))}
+                  paletteOpen={paletteOpen}
+                  onPalette={() => setPaletteOpen((open) => !open)}
+                  onInk={setInk}
+                  changed={presetChanged}
+                  disabled={plotting}
+                  onApply={applyPreset}
+                  onSave={savePreset}
+                  onDelete={deletePreset}
+                />
+              </Section>
             </div>
           </Card>
           {fileName && layerViews.length > 0 && (
             <Card variant="flat" className={styles.controls}>
-              <div className={styles.cardBody}>
+              <div className={`${styles.cardBody} ${controls.cardSections}`}>
                 <LayersSection
                   mode={layerMode}
                   onMode={setLayerMode}
@@ -1453,49 +1508,6 @@ export default function App() {
               </div>
             </Card>
           )}
-          <Card variant="flat" className={styles.controls}>
-            <div className={styles.cardBody}>
-              <PresetSection
-                presets={presets}
-                active={active}
-                secondTool={secondTool}
-                secondLayers={secondToolLayers}
-                layers={layerViews.map((l, i) => ({ id: l.id, number: i + 1, color: l.color }))}
-                inUse={layerMode === "work" && printTarget ? (usesSecond(printTarget.id) ? "second" : "first") : null}
-                onAddSecond={() => setSecondTool("")}
-                onSecondTool={(name) => setSecondTool(name)}
-                onRemoveSecond={() => {
-                  setSecondTool(null);
-                  setSecondToolLayers([]);
-                }}
-                onAssign={assignLayerTool}
-                smallPaths={smallPaths}
-                onSmallPaths={setSmallPaths}
-                tiltOn={tiltOn}
-                onTilt={(name, on) => setTiltChoice((c) => ({ ...c, [name]: on }))}
-                dragOn={dragOn}
-                onDrag={(name, on) => setDragChoice((c) => ({ ...c, [name]: on }))}
-                paletteOpen={paletteOpen}
-                onPalette={() => setPaletteOpen((open) => !open)}
-                onInk={setInk}
-                changed={presetChanged}
-                disabled={plotting}
-                onApply={applyPreset}
-                onSave={savePreset}
-                onDelete={deletePreset}
-              />
-            </div>
-          </Card>
-          <Card variant="flat" className={styles.controls}>
-            <div className={styles.cardBody}>
-              <PaperSection
-                settings={settings}
-                disabled={plotting}
-                onPickSize={pickPaperSize}
-                onChange={(patch) => updateSettings(patch)}
-              />
-            </div>
-          </Card>
           {(SHOW_PEN_AND_SPEED || SHOW_PLOTTER_MODEL) && (
             <Card variant="flat" className={styles.controls}>
               <form className={styles.controlsForm} onSubmit={(e) => e.preventDefault()} autoComplete="off">

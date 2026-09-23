@@ -11,6 +11,7 @@ import { placementAttr, placements } from "../lib/repeat";
 import { textRuns, type StrokeFont } from "../lib/text";
 import type { Layer } from "../lib/shapes";
 import { BedCanvas, type BedCanvasHandle, type Box, type Zoom } from "../../shared/components/BedCanvas";
+import type { View } from "../../shared/components/PreviewToolbar";
 import { DEFAULT_SETTINGS, UNITS } from "../../shared/lib/constants";
 import type { PlotterModel } from "../../shared/lib/types";
 import { inkLayer } from "../../shared/lib/ink";
@@ -62,7 +63,7 @@ interface Props {
   inkBuild: number;
   /** Simulate the ink, or draw each layer flat. Off is also much cheaper on a heavy hatch. */
   /** Outline: every path a thin line in its layer's colour. Preview: the ink, at the pen's width. */
-  view: "outline" | "preview";
+  view: View;
   tool: Tool;
   /** Round what is drawn and dragged to this many inches, or 0 to leave it where the pointer is. */
   snap: number;

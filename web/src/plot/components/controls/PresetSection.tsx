@@ -1,6 +1,6 @@
 import { useRef, useState } from "react";
-import { ToolNote } from "../../../shared/components/controls/ToolNote";
-import { Button, ButtonRound, Checkbox, InputSelect, InputText } from "@tomcoggia/ui";
+import { ToolPicker } from "../../../shared/components/controls/ToolPicker";
+import { Button, ButtonRound, Checkbox, InputText } from "@tomcoggia/ui";
 import { CirclePlus, Palette, X } from "lucide-react";
 import styles from "../../../shared/components/controls/controls.module.css";
 import { Section } from "../../../shared/components/controls/Section";
@@ -106,6 +106,7 @@ export function PresetSection({
   return (
     <Section
       title="Drawing tool"
+      collapsibleKey="plot-pen"
       action={
           <ButtonRound
             size="sm"
@@ -120,23 +121,16 @@ export function PresetSection({
       }
     >
       <div className={styles.toolBlock} data-in-use={inUse === "first"}>
-      <InputSelect
-        size="md"
-        label="Drawing tool"
-        hideLabel
+      <ToolPicker
+        tools={presets}
         value={active?.name ?? ""}
-        disabled={disabled || !presets.length}
-        onChange={(e) => onApply(e.target.value)}
-      >
-        {/* A tool is always chosen once presets load, so the empty choice only shows if none is. */}
-        {!active && <option value="">{presets.length ? "Choose a preset" : "No presets saved yet"}</option>}
-        {presets.map((p) => (
-          <option key={p.name} value={p.name}>
-            {p.name === active?.name && changed ? `${p.name} (changed)` : p.name}
-          </option>
-        ))}
-      </InputSelect>
-      <ToolNote tool={active} />
+        onPick={onApply}
+        label="Drawing tool"
+        // A tool is always chosen once presets load, so this only shows if none is.
+        placeholder={presets.length ? "Choose a preset" : "No presets saved yet"}
+        changed={changed}
+        disabled={disabled}
+      />
       {tiltSwitch(active)}
       {dragSwitch(active)}
       {mixed && layers.length > 0 && chips(false)}
@@ -145,24 +139,17 @@ export function PresetSection({
 
       {mixed && (
         <div className={styles.toolBlock} data-in-use={inUse === "second"}>
-          <div className={styles.toolRow}>
-            <InputSelect
-              size="md"
-              label="Second drawing tool"
-              hideLabel
-              value={secondTool ?? ""}
-              disabled={disabled}
-              onChange={(e) => onSecondTool(e.target.value)}
-            >
-              <option value="">Choose a preset</option>
-              {presets.filter((p) => p.name !== active?.name).map((p) => (
-                <option key={p.name} value={p.name}>{p.name}</option>
-              ))}
-              {secondTool && !presets.some((p) => p.name === secondTool) && <option value={secondTool}>{`${secondTool} (not on this Mac)`}</option>}
-            </InputSelect>
-            <ButtonRound size="sm" variant="ghost" icon={<X />} aria-label="Remove the second drawing tool" title="Remove the second tool; its layers go back to the first" disabled={disabled} onClick={onRemoveSecond} />
-          </div>
-          <ToolNote tool={presets.find((p) => p.name === secondTool)} />
+          <ToolPicker
+            tools={presets.filter((p) => p.name !== active?.name)}
+            value={secondTool ?? ""}
+            onPick={onSecondTool}
+            label="Second drawing tool"
+            placeholder="Choose a preset"
+            disabled={disabled}
+            action={
+              <ButtonRound size="sm" variant="ghost" icon={<X />} aria-label="Remove the second drawing tool" title="Remove the second tool; its layers go back to the first" disabled={disabled} onClick={onRemoveSecond} />
+            }
+          />
           {tiltSwitch(presets.find((p) => p.name === secondTool))}
           {dragSwitch(presets.find((p) => p.name === secondTool))}
           {layers.length > 0 && chips(true)}

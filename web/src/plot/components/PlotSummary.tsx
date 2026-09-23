@@ -1,5 +1,5 @@
 import styles from "./PlotSummary.module.css";
-import { Disclosure } from "./Disclosure";
+import { Section } from "../../shared/components/controls/Section";
 import { fmtDistance, fmtDuration, fmtLen } from "../../shared/lib/format";
 import type { Preview } from "../../shared/lib/preview";
 import type { Estimate, Units } from "../../shared/lib/types";
@@ -25,7 +25,7 @@ export function PlotSummary({ estimate, preview, units, rotated }: Props) {
             <span className={styles.key} data-kind="up">Pen up</span>
           </div>}
 
-          <Disclosure title="Last drawing">
+          <Section title="Last drawing" collapsibleKey="plot-last" defaultOpen={false}>
             <dl className={styles.facts}>
               <div><dt>Plot time</dt><dd>{fmtDuration(estimate.estimate_s)}</dd></div>
               <div><dt>Line drawn</dt><dd>{fmtDistance(estimate.pendown_m)}</dd></div>
@@ -37,7 +37,7 @@ export function PlotSummary({ estimate, preview, units, rotated }: Props) {
                 </dd>
               </div>
             </dl>
-          </Disclosure>
+          </Section>
         </>
       )}
 

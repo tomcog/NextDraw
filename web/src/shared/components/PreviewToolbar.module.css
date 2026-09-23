@@ -1,0 +1,19 @@
+/* The bar, and whatever the app reports beside it, on one line. */
+.row {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+/* Something still being worked out, such as Plot's plot time. Masks the dimension line behind the
+   text, as the bar's own background does. */
+.status {
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+  padding: 0.125rem 0.375rem;
+  font-size: 10px;
+  white-space: nowrap;
+  color: var(--ui-text-muted);
+  background: var(--ui-surface-pale);
+}

@@ -79,6 +79,7 @@ export function LayersSection({ mode, onMode, layers, target, linksOf, onLink, o
   return (
     <Section
       title="Layers"
+      collapsibleKey="plot-layers"
       action={
         <span className={styles.headerTools}>
         {printed.length > 0 && (

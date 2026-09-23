@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ToolNote } from "../shared/components/controls/ToolNote";
-import { TipMark } from "../shared/components/controls/TipMark";
+import { ToolPicker } from "../shared/components/controls/ToolPicker";
 import { Button, ButtonRound, Card, Checkbox, ConfirmButton, InputSelect, InputText, InputTextarea, LayerController } from "@tomcoggia/ui";
 import { ArrowDownToLine, AudioWaveform, Circle, ClipboardCopy, ClipboardPaste, Copy, Ellipsis, EllipsisVertical, FilePlus, FlameKindling, FolderOpen, Grid2x2, Layers2, LayersArrowDown, LayersArrowUp, LineStyle, LoaderPinwheel, Menu, Minus, MoveHorizontal, MoveVertical, MousePointer2, Orbit, PaintBucket, PenLine, Pentagon, Plus, Rainbow, RotateCw, Save, Send, Shell, Signal, Spline, Square, SquareDimensions, SquareStack, Star, Target, Trash2, Type, Waves } from "lucide-react";
 import { FileBrowser, LAST_FOLDER_KEY, type OpenResult } from "../shared/components/FileBrowser";
@@ -13,7 +12,7 @@ import { DEFAULT_SETTINGS, PAPER_SIZES, PLOT_CHANNEL } from "../shared/lib/const
 import type { Info, PenColor, PlotterModel, Preset } from "../shared/lib/types";
 import { trimNum } from "../shared/lib/format";
 import { lightness } from "../shared/lib/color";
-import { StudioToolbar, type View } from "./components/StudioToolbar";
+import { PreviewToolbar, type View } from "../shared/components/PreviewToolbar";
 import type { Zoom } from "../shared/components/BedCanvas";
 import { useRowDrag } from "./lib/useRowDrag";
 import { Canvas, type Tool } from "./components/Canvas";
@@ -675,19 +674,6 @@ export default function App() {
  const [view, setView] = useState<View>("outline");
 
  const tool2 = presets.find((t) => t.name === toolName) ?? null;
- // The menu lists markers, not tips: a marker that comes with more than one tip is one line with a
- // row of tips under it, rather than a line per tip. A marker with no tips of its own is its own
- // entry and shows no row. The name of a tool is still the whole of it - the family is only how the
- // menu is grouped - so what is picked here is what a drawing records.
- const familyOf = (t: Preset) => t.family ?? t.name;
- const families = presets.reduce<{ name: string; tips: Preset[] }[]>((list, t) => {
-  const at = list.find((f) => f.name === familyOf(t));
-  if (at) at.tips.push(t);
-  else list.push({ name: familyOf(t), tips: [t] });
-  return list;
- }, []);
- const family = tool2 ? familyOf(tool2) : "";
- const tips = families.find((f) => f.name === family)?.tips ?? [];
  const palette: PenColor[] = tool2?.palette?.length ? tool2.palette : [PLAIN_PEN];
  // Darkest last in the list, so the default pen is the one you'd reach for first.
  // The real line the pen lays down, so the drawing shows its true weight against the hatch spacing.
@@ -1414,16 +1400,13 @@ export default function App() {
       // been done, how the drawing is drawn, and how close the view sits. It used to be two
       // groups at opposite ends of the width line.
       toolbarLeft={(
-       <StudioToolbar
+       <PreviewToolbar
         view={view}
         onView={setView}
         zoom={zoom}
         onZoom={setZoom}
         canDrawing={shapes.length > 0}
-        canUndo={past.length > 0}
-        canRedo={future.length > 0}
-        onUndo={undo}
-        onRedo={redo}
+        history={{ canUndo: past.length > 0, canRedo: future.length > 0, onUndo: undo, onRedo: redo }}
         disabled={busy}
        />
       )}
@@ -1449,7 +1432,7 @@ export default function App() {
 
     <div className={styles.side}>
      <Card variant="flat" className={styles.controls}>
-      <div className={`${styles.cardBody} ${styles.settings}`}>
+      <div className={`${styles.cardBody} ${controls.cardSections}`}>
        <Section
         title="Drawing"
         action={
@@ -1544,7 +1527,7 @@ export default function App() {
         title="Settings"
         // The tool sits here rather than on its own heading: this row is the one still showing when
         // the whole card is folded, which is when knowing the pen matters most.
-        action={toolName ? <span className={styles.toolInTitle}>{toolName}</span> : undefined}
+        action={toolName ? <span className={controls.toolInTitle}>{toolName}</span> : undefined}
         collapsibleKey="settings"
        >
         <Section title="Paper" collapsibleKey="paper">
@@ -1604,63 +1587,13 @@ export default function App() {
         </Section>
 
         <Section title="Drawing tool" collapsibleKey="pen">
-         {/* The tip's own drawing, in front of the marker and the tips it belongs to:
-           it stands as tall as they do together, since it is what both of them name. */}
-         <div className={styles.toolPick}>
-         <TipMark tool={tool2 ?? undefined} />
-         <div className={styles.toolPickMain}>
-         <InputSelect
-          size="md"
+         <ToolPicker
+          tools={presets}
+          value={toolName}
+          onPick={pickTool}
           label="Tool"
-          hideLabel
-          value={family}
-          disabled={busy || !presets.length}
-          // Changing marker keeps the tip you were on where the new one has that tip too -
-          // a Fine is a Fine - and otherwise takes its first.
-          onChange={(e) => {
-           const picked = families.find((f) => f.name === e.target.value)?.tips ?? [];
-           const same = picked.find((t) => t.variant && t.variant === tool2?.variant);
-           pickTool((same ?? picked[0])?.name ?? "");
-          }}
-         >
-          {families.map((f) => (
-           <option key={f.name} value={f.name}>
-            {f.name}
-           </option>
-          ))}
-         </InputSelect>
-         {tips.length <= 1 && (
-          // A marker with one tip keeps the row's space all the same, so its pen is drawn
-          // the same size as every other's and the cards line up. Held open by a button
-          // that isn't there rather than by a measurement, which would go stale the moment
-          // the row's own size changed.
-          <div className={styles.tools} aria-hidden>
-           <Button size="sm" variant="ghost" tabIndex={-1} className={styles.tipRowHold}>&nbsp;</Button>
-          </div>
-         )}
-         {tips.length > 1 && (
-          <div className={styles.tools} role="group" aria-label="Tip">
-           {tips.map((t) => (
-            <Button
-             key={t.name}
-             size="sm"
-             variant={t.name === toolName ? "primary" : "ghost"}
-             aria-pressed={t.name === toolName}
-             title={`${t.variant}: draws a ${t.settings.pen_width ?? "?"} mm line`}
-             onClick={() => pickTool(t.name)}
-            >
-             {t.variant}
-            </Button>
-           ))}
-          </div>
-         )}
-         </div>
-         </div>
-         {/* What the tool is always set up for - how wide it draws, the clip angle, and
-           one-way strokes. The same note Plot shows, from the same place, because it is a
-           fact about the tool rather than about plotting: it says what to do before a
-           drawing is made with it. */}
-         <ToolNote tool={tool2 ?? undefined} />
+          disabled={busy}
+         />
         </Section>
        </Section>
       </div>
@@ -1687,7 +1620,7 @@ export default function App() {
 
      {/* The layers, and what is on the one being worked on: two sections of one card. */}
      <Card variant="flat" className={styles.controls}>
-      <div className={`${styles.cardBody} ${styles.settings}`}>
+      <div className={`${styles.cardBody} ${controls.cardSections}`}>
        <Section title="Artwork" collapsibleKey="artwork">
        <Section
         title="Layers"
@@ -1989,7 +1922,7 @@ export default function App() {
      {/* What the shape itself is made of: the numbers that draw it, and how it is filled in. */}
      {chosen && (chosen.curve || canFill(chosen) || chosen.kind === "path") && (
       <Card variant="flat" className={styles.controls}>
-       <div className={`${styles.cardBody} ${styles.settings}`}>
+       <div className={`${styles.cardBody} ${controls.cardSections}`}>
         {/* Named after the shape it is about, which is what the card is: the chosen shape,
           and what can be done to it. The fold is remembered under one key all the same. */}
         <Section

@@ -1,0 +1,33 @@
+/* The drawing tool: its tip's drawing, then the marker to choose. The drawing gives up its space
+   when the tool hasn't got one, so the menu sits where it always did. */
+.toolPick {
+  display: flex;
+  align-items: flex-start; /* the menu stays at the top; the room a missing tip row leaves is below it */
+  gap: 0.5rem;
+}
+
+.toolPickMain {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.375rem;
+}
+
+/* The menu with a button at its end. */
+.menuRow {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 0.375rem;
+  align-items: center;
+}
+
+/* The marker's tips, one row while they fit, then onto the next. */
+.tips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.375rem;
+}
+
+/* Holds the tip row open for a marker that has only one. */
+.tipRowHold { visibility: hidden; }

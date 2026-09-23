@@ -1,6 +1,6 @@
 /* The tip drawings live in files of their own, drawn in near-black ink on nothing, so no token in
    them follows the theme. These rules travel with the component rather than sitting in the shared
-   sheet: only Studio shows a tip drawing. */
+   sheet. */
 .tipMark {
   align-self: stretch;   /* as tall as the menu, or the menu and its tips together */
   position: relative;

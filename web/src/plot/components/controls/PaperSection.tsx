@@ -41,6 +41,7 @@ export function PaperSection({ settings: s, disabled, onPickSize, onChange }: Pr
   return (
     <Section
       title="Paper"
+      collapsibleKey="plot-paper"
       action={
         <ButtonRound
           size="sm"

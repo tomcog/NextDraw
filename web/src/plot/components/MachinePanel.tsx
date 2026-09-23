@@ -1,7 +1,7 @@
 import type { KeyboardEvent } from "react";
 import { Button, ButtonRound, Checkbox, Segment, SegmentedControl } from "@tomcoggia/ui";
 import { ArrowDown, ArrowLeft, ArrowRight, ArrowUp, House } from "lucide-react";
-import { Disclosure } from "./Disclosure";
+import { Section } from "../../shared/components/controls/Section";
 import styles from "./MachinePanel.module.css";
 import { STEPS } from "../../shared/lib/constants";
 import { fmtLen } from "../../shared/lib/format";
@@ -65,7 +65,7 @@ export function MachinePanel(props: Props) {
   };
 
   return (
-    <Disclosure title="Utilities">
+    <Section title="Utilities" collapsibleKey="plot-utilities" defaultOpen={false}>
       <section className={styles.panel} aria-label="Pen and carriage">
         <div className={styles.jog} role="group" aria-label="Move the carriage (arrow keys work here)" onKeyDown={onKeyDown}>
           <ButtonRound className={styles.up} size="md" icon={<ArrowUp />} aria-label="Move carriage toward the back" disabled={walkDisabled} onClick={() => props.onWalk("y", -1)} />
@@ -114,6 +114,6 @@ export function MachinePanel(props: Props) {
           </p>
         </div>
       </section>
-    </Disclosure>
+    </Section>
   );
 }

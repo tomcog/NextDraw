@@ -57,7 +57,7 @@ export function FileSection({
       : saveState === "saving" ? `Saving to ${folder}…` : saveState === "saved" ? `Saved to ${folder}` : `In ${folder}`;
 
   return (
-    <Section title="File">
+    <Section title="Drawing">
       <div className={styles.fileRow}>
         <span className={styles.fileName} data-has-file={Boolean(fileName)} title={fileName ?? undefined}>
           {fileName ?? "No file loaded"}
