@@ -5,6 +5,8 @@ import {
   type Handle, type Page, type Shape, type ShapeKind,
 } from "../lib/shapes";
 import { fillRuns, type Fill } from "../lib/hatch";
+import { photoMarks } from "../lib/photo";
+import { usePhotoRead } from "../lib/usePhotoRead";
 import { pathData } from "../lib/path";
 import { curveStrokes, pointsAttr, DEFAULT_CURVE, type CurveKind } from "../lib/parametric";
 import { placementAttr, placements } from "../lib/repeat";
@@ -19,8 +21,9 @@ import styles from "./Canvas.module.css";
 
 /** Select picks shapes up; the rest draw. Without the distinction a shape covering the page would
  *  be a hole you couldn't draw in, and a drag over one would be ambiguous. A parametric curve is
- *  its own tool per generator, since which curve it is can't be told from the drag. */
-export type Tool = Exclude<ShapeKind, "curve" | "path"> | "select" | CurveKind;
+ *  its own tool per generator, since which curve it is can't be told from the drag. A photo is added
+ *  from a file, not drawn, so it isn't a tool. */
+export type Tool = Exclude<ShapeKind, "curve" | "path" | "photo"> | "select" | CurveKind;
 
 /** A line of text to start from, so a new one says something rather than being an empty box. */
 const NEW_TEXT = "Text";
@@ -176,7 +179,28 @@ function listsByLayer(shapes: Shape[], fills: Fill[], was: LayerLists): LayerLis
 // Ink is painted by the shared preview rules (see lib/ink.ts), and the interface pieces by
 // Canvas.module.css, so a mark and the thing you grab to move it are drawn separately even though
 // they're the same rectangle.
+/**
+ * A photo's hatching, drawn once the photo has been read - which takes a moment the first time, so
+ * this redraws itself when it's done rather than waiting on the rest of the page to. One path per
+ * pass of lines: tens of thousands of strokes, and four things on the page.
+ */
+function PhotoInk({ shape }: { shape: Shape }) {
+  const photo = shape.photo!;
+  usePhotoRead(photo.src);
+  const b = boxOf(shape);
+  const marks = photoMarks(photo, b.x1 - b.x0, b.y1 - b.y0);
+  return (
+    <g transform={turnAttr(shape)}>
+      <g transform={`translate(${b.x0} ${b.y0})`}>
+        {marks?.passes.map((d, i) => (d ? <path key={i} d={d} fill="none" /> : null))}
+      </g>
+    </g>
+  );
+}
+
 function shapeElement(s: Shape, key: string, props: Record<string, unknown>, fonts: Record<string, StrokeFont>) {
+  // A photo's ink is its hatching. What you grab it by is the box it sits in, as for a rectangle.
+  if (s.kind === "photo" && s.photo && props.className !== styles.grab) return <PhotoInk key={key} shape={s} />;
   const b = boxOf(s);
   // A turned shape is drawn turned about the middle of its box; the box itself stays square.
   const common = { ...props, ...(turnAttr(s) ? { transform: turnAttr(s) } : {}) };
@@ -390,6 +414,9 @@ export function Canvas({ page, paperColor, shapes, fills, layers, activeLayer, m
 
   const carry = (e: ReactPointerEvent, p: { x: number; y: number }, ids: string[]) => {
     const set = new Set(ids);
+    // A photo's tone bands are one photo on the page: carrying one carries them all.
+    const groups = new Set(shapes.filter((s) => set.has(s.id) && s.photo?.group).map((s) => s.photo!.group));
+    for (const s of shapes) if (s.photo?.group && groups.has(s.photo.group)) set.add(s.id);
     const origins = shapes.filter((s) => set.has(s.id));
     if (!origins.length) return;
     begin(e, { mode: "move", from: p, origins, ids: set, box: boxAround(origins), by: { x: 0, y: 0 } });

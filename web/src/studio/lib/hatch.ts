@@ -78,7 +78,7 @@ export interface Seg {
 const OPEN_CURVES = ["parabolic", "spiral", "arc", "wave"];
 
 export const canFill = (s: Shape) =>
-  s.kind !== "line" && s.kind !== "text" && !OPEN_CURVES.includes(s.curve?.kind ?? "")
+  s.kind !== "line" && s.kind !== "text" && s.kind !== "photo" && !OPEN_CURVES.includes(s.curve?.kind ?? "")
   && (s.kind !== "path" || pathRuns(s).some((run) => run.length > 2));
 
 /**

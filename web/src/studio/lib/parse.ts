@@ -4,7 +4,8 @@ import { flattenRun, mapNode, parsePath, type Node } from "./path";
 import { apply, axisAligned, multiply, parseTransform, IDENTITY, type Matrix } from "./transform";
 import { repeatFromData } from "./repeat";
 import { newLayerId, newShapeId, type Layer, type Page, type Shape } from "./shapes";
-import { FILL_GROUP_PREFIX } from "./svg";
+import { FILL_GROUP_PREFIX, PHOTO_GROUP_PREFIX } from "./svg";
+import { photoFromData } from "./photo";
 
 // Reading a drawing back in, so work can be picked up again after it's been handed to Plot.
 //
@@ -107,7 +108,7 @@ export function parseDrawing(text: string): Opened {
   // so those aren't counted as marks this can't edit.
   const designEl = svg.getElementsByTagName("nds:design")[0] ?? svg.querySelector("design");
   let design: {
-    fills?: unknown; on?: Record<string, string>; curves?: unknown;
+    fills?: unknown; on?: Record<string, string>; curves?: unknown; photos?: unknown;
     turned?: Record<string, unknown>; repeats?: Record<string, unknown>; smoothed?: Record<string, unknown>;
     names?: Record<string, unknown>;
     texts?: Record<string, { text?: unknown; font?: unknown; box?: unknown; tracking?: unknown; leading?: unknown }>;
@@ -129,7 +130,7 @@ export function parseDrawing(text: string): Opened {
 
   // A fill's lines are regenerated from its parameters, so reading them back as hundreds of separate
   // line shapes would both double the drawing and cut it loose from the fill that made it.
-  const generated = (el: Element) => Boolean(el.closest(`[id^="${FILL_GROUP_PREFIX}"]`));
+  const generated = (el: Element) => Boolean(el.closest(`[id^="${FILL_GROUP_PREFIX}"], [id^="${PHOTO_GROUP_PREFIX}"]`));
   const idOf = (el: Element) => el.getAttribute("id") || newShapeId();
 
   // What a layer is called. Its label, where the file has one. Otherwise its id, which is how
@@ -390,6 +391,19 @@ export function parseDrawing(text: string): Opened {
       layerId: "", kind: "curve", curve,
       x: box[0], y: box[1], x2: box[2], y2: box[3],
     });
+  }
+
+  // Each photo becomes one shape again, in the box it sits in, on the layer its lines are on. The
+  // lines themselves were skipped above: they are made again from the photo.
+  for (const saved of (Array.isArray(design.photos) ? design.photos : []) as Record<string, unknown>[]) {
+    const photo = photoFromData(saved);
+    const box = Array.isArray(saved.box) ? (saved.box as unknown[]).map(Number) : [];
+    if (!photo || box.length !== 4 || box.some((v) => !Number.isFinite(v))) continue;
+    const id = String(saved.shape);
+    const el = svg.querySelector(`[id="${CSS.escape(PHOTO_GROUP_PREFIX + id)}"]`);
+    const layer = el ? layerFor(el) : null;
+    if (layer) layerOf.set(id, layer);
+    shapes.push({ id, layerId: "", kind: "photo", photo, x: box[0], y: box[1], x2: box[2], y2: box[3] });
   }
 
   // How each repeated shape repeats, put back on the one shape its copies were drawn from.

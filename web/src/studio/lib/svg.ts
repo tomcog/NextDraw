@@ -4,6 +4,7 @@ import { textRuns, type StrokeFont } from "./text";
 import { placementAttr, placements } from "./repeat";
 import { hasCurves, pathData } from "./path";
 import { boxOf, drawnNodes, drawnRuns, pathRuns, turnAttr, type Layer, type Page, type Shape } from "./shapes";
+import { photoData, photoMarks } from "./photo";
 
 // The drawing Studio writes out. Two things matter to Plot at the other end:
 //
@@ -51,6 +52,14 @@ function shapeMarkup(s: Shape, fonts: Record<string, StrokeFont> = {}): string {
   // Copies carry the shape's id with a number after it, which is how reading the drawing back knows
   // they are copies rather than shapes of their own.
   if (s.repeat) return allCopies(s, (i) => shapeMarkup({ ...s, repeat: undefined, id: i ? `${s.id}-r${i + 1}` : s.id }, fonts));
+  if (s.kind === "photo" && s.photo) {
+    // The hatching, one path per pass of lines, in the photo's own corner moved to where it sits.
+    // In a group named after the photo, so reading the drawing back leaves the lines to be made
+    // again from the photo rather than listing tens of thousands of them as shapes.
+    const marks = photoMarks(s.photo, b.x1 - b.x0, b.y1 - b.y0);
+    const paths = (marks?.passes ?? []).filter(Boolean).map((d) => `<path d="${escapeAttr(d)}"/>`).join("");
+    return `<g id="${PHOTO_GROUP_PREFIX}${escapeAttr(s.id)}" transform="translate(${num(b.x0)} ${num(b.y0)})">${paths}</g>`;
+  }
   if (s.kind === "path") {
     // A path that curves is written as the curves themselves - the same `C`s, to the same numbers,
     // that it was read from, or the handles a smoothed path is drawn by - so a drawing that came in
@@ -92,6 +101,9 @@ function shapeMarkup(s: Shape, fonts: Record<string, StrokeFont> = {}): string {
   }
   return `<rect id="${escapeAttr(s.id)}" x="${num(b.x0)}" y="${num(b.y0)}" width="${num(b.x1 - b.x0)}" height="${num(b.y1 - b.y0)}"/>`;
 }
+
+// A photo's lines go in a group named after the photo, for the same reason as a fill's below.
+export const PHOTO_GROUP_PREFIX = "studio-photo-";
 
 // Fill lines go in a group named after the shape they fill, so reading the drawing back can tell
 // them apart from shapes that were drawn by hand and regenerate them instead of listing them.
@@ -188,6 +200,7 @@ function designBlock(fills: Fill[], shapes: Shape[], layers: Layer[]): string {
   // matching them up by position gets it wrong the moment shapes and layers are in different orders.
   const nameOf = new Map(layers.map((l) => [l.id, l.name]));
   const curves = shapes.filter((s) => s.curve);
+  const photos = shapes.filter((s) => s.kind === "photo" && s.photo);
   const texts = shapes.filter((s) => s.kind === "text");
   const turned = shapes.filter((s) => s.rotation);
   const repeated = shapes.filter((s) => s.repeat);
@@ -228,6 +241,11 @@ function designBlock(fills: Fill[], shapes: Shape[], layers: Layer[]): string {
     // drawing gets the curve back rather than a heap of line segments.
     ...(curves.length
       ? { curves: curves.map((s) => ({ shape: s.id, box: [s.x, s.y, s.x2, s.y2], ...s.curve })) }
+      : {}),
+    // Each photo, its working copy included, and the numbers that turn it into lines. The lines are in
+    // the file for Plot; this is what lets Studio make them again - for another pen, at another size.
+    ...(photos.length
+      ? { photos: photos.map((s) => ({ shape: s.id, box: [s.x, s.y, s.x2, s.y2], ...photoData(s.photo!) })) }
       : {}),
     fills: fills.map((f) => ({
       id: f.id,

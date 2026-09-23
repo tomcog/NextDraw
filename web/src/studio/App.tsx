@@ -2,8 +2,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { DrawingToolSection } from "../shared/components/controls/DrawingToolSection";
 import { PaperSection } from "../shared/components/controls/PaperSection";
 import { SettingsSection } from "../shared/components/controls/SettingsSection";
-import { Button, ButtonRound, Card, Checkbox, ConfirmButton, InputSelect, InputText, InputTextarea, LayerController } from "@tomcoggia/ui";
-import { ArrowDownToLine, AudioWaveform, Circle, ClipboardCopy, ClipboardPaste, Copy, Ellipsis, EllipsisVertical, FilePlus, FlameKindling, FolderOpen, Grid2x2, Layers2, LayersArrowDown, LayersArrowUp, LineStyle, LoaderPinwheel, Menu, Minus, MousePointer2, Orbit, PaintBucket, PenLine, Pentagon, Plus, Rainbow, RotateCw, Save, Send, Shell, Signal, Spline, Square, SquareDimensions, SquareStack, Star, Target, Trash2, Type, Waves } from "lucide-react";
+import { Button, ButtonRound, Card, Checkbox, ConfirmButton, InputSelect, InputText, InputTextarea, LayerController, Segment, SegmentedControl } from "@tomcoggia/ui";
+import { ArrowDownToLine, AudioWaveform, Circle, ClipboardCopy, ClipboardPaste, Copy, Ellipsis, EllipsisVertical, FilePlus, FlameKindling, FolderOpen, ImagePlus, Grid2x2, Layers2, LayersArrowDown, LayersArrowUp, LineStyle, LoaderPinwheel, Menu, Minus, MousePointer2, Orbit, PaintBucket, PenLine, Pentagon, Plus, Rainbow, RotateCw, Save, Send, Shell, Signal, Spline, Square, SquareDimensions, SquareStack, Star, Target, Trash2, Type, Waves } from "lucide-react";
 import { FileBrowser, LAST_FOLDER_KEY, type CombineResult, type OpenResult } from "../shared/components/FileBrowser";
 import { Section } from "../shared/components/controls/Section";
 import { NumberField } from "../shared/components/controls/NumberField";
@@ -29,6 +29,8 @@ import { flattenPath, flattenRun, mapNode, parsePath, simplifyRun, type Node } f
 import { fitText, textRuns } from "./lib/text";
 import { defaultRepeat, placements, REPEAT_FIELDS, type Repeat, type RepeatKind } from "./lib/repeat";
 import { parseDrawing } from "./lib/parse";
+import { BAND_NAMES, PHOTO_DEFAULTS, photoMarks, placeOnPage, workingCopy, type Photo } from "./lib/photo";
+import { usePhotoRead } from "./lib/usePhotoRead";
 import { PaletteMenu } from "../shared/components/controls/PaletteMenu";
 import { Hints } from "../shared/components/controls/Hints";
 import { RowMenu } from "./components/controls/RowMenu";
@@ -138,6 +140,35 @@ function uniqueName(wanted: string, taken: string[]): string {
  let n = 2;
  while (taken.includes(`${base} ${n}`)) n++;
  return `${base} ${n}`;
+}
+
+/**
+ * A photo split into tone bands is one photo on the page: whatever moved, sized or turned one band
+ * takes the rest of its bands along with it.
+ */
+function withPhotoGroups(list: Shape[], changed: Shape[]): Shape[] {
+ const leads = new Map(changed.filter((s) => s.photo?.group).map((s) => [s.photo!.group!, s]));
+ if (!leads.size) return list;
+ const moved = new Set(changed.map((s) => s.id));
+ return list.map((s) => {
+  const lead = s.photo?.group ? leads.get(s.photo.group) : undefined;
+  if (!lead || moved.has(s.id)) return s;
+  return {
+   ...s, x: lead.x, y: lead.y, x2: lead.x2, y2: lead.y2, rotation: lead.rotation,
+   photo: { ...s.photo!, crop: lead.photo?.crop, fit: lead.photo?.fit, margin: lead.photo?.margin },
+  };
+ });
+}
+
+/**
+ * A photo sized to the page stops being sized to it once it's moved or sized by hand: that is a
+ * choice of where it goes, and sizing the page again shouldn't undo it.
+ */
+function unfitIfMoved(before: Shape | undefined, after: Shape): Shape {
+ if (!before || !after.photo?.fit) return after;
+ const same = before.x === after.x && before.y === after.y && before.x2 === after.x2 && before.y2 === after.y2
+  && (before.rotation ?? 0) === (after.rotation ?? 0);
+ return same ? after : { ...after, photo: { ...after.photo, fit: undefined } };
 }
 
 /** Whether a Plot page is open in another tab of this browser: it answers when asked (see Plot's poll). */
@@ -292,6 +323,22 @@ export default function App() {
   return customPaper || !match ? "custom" : match.id;
  }, [page, customPaper]);
 
+ // Photos sized to the page follow it: a new paper size, or turning it, sizes them again.
+ useEffect(() => {
+  setShapes((list) => {
+   let changed = false;
+   const next = list.map((sh) => {
+    const p = sh.photo;
+    if (!p?.fit) return sh;
+    const { crop, ...box } = placeOnPage(p.width / p.height, page, p.fit, p.margin ?? 0.5);
+    if (Math.abs(box.x - sh.x) < 1e-6 && Math.abs(box.y - sh.y) < 1e-6 && Math.abs(box.x2 - sh.x2) < 1e-6 && Math.abs(box.y2 - sh.y2) < 1e-6) return sh;
+    changed = true;
+    return { ...sh, ...box, rotation: undefined, photo: { ...p, crop } };
+   });
+   return changed ? next : list;
+  });
+ }, [page]);
+
  // Called just before a change, never during one: a drag records once, when it starts.
  const record = useCallback(() => {
   setPast((p) => [...p.slice(-(HISTORY_LIMIT - 1)), { shapes, fills, layers, page }]);
@@ -341,13 +388,20 @@ export default function App() {
 
  const updateShape = useCallback((shape: Shape) => {
   const next = shape.kind === "text" ? fitText(shape, fontsRef.current[shape.font ?? ""]) : shape;
-  setShapes((list) => list.map((s) => (s.id === next.id ? next : s)));
+  setShapes((list) => {
+   const placed = unfitIfMoved(list.find((s) => s.id === next.id), next);
+   return withPhotoGroups(list.map((s) => (s.id === placed.id ? placed : s)), [placed]);
+  });
  }, []);
 
  /** Several shapes changed at once, as a drag of a whole selection does. */
  const updateShapes = useCallback((changed: Shape[]) => {
-  const byId = new Map(changed.map((s) => [s.id, s]));
-  setShapes((list) => list.map((s) => byId.get(s.id) ?? s));
+  setShapes((list) => {
+   const was = new Map(list.map((s) => [s.id, s]));
+   const placed = changed.map((s) => unfitIfMoved(was.get(s.id), s));
+   const byId = new Map(placed.map((s) => [s.id, s]));
+   return withPhotoGroups(list.map((s) => byId.get(s.id) ?? s), placed);
+  });
  }, []);
 
  // A copy of a shape and its fill, on the same layer, nudged down and to the right so it can be
@@ -443,8 +497,8 @@ export default function App() {
    const byX = Math.max(-x0, Math.min(page.w - x1, dx));
    const byY = Math.max(-y0, Math.min(page.h - y1, dy));
    if (!byX && !byY) return list;
-   const byId = new Map(moving.map((s) => [s.id, moveBy(s, byX, byY, page)]));
-   return list.map((s) => byId.get(s.id) ?? s);
+   const byId = new Map(moving.map((s) => [s.id, unfitIfMoved(s, moveBy(s, byX, byY, page))]));
+   return withPhotoGroups(list.map((s) => byId.get(s.id) ?? s), [...byId.values()]);
   });
  };
  const nudgeRef = useRef(nudge);
@@ -814,6 +868,112 @@ export default function App() {
  const active = layers.find((l) => l.id === activeLayer) ?? layers[0];
  const onActive = shapes.filter((sh) => sh.layerId === active?.id);
  const pickedIds = useMemo(() => new Set(selected), [selected]);
+ // The chosen photo's card counts its lines, which can only be made once the photo has been read.
+ usePhotoRead(chosen?.photo?.src);
+
+ // A photo, from a file on this Mac: made into a working copy, fitted to the page inside a half-inch
+ // margin at its own proportions, and put on the layer being drawn on - whose ink it is hatched in.
+ const photoInput = useRef<HTMLInputElement>(null);
+ const addPhoto = async (file: File | undefined) => {
+  if (!file || !active) return;
+  try {
+   const copy = await workingCopy(file);
+   const margin = 0.5;
+   const { crop, ...box } = placeOnPage(copy.width / copy.height, page, "fit", margin);
+   addShape({
+    id: newShapeId(),
+    layerId: active.id,
+    kind: "photo",
+    name: file.name.replace(/\.[^.]+$/, ""),
+    ...box,
+    photo: { ...copy, ...PHOTO_DEFAULTS, spacingMm: defaults.spacingMm, crop, fit: "fit", margin },
+   });
+   setMessage({ text: `Added ${file.name}, hatched in ${active.name}`, ok: true });
+  } catch (err) {
+   setMessage({ text: (err as Error).message, ok: false });
+  }
+ };
+ /**
+  * Split the chosen photo into tone bands, one layer each, or put it back to one. The lightest band
+  * keeps the photo's own layer and settings; each darker one gets a layer of its own above it, in the
+  * same ink, named after the ink and the band - so the layers still say which pen to load, and the
+  * lightest stays at the bottom. Every band starts from the same settings, to be changed one by one.
+  */
+ const splitPhoto = (count: number) => {
+  if (!chosen?.photo) return;
+  const n = Math.min(4, Math.max(1, Math.round(count)));
+  const oldGroup = chosen.photo.group;
+  const members = oldGroup ? shapes.filter((sh) => sh.photo?.group === oldGroup) : [chosen];
+  if (members.length === n) return;
+  record();
+  const base = members.find((m) => !m.photo?.band || m.photo.band[0] <= 0) ?? chosen;
+  const baseLayer = layers.find((l) => l.id === base.layerId);
+  if (!baseLayer) return;
+  const bandWords = /\s+(lightest|light|mid|dark|darkest)$/i;
+  const ink = baseLayer.name.replace(bandWords, "");
+  const stem = (base.name ?? "Photo").replace(bandWords, "");
+  const names = BAND_NAMES[n] ?? [];
+  const group = n > 1 ? oldGroup ?? newShapeId() : undefined;
+  const others = new Set(members.filter((m) => m.id !== base.id).map((m) => m.id));
+  // The layers the other bands were on go with them, once nothing else is left on them.
+  const emptied = new Set(members.filter((m) => others.has(m.id)).map((m) => m.layerId)
+   .filter((id) => id !== baseLayer.id && !shapes.some((sh) => sh.layerId === id && !others.has(sh.id))));
+  const bandLayers: Layer[] = names.slice(1).map((word) => ({ id: newLayerId(), name: `${ink} ${word}`, color: baseLayer.color }));
+  const made: Shape[] = Array.from({ length: n }, (_, i) => ({
+   ...base,
+   id: i === 0 ? base.id : newShapeId(),
+   layerId: i === 0 ? baseLayer.id : bandLayers[i - 1].id,
+   name: n > 1 ? `${stem} ${names[i]}` : stem,
+   photo: { ...base.photo!, group, band: n > 1 ? [i / n, (i + 1) / n] as [number, number] : undefined },
+  }));
+  setLayers((list) => {
+   const kept = list
+    .filter((l) => !emptied.has(l.id))
+    .map((l) => (l.id === baseLayer.id ? { ...l, name: n > 1 ? `${ink} ${names[0]}` : ink } : l));
+   const at = kept.findIndex((l) => l.id === baseLayer.id);
+   return [...kept.slice(0, at + 1), ...bandLayers, ...kept.slice(at + 1)];
+  });
+  setShapes((list) => [...list.filter((sh) => !others.has(sh.id) && sh.id !== base.id), ...made]);
+  pick(base.id);
+  setMessage({ text: n > 1 ? `Split into ${n} tone layers` : "Back to one layer", ok: true });
+ };
+
+ /**
+  * Size the chosen photo - all its bands - to the page: all of it as large as it fits, or filling the
+  * page and cropped, inside a margin. Square to the page again, whatever it was turned to.
+  */
+ const placePhoto = (how: "fit" | "fill", margin: number) => {
+  if (!chosen?.photo) return;
+  record();
+  const group = chosen.photo.group;
+  const { crop, ...box } = placeOnPage(chosen.photo.width / chosen.photo.height, page, how, margin);
+  setShapes((list) => list.map((sh) => (sh.id === chosen.id || (group && sh.photo?.group === group)
+   ? { ...sh, ...box, rotation: undefined, photo: { ...sh.photo!, crop, fit: how, margin } }
+   : sh)));
+ };
+ /** The margin a photo is sized inside: changing it sizes the photo again, if it's sized to the page. */
+ const setPhotoMargin = (margin: number) => {
+  if (!chosen?.photo) return;
+  if (chosen.photo.fit) return placePhoto(chosen.photo.fit, margin);
+  setPhotoOf({ margin });
+ };
+
+ /** Change how the chosen photo is turned into lines. */
+ const setPhotoOf = (patch: Partial<Photo>) => {
+  if (!chosen?.photo) return;
+  record();
+  // Brightness and contrast are the photo's, not a band's: they decide where the bands are cut, and
+  // bands cut from different photos would overlap or leave gaps. The rest is each band's own.
+  const group = chosen.photo.group;
+  const whole: Partial<Photo> = {};
+  if (patch.brightness !== undefined) whole.brightness = patch.brightness;
+  if (patch.contrast !== undefined) whole.contrast = patch.contrast;
+  setShapes((list) => list.map((sh) => {
+   if (sh.id === chosen.id) return { ...sh, photo: { ...sh.photo!, ...patch } };
+   if (group && sh.photo?.group === group && Object.keys(whole).length) return { ...sh, photo: { ...sh.photo, ...whole } };
+   return sh;
+  }));
+ };
 
  const newFill = (angle: number): Fill => ({
   id: newFillId(),
@@ -1024,7 +1184,8 @@ export default function App() {
   */
  const joinShapes = () => {
   const ids = new Set(selected);
-  const picked = shapes.filter((s) => ids.has(s.id));
+  // A photo is its lines made from a picture, not an outline to join.
+  const picked = shapes.filter((s) => ids.has(s.id) && s.kind !== "photo");
   if (picked.length < 2) return;
   const runs = picked.flatMap((s) => nodesOf(s));
   if (!runs.length) return;
@@ -1657,6 +1818,25 @@ export default function App() {
           onClick={() => setTool(t.kind)}
          />
         ))}
+        {/* Not a tool to drag with: a photo comes from a file, and is placed on the page to fit. */}
+        <ButtonRound
+         size="sm"
+         icon={<ImagePlus />}
+         aria-label="Add a photo"
+         title="Add a photo: it's drawn as hatching, in the ink of the layer you're drawing on"
+         disabled={busy}
+         onClick={() => photoInput.current?.click()}
+        />
+        <input
+         ref={photoInput}
+         type="file"
+         accept="image/*"
+         hidden
+         onChange={(e) => {
+          addPhoto(e.target.files?.[0]);
+          e.target.value = ""; // so the same photo can be added again
+         }}
+        />
        </div>
       </div>
      </Card>
@@ -1718,7 +1898,14 @@ export default function App() {
              visible={!layer.hidden}
              onVisibleChange={(visible) => patchLayer(layer.id, { hidden: !visible })}
              disabled={busy}
-             onChange={() => setActiveLayer(layer.id)}
+             onChange={() => {
+              setActiveLayer(layer.id);
+              // A photo's band on this layer is what its card should now be about: the bands sit
+              // on top of each other on the page, so this is the plain way to reach each one.
+              const band = chosen?.photo?.group
+               && shapes.find((sh) => sh.layerId === layer.id && sh.photo?.group === chosen.photo!.group);
+              if (band) pick(band.id);
+             }}
              aria-label={`Draw on layer ${at + 1}, ${layer.name}`}
              label={renamingLayer === layer.id ? (
               <input
@@ -1919,6 +2106,79 @@ export default function App() {
        </div>
       </Card>
      )}
+
+     {chosen?.kind === "photo" && chosen.photo && (() => {
+      const b = boxOf(chosen);
+      const marks = photoMarks(chosen.photo, b.x1 - b.x0, b.y1 - b.y0);
+      return (
+      <Card variant="flat" className={styles.controls}>
+       <div className={`${styles.cardBody} ${controls.cardSections}`}>
+        <Section title={shapeName(chosen, onActive.indexOf(chosen))} collapsibleKey="photo">
+         {/* How many layers the photo is split into by tone. Each band layer has its own settings
+           below; the photo's picture, brightness and contrast are what the bands are cut from. */}
+         <NumberField
+          label="Tone layers"
+          min={1}
+          max={4}
+          step={1}
+          value={chosen.photo.group ? shapes.filter((sh) => sh.photo?.group === chosen.photo!.group).length : 1}
+          onChange={splitPhoto}
+         />
+         {/* Sized to the page, inside the margin: the whole photo as large as it fits, or the page
+           filled and the photo cropped. Moved or sized by hand, it's neither. */}
+         <div className={styles.fillRow}>
+          <SegmentedControl size="sm" variant="dark" aria-label="Size to the page">
+           <Segment selected={chosen.photo.fit === "fit"} title="Fit to page: all of the photo, as large as it fits inside the margin" onClick={() => placePhoto("fit", chosen.photo!.margin ?? 0.5)}>Fit</Segment>
+           <Segment selected={chosen.photo.fit === "fill"} title="Fill page: the whole page inside the margin, the photo cropped to it" onClick={() => placePhoto("fill", chosen.photo!.margin ?? 0.5)}>Fill</Segment>
+          </SegmentedControl>
+          <NumberField label="Margin" unit="in" min={0} max={4} step={0.25} value={chosen.photo.margin ?? 0.5} onChange={setPhotoMargin} />
+         </div>
+         {/* Which band's lines the rest of the card sets. The bands lie on top of each other, so
+           this is how to reach each one; its layer in the list does the same. */}
+         {chosen.photo.group && (() => {
+          const bands = shapes
+           .filter((sh) => sh.photo?.group === chosen.photo!.group)
+           .sort((a, b) => (a.photo!.band?.[0] ?? 0) - (b.photo!.band?.[0] ?? 0));
+          const words = BAND_NAMES[bands.length] ?? [];
+          return (
+           <SegmentedControl size="sm" variant="dark" aria-label="Band to set">
+            {bands.map((band, i) => (
+             <Segment
+              key={band.id}
+              selected={band.id === chosen.id}
+              title={`The ${words[i] ?? ""} band's lines, on ${layers.find((l) => l.id === band.layerId)?.name ?? "its layer"}`}
+              onClick={() => { pick(band.id); setActiveLayer(band.layerId); }}
+             >
+              {(words[i] ?? String(i + 1)).replace(/^./, (c) => c.toUpperCase())}
+             </Segment>
+            ))}
+           </SegmentedControl>
+          );
+         })()}
+         {chosen.photo.band && (
+          <p className={styles.empty}>
+           {`This layer draws the tones from ${Math.round(chosen.photo.band[0] * 100)}% to ${Math.round(chosen.photo.band[1] * 100)}% dark.`}
+          </p>
+         )}
+         <div className={styles.fillRow}>
+          <NumberField label="Brightness" min={-100} max={100} step={5} value={chosen.photo.brightness} onChange={(brightness) => setPhotoOf({ brightness })} />
+          <NumberField label="Contrast" min={-100} max={100} step={5} value={chosen.photo.contrast} onChange={(contrast) => setPhotoOf({ contrast })} />
+         </div>
+         <div className={styles.fillRow}>
+          <NumberField label="Angle" unit="°" min={-180} max={180} step={5} value={chosen.photo.angle} onChange={(angle) => setPhotoOf({ angle })} />
+          <NumberField label="Closest lines" unit="mm" min={0.1} max={5} step={0.05} value={chosen.photo.spacingMm} onChange={(spacingMm) => setPhotoOf({ spacingMm })} />
+          <NumberField label="Passes" min={1} max={4} step={1} value={chosen.photo.levels} onChange={(levels) => setPhotoOf({ levels })} />
+         </div>
+         <p className={styles.empty}>
+          {marks
+           ? `${marks.strokes.toLocaleString()} strokes. The closest lines start at the tool’s solid-fill spacing; each pass adds lines where the photo is darker.`
+           : "Reading the photo…"}
+         </p>
+        </Section>
+       </div>
+      </Card>
+      );
+     })()}
 
      {chosen?.kind === "text" && (
       <Card variant="flat" className={styles.controls}>

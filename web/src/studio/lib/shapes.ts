@@ -6,8 +6,9 @@ import { catmullNodes, flattenRun, mapNode, type Node } from "./path";
 
 export type { Node } from "./path";
 import type { Repeat } from "./repeat";
+import type { Photo } from "./photo";
 
-export type ShapeKind = "rect" | "ellipse" | "line" | "curve" | "path" | "text";
+export type ShapeKind = "rect" | "ellipse" | "line" | "curve" | "path" | "text" | "photo";
 
 export interface Shape {
   id: string;
@@ -65,6 +66,11 @@ export interface Shape {
    * curve moves, resizes and fills like anything else; the lines are drawn from these every time.
    */
   curve?: Curve;
+  /**
+   * For a photo: the photo, and how it is turned into lines. The box is where it sits on the page and
+   * how big; the lines are made from the photo every time, never kept as shapes of their own.
+   */
+  photo?: Photo;
   /**
    * The layer it sits on, which is what decides the colour it's drawn in. A layer is one pen:
    * everything on it plots in that one colour, because plotting a layer is what a pen change is for.
@@ -137,7 +143,7 @@ export const shapeName = (s: Shape, index: number) =>
   s.name?.trim() ||
   `${s.kind === "text" ? (s.text?.trim().split("\n")[0].slice(0, 20) || "Text")
     : s.curve ? CURVE_LABEL[s.curve.kind]
-    : { rect: "Rectangle", ellipse: "Ellipse", line: "Line", curve: "Curve", path: "Path", text: "Text" }[s.kind]} ${s.kind === "text" ? "" : index + 1}`.trim();
+    : { rect: "Rectangle", ellipse: "Ellipse", line: "Line", curve: "Curve", path: "Path", text: "Text", photo: "Photo" }[s.kind]} ${s.kind === "text" ? "" : index + 1}`.trim();
 
 /**
  * The outline of a shape that has no points of its own, in the drawing's inches: the corners of a
