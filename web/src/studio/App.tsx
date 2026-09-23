@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ToolPicker } from "../shared/components/controls/ToolPicker";
 import { Button, ButtonRound, Card, Checkbox, ConfirmButton, InputSelect, InputText, InputTextarea, LayerController } from "@tomcoggia/ui";
 import { ArrowDownToLine, AudioWaveform, Circle, ClipboardCopy, ClipboardPaste, Copy, Ellipsis, EllipsisVertical, FilePlus, FlameKindling, FolderOpen, Grid2x2, Layers2, LayersArrowDown, LayersArrowUp, LineStyle, LoaderPinwheel, Menu, Minus, MoveHorizontal, MoveVertical, MousePointer2, Orbit, PaintBucket, PenLine, Pentagon, Plus, Rainbow, RotateCw, Save, Send, Shell, Signal, Spline, Square, SquareDimensions, SquareStack, Star, Target, Trash2, Type, Waves } from "lucide-react";
-import { FileBrowser, LAST_FOLDER_KEY, type OpenResult } from "../shared/components/FileBrowser";
+import { FileBrowser, LAST_FOLDER_KEY, type CombineResult, type OpenResult } from "../shared/components/FileBrowser";
 import { Section } from "../shared/components/controls/Section";
 import { NumberField } from "../shared/components/controls/NumberField";
 import controls from "../shared/components/controls/controls.module.css";
@@ -10,7 +10,7 @@ import { api, postJSON } from "../shared/lib/api";
 import { load, save as remember } from "../shared/lib/storage";
 import { DEFAULT_SETTINGS, PAPER_SIZES, PLOT_CHANNEL } from "../shared/lib/constants";
 import type { Info, PenColor, PlotterModel, Preset } from "../shared/lib/types";
-import { trimNum } from "../shared/lib/format";
+import { listOf, trimNum } from "../shared/lib/format";
 import { lightness } from "../shared/lib/color";
 import { PreviewToolbar, type View } from "../shared/components/PreviewToolbar";
 import type { Zoom } from "../shared/components/BedCanvas";
@@ -212,6 +212,9 @@ export default function App() {
  const [future, setFuture] = useState<Snapshot[]>([]);
  const [foreign, setForeign] = useState(0);
  const [openedAs, setOpenedAs] = useState<string | null>(null);
+ // Where a drawing that has never been saved will be: files stacked into one are saved next to the
+ // first of them, not in the shared folder a new drawing goes to. Null means the server's default.
+ const [saveTo, setSaveTo] = useState<string | null>(null);
  const [message, setMessage] = useState<{ text: string; ok: boolean }>({
   text: "Nothing saved yet",
   ok: false,
@@ -520,12 +523,13 @@ export default function App() {
    const res = await postJSON<{ name: string; path: string; folder: string }>("/api/studio/save", {
     name: cleanFileName(name),
     svg,
-    ...(saved ? { folder: saved.path.slice(0, saved.path.lastIndexOf("/")) } : {}),
+    ...(saved ? { folder: saved.path.slice(0, saved.path.lastIndexOf("/")) } : saveTo ? { folder: saveTo } : {}),
    });
    const where = { path: res.path, folder: res.folder };
    const savedName = res.name.replace(/\.svg$/i, "");
    setName(savedName);
    setSaved(where);
+   setSaveTo(null);
    // What's on disk now is exactly what Studio holds, whatever the file used to contain.
    setForeign(0);
    setOpenedAs(res.name);
@@ -581,6 +585,7 @@ export default function App() {
   setFuture([]);
   setName("Untitled");
   setSaved(null);
+  setSaveTo(null);
   setForeign(0);
   setOpenedAs(null);
   setConfirmNew(false);
@@ -606,6 +611,7 @@ export default function App() {
   setFuture([]);
   setName(res.name.replace(/\.svg$/i, ""));
   setSaved({ path: res.path, folder: res.folder });
+  setSaveTo(null);
   setForeign(drawing.unsupported);
   setOpenedAs(res.name);
   remember(LAST_FILE_KEY, res.path);
@@ -628,6 +634,42 @@ export default function App() {
    name: res.name.replace(/\.svg$/i, ""),
   });
  }, [markClean]);
+
+ // Files stacked into one drawing, a layer each (the file browser's "Open as layers" and "Add as
+ // layers"). Opened, they are a new drawing not yet saved, which saves next to the first of them.
+ // Added, they go on top of this one, and Undo takes them off again.
+ const openCombined = (res: CombineResult) => {
+  const drawing = parseDrawing(res.svg ?? "");
+  const count = drawing.layers.length;
+  if (res.added) {
+   record();
+  } else {
+   setPast([]);
+   setFuture([]);
+   setName(res.name.replace(/\.svg$/i, ""));
+   setSaved(null);
+   setSaveTo(res.folder_path ?? null);
+   setOpenedAs(null);
+   remember(LAST_FILE_KEY, null); // nothing on disk to pick up again yet
+   onDisk.current = null; // on screen and nowhere else: there is something to save
+  }
+  setPage(drawing.page);
+  setShapes(drawing.shapes);
+  setFills(drawing.fills);
+  setLayers(drawing.layers);
+  setActiveLayer(drawing.layers[drawing.layers.length - 1]?.id ?? "");
+  setSelected([]);
+  setForeign((was) => (res.added ? was : 0) + drawing.unsupported);
+  // What most needs saying goes first: files that may not line up, then marks Studio can't redraw.
+  const said = res.added ? `Added as layers - ${count} ${count === 1 ? "layer" : "layers"} now` : `Opened as ${count} layers - not saved yet`;
+  const misfit = res.mismatched.length
+   ? ` - ${listOf(res.mismatched)} ${res.mismatched.length === 1 ? "isn’t" : "aren’t"} on a page this size: pick Select all on layer from ${res.mismatched.length === 1 ? "its" : "their"} menu and drag to line up`
+   : "";
+  const foreignNote = drawing.unsupported
+   ? ` - ${drawing.unsupported} other ${drawing.unsupported === 1 ? "mark" : "marks"} can’t be edited here and saving would drop ${drawing.unsupported === 1 ? "it" : "them"}`
+   : "";
+  setMessage({ text: said + misfit + foreignNote, ok: !misfit && !foreignNote });
+ };
 
  // Say so if the server isn't there, rather than only failing at the moment of saving. Then pick up
  // the drawing this browser was last working on, so coming back from Plot lands where you left off.
@@ -1258,6 +1300,13 @@ export default function App() {
     endpoint="/api/studio/read"
     onClose={() => setBrowserOpen(false)}
     onOpened={(res) => openDrawing(res, (n) => `Opened ${res.name} - ${n} ${n === 1 ? "shape" : "shapes"}`)}
+    combine={{
+     endpoint: "/api/studio/combine",
+     canAdd: shapes.length > 0,
+     // This drawing as it would be saved, for the files to go on top of.
+     base: () => buildSvg(shapes, fills, layers, page, { paperSizeId: sizeId, toolName, fonts }),
+     onCombined: openCombined,
+    }}
    />
    <StudioHeader message={message.text} ok={message.ok} />
    {colorMenu && layers.some((l) => l.id === colorMenu.id) && (
