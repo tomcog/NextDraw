@@ -1540,7 +1540,13 @@ export default function App() {
 
        {/* What the drawing is made on and with, in the same card as the drawing itself:
          each folds on its own, as does the card around them. */}
-       <Section title="Settings" collapsibleKey="settings">
+       <Section
+        title="Settings"
+        // The tool sits here rather than on its own heading: this row is the one still showing when
+        // the whole card is folded, which is when knowing the pen matters most.
+        action={toolName ? <span className={styles.toolInTitle}>{toolName}</span> : undefined}
+        collapsibleKey="settings"
+       >
         <Section title="Paper" collapsibleKey="paper">
          <div className={styles.pageRow}>
           <InputSelect size="md" label="Page size" hideLabel value={sizeId} onChange={(e) => setSize(e.target.value)}>
