@@ -3,7 +3,7 @@ import { DrawingToolSection } from "../shared/components/controls/DrawingToolSec
 import { PaperSection } from "../shared/components/controls/PaperSection";
 import { SettingsSection } from "../shared/components/controls/SettingsSection";
 import { Button, ButtonRound, Card, Checkbox, ConfirmButton, InputSelect, InputText, InputTextarea, LayerController, Segment, SegmentedControl } from "@tomcoggia/ui";
-import { ArrowDownToLine, AudioWaveform, Circle, ClipboardCopy, ClipboardPaste, Copy, Ellipsis, EllipsisVertical, FilePlus, FlameKindling, FolderOpen, Image as ImageIcon, ImagePlus, Grid2x2, Layers2, LayersArrowDown, LayersArrowUp, LineStyle, LoaderPinwheel, Menu, Minus, MousePointer2, Orbit, PaintBucket, PenLine, Pentagon, Plus, Rainbow, RotateCw, Save, Send, Shell, Signal, Spline, Square, SquareDimensions, SquareStack, Star, Target, Trash2, Type, Waves } from "lucide-react";
+import { ArrowDownToLine, AudioWaveform, Circle, ClipboardCopy, ClipboardPaste, Copy, Ellipsis, EllipsisVertical, FilePlus, FlameKindling, FolderOpen, Image as ImageIcon, ImagePlus, Grid2x2, Layers2, LayersArrowDown, LayersArrowUp, LineStyle, LoaderPinwheel, Menu, Minus, MousePointer2, Orbit, PaintBucket, PenLine, Pentagon, Plus, Rainbow, RotateCw, Save, Send, Shell, Signal, Spline, Square, SquareDimensions, SquareStack, Star, SwatchBook, Target, Trash2, Type, Waves } from "lucide-react";
 import { FileBrowser, LAST_FOLDER_KEY, type CombineResult, type OpenResult } from "../shared/components/FileBrowser";
 import { Section } from "../shared/components/controls/Section";
 import { NumberField } from "../shared/components/controls/NumberField";
@@ -36,6 +36,7 @@ import { Hints } from "../shared/components/controls/Hints";
 import { RowMenu } from "./components/controls/RowMenu";
 import { boxAround, boxOf, centerOf, clampToPage, drawnNodes, drawnRuns, moveBy, newLayerId, newShapeId, outlinePoints, pathRuns, pointsBox, resizeTo, shapeName, turnPoint, POINT_HANDLE_LIMIT, type Layer, type Page, type Shape } from "./lib/shapes";
 import { buildSvg, svgForMarks, cleanFileName } from "./lib/svg";
+import { calibrationSheet } from "./lib/calibration";
 import styles from "./App.module.css";
 
 // Page sizes, in inches, from the list Plot already offers. Stored width-first the way they're drawn
@@ -682,7 +683,8 @@ export default function App() {
 
  // Close whatever is open and begin again on a blank page. The page size stays as it is: it's the
  // paper you're working on today, and a new drawing is almost always for the same sheet.
- const [confirmNew, setConfirmNew] = useState(false);
+ // Which new drawing is waiting on the question: a blank one, or a calibration sheet.
+ const [confirmNew, setConfirmNew] = useState<"blank" | "calibration" | null>(null);
  const newDrawing = useCallback(() => {
   const noShapes: Shape[] = [];
   const noFills: Fill[] = [];
@@ -700,7 +702,7 @@ export default function App() {
   setSaveTo(null);
   setForeign(0);
   setOpenedAs(null);
-  setConfirmNew(false);
+  setConfirmNew(null);
   remember(LAST_FILE_KEY, null); // don't reopen the old drawing next time Studio starts
   setMessage({ text: "New drawing", ok: true });
   // An empty page is not unsaved work, and the paper it's on came from the drawing before it.
@@ -709,7 +711,12 @@ export default function App() {
 
  // Undo can't bring back which file was open - a snapshot is the drawing, not the drawing's name -
  // so unsaved work gets a question rather than a silent discard.
- const startNew = () => (dirty && shapes.length ? setConfirmNew(true) : newDrawing());
+ const startNew = (what: "blank" | "calibration" = "blank") => {
+  if (dirty && shapes.length) setConfirmNew(what);
+  else if (what === "calibration") newCalibration();
+  else newDrawing();
+ };
+ const beginNew = () => (confirmNew === "calibration" ? newCalibration() : newDrawing());
 
  const openDrawing = useCallback((res: OpenResult, note: (n: number) => string) => {
   const drawing = parseDrawing(res.svg ?? "");
@@ -839,6 +846,36 @@ export default function App() {
  const [photoAll, setPhotoAll] = useState(false);
 
  const tool2 = presets.find((t) => t.name === toolName) ?? null;
+
+ // A new drawing that is the drawing tool's calibration sheet, on the paper chosen now: every pen,
+ // a layer each, hatched at four strengths. Unsaved, like any new drawing, until it's saved.
+ const newCalibration = () => {
+  if (!tool2) return;
+  const sheet = calibrationSheet(tool2, page, font);
+  if ("error" in sheet) {
+   setConfirmNew(null);
+   setMessage({ text: sheet.error, ok: false });
+   return;
+  }
+  const fitted = sheet.shapes.map((sh) => (sh.kind === "text" ? fitText(sh, fontsRef.current[sh.font ?? ""]) : sh));
+  const sheetName = `${tool2.name} calibration`;
+  setShapes(fitted);
+  setFills(sheet.fills);
+  setLayers(sheet.layers);
+  setActiveLayer(sheet.layers[0].id);
+  setSelected([]);
+  setPast([]);
+  setFuture([]);
+  setName(sheetName);
+  setSaved(null);
+  setSaveTo(null);
+  setForeign(0);
+  setOpenedAs(null);
+  setConfirmNew(null);
+  remember(LAST_FILE_KEY, null);
+  setDirty(true);
+  setMessage({ text: `${sheetName}: ${sheet.layers.length} pens`, ok: true });
+ };
  const palette: PenColor[] = tool2?.palette?.length ? tool2.palette : [PLAIN_PEN];
  // Darkest last in the list, so the default pen is the one you'd reach for first.
  // The real line the pen lays down, so the drawing shows its true weight against the hatch spacing.
@@ -2172,7 +2209,15 @@ export default function App() {
            aria-label="New drawing"
            title="Close this drawing and start a new one"
            disabled={busy}
-           onClick={startNew}
+           onClick={() => startNew()}
+          />
+          <ButtonRound
+           size="sm"
+           icon={<SwatchBook />}
+           aria-label="New calibration sheet"
+           title={`Start a calibration sheet: every ${toolName || "drawing tool"} pen, hatched at four strengths, to plot and photograph`}
+           disabled={busy || !tool2?.palette?.length}
+           onClick={() => startNew("calibration")}
           />
           <ButtonRound
            size="sm"
@@ -2212,15 +2257,15 @@ export default function App() {
             size="sm"
             disabled={busy}
             onClick={async () => {
-             if (await save()) newDrawing();
+             if (await save()) beginNew();
             }}
            >
             Save, then start new
            </Button>
-           <Button size="sm" tone="danger" variant="secondary" onClick={newDrawing}>
+           <Button size="sm" tone="danger" variant="secondary" onClick={beginNew}>
             Discard and start new
            </Button>
-           <Button size="sm" variant="tertiary" onClick={() => setConfirmNew(false)}>
+           <Button size="sm" variant="tertiary" onClick={() => setConfirmNew(null)}>
             Keep editing
            </Button>
           </div>
