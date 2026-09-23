@@ -271,7 +271,7 @@
   padding: 0;
 }
 
-/* Mixed drawing tools: each tool with the numbers of the layers it draws. In Plot mode the chosen
+/* Mixed drawing tools: each tool with the numbers of the layers it draws. Layer by layer, the chosen
    layer's tool is ringed, to match against the pen that's mounted. */
 .toolBlock {
   display: flex;

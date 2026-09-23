@@ -143,8 +143,8 @@
   }
   .pv-true-width .pv-down path { stroke-width: var(--pen-in) !important; }
 
-  /* Plot mode (Layers card): every path as a thin line, whatever the pen's width, to see the paths
-     themselves. Preview mode shows them at the pen's width. */
+  /* Layer by layer (Layers card): every path as a thin line, whatever the pen's width, to see the paths
+     themselves. Whole drawing shows them at the pen's width. */
   .pv-hairline .pv-down path,
   .pv-hairline .pv-up path,
   .pv-hairline.pv-artwork :is(path, rect, circle, ellipse, line, polyline, polygon),

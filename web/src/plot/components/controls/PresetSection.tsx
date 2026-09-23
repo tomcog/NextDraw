@@ -18,7 +18,7 @@ interface Props {
   secondTool: string | null; // null: one tool for the whole drawing; "" added but not chosen
   secondLayers: string[]; // ids of the layers that use the second tool
   layers: { id: string; number: number; color: string | null }[];
-  inUse: "first" | "second" | null; // in Plot mode, the tool of the layer chosen to print
+  inUse: "first" | "second" | null; // layer by layer, the tool of the layer chosen to print
   onAddSecond: () => void;
   onSecondTool: (name: string) => void;
   onRemoveSecond: () => void;

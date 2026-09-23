@@ -23,7 +23,7 @@ interface Props {
   onPlacementChange: (p: Placement, persist?: boolean) => void;
   carriage: Carriage | undefined;
   showPenUp: boolean;
-  hairlines?: boolean; // every path as a thin line, ignoring the pen's width: the Layers card's Plot mode
+  hairlines?: boolean; // every path as a thin line, ignoring the pen's width: the Layers card's layer by layer
   hasFile: boolean;
   draggingFile: boolean;
   canDrag: boolean;

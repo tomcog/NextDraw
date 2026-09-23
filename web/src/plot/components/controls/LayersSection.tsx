@@ -1,6 +1,6 @@
 import { useRef, useState } from "react";
 import { ButtonRound, LayerController, Segment, SegmentedControl } from "@tomcoggia/ui";
-import { Eye, LayersArrowUp, Link2, Link2Off, PenTool, RotateCcw } from "lucide-react";
+import { Layers, LayersArrowUp, Link2, Link2Off, PenTool, RotateCcw } from "lucide-react";
 import styles from "./LayersSection.module.css";
 import { Section } from "../../../shared/components/controls/Section";
 import { Slider } from "./Slider";
@@ -55,7 +55,7 @@ export function LayersSection({ mode, onMode, layers, target, linksOf, onLink, o
   const [picking, setPicking] = useState<LayerView | null>(null);
   const [colorMenu, setColorMenu] = useState<{ id: string; anchor: HTMLElement } | null>(null);
   const menuLayer = colorMenu ? layers.find((l) => l.id === colorMenu.id) : null;
-  // In Plot mode the layers held back in Preview mode leave the list, and the eye goes. Numbers stay
+  // Layer by layer, the layers held back in the whole drawing leave the list, and the eye goes. Numbers stay
   // the plot-order numbers from the full list.
   const numberOf = new Map(layers.map((l, i) => [l.id, i + 1]));
   const rows = [...layers].reverse().filter((l) => mode === "preview" || !l.hidden);
@@ -104,9 +104,11 @@ export function LayersSection({ mode, onMode, layers, target, linksOf, onLink, o
             onClick={onSort}
           />
         )}
+        {/* Not "Preview" and "Plot": the bar over the preview already says Preview, meaning the ink,
+            and this is a different question - how much of the drawing to show. */}
         <SegmentedControl size="sm" aria-label="Layers view">
-          <Segment selected={mode === "preview"} onClick={() => onMode("preview")} icon={<Eye />} aria-label="Preview" title="Preview: the whole drawing, and which layers to leave out" />
-          <Segment selected={mode === "work"} onClick={() => onMode("work")} icon={<PenTool />} aria-label="Plot" title="Plot: layer by layer - only the layer to print is drawn" />
+          <Segment selected={mode === "preview"} onClick={() => onMode("preview")} icon={<Layers />} aria-label="Whole drawing" title="Whole drawing: every layer, and which ones to leave out" />
+          <Segment selected={mode === "work"} onClick={() => onMode("work")} icon={<PenTool />} aria-label="Layer by layer" title="Layer by layer: only the layer to print is drawn" />
         </SegmentedControl>
         </span>
       }
