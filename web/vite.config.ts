@@ -15,11 +15,10 @@ const studioAtTheRoot = () => ({
   name: "studio-at-the-root",
   configureServer(server: { middlewares: { use: (fn: (req: { url?: string }, res: { writeHead: (code: number, headers: Record<string, string>) => void; end: () => void }, next: () => void) => void) => void } }) {
     server.middlewares.use((req, res, next) => {
-      if (req.url === "/" || req.url === "") {
-        res.writeHead(302, { Location: "/static/studio.html" });
-        res.end();
-        return;
-      }
+      // Served at the root rather than redirected to it. A redirect answers 30x, and the harness
+      // that runs this server probes the root for a plain 200 before it calls the server ready -
+      // it never was, so every one of these was marked unhealthy and eventually stopped under us.
+      if (req.url === "/" || req.url === "") req.url = "/static/studio.html";
       next();
     });
   },
