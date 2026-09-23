@@ -641,16 +641,20 @@ export default function App() {
     if (!cancelled) setMessage({ text: "Can’t reach the server. Is server.py running?", ok: false });
     return;
    }
-   const last = load<string>(LAST_FILE_KEY);
+   // A drawing handed over in the address - Plot's "Line up in Studio" - comes before the one
+   // worked on last. The address is put back as it was, so reloading doesn't open it again.
+   const handed = new URLSearchParams(window.location.search).get("open");
+   if (handed) window.history.replaceState(null, "", window.location.pathname);
+   const last = handed ?? load<string>(LAST_FILE_KEY);
    if (!last || cancelled) return;
    try {
     const res = await api<OpenResult>(`/api/studio/read?path=${encodeURIComponent(last)}`);
-    if (!cancelled) openDrawing(res, (n) => `Picked up ${res.name} - ${n} ${n === 1 ? "shape" : "shapes"}`);
-   } catch {
+    if (!cancelled) openDrawing(res, (n) => `${handed ? "Opened" : "Picked up"} ${res.name} - ${n} ${n === 1 ? "shape" : "shapes"}`);
+   } catch (err) {
     // Start clean but keep the pointer: the file may be fine and the server merely unreachable,
     // and throwing the only record of what was being worked on is the one unrecoverable move.
-    // Opening or saving anything else replaces it anyway.
-    if (!cancelled) setMessage({ text: `Couldn’t reopen the last drawing. Use Open… to pick it up.`, ok: false });
+    // Opening or saving anything else replaces it anyway. A drawing handed over says why it didn't open.
+    if (!cancelled) setMessage({ text: handed ? (err as Error).message : `Couldn’t reopen the last drawing. Use Open… to pick it up.`, ok: false });
    }
   })();
   return () => {

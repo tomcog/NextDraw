@@ -31,3 +31,7 @@ export function fmtDistance(meters: number) {
 export const cleanNote = (text: string) => String(text).replace(/^(warning|note|error)\s*\([^)]*\):\s*/i, "");
 
 export const near = (a: number, b: number) => Math.abs(a - b) < 0.6;
+
+/** Names as a sentence would list them: "a", "a and b", "a, b and c". */
+export const listOf = (names: string[]) =>
+  names.length < 2 ? names.join("") : `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}`;

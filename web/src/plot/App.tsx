@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Card } from "@tomcoggia/ui";
+import { Button, Card } from "@tomcoggia/ui";
 import styles from "./App.module.css";
 import { api, postJSON } from "../shared/lib/api";
 import { barrelOffsetMm, BUSY_STATES, DEFAULT_SETTINGS, DEFAULT_TOOL, PAPER_SIZES, PLOT_CHANNEL, PLOTTING_STATES, PRESET_FIELDS, STEPS, STORAGE } from "../shared/lib/constants";
-import { cleanNote } from "../shared/lib/format";
+import { cleanNote, listOf } from "../shared/lib/format";
 import { lightness } from "../shared/lib/color";
 import { fitsOnBed, fitsOnPaper, footprint } from "../shared/lib/geometry";
 import { parsePlotPaths, type PlotPaths } from "../shared/lib/progressPaths";
@@ -801,6 +801,15 @@ export default function App() {
   };
 
   const [browserOpen, setBrowserOpen] = useState(false);
+  // Files just stacked whose page isn't the size of the first one's: they may not line up, and Plot
+  // doesn't move layers - Studio does. Said for as long as that drawing is the one open.
+  const [misfits, setMisfits] = useState<{ drawing: string; path: string; files: string[] } | null>(null);
+  const shownMisfits = misfits && misfits.drawing === fileName ? misfits : null;
+  // A tab of its own, never one already open: that could be a Studio with changes not yet saved.
+  const lineUpInStudio = (path: string) => {
+    const url = `/static/studio.html?open=${encodeURIComponent(path)}`;
+    if (!window.open(url, "_blank")) window.location.href = url;
+  };
   const openBrowser = () => {
     if (!busy) setBrowserOpen(true);
   };
@@ -1275,6 +1284,7 @@ export default function App() {
           onCombined: (res) => {
             refs.current.opened = res.opened;
             startNewDrawing(res.name, res.plot ?? null);
+            setMisfits(res.mismatched.length && res.path ? { drawing: res.name, path: res.path, files: res.mismatched } : null);
           },
         }}
       />
@@ -1454,6 +1464,16 @@ export default function App() {
                 onTrim={trimPage}
                 onRotate={(turn) => setRotation((r) => (((r + turn * 90) % 360) + 360) % 360)}
               />
+              {shownMisfits && (
+                <div className={styles.misfits} role="status">
+                  <p>
+                    {`${listOf(shownMisfits.files)} ${shownMisfits.files.length === 1 ? "isn’t" : "aren’t"} on a page the size of the first file’s, so ${shownMisfits.files.length === 1 ? "it" : "they"} may not line up.`}
+                  </p>
+                  <Button size="sm" variant="secondary" onClick={() => lineUpInStudio(shownMisfits.path)}>
+                    Line up in Studio
+                  </Button>
+                </div>
+              )}
               <Section
                 title="Settings"
                 action={toolLabel ? <span className={controls.toolInTitle}>{toolLabel}</span> : undefined}
