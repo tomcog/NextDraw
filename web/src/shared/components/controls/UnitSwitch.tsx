@@ -1,6 +1,5 @@
 import type { Units } from "../../lib/types";
 import styles from "./UnitSwitch.module.css";
-import rule from "./unit-rule.svg";
 
 interface Props {
   units: Units;
@@ -29,10 +28,8 @@ export function UnitSwitch({ units, onChange, disabled }: Props) {
   return (
     <span className={styles.switch} role="radiogroup" aria-label="Units">
       {option("in")}
-      {/* The rule as the design draws it: a 12-wide line, stood on its end. */}
-      <span className={styles.rule} aria-hidden="true">
-        <img src={rule} alt="" width={12} height={1} />
-      </span>
+      {/* The rule between them, in the border colour so it follows the theme. */}
+      <span className={styles.rule} aria-hidden="true" />
       {option("mm")}
     </span>
   );

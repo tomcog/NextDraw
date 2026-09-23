@@ -32,18 +32,11 @@
   border-radius: 2px;
 }
 
-/* A box the size of the rule standing up, 1 across and 12 high, with the 12 × 1 line turned inside it. */
+/* The rule: 1 across and 12 high, as the design draws it, in the library's border colour rather
+   than the design's fixed grey, so it holds its own against a dark card too. */
 .rule {
-  position: relative;
   display: block;
   width: 1px;
   height: 12px;
-}
-
-.rule img {
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  display: block;
-  transform: translate(-50%, -50%) rotate(90deg);
+  background: var(--ui-border-default);
 }
