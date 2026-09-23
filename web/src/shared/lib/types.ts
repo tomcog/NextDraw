@@ -124,8 +124,8 @@ export interface Layer {
 export interface LayerView extends Layer {
   /** The color the drawing itself gives this layer, before any ink the operator chose for today. */
   ownColor: string | null;
-  /** What the drawing calls this layer, when Plot is showing it under the name of its ink. */
-  ownName: string;
+  /** The pen of its tool that draws the colour it goes down in, by name; null when no pen does. */
+  pen: string | null;
   /**
    * The pen it's being plotted in, when that isn't the colour the drawing gives it. Null when the
    * layer is in its own colour, or in one picked with the colour picker, which is no pen.

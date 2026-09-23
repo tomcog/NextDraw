@@ -97,7 +97,6 @@ export default function App() {
   // block - the same bargain as the ink and the order above - because the drawing's layer names are
   // Studio's, and <nds:design> maps shapes to layers BY NAME: renaming one in the file would leave
   // Studio unable to find the shapes on it.
-  const [layerNames, setLayerNames] = useState<Record<string, string>>({});
   // Layers linked to print together, as groups of ids: layers going down in the same pen, plotted in
   // one pass rather than one after another with the same pen put back in. Plot's decision, kept in its
   // own block like the inks. A link only holds while its layers really are the same pen of the same
@@ -140,20 +139,18 @@ export default function App() {
       // The colour this layer is going down in: an ink chosen for today, else the pen its name calls
       // for, else the colour the drawing was made in.
       const color = inkHex(inkColors[layer.id], palette, paletteOfTool) || penColors[layer.id] || layer.color;
-      // The pen that draws that colour - which is the pen to put in the holder. The layer is called
-      // after it, whether the ink was chosen here or came with the drawing: a layer Studio called
-      // "orange" is plotted with Tangerine, and a list that says "orange" is a list you have to
-      // translate at the moment you're loading pens. A name set by hand wins; a layer NextDraw skips
-      // keeps the "%" name that makes it skipped.
+      // The pen that draws that colour - which is the pen to put in the holder. The layer keeps the
+      // name the drawing gives it, which is Studio's to set: "Lime register" is a layer Plot has to
+      // be able to tell from "Lime". The dot says which ink it goes down in, and the row's tooltip
+      // names the pen.
       const pen = penNameAt(color, palette);
       const skipped = layer.name.startsWith("%");
       const tool = toolOfLayer(layer.id);
-      const name = skipped ? layer.name : layerNames[layer.id] || pen || layer.name;
+      const name = layer.name;
       return {
         ...layer,
         name,
-        // What the drawing calls it, for handing the name back and for telling the two apart.
-        ownName: layer.name,
+        pen,
         color,
         inkPen: penNameOf(inkColors[layer.id], palette),
         // Judged by the name the row shows: that is what you load a pen by.
@@ -165,7 +162,7 @@ export default function App() {
         skipped,
       };
     });
-  }, [fileLayers, hiddenLayers, penColors, inkColors, layerNames, plotOrder, paletteOfTool, toolOfLayer]);
+  }, [fileLayers, hiddenLayers, penColors, inkColors, plotOrder, paletteOfTool, toolOfLayer]);
   // Lightest at the bottom: layer 1 is plotted first and everything darker goes over it, which is how
   // the inks build on paper. Layers whose color can't be read stay at the bottom, under the ones that
   // can; ties keep the order they already had.
@@ -194,18 +191,9 @@ export default function App() {
       // No tool to name the pen against (presets never loaded): the colour still stands on its own.
       return { ...all, [id]: tool ? { tool, pen: pick.pen.name, hex: pick.pen.color } : pick.pen.color };
     });
-  // The ink a layer goes down in is what the layer is called, so the Layers card reads as a list of
-  // the pens to load. A colour from the colour picker is no pen and has no name to take, and handing
-  // the layer back to the drawing's own ink hands back the drawing's own name with it.
-  const nameLayer = (id: string, pick: { pen: PenColor } | { hex: string } | null) =>
-    setLayerNames((all) => {
-      if (pick && "pen" in pick) return { ...all, [id]: pick.pen.name };
-      const { [id]: _gone, ...rest } = all;
-      return rest;
-    });
+  // Choosing an ink changes the colour and nothing else: the layer's name is the drawing's.
   const colorAndNameLayer = (id: string, pick: { pen: PenColor } | { hex: string } | null) => {
     colorLayer(id, pick);
-    nameLayer(id, pick);
     // A new ink is a different pen, so the layer leaves whatever it was linked with. Left in place, the
     // link would come back to life if the ink were ever swapped back, which nobody would expect.
     setLayerLinks((groups) => groups.map((g) => g.filter((i) => i !== id)).filter((g) => g.length > 1));
@@ -417,7 +405,6 @@ export default function App() {
     setRotation(nextRotation);
     setHiddenLayers(plot?.hidden_layers ?? []);
     setInkColors(plot?.layer_colors ?? {});
-    setLayerNames(plot?.layer_names ?? {});
     setPlotOrder(plot?.layer_order ?? null);
     setLayerLinks(plot?.layer_links ?? []);
     setHatchSpacing(plot?.hatch_spacing ?? {});
@@ -460,7 +447,6 @@ export default function App() {
     ...(secondTool ? { second_tool: secondTool, second_tool_layers: secondToolLayers } : {}),
     ...(hiddenLayers.length ? { hidden_layers: hiddenLayers } : {}),
     ...(Object.keys(inkColors).length ? { layer_colors: inkColors } : {}),
-    ...(Object.keys(layerNames).length ? { layer_names: layerNames } : {}),
     ...(plotOrder?.length ? { layer_order: plotOrder } : {}),
     ...(layerLinks.length ? { layer_links: layerLinks } : {}),
     ...(Object.keys(hatchSpacing).length ? { hatch_spacing: hatchSpacing } : {}),
@@ -556,7 +542,6 @@ export default function App() {
     setRotation(0);
     setHiddenLayers([]);
     setInkColors({});
-    setLayerNames({});
     setPlotOrder(null);
     setLayerLinks([]);
     setHatchSpacing({});

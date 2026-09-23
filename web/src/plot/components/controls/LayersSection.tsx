@@ -118,6 +118,11 @@ export function LayersSection({ mode, onMode, layers, target, linksOf, onLink, o
           const i = numberOf.get(layer.id)! - 1; // position in the drawing's order
           const links = linksOf(layer.id);
           const partners = sameInk(layer);
+          // Why the dot is struck through: a colour no pen of the tool draws, or a pen's colour
+          // under a name that isn't the pen's.
+          const offPen = (l: LayerView) => l.pen
+            ? `Not named after the ${toolFor(l.id)} pen it's drawn with, ${l.pen}`
+            : `No ${toolFor(l.id)} pen draws ${l.color ?? "this colour"}`;
           const numbers = (ids: string[]) => ids.map((id) => numberOf.get(id)).join(", ");
           const run = runOf(runTop.get(layer.id)!);
           const place = run.length < 2 ? undefined : run[0] === layer.id ? "top" : run[run.length - 1] === layer.id ? "bottom" : "middle";
@@ -137,9 +142,7 @@ export function LayersSection({ mode, onMode, layers, target, linksOf, onLink, o
                 // in Studio with another tool: the preview shows it, and nothing in the holder will.
                 swatchCut={layer.inPalette === false}
                 swatchProps={{
-                  "aria-label": layer.inPalette === false
-                    ? `Ink for ${layer.name} - no ${toolFor(layer.id)} pen draws this colour`
-                    : `Ink for ${layer.name}`,
+                  "aria-label": layer.inPalette === false ? `Ink for ${layer.name} - ${offPen(layer)}` : `Ink for ${layer.name}`,
                   ...(paletteFor(layer.id).length
                     ? { "aria-haspopup": "menu" as const, "aria-expanded": colorMenu?.id === layer.id, title: "Choose the ink to plot this layer in" }
                     : { title: "Pick the ink to plot this layer in" }),
@@ -173,12 +176,10 @@ export function LayersSection({ mode, onMode, layers, target, linksOf, onLink, o
                 disabled={disabled}
                 onChange={() => onTarget(layer.id)}
                 aria-label={`Print layer ${i + 1}, ${layer.name}`}
-                // Choosing an ink renames the layer to it, so this list reads as the pens to load.
-                // The drawing's own name is kept on the row as its title, for telling which layer of
-                // the drawing you're looking at when the two differ.
+                // The row keeps the drawing's name for the layer; the pen that draws it is said here,
+                // for loading pens, where the name doesn't already say it.
                 title={[
-                  layer.ownName !== layer.name ? `${layer.ownName} in the drawing` : null,
-                  layer.inPalette === false ? `No ${toolFor(layer.id)} pen draws ${layer.color ?? "this colour"}` : null,
+                  layer.inPalette === false ? offPen(layer) : layer.pen && layer.pen !== layer.name ? `Drawn with ${layer.pen}` : null,
                   links.length ? `Prints together with ${numbers(links)}` : null,
                 ].filter(Boolean).join(" · ") || undefined}
                 label={layer.name}

@@ -3251,6 +3251,9 @@ def studio_save():
             from lxml import etree
             kept = read_plot(parse_svg(path).getroot())
             if kept is not None:
+                # Except the names Plot once gave layers after their inks: the names are Studio's,
+                # and those, filed by a layer's place, land on whatever layer is in that place now.
+                kept.pop("layer_names", None)
                 root = etree.fromstring(svg.encode("utf-8"), etree.XMLParser(huge_tree=True))
                 write_plot(root, kept)
                 svg = etree.tostring(root, encoding="unicode", xml_declaration=False)
