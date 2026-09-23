@@ -127,6 +127,9 @@
     mix-blend-mode: normal !important;
   }
   .pv-colored .pv-layer :is(text, image) { display: none; }
+  /* Except Studio's Photo view, which shows the photo a layer's lines are made from, to compare
+     against: marked as that, so a picture embedded in a drawing is still left out. */
+  .pv-colored .pv-layer image[data-photo-view] { display: inline; }
   .pv-colored .pv-layer[data-skipped="true"] { display: none !important; }
 
   /* With a pen width set on the drawing tool, lines are drawn at the pen's real width, with round

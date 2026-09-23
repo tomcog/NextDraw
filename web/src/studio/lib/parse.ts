@@ -5,7 +5,7 @@ import { apply, axisAligned, multiply, parseTransform, IDENTITY, type Matrix } f
 import { repeatFromData } from "./repeat";
 import { newLayerId, newShapeId, type Layer, type Page, type Shape } from "./shapes";
 import { FILL_GROUP_PREFIX, PHOTO_GROUP_PREFIX } from "./svg";
-import { photoFromData } from "./photo";
+import { photoFromData, PLATES } from "./photo";
 
 // Reading a drawing back in, so work can be picked up again after it's been handed to Plot.
 //
@@ -494,6 +494,26 @@ export function parseDrawing(text: string): Opened {
   shapes.forEach((s) => {
     if (!s.layerId) s.layerId = layers[0].id;
   });
+
+  // A photo split by colour draws in its layers' pens, each worked out alongside the rest: told here,
+  // as it's read, what the app would otherwise work out once it's open - which would count as a
+  // change, and leave a drawing that was only just opened looking unsaved.
+  const colourOf = (sh: Shape) => layers.find((l) => l.id === sh.layerId)?.color ?? sh.photo!.ink!;
+  for (const sh of shapes) {
+    if (!sh.photo?.ink) continue;
+    const members = sh.photo.group ? shapes.filter((m) => m.photo?.group === sh.photo!.group) : [sh];
+    const keyMember = members.find((m) => m.photo?.key);
+    sh.photo = {
+      ...sh.photo,
+      ink: colourOf(sh),
+      regionInks: (sh.photo.regions ?? []).map((_, r) => {
+        const m = members.find((x) => x.photo?.region === r && !x.photo?.key);
+        return m ? colourOf(m) : null;
+      }),
+      keyInk: keyMember ? colourOf(keyMember) : undefined,
+      ...(sh.photo.plate ? { plates: PLATES.map((p) => { const m = members.find((x) => x.photo?.plate === p); return m ? colourOf(m) : "#000000"; }) } : {}),
+    };
+  }
 
   return { page, shapes, layers, fills, unsupported };
 }

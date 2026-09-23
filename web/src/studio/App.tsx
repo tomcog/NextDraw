@@ -3,7 +3,7 @@ import { DrawingToolSection } from "../shared/components/controls/DrawingToolSec
 import { PaperSection } from "../shared/components/controls/PaperSection";
 import { SettingsSection } from "../shared/components/controls/SettingsSection";
 import { Button, ButtonRound, Card, Checkbox, ConfirmButton, InputSelect, InputText, InputTextarea, LayerController, Segment, SegmentedControl } from "@tomcoggia/ui";
-import { ArrowDownToLine, AudioWaveform, Circle, ClipboardCopy, ClipboardPaste, Copy, Ellipsis, EllipsisVertical, FilePlus, FlameKindling, FolderOpen, ImagePlus, Grid2x2, Layers2, LayersArrowDown, LayersArrowUp, LineStyle, LoaderPinwheel, Menu, Minus, MousePointer2, Orbit, PaintBucket, PenLine, Pentagon, Plus, Rainbow, RotateCw, Save, Send, Shell, Signal, Spline, Square, SquareDimensions, SquareStack, Star, Target, Trash2, Type, Waves } from "lucide-react";
+import { ArrowDownToLine, AudioWaveform, Circle, ClipboardCopy, ClipboardPaste, Copy, Ellipsis, EllipsisVertical, FilePlus, FlameKindling, FolderOpen, Image as ImageIcon, ImagePlus, Grid2x2, Layers2, LayersArrowDown, LayersArrowUp, LineStyle, LoaderPinwheel, Menu, Minus, MousePointer2, Orbit, PaintBucket, PenLine, Pentagon, Plus, Rainbow, RotateCw, Save, Send, Shell, Signal, Spline, Square, SquareDimensions, SquareStack, Star, Target, Trash2, Type, Waves } from "lucide-react";
 import { FileBrowser, LAST_FOLDER_KEY, type CombineResult, type OpenResult } from "../shared/components/FileBrowser";
 import { Section } from "../shared/components/controls/Section";
 import { NumberField } from "../shared/components/controls/NumberField";
@@ -29,7 +29,7 @@ import { flattenPath, flattenRun, mapNode, parsePath, simplifyRun, type Node } f
 import { fitText, textRuns } from "./lib/text";
 import { defaultRepeat, placements, REPEAT_FIELDS, type Repeat, type RepeatKind } from "./lib/repeat";
 import { parseDrawing } from "./lib/parse";
-import { BAND_NAMES, MOST_LAYERS, PHOTO_DEFAULTS, WAVE_DEFAULTS, photoMarks, colourGroups, darkestOf, isColourful, matchPens, placeOnPage, readTones, workingCopy, type Photo } from "./lib/photo";
+import { BAND_NAMES, BLACK_SHARE, KEY_FROM, LAYER_SETTINGS, PLATES, PLATE_AIMS, MOST_LAYERS, PHOTO_DEFAULTS, WAVE_DEFAULTS, OUTLINE_DEFAULTS, photoMarks, colourGroups, darkestOf, isColourful, matchPens, placeOnPage, platePens, readTones, workingCopy, type Photo, type PhotoPart } from "./lib/photo";
 import { usePhotoRead } from "./lib/usePhotoRead";
 import { PaletteMenu } from "../shared/components/controls/PaletteMenu";
 import { Hints } from "../shared/components/controls/Hints";
@@ -146,6 +146,9 @@ function uniqueName(wanted: string, taken: string[]): string {
  * A photo split into tone bands is one photo on the page: whatever moved, sized or turned one band
  * takes the rest of its bands along with it.
  */
+/** How a photo is split: by value, into colour groups, or into CMYK plates. */
+const photoMode = (p: Photo) => (p.plate ? "cmyk" : p.ink ? "colour" : "value");
+
 function withPhotoGroups(list: Shape[], changed: Shape[]): Shape[] {
  const leads = new Map(changed.filter((s) => s.photo?.group).map((s) => [s.photo!.group!, s]));
  if (!leads.size) return list;
@@ -323,21 +326,37 @@ export default function App() {
   return customPaper || !match ? "custom" : match.id;
  }, [page, customPaper]);
 
- // A photo split by colour draws each layer's area in that layer's pen: give the layer another pen,
- // and it draws the same area in the new one.
+ // A photo split by colour draws each layer's area in that layer's pen, and each layer is worked
+ // out alongside the rest - the pens of every area, and the key's. Give a layer another pen, and it
+ // draws the same area in the new one, and the others are worked out again for it.
  useEffect(() => {
   setShapes((list) => {
    let changed = false;
+   const colourOf = (m: Shape) => layers.find((l) => l.id === m.layerId)?.color ?? m.photo!.ink!;
    const next = list.map((sh) => {
     if (!sh.photo?.ink) return sh;
-    const ink = layers.find((l) => l.id === sh.layerId)?.color;
-    if (!ink || ink === sh.photo.ink) return sh;
+    const members = sh.photo.group ? list.filter((m) => m.photo?.group === sh.photo!.group) : [sh];
+    const regionInks = (sh.photo.regions ?? []).map((_, r) => {
+     const m = members.find((x) => x.photo?.region === r && !x.photo?.key);
+     return m ? colourOf(m) : null;
+    });
+    const keyMember = members.find((x) => x.photo?.key);
+    const keyInk = keyMember ? colourOf(keyMember) : undefined;
+    const ink = colourOf(sh);
+    if (sh.photo.plate) {
+     // A CMYK plate: all four plates' pens, in plate order.
+     const plates = PLATES.map((p) => { const m = members.find((x) => x.photo?.plate === p); return m ? colourOf(m) : "#000000"; });
+     if (ink === sh.photo.ink && plates.join() === (sh.photo.plates ?? []).join()) return sh;
+     changed = true;
+     return { ...sh, photo: { ...sh.photo, ink, plates } };
+    }
+    if (ink === sh.photo.ink && keyInk === sh.photo.keyInk && regionInks.join() === (sh.photo.regionInks ?? []).join()) return sh;
     changed = true;
-    return { ...sh, photo: { ...sh.photo, ink } };
+    return { ...sh, photo: { ...sh.photo, ink, keyInk, regionInks } };
    });
    return changed ? next : list;
   });
- }, [layers]);
+ }, [layers, shapes]);
 
  // Photos sized to the page follow it: a new paper size, or turning it, sizes them again.
  useEffect(() => {
@@ -809,6 +828,13 @@ export default function App() {
  // painted - the drawing is the same either way. Not remembered: a drawing always opens in
  // Outline, which is quick whatever its size, and Preview is asked for when it is wanted.
  const [view, setView] = useState<View>("outline");
+ // No photo left to show: back to the lines.
+ const hasPhoto = shapes.some((sh) => sh.kind === "photo");
+ useEffect(() => {
+  if (!hasPhoto && view === "photo") setView("outline");
+ }, [hasPhoto, view]);
+ // Whether a photo's settings go to the layer being set, or to all its layers at once.
+ const [photoAll, setPhotoAll] = useState(false);
 
  const tool2 = presets.find((t) => t.name === toolName) ?? null;
  const palette: PenColor[] = tool2?.palette?.length ? tool2.palette : [PLAIN_PEN];
@@ -907,9 +933,14 @@ export default function App() {
    if (pens.length && isColourful(copy.src)) {
     const groups = colourGroups(copy.src, 4, photo.brightness, photo.contrast);
     const matched = matchPens(groups, pens);
-    parts = groups.flatMap((_, region) => (matched[region] ? [{ pen: matched[region]!, photo: { ink: matched[region]!.color, regions: groups, region } }] : []))
+    parts = groups.flatMap((_, region) => (matched[region] ? [{ pen: matched[region]!, photo: { ink: matched[region]!.color, regions: groups, region } as Partial<Photo> }] : []))
      // Stacked by the pens' own lightness, lightest at the bottom, as the layers are laid down.
      .sort((a, b) => (lightness(b.pen.color) ?? 0) - (lightness(a.pen.color) ?? 0));
+    // And the key on top, in the palette's darkest pen, to darken the shadows of every colour.
+    const key = darkestPen(pens);
+    if (parts.length && key) parts.push({ pen: key, photo: { key: true, ink: key.color, regions: groups } });
+    const regionInks = groups.map((_, r) => matched[r]?.color ?? null);
+    parts = parts.map((part) => ({ ...part, photo: { ...part.photo, regionInks, keyInk: key?.color } }));
    } else if (pens.length) {
     const pen = matchPens([darkestOf(copy.src)], pens)[0];
     if (pen) parts = [{ pen, photo: {} }];
@@ -925,13 +956,13 @@ export default function App() {
    const reuse = !shapes.some((sh) => sh.layerId === active.id);
    const group = parts.length > 1 ? newShapeId() : undefined;
    const newLayers: Layer[] = parts.map((part, i) => (i === 0 && reuse
-    ? { ...active, name: part.pen.name, color: part.pen.color }
-    : { id: newLayerId(), name: part.pen.name, color: part.pen.color }));
+    ? { ...active, name: layerNameOf(part), color: part.pen.color }
+    : { id: newLayerId(), name: layerNameOf(part), color: part.pen.color }));
    const made: Shape[] = parts.map((part, i) => ({
     id: newShapeId(),
     layerId: newLayers[i].id,
     kind: "photo",
-    name: parts.length > 1 ? `${stem} ${part.pen.name}` : stem,
+    name: parts.length > 1 ? `${stem} ${layerNameOf(part)}` : stem,
     ...box,
     photo: { ...photo, ...part.photo, group },
    }));
@@ -992,6 +1023,109 @@ export default function App() {
   setMessage({ text: note, ok: true });
  };
 
+ /** The chosen photo's layers as they stand, bottom first: what a mode remembers of itself. */
+ const photoParts = (): PhotoPart[] => {
+  if (!chosen?.photo) return [];
+  const members = chosen.photo.group ? shapes.filter((sh) => sh.photo?.group === chosen.photo!.group) : [chosen];
+  const place = (sh: Shape) => layers.findIndex((l) => l.id === sh.layerId);
+  return [...members].sort((a, b) => place(a) - place(b)).map((m) => {
+   const layer = layers.find((l) => l.id === m.layerId);
+   const own = Object.fromEntries(LAYER_SETTINGS.map((k) => [k, m.photo![k]]));
+   return { layerName: layer?.name ?? "Black", layerColor: layer?.color ?? "#262626", shapeName: m.name ?? "Photo", photo: own };
+  });
+ };
+
+ /**
+  * Split the chosen photo the other way - by value or by colour - keeping how it was split this way
+  * for when it comes back, and putting back how it was split that way before, if it has been.
+  */
+ const switchPhotoMode = (to: "value" | "colour" | "cmyk") => {
+  if (!chosen?.photo) return;
+  const from = photoMode(chosen.photo);
+  if (from === to) return;
+  const modes = { ...(chosen.photo.modes ?? {}), [from]: photoParts() };
+  const back = modes[to];
+  if (back?.length) {
+   rebuildPhoto(
+    back.map((part) => ({ ...part, photo: { ...Object.fromEntries(LAYER_SETTINGS.map((k) => [k, undefined])), ...part.photo, modes } })),
+    back.length > 1 ? chosen.photo.group ?? newShapeId() : undefined,
+    `Back to how it was split by ${to}`,
+   );
+  } else if (to === "colour") {
+   splitPhotoByColor(3, { modes });
+  } else if (to === "cmyk") {
+   splitPhotoCmyk({ modes });
+  } else {
+   splitPhoto(1, { modes });
+  }
+ };
+
+ /**
+  * Split the chosen photo into CMYK: four plates, each in the tool's pen nearest printing's cyan,
+  * magenta, yellow or black, each hatched at its screen angle, drawn across the whole photo and
+  * blended on paper. Layers stack by their pens' lightness, lightest at the bottom.
+  */
+ const splitPhotoCmyk = (extra: Partial<Photo> = {}) => {
+  if (!chosen?.photo) return;
+  const pens = tool2?.palette ?? [];
+  if (pens.length < 4) {
+   setMessage({ text: `${tool2?.name ?? "This tool"} needs four pens in its palette to split a photo into CMYK`, ok: false });
+   return;
+  }
+  const matched = platePens(pens);
+  if (matched.some((p) => !p)) return;
+  const plates = matched.map((p) => p!.color);
+  const { name } = photoStem();
+  const parts = PLATES.map((plate, i) => ({ plate, pen: matched[i]! }))
+   .sort((a, b) => (lightness(b.pen.color) ?? 0) - (lightness(a.pen.color) ?? 0));
+  rebuildPhoto(
+   parts.map(({ plate, pen }) => ({
+    layerName: pen.name,
+    layerColor: pen.color,
+    shapeName: `${name} ${pen.name}`,
+    photo: {
+     band: undefined, key: undefined, keyInk: undefined, regions: undefined, region: undefined, regionInks: undefined,
+     plate, plates, ink: pen.color, angle: PLATE_AIMS[plate].angle, ...extra,
+    },
+   })),
+   chosen.photo.group ?? newShapeId(),
+   `Split into CMYK: ${PLATES.map((p, i) => `${PLATE_AIMS[p].name} in ${matched[i]!.name}`).join(", ")}`,
+  );
+ };
+
+ /** The palette's darkest pen: what a photo's key layer starts in. */
+ const darkestPen = (pens: PenColor[]) =>
+  [...pens].sort((a, b) => (lightness(a.color) ?? 1) - (lightness(b.color) ?? 1))[0];
+ /** A photo layer's name: its pen's, and " key" after it for the key. */
+ const layerNameOf = (part: { pen: PenColor; photo: Partial<Photo> }) => (part.photo.key ? `${part.pen.name} key` : part.pen.name);
+
+ /** Put the chosen photo's key layer on, in the palette's darkest pen, or take it off. */
+ const setKeyLayer = (on: boolean) => {
+  if (!chosen?.photo?.ink || !chosen.photo.regions) return;
+  const members = chosen.photo.group ? shapes.filter((sh) => sh.photo?.group === chosen.photo!.group) : [chosen];
+  const existing = members.find((m) => m.photo?.key);
+  if (on === Boolean(existing)) return;
+  record();
+  if (!on && existing) {
+   const emptied = !shapes.some((sh) => sh.layerId === existing.layerId && sh.id !== existing.id);
+   setShapes((list) => list.filter((sh) => sh.id !== existing.id).map((sh) => (members.some((m) => m.id === sh.id) ? { ...sh, photo: { ...sh.photo!, keyInk: undefined } } : sh)));
+   if (emptied) setLayers((list) => list.filter((l) => l.id !== existing.layerId));
+   if (chosen.id === existing.id) pick(members.find((m) => m.id !== existing.id)?.id ?? null);
+   setMessage({ text: "Key layer off", ok: true });
+   return;
+  }
+  const pen = darkestPen(tool2?.palette ?? []);
+  if (!pen) return;
+  const group = chosen.photo.group ?? newShapeId();
+  const top = members.reduce((hi, m) => Math.max(hi, layers.findIndex((l) => l.id === m.layerId)), -1);
+  const layer: Layer = { id: newLayerId(), name: `${pen.name} key`, color: pen.color };
+  const { name } = photoStem();
+  const keyShape: Shape = { ...chosen, id: newShapeId(), layerId: layer.id, name: `${name} ${pen.name} key`, photo: { ...chosen.photo, group, key: true, region: undefined, ink: pen.color, keyInk: pen.color } };
+  setLayers((list) => [...list.slice(0, top + 1), layer, ...list.slice(top + 1)]);
+  setShapes((list) => [...list.map((sh) => (members.some((m) => m.id === sh.id) ? { ...sh, photo: { ...sh.photo!, group, keyInk: pen.color } } : sh)), keyShape]);
+  setMessage({ text: `Key layer on, in ${pen.name}`, ok: true });
+ };
+
  /**
   * The photo's own name, and the ink a split by value draws in, without what an earlier split added:
   * the band word after a name, or the pen's name after a colour split's. From a colour split, the
@@ -1005,8 +1139,11 @@ export default function App() {
   let name = base?.name ?? "Photo";
   if (base?.photo?.ink && layer && name.endsWith(` ${layer.name}`)) name = name.slice(0, -layer.name.length - 1);
   else name = name.replace(words, "");
-  const inkLayer = base?.photo?.ink ? layers.find((l) => l.id === members[members.length - 1].layerId) : layer;
-  return { name, ink: (inkLayer?.name ?? "Black").replace(words, ""), color: inkLayer?.color ?? "#262626" };
+  // From a colour split, the key's ink if it has one - the darkest - else its darkest colour's.
+  const place = (sh: Shape) => layers.findIndex((l) => l.id === sh.layerId);
+  const darkest = [...members].sort((a, b) => (a.photo?.key ? 1 : 0) - (b.photo?.key ? 1 : 0) || place(a) - place(b)).pop();
+  const inkLayer = base?.photo?.ink ? layers.find((l) => l.id === darkest?.layerId) : layer;
+  return { name, ink: (inkLayer?.name ?? "Black").replace(words, "").replace(/\s+key$/i, ""), color: inkLayer?.color ?? "#262626" };
  };
 
  /**
@@ -1015,11 +1152,11 @@ export default function App() {
   * named after the ink and the band - so the layers still say which pen to load, lightest at the
   * bottom. Every band starts from the same settings, to be changed one by one.
   */
- const splitPhoto = (count: number) => {
+ const splitPhoto = (count: number, extra: Partial<Photo> = {}) => {
   if (!chosen?.photo) return;
   const n = Math.min(MOST_LAYERS, Math.max(1, Math.round(count)));
   const members = chosen.photo.group ? shapes.filter((sh) => sh.photo?.group === chosen.photo!.group) : [chosen];
-  if (members.length === n && !chosen.photo.ink) return;
+  if (members.length === n && !chosen.photo.ink && !extra.modes) return;
   const { name, ink, color } = photoStem();
   const words = BAND_NAMES[n] ?? [];
   rebuildPhoto(
@@ -1027,7 +1164,7 @@ export default function App() {
     layerName: n > 1 ? `${ink} ${words[i]}` : ink,
     layerColor: color,
     shapeName: n > 1 ? `${name} ${words[i]}` : name,
-    photo: { band: n > 1 ? [i / n, (i + 1) / n] as [number, number] : undefined, ink: undefined, regions: undefined, region: undefined },
+    photo: { band: n > 1 ? [i / n, (i + 1) / n] as [number, number] : undefined, ink: undefined, regions: undefined, region: undefined, key: undefined, keyInk: undefined, regionInks: undefined, plate: undefined, plates: undefined, ...extra },
    })),
    n > 1 ? chosen.photo.group ?? newShapeId() : undefined,
    n > 1 ? `Split into ${n} tone layers` : "One layer, by value",
@@ -1041,7 +1178,7 @@ export default function App() {
   * layer another pen and it draws the same area in that one. A group so pale it's the paper gets no
   * layer, so a photo can come back with fewer than asked.
   */
- const splitPhotoByColor = (count: number) => {
+ const splitPhotoByColor = (count: number, extra: Partial<Photo> = {}) => {
   if (!chosen?.photo) return;
   const pens = tool2?.palette ?? [];
   if (!pens.length) {
@@ -1062,15 +1199,28 @@ export default function App() {
    return;
   }
   const { name } = photoStem();
+  // The key on top, in the palette's darkest pen - or the pen the photo's key already has.
+  const oldKey = chosen.photo.group ? shapes.find((sh) => sh.photo?.group === chosen.photo!.group && sh.photo?.key) : undefined;
+  const keyPen = oldKey ? { name: layers.find((l) => l.id === oldKey.layerId)?.name.replace(/\s+key$/i, "") ?? "Key", color: oldKey.photo!.ink! } : darkestPen(pens);
+  const regionInks = groups.map((_, r) => matched[r]?.color ?? null);
+  const withKey = keyPen && (oldKey || photoMode(chosen.photo) !== "colour" || chosen.photo.keyInk !== undefined);
   rebuildPhoto(
-   parts.map(({ region, pen }) => ({
-    layerName: pen.name,
-    layerColor: pen.color,
-    shapeName: `${name} ${pen.name}`,
-    photo: { band: undefined, ink: pen.color, regions: groups, region },
-   })),
-   parts.length > 1 ? chosen.photo.group ?? newShapeId() : undefined,
-   `Split into ${parts.map((p) => p.pen.name).join(", ")}${parts.length < n ? ` - the rest was paper, or near enough another` : ""}`,
+   [
+    ...parts.map(({ region, pen }) => ({
+     layerName: pen.name,
+     layerColor: pen.color,
+     shapeName: `${name} ${pen.name}`,
+     photo: { band: undefined, key: undefined, plate: undefined, plates: undefined, ink: pen.color, regions: groups, region, regionInks, keyInk: withKey ? keyPen!.color : undefined, ...extra },
+    })),
+    ...(withKey ? [{
+     layerName: `${keyPen!.name} key`,
+     layerColor: keyPen!.color,
+     shapeName: `${name} ${keyPen!.name} key`,
+     photo: { band: undefined, key: true, plate: undefined, plates: undefined, ink: keyPen!.color, regions: groups, region: undefined, regionInks, keyInk: keyPen!.color, ...extra },
+    }] : []),
+   ],
+   parts.length + (withKey ? 1 : 0) > 1 ? chosen.photo.group ?? newShapeId() : undefined,
+   `Split into ${parts.map((p) => p.pen.name).join(", ")}${withKey ? `, with ${keyPen!.name} as the key` : ""}${parts.length < n ? ` - the rest was paper, or near enough another` : ""}`,
   );
  };
 
@@ -1120,6 +1270,46 @@ export default function App() {
   setPhotoOf({ margin });
  };
 
+ /**
+  * Put a different picture in the chosen photo - all its layers - keeping everything else: how it's
+  * split, its layers and pens, and every layer's settings. Sized to the page, it's sized again for the
+  * new picture; placed by hand, it keeps its place and width, its height following the new picture.
+  * Split by colour, the new picture is sorted into the same colour groups, so the layers stay as
+  * they are.
+  */
+ const replaceInput = useRef<HTMLInputElement>(null);
+ const replacePhoto = async (file: File | undefined) => {
+  if (!file || !chosen?.photo) return;
+  try {
+   const copy = await workingCopy(file);
+   await readTones(copy.src);
+   const aspect = copy.width / copy.height;
+   const was = chosen.photo;
+   let box: { x: number; y: number; x2: number; y2: number };
+   let crop: Photo["crop"];
+   if (was.fit) {
+    const placed = placeOnPage(aspect, page, was.fit, was.margin ?? 0.5);
+    crop = placed.crop;
+    box = { x: placed.x, y: placed.y, x2: placed.x2, y2: placed.y2 };
+   } else {
+    const b = boxOf(chosen);
+    const w = b.x1 - b.x0;
+    const h = w / aspect;
+    const cy = (b.y0 + b.y1) / 2;
+    box = { x: b.x0, y: cy - h / 2, x2: b.x1, y2: cy + h / 2 };
+    crop = undefined;
+   }
+   record();
+   const group = was.group;
+   setShapes((list) => list.map((sh) => (sh.id === chosen.id || (group && sh.photo?.group === group)
+    ? { ...sh, ...box, photo: { ...sh.photo!, src: copy.src, width: copy.width, height: copy.height, crop } }
+    : sh)));
+   setMessage({ text: `Replaced the photo with ${file.name}, keeping its settings`, ok: true });
+  } catch (err) {
+   setMessage({ text: (err as Error).message, ok: false });
+  }
+ };
+
  /** Change how the chosen photo is turned into lines. */
  const setPhotoOf = (patch: Partial<Photo>) => {
   if (!chosen?.photo) return;
@@ -1131,9 +1321,14 @@ export default function App() {
   if (patch.brightness !== undefined) whole.brightness = patch.brightness;
   if (patch.contrast !== undefined) whole.contrast = patch.contrast;
   if (patch.bleed !== undefined) whole.bleed = patch.bleed;
+  if (patch.keyStrength !== undefined) whole.keyStrength = patch.keyStrength;
+  if (patch.keyFrom !== undefined) whole.keyFrom = patch.keyFrom;
+  if (patch.blackShare !== undefined) whole.blackShare = patch.blackShare;
+  // Set for all its layers: everything changed here goes to every one of them.
+  const toAll = photoAll ? patch : whole;
   setShapes((list) => list.map((sh) => {
    if (sh.id === chosen.id) return { ...sh, photo: { ...sh.photo!, ...patch } };
-   if (group && sh.photo?.group === group && Object.keys(whole).length) return { ...sh, photo: { ...sh.photo, ...whole } };
+   if (group && sh.photo?.group === group && Object.keys(toAll).length) return { ...sh, photo: { ...sh.photo, ...toAll } };
    return sh;
   }));
  };
@@ -1808,6 +2003,7 @@ export default function App() {
         zoom={zoom}
         onZoom={setZoom}
         canDrawing={shapes.length > 0}
+        canPhoto={shapes.some((sh) => sh.kind === "photo")}
         history={{ canUndo: past.length > 0, canRedo: future.length > 0, onUndo: undo, onRedo: redo }}
         disabled={busy}
        />
@@ -2178,6 +2374,8 @@ export default function App() {
                // the row right above says which it is.
                hideVisibility
                hideHandle
+               // A photo isn't drawn like the other shapes, so its row says so in the box.
+               icon={sh.kind === "photo" ? <ImageIcon /> : undefined}
                checked={pickedIds.has(sh.id)}
                aria-label={`Shape ${i + 1}, ${name}`}
                // The click decides, not the box: several shapes can be picked, which
@@ -2278,25 +2476,67 @@ export default function App() {
       return (
       <Card variant="flat" className={styles.controls}>
        <div className={`${styles.cardBody} ${controls.cardSections}`}>
-        <Section title={shapeName(chosen, onActive.indexOf(chosen))} collapsibleKey="photo">
+        <Section
+         title={shapeName(chosen, onActive.indexOf(chosen))}
+         collapsibleKey="photo"
+         action={
+          <>
+           <Button size="sm" variant="secondary" title="Put a different photo in, keeping every setting" onClick={() => replaceInput.current?.click()}>
+            Replace…
+           </Button>
+           <input
+            ref={replaceInput}
+            type="file"
+            accept="image/*"
+            hidden
+            onChange={(e) => {
+             replacePhoto(e.target.files?.[0]);
+             e.target.value = "";
+            }}
+           />
+          </>
+         }
+        >
          {/* How many layers the photo is split into by tone. Each band layer has its own settings
            below; the photo's picture, brightness and contrast are what the bands are cut from. */}
          {/* By value: read as black and white, split into tone bands. By colour: split into groups
            of similar colours, each drawn in the tool's nearest pen. Either way, a layer each, with
            its own lines. */}
          <SegmentedControl size="sm" variant="dark" aria-label="Split by">
-          <Segment selected={!chosen.photo.ink} title="By value: the photo as black and white, split into tone bands" onClick={() => chosen.photo?.ink && splitPhoto(1)}>Value</Segment>
-          <Segment selected={!!chosen.photo.ink} title="By colour: the photo's colours gathered into groups, each drawn in the tool's nearest pen" onClick={() => !chosen.photo?.ink && splitPhotoByColor(3)}>Colour</Segment>
+          <Segment selected={photoMode(chosen.photo) === "value"} title="By value: the photo as black and white, split into tone bands" onClick={() => switchPhotoMode("value")}>Value</Segment>
+          <Segment selected={photoMode(chosen.photo) === "colour"} title="By colour: the photo's colours gathered into groups, each drawn in the tool's nearest pen" onClick={() => switchPhotoMode("colour")}>Colour</Segment>
+          <Segment selected={photoMode(chosen.photo) === "cmyk"} title="CMYK: four plates - cyan, magenta, yellow and black - in the tool's nearest pens, blended on paper" onClick={() => switchPhotoMode("cmyk")}>CMYK</Segment>
          </SegmentedControl>
-         {chosen.photo.ink ? (
-          <NumberField
-           label="Inks"
-           min={1}
-           max={MOST_LAYERS}
-           step={1}
-           value={chosen.photo.group ? shapes.filter((sh) => sh.photo?.group === chosen.photo!.group).length : 1}
-           onChange={splitPhotoByColor}
-          />
+         {photoMode(chosen.photo) === "cmyk" ? (
+          // How much of the colours' shared grey the black plate takes over: more, and the darks are
+          // black; less, and they're the three colours laid over each other.
+          <NumberField label="Black" unit="%" min={0} max={100} step={5} value={Math.round((chosen.photo.blackShare ?? BLACK_SHARE) * 100)} onChange={(v) => setPhotoOf({ blackShare: v / 100 })} />
+         ) : chosen.photo.ink ? (
+          <>
+           <NumberField
+            label="Inks"
+            min={1}
+            max={MOST_LAYERS}
+            step={1}
+            value={chosen.photo.group ? shapes.filter((sh) => sh.photo?.group === chosen.photo!.group && !sh.photo?.key).length : 1}
+            onChange={splitPhotoByColor}
+           />
+           {/* A key ink over the colours, darkening shadows the colour layers can't reach alone.
+             Its pen is the layer's: change it with the layer's dot. */}
+           <Checkbox
+            checked={Boolean(chosen.photo.keyInk)}
+            label="Key layer, to darken shadows"
+            onChange={(e) => setKeyLayer(e.target.checked)}
+           />
+           {chosen.photo.keyInk && (
+            // The key's shading over the colours: how dark a part must be before it's shaded, and
+            // how heavy the shading gets at black. The colours under it draw as they would without it.
+            <div className={styles.fillRow}>
+             <NumberField label="Shading starts at" unit="%" min={0} max={95} step={5} value={Math.round((chosen.photo.keyFrom ?? KEY_FROM) * 100)} onChange={(v) => setPhotoOf({ keyFrom: v / 100 })} />
+             <NumberField label="Key strength" unit="%" min={0} max={100} step={5} value={Math.round((chosen.photo.keyStrength ?? 1) * 100)} onChange={(v) => setPhotoOf({ keyStrength: v / 100 })} />
+            </div>
+           )}
+          </>
          ) : (
           <NumberField
            label="Tone layers"
@@ -2327,6 +2567,14 @@ export default function App() {
          </div>
          {/* Which band's lines the rest of the card sets. The bands lie on top of each other, so
            this is how to reach each one; its layer in the list does the same. */}
+         {chosen.photo.group && (
+          // Where the settings below go: to the layer picked in the switch under this, or to every
+          // layer of the photo at once. The switch still says whose settings are showing.
+          <SegmentedControl size="sm" variant="dark" aria-label="Settings for">
+           <Segment selected={!photoAll} title="The settings below go to the layer picked here" onClick={() => setPhotoAll(false)}>This layer</Segment>
+           <Segment selected={photoAll} title="The settings below go to all the photo's layers at once" onClick={() => setPhotoAll(true)}>All layers</Segment>
+          </SegmentedControl>
+         )}
          {chosen.photo.group && (() => {
           // In the order of their layers, bottom first: the same order as the numbers in the
           // Layers list, lightest ink on the left once the layers are sorted by darkness.
@@ -2358,6 +2606,18 @@ export default function App() {
            </SegmentedControl>
           );
          })()}
+         {photoMode(chosen.photo) === "colour" && chosen.photo.group && (
+          // Colour layers overlap where colours blend: a part of the photo is drawn by every
+          // layer whose colour is nearly as close as the nearest, within this.
+          <>
+           <NumberField label="Bleed" unit="%" min={0} max={25} step={1} value={Math.round((chosen.photo.bleed ?? 0) * 100)} onChange={(v) => setPhotoOf({ bleed: v / 100 })} />
+           <p className={styles.empty}>
+            {(chosen.photo.bleed ?? 0) > 0
+             ? "Where the photo's colours blend, the layers either side both draw, and their lines overlap."
+             : "Each part of the photo is drawn by the one layer nearest its colour."}
+           </p>
+          </>
+         )}
          {chosen.photo.band && (() => {
           const [lo, hi] = chosen.photo.band;
           const bleed = chosen.photo.bleed ?? 0;
@@ -2377,8 +2637,9 @@ export default function App() {
          </div>
          {/* What this band's tone is drawn as, and the numbers that style has. Each band its own. */}
          <SegmentedControl size="sm" variant="dark" aria-label="Lines">
-          <Segment selected={chosen.photo.style !== "waves"} title="Hatching: lines that cross and fill in as the photo darkens" onClick={() => setPhotoOf({ style: undefined })}>Hatching</Segment>
+          <Segment selected={!chosen.photo.style || chosen.photo.style === "hatch"} title="Hatching: lines that cross and fill in as the photo darkens" onClick={() => setPhotoOf({ style: undefined })}>Hatching</Segment>
           <Segment selected={chosen.photo.style === "waves"} title="Tone lines: one line along each row, waving harder and tighter where it's darker" onClick={() => setPhotoOf({ style: "waves" })}>Tone lines</Segment>
+          <Segment selected={chosen.photo.style === "outlines"} title="Outlines: the photo traced as contour lines, following its edges and shapes" onClick={() => setPhotoOf({ style: "outlines" })}>Outlines</Segment>
          </SegmentedControl>
          {/* This layer's lines shifted from where the photo puts them: into register with the
            others, or out of it on purpose. Its own; the rest stay put. */}
@@ -2386,7 +2647,12 @@ export default function App() {
           <NumberField label="Offset X" unit="mm" min={-100} max={100} step={0.1} value={chosen.photo.offsetMm?.[0] ?? 0} onChange={(x) => setPhotoOf({ offsetMm: [x, chosen.photo!.offsetMm?.[1] ?? 0] })} />
           <NumberField label="Offset Y" unit="mm" min={-100} max={100} step={0.1} value={chosen.photo.offsetMm?.[1] ?? 0} onChange={(y) => setPhotoOf({ offsetMm: [chosen.photo!.offsetMm?.[0] ?? 0, y] })} />
          </div>
-         {chosen.photo.style === "waves" ? (
+         {chosen.photo.style === "outlines" ? (
+          <div className={styles.fillRow}>
+           <NumberField label="Lines" min={1} max={40} step={1} value={chosen.photo.contours ?? OUTLINE_DEFAULTS.contours} onChange={(contours) => setPhotoOf({ contours })} />
+           <NumberField label="Smoothing" unit="mm" min={0} max={20} step={0.25} value={chosen.photo.smoothMm ?? OUTLINE_DEFAULTS.smoothMm} onChange={(smoothMm) => setPhotoOf({ smoothMm })} />
+          </div>
+         ) : chosen.photo.style === "waves" ? (
           <div className={styles.fillRow}>
            <NumberField label="Angle" unit="°" min={-180} max={180} step={5} value={chosen.photo.angle} onChange={(angle) => setPhotoOf({ angle })} />
            <NumberField label="Row spacing" unit="mm" min={0.2} max={20} step={0.25} value={chosen.photo.rowMm ?? WAVE_DEFAULTS.rowMm} onChange={(rowMm) => setPhotoOf({ rowMm })} />
@@ -2401,7 +2667,9 @@ export default function App() {
          )}
          <p className={styles.empty}>
           {marks
-           ? chosen.photo.style === "waves"
+           ? chosen.photo.style === "outlines"
+            ? `${marks.strokes.toLocaleString()} contours, along the photo's edges and shapes. More lines follow finer changes of tone; more smoothing, only the big ones.`
+            : chosen.photo.style === "waves"
             ? `${marks.strokes.toLocaleString()} strokes. Each row waves harder and tighter where the photo is darker; white is left as paper.`
             : `${marks.strokes.toLocaleString()} strokes. The closest lines start at the tool’s solid-fill spacing; each pass adds lines where the photo is darker.`
            : "Reading the photo…"}

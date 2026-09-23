@@ -1,5 +1,5 @@
 import { Segment, SegmentedControl, Spinner, Toolbar } from "@tomcoggia/ui";
-import { Eye, EyeDashed, Grid3x3, ImageIcon, Redo2, Route, StickyNote, Undo2 } from "lucide-react";
+import { Camera, Eye, EyeDashed, Grid3x3, ImageIcon, Redo2, Route, StickyNote, Undo2 } from "lucide-react";
 import type { Zoom } from "./Bed";
 import styles from "./PreviewToolbar.module.css";
 
@@ -7,13 +7,15 @@ import styles from "./PreviewToolbar.module.css";
  * How the drawing is drawn: its paths as thin lines, the ink they will make, or - in Plot, while
  * there is a plot to show - how far the plot has got.
  */
-export type View = "outline" | "preview" | "progress";
+export type View = "outline" | "preview" | "progress" | "photo";
 
 interface Props {
   view: View;
   onView: (view: View) => void;
   /** Plot only: offer the plot in progress as a third way to draw the drawing. Left out, it isn't offered. */
   canProgress?: boolean;
+  /** Studio only: offer the photos the drawing's lines are made from, as pictures. Left out, it isn't offered. */
+  canPhoto?: boolean;
   zoom: Zoom;
   onZoom: (zoom: Zoom) => void;
   canPaper?: boolean;
@@ -42,7 +44,7 @@ interface Props {
  * choice one of which holds, so the track is a group of plain buttons rather than a radiogroup.
  * Nothing about it looks different.
  */
-export function PreviewToolbar({ view, onView, canProgress, zoom, onZoom, canPaper = true, canDrawing, history, disabled, working }: Props) {
+export function PreviewToolbar({ view, onView, canProgress, canPhoto, zoom, onZoom, canPaper = true, canDrawing, history, disabled, working }: Props) {
   return (
     <span className={styles.row}>
       <Toolbar tone="white" aria-label="Drawing view">
@@ -80,6 +82,15 @@ export function PreviewToolbar({ view, onView, canProgress, zoom, onZoom, canPap
             title="Preview: the ink - each tool's real width, how solid it is and how it darkens where strokes cross. Slow on a very large drawing"
             aria-label="Preview"
           />
+          {canPhoto && (
+            <Segment
+              selected={view === "photo"}
+              onClick={() => onView("photo")}
+              icon={<Camera />}
+              aria-label="Photo"
+              title="Photo: the photos themselves, where their lines are, to compare the drawing against"
+            />
+          )}
           {canProgress !== undefined && (
             <Segment
               selected={view === "progress"}

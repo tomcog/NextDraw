@@ -145,6 +145,9 @@ const sameItems = <T,>(a: T[], b: T[]) => a.length === b.length && a.every((x, i
 
 type LayerLists = Map<string, { shapes: Shape[]; fills: Fill[] }>;
 
+/** The Photo view: whether it's on, and the one shape of each photo that draws it. */
+interface PhotoView { on: boolean; leads: Set<string> }
+
 /**
  * The shapes and fills on each layer, keeping last time's list for a layer where nothing on it
  * changed. An edit replaces one shape and leaves the rest as they were, so every layer it didn't
@@ -184,7 +187,26 @@ function listsByLayer(shapes: Shape[], fills: Fill[], was: LayerLists): LayerLis
  * this redraws itself when it's done rather than waiting on the rest of the page to. One path per
  * pass of lines: tens of thousands of strokes, and four things on the page.
  */
-function PhotoInk({ shape }: { shape: Shape }) {
+function PhotoInk({ shape, asPhoto }: { shape: Shape; asPhoto?: boolean }) {
+  const photo = shape.photo!;
+  const b = boxOf(shape);
+  // The photo itself, cropped and placed as its lines are: what they're compared against.
+  if (asPhoto) {
+    const [c0, c1, c2, c3] = photo.crop ?? [0, 0, 1, 1];
+    const W = photo.width;
+    const H = photo.height;
+    return (
+      <g transform={turnAttr(shape)}>
+        <svg x={b.x0} y={b.y0} width={b.x1 - b.x0} height={b.y1 - b.y0} viewBox={`${c0 * W} ${c1 * H} ${(c2 - c0) * W} ${(c3 - c1) * H}`} preserveAspectRatio="none">
+          <image data-photo-view href={photo.src} width={W} height={H} preserveAspectRatio="none" />
+        </svg>
+      </g>
+    );
+  }
+  return <PhotoLines shape={shape} />;
+}
+
+function PhotoLines({ shape }: { shape: Shape }) {
   const photo = shape.photo!;
   usePhotoRead(photo.src);
   const b = boxOf(shape);
@@ -199,9 +221,13 @@ function PhotoInk({ shape }: { shape: Shape }) {
   );
 }
 
-function shapeElement(s: Shape, key: string, props: Record<string, unknown>, fonts: Record<string, StrokeFont>) {
-  // A photo's ink is its hatching. What you grab it by is the box it sits in, as for a rectangle.
-  if (s.kind === "photo" && s.photo && props.className !== styles.grab) return <PhotoInk key={key} shape={s} />;
+function shapeElement(s: Shape, key: string, props: Record<string, unknown>, fonts: Record<string, StrokeFont>, photos?: PhotoView) {
+  // A photo's ink is its lines - or, in the Photo view, the photo itself, drawn once however many
+  // layers it's split into. What you grab it by is the box it sits in, as for a rectangle.
+  if (s.kind === "photo" && s.photo && props.className !== styles.grab) {
+    if (photos?.on && !photos.leads.has(s.id)) return null;
+    return <PhotoInk key={key} shape={s} asPhoto={photos?.on} />;
+  }
   const b = boxOf(s);
   // A turned shape is drawn turned about the middle of its box; the box itself stays square.
   const common = { ...props, ...(turnAttr(s) ? { transform: turnAttr(s) } : {}) };
@@ -261,7 +287,7 @@ function shapeElement(s: Shape, key: string, props: Record<string, unknown>, fon
  * Kept apart and memoised so a layer is only drawn again when its own list changes: moving a shape
  * on one layer leaves every other layer's thousands of marks exactly where they were on screen.
  */
-const LayerMarks = memo(function LayerMarks({ shapes, fills, fonts }: { shapes: Shape[]; fills: Fill[]; fonts: Record<string, StrokeFont> }) {
+const LayerMarks = memo(function LayerMarks({ shapes, fills, fonts, photos }: { shapes: Shape[]; fills: Fill[]; fonts: Record<string, StrokeFont>; photos: PhotoView }) {
   const byId = new Map(shapes.map((sh) => [sh.id, sh]));
   // A repeated shape is drawn once per copy. The copies are marks and nothing else: what you grab,
   // and what the handles belong to, is always the shape itself.
@@ -275,7 +301,7 @@ const LayerMarks = memo(function LayerMarks({ shapes, fills, fonts }: { shapes: 
       : what(`${sh.id}-0`);
   return (
     <>
-      {shapes.filter((sh) => sh.outline !== false).map((sh) => copies(sh, (key) => shapeElement(sh, key, {}, fonts)))}
+      {shapes.filter((sh) => sh.outline !== false).map((sh) => copies(sh, (key) => shapeElement(sh, key, {}, fonts, photos)))}
       {fills.map((fill) => {
         const shape = byId.get(fill.shapeId);
         if (!shape) return null;
@@ -320,6 +346,18 @@ export function Canvas({ page, paperColor, shapes, fills, layers, activeLayer, m
   // The pen's real width in inches, so the line on screen is the line on paper.
   const penIn = penWidthMm / 25.4;
   const inkSim = view === "preview";
+  // The Photo view draws each photo once, from the first of its layers; the rest draws as in Outline.
+  const photoLeads = useMemo(() => {
+    const seen = new Set<string>();
+    const leads = new Set<string>();
+    for (const sh of shapes) {
+      if (sh.kind !== "photo") continue;
+      const key = sh.photo?.group ?? sh.id;
+      if (!seen.has(key)) { seen.add(key); leads.add(sh.id); }
+    }
+    return leads;
+  }, [shapes]);
+  const photos = useMemo<PhotoView>(() => ({ on: view === "photo", leads: photoLeads }), [view, photoLeads]);
   const hiddenLayers = new Set(layers.filter((l) => l.hidden).map((l) => l.id));
   const shown = useMemo(() => shapes.filter((sh) => !hiddenLayers.has(sh.layerId)), [shapes, layers]); // eslint-disable-line react-hooks/exhaustive-deps
   const picked = useMemo(() => new Set(selected), [selected]);
@@ -638,11 +676,11 @@ export function Canvas({ page, paperColor, shapes, fills, layers, activeLayer, m
                     {/* Always inside this group, shifted or not, so picking a whole layer up doesn't
                         move its marks to another place in the page and draw them all again. */}
                     <g transform={carriedWhole?.has(layer.id) ? shift : undefined}>
-                      {here && <LayerMarks shapes={here.shapes} fills={here.fills} fonts={fonts} />}
+                      {here && <LayerMarks shapes={here.shapes} fills={here.fills} fonts={fonts} photos={photos} />}
                     </g>
                     {moving && (
                       <g transform={shift}>
-                        <LayerMarks shapes={moving.shapes} fills={moving.fills} fonts={fonts} />
+                        <LayerMarks shapes={moving.shapes} fills={moving.fills} fonts={fonts} photos={photos} />
                       </g>
                     )}
                   </>

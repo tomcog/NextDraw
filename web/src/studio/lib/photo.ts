@@ -24,7 +24,11 @@ export interface Photo {
    * What the tone is drawn as: hatching, lines crossing and filling in as it darkens; or tone lines,
    * one line along each row that waves harder and tighter where it's darker. Absent, hatching.
    */
-  style?: "hatch" | "waves";
+  style?: "hatch" | "waves" | "outlines";
+  /** Outlines: how many contours, spread across the tones this layer draws. */
+  contours?: number;
+  /** Outlines: how much fine detail and noise is smoothed away first, in mm on the page. */
+  smoothMm?: number;
   /** Tone lines: how far apart the rows are, in mm. */
   rowMm?: number;
   /** Tone lines: the length of one wave where the photo is darkest, in mm. Lighter tones stretch it. */
@@ -38,6 +42,33 @@ export interface Photo {
   ink?: string;
   regions?: string[];
   region?: number;
+  /**
+   * The key layer of a photo split by colour: shading drawn over the colours in its ink, across the
+   * whole photo, heavier where it's darker - like shading a coloured drawing with a black pen. Only
+   * one of a photo's layers is the key; it has no `region`.
+   */
+  key?: boolean;
+  /**
+   * How the photo was split the other way, kept for when it's split that way again: switching between
+   * value and colour puts back the layers and settings it had, rather than starting over.
+   */
+  modes?: Partial<Record<"value" | "colour" | "cmyk", PhotoPart[]>>;
+  /** Split by colour: every group's pen, by group, and the key's, so each layer can be worked out alongside the rest. */
+  regionInks?: (string | null)[];
+  keyInk?: string;
+  /** How heavy the key's shading gets at black, 0 to 1. The whole photo's. Absent, full. */
+  keyStrength?: number;
+  /** How dark, 0 to 1, a part of the photo is before the key shades it. The whole photo's. */
+  keyFrom?: number;
+  /**
+   * Split into CMYK: this layer is one of four plates - cyan, magenta, yellow, black - drawn across
+   * the whole photo in its pen, `ink`, and blended on paper with the others. `plates` is all four
+   * pens, in that order, so each plate is worked out alongside the rest.
+   */
+  plate?: Plate;
+  plates?: string[];
+  /** CMYK: how much of the grey the colours share goes to the black plate, 0 to 1. The whole photo's. */
+  blackShare?: number;
   /**
    * How far this layer's lines are shifted from where the photo puts them, in mm across and down:
    * to bring one layer into register with another, or to set it deliberately out of register. Each
@@ -96,6 +127,79 @@ export function placeOnPage(aspect: number, page: { w: number; h: number }, how:
   return { x: m, y: m, x2: page.w - m, y2: page.h - m, crop };
 }
 
+/** The four plates of a CMYK split, in the order they're worked out. */
+export type Plate = "c" | "m" | "y" | "k";
+export const PLATES: Plate[] = ["c", "m", "y", "k"];
+
+/**
+ * What each plate aims for - printing's own cyan, magenta, yellow and black, to find the nearest pen
+ * to - and the angle it's hatched at: print's screen angles, apart enough that the four don't make
+ * moiré patterns where they cross.
+ */
+export const PLATE_AIMS: Record<Plate, { name: string; color: string; angle: number }> = {
+  c: { name: "Cyan", color: "#00a3e0", angle: 15 },
+  m: { name: "Magenta", color: "#d6007a", angle: 75 },
+  y: { name: "Yellow", color: "#ffe500", angle: 0 },
+  k: { name: "Black", color: "#1a1a1a", angle: 45 },
+};
+
+/** A colour's hue round the colour wheel (0-360), saturation and value (0-1). */
+function hsv(hex: string): [number, number, number] {
+  const n = parseInt(hex.replace("#", "").padEnd(6, "0").slice(0, 6), 16);
+  const [r, g, b] = [(n >> 16) & 255, (n >> 8) & 255, n & 255].map((v) => v / 255);
+  const max = Math.max(r, g, b);
+  const d = max - Math.min(r, g, b);
+  const h = d === 0 ? 0 : max === r ? ((g - b) / d) % 6 : max === g ? (b - r) / d + 2 : (r - g) / d + 4;
+  return [(h * 60 + 360) % 360, max ? d / max : 0, max];
+}
+
+/**
+ * The pens a palette has for the four plates, each used once: black the darkest, and cyan, magenta
+ * and yellow each the pen nearest printing's own round the colour wheel - by hue, as a painter would
+ * match them, among pens with colour enough to count. Measured in a space where distance means
+ * colour, a pale violet can come out nearer cyan than a real turquoise does; by hue, it doesn't.
+ */
+export function platePens<P extends { color: string }>(palette: P[]): (P | undefined)[] {
+  const out: (P | undefined)[] = [undefined, undefined, undefined, undefined];
+  const used = new Set<P>();
+  const darkest = [...palette].sort((a, b) => hsv(a.color)[2] - hsv(b.color)[2])[0];
+  if (darkest) { out[3] = darkest; used.add(darkest); }
+  const pairs: { plate: number; pen: P; score: number }[] = [];
+  PLATES.slice(0, 3).forEach((plate, i) => {
+    const [ah, as, av] = hsv(PLATE_AIMS[plate].color);
+    for (const pen of palette) {
+      const [h, sat, val] = hsv(pen.color);
+      if (sat < 0.25) continue;
+      const turn = Math.min(Math.abs(h - ah), 360 - Math.abs(h - ah));
+      pairs.push({ plate: i, pen, score: turn + 40 * Math.abs(sat - as) + 30 * Math.abs(val - av) });
+    }
+  });
+  pairs.sort((a, b) => a.score - b.score);
+  for (const { plate, pen } of pairs) {
+    if (out[plate] || used.has(pen)) continue;
+    out[plate] = pen;
+    used.add(pen);
+  }
+  return out;
+}
+
+/** How much of the colours' shared grey goes to the black plate unless set: half, as print often does. */
+export const BLACK_SHARE = 0.5;
+
+/** One layer of a photo as it was split: the layer, the shape, and that layer's own settings. */
+export interface PhotoPart {
+  layerName: string;
+  layerColor: string;
+  shapeName: string;
+  photo: Partial<Photo>;
+}
+
+/** The settings a layer of a photo keeps as its own, as opposed to the photo's: what a mode remembers. */
+export const LAYER_SETTINGS = [
+  "style", "angle", "spacingMm", "levels", "rowMm", "waveMm", "contours", "smoothMm", "offsetMm",
+  "band", "ink", "regions", "region", "key", "regionInks", "keyInk", "plate", "plates",
+] as const;
+
 /** What each band is called, lightest first, for a photo split into this many. */
 export const BAND_NAMES: Record<number, string[]> = {
   2: ["light", "dark"],
@@ -115,6 +219,9 @@ export const PHOTO_DEFAULTS = { brightness: 0, contrast: 0, angle: 45, levels: 4
 
 /** What tone lines start from: rows a couple of millimetres apart, waves a millimetre long at black. */
 export const WAVE_DEFAULTS = { rowMm: 2, waveMm: 1 };
+
+/** What outlines start from: a handful of contours, a millimetre's detail smoothed away. */
+export const OUTLINE_DEFAULTS = { contours: 6, smoothMm: 1 };
 
 // ---------- Reading the photo ----------
 
@@ -209,10 +316,12 @@ const marksCache = new Map<string, PhotoMarks>();
 export function photoMarks(photo: Photo, w: number, h: number): PhotoMarks | null {
   const tones = tonesOf(photo.src);
   if (!tones || w <= 0 || h <= 0) return null;
-  const key = [photo.src.length, photo.src.slice(-32), w.toFixed(4), h.toFixed(4), photo.brightness, photo.contrast, photo.angle, photo.spacingMm, photo.levels, photo.band?.join(",") ?? "", photo.crop?.join(",") ?? "", photo.bleed ?? 0, photo.style ?? "hatch", photo.rowMm ?? "", photo.waveMm ?? "", photo.ink ?? "", photo.regions?.join(",") ?? "", photo.region ?? ""].join("|");
+  const key = [photo.src.length, photo.src.slice(-32), w.toFixed(4), h.toFixed(4), photo.brightness, photo.contrast, photo.angle, photo.spacingMm, photo.levels, photo.band?.join(",") ?? "", photo.crop?.join(",") ?? "", photo.bleed ?? 0, photo.style ?? "hatch", photo.rowMm ?? "", photo.waveMm ?? "", photo.ink ?? "", photo.regions?.join(",") ?? "", photo.region ?? "", photo.contours ?? "", photo.smoothMm ?? "", photo.key ? "key" : "", photo.keyInk ?? "", photo.regionInks?.join(",") ?? "", photo.keyStrength ?? "", photo.keyFrom ?? "", photo.plate ?? "", photo.plates?.join(",") ?? "", photo.blackShare ?? ""].join("|");
   const known = marksCache.get(key);
   if (known) return known;
-  const made = photo.style === "waves" ? waves(tones, photo, w, h) : hatch(tones, photo, w, h);
+  const made = photo.style === "waves" ? waves(tones, photo, w, h)
+    : photo.style === "outlines" ? outlines(tones, photo, w, h)
+    : hatch(tones, photo, w, h);
   if (marksCache.size > 24) marksCache.delete(marksCache.keys().next().value!);
   marksCache.set(key, made);
   return made;
@@ -318,8 +427,13 @@ export function darkestOf(src: string): string {
   return toHex(avg);
 }
 
-/** Lighter than this, a colour group is the paper showing, and gets no layer of its own. */
+/**
+ * A colour group this light and this nearly grey is the paper showing, and gets no layer of its own.
+ * Both: a bright yellow is nearly as light as white, but it's a colour to draw, not paper.
+ */
 const PAPER_LIGHTNESS = 92;
+const PAPER_CHROMA = 12;
+const isPaper = (c: number[]) => c[0] >= PAPER_LIGHTNESS && Math.hypot(c[1], c[2]) <= PAPER_CHROMA;
 
 /**
  * The photo's colours gathered into this many groups of similar colours: each group's average
@@ -367,7 +481,7 @@ export function colourGroups(src: string, count: number, brightness: number, con
     .map((s, i) => ({ lab: centres[i], hex: s.n ? toHex(s.rgb.map((v) => v / s.n)) : "#ffffff", n: s.n }))
     .filter((g) => g.n > 0);
   // Drop the paper, then keep the biggest groups if there are still more than asked for.
-  const inked = groups.filter((g) => g.lab[0] < PAPER_LIGHTNESS).sort((a, b) => b.n - a.n).slice(0, count);
+  const inked = groups.filter((g) => !isPaper(g.lab)).sort((a, b) => b.n - a.n).slice(0, count);
   return inked.sort((a, b) => b.lab[0] - a.lab[0]).map((g) => g.hex);
 }
 
@@ -389,7 +503,30 @@ export function matchPens<P extends { color: string }>(groups: string[], palette
   return out;
 }
 
-interface Areas { w: number; h: number; group: Uint8Array; want: Float32Array }
+interface Areas {
+  w: number;
+  h: number;
+  /** How many groups, the paper counted last. */
+  groups: number;
+  /** How far each point's colour is from each group's, in CIELAB units: `groups` to a point. */
+  dist: Float32Array;
+  /** How far each point is from its nearest group. */
+  nearest: Float32Array;
+  /** Which group each point is nearest, the paper being the last. */
+  best: Uint8Array;
+  want: Float32Array;
+}
+
+/** Bleed, as a share, in CIELAB units: how much further a group may be than the nearest and still draw. */
+const BLEED_LAB = 100;
+
+/**
+ * Whether a point of the photo is in this group's area: its colour nearest this group's - or, with
+ * bleed, nearly as near as the nearest, so where colours blend two groups both draw.
+ */
+function inArea(areas: Areas, at: number, group: number, bleed: number) {
+  return areas.dist[at * areas.groups + group] <= areas.nearest[at] + bleed * BLEED_LAB;
+}
 const areasCache = new Map<string, Areas>();
 
 /**
@@ -407,7 +544,10 @@ function areasOf(tones: Tones, groups: string[], brightness: number, contrast: n
   const centres = groups.map(hexLab);
   // The paper is a group of its own here, so pale areas belong to it and no layer draws them.
   centres.push(lab(255, 255, 255));
-  const group = new Uint8Array(w * h);
+  const count = centres.length;
+  const dist = new Float32Array(w * h * count);
+  const nearestAll = new Float32Array(w * h);
+  const bestAll = new Uint8Array(w * h);
   const want = new Float32Array(w * h * 3);
   for (let y = 0; y < h; y++) {
     const sy = Math.min(tones.h - 1, Math.round((y / Math.max(1, h - 1)) * (tones.h - 1)));
@@ -418,20 +558,150 @@ function areasOf(tones: Tones, groups: string[], brightness: number, contrast: n
       const g = adjust(tones.rgba[i + 1]);
       const b = adjust(tones.rgba[i + 2]);
       const here = lab(r, g, b);
-      let best = 0;
-      let nearest = Infinity;
-      centres.forEach((c, k) => { const d = dist2(here, c); if (d < nearest) { nearest = d; best = k; } });
       const at = y * w + x;
-      group[at] = best;
+      let nearest = Infinity;
+      centres.forEach((c, k) => {
+        const d = Math.sqrt(dist2(here, c));
+        dist[at * count + k] = d;
+        if (d < nearest) { nearest = d; bestAll[at] = k; }
+      });
+      nearestAll[at] = nearest;
       want[at * 3] = density(r);
       want[at * 3 + 1] = density(g);
       want[at * 3 + 2] = density(b);
     }
   }
-  const made = { w, h, group, want };
+  const made = { w, h, groups: count, dist, nearest: nearestAll, best: bestAll, want };
   if (areasCache.size > 8) areasCache.delete(areasCache.keys().next().value!);
   areasCache.set(key, made);
   return made;
+}
+
+/**
+ * How much of an area's pen and of the key, 0 to 1 each, to put down at a point, the way a printer
+ * takes the grey out of colour: the key takes the darkness every channel shares - as much of it as
+ * it can without going darker than the photo in any channel, times `strength` - and the pen draws
+ * what's left, which is the colour itself. Either ink can be missing.
+ */
+// ---------- CMYK ----------
+
+interface Separation { w: number; h: number; maps: Float32Array[] }
+const separationCache = new Map<string, Separation>();
+
+/**
+ * How much of each of the four plates' pens the photo needs at every point, 0 to 1, laid over each
+ * other on white paper. The black takes `blackShare` of the grey the colours would otherwise share
+ * - the darkness every channel has in common - and cyan, magenta and yellow make up the rest between
+ * them: at each point the amounts whose densities, added up, come nearest the photo's own, none less
+ * than nothing or more than solid. Worked out from the pens' own colours, not printing's, so the
+ * blend is what these markers will actually make. Worked out small, and read at its nearest pixel.
+ */
+function separationOf(tones: Tones, plates: string[], brightness: number, contrast: number, blackShare: number): Separation {
+  const key = [tones.w, tones.h, tones.light[0], tones.light[tones.light.length >> 1], plates.join(","), brightness, contrast, blackShare].join("|");
+  const known = separationCache.get(key);
+  if (known) return known;
+  const adjust = adjuster(brightness, contrast);
+  const scale = Math.min(1, COVER_EDGE / Math.max(tones.w, tones.h));
+  const w = Math.max(1, Math.round(tones.w * scale));
+  const h = Math.max(1, Math.round(tones.h * scale));
+  const inks = plates.map(densityOf);
+  const colours = inks.slice(0, 3);
+  const black = inks[3];
+  const maps = plates.map(() => new Float32Array(w * h));
+  const amounts = new Float64Array(3);
+  for (let y = 0; y < h; y++) {
+    const sy = Math.min(tones.h - 1, Math.round((y / Math.max(1, h - 1)) * (tones.h - 1)));
+    for (let x = 0; x < w; x++) {
+      const sx = Math.min(tones.w - 1, Math.round((x / Math.max(1, w - 1)) * (tones.w - 1)));
+      const i = (sy * tones.w + sx) * 4;
+      const want = [density(adjust(tones.rgba[i])), density(adjust(tones.rgba[i + 1])), density(adjust(tones.rgba[i + 2]))];
+      // The grey every channel shares, in the black pen's own terms: as much black as fits in all three.
+      const grey = black ? Math.min(want[0] / Math.max(1e-3, black[0]), want[1] / Math.max(1e-3, black[1]), want[2] / Math.max(1e-3, black[2])) : 0;
+      const k = Math.min(1, Math.max(0, grey * blackShare));
+      const rest = black ? [want[0] - black[0] * k, want[1] - black[1] * k, want[2] - black[2] * k] : want;
+      solveInks(colours, rest, amounts);
+      const at = y * w + x;
+      for (let n = 0; n < 3; n++) maps[n][at] = amounts[n];
+      maps[3][at] = k;
+    }
+  }
+  const made = { w, h, maps };
+  if (separationCache.size > 6) separationCache.delete(separationCache.keys().next().value!);
+  separationCache.set(key, made);
+  return made;
+}
+
+/**
+ * The amounts of some inks, 0 to 1, whose densities added together come nearest `want` in all three
+ * channels: a handful of passes over the inks, each set to what fits best given the others.
+ */
+function solveInks(inks: [number, number, number][], want: number[], out: Float64Array) {
+  out.fill(0);
+  const residual = [want[0], want[1], want[2]];
+  for (let pass = 0; pass < 12; pass++) {
+    for (let k = 0; k < inks.length; k++) {
+      const d = inks[k];
+      const dd = d[0] * d[0] + d[1] * d[1] + d[2] * d[2];
+      if (dd < 1e-9) continue;
+      const was = out[k];
+      const r0 = residual[0] + d[0] * was;
+      const r1 = residual[1] + d[1] * was;
+      const r2 = residual[2] + d[2] * was;
+      const best = Math.min(1, Math.max(0, (r0 * d[0] + r1 * d[1] + r2 * d[2]) / dd));
+      out[k] = best;
+      residual[0] = r0 - d[0] * best;
+      residual[1] = r1 - d[1] * best;
+      residual[2] = r2 - d[2] * best;
+    }
+  }
+}
+
+/** A CMYK plate, read at a point of the photo (u and v, 0 to 1): -1 where it draws nothing, else how much. */
+function plateSampler(tones: Tones, photo: Photo) {
+  const sep = separationOf(tones, photo.plates!, photo.brightness, photo.contrast, Math.min(1, Math.max(0, photo.blackShare ?? BLACK_SHARE)));
+  const map = sep.maps[PLATES.indexOf(photo.plate!)];
+  return (u: number, v: number) => {
+    const amount = map[Math.min(sep.h - 1, Math.round(v * (sep.h - 1))) * sep.w + Math.min(sep.w - 1, Math.round(u * (sep.w - 1)))];
+    return amount > 0.02 ? amount : -1;
+  };
+}
+
+/** How dark a part of a photo is, 0 to 1, before its key starts to shade it, unless set. */
+export const KEY_FROM = 0.35;
+
+/**
+ * A layer of a photo split by colour, read at a point of the photo (u and v, 0 to 1): -1 where it
+ * draws nothing, otherwise how much of its ink. A colour layer draws its group's area - widened by
+ * the bleed - as much of its pen as comes nearest the photo there. The key shades over all of them.
+ */
+function colourSampler(tones: Tones, photo: Photo) {
+  const areas = areasOf(tones, photo.regions!, photo.brightness, photo.contrast);
+  const bleed = Math.max(0, photo.bleed ?? 0);
+  const own = densityOf(photo.ink!);
+  const pointAt = (u: number, v: number) =>
+    Math.min(areas.h - 1, Math.round(v * (areas.h - 1))) * areas.w + Math.min(areas.w - 1, Math.round(u * (areas.w - 1)));
+  if (photo.key) {
+    // The key shades over the colours rather than taking their place: it follows how dark the photo
+    // is, from `keyFrom` to black, and the colour layers under it draw as they would without it.
+    // How dark, the way the eye sees it: a bright red is a mid-tone, not a shadow.
+    const adjust = adjuster(photo.brightness, photo.contrast);
+    const from = Math.min(0.95, Math.max(0, photo.keyFrom ?? KEY_FROM));
+    const strength = Math.min(1, Math.max(0, photo.keyStrength ?? 1));
+    return (u: number, v: number) => {
+      const px = (Math.min(tones.h - 1, Math.round(v * (tones.h - 1))) * tones.w + Math.min(tones.w - 1, Math.round(u * (tones.w - 1)))) * 4;
+      const dark = 1 - lab(adjust(tones.rgba[px]), adjust(tones.rgba[px + 1]), adjust(tones.rgba[px + 2]))[0] / 100;
+      const amount = strength * ((dark - from) / (1 - from));
+      return amount > 0.02 ? Math.min(1, amount) : -1;
+    };
+  }
+  const mine = photo.region!;
+  const dd = own[0] * own[0] + own[1] * own[1] + own[2] * own[2];
+  return (u: number, v: number) => {
+    const at = pointAt(u, v);
+    if (!inArea(areas, at, mine, bleed) || dd < 1e-9) return -1;
+    const want = areas.want;
+    return Math.min(1, Math.max(0, (want[at * 3] * own[0] + want[at * 3 + 1] * own[1] + want[at * 3 + 2] * own[2]) / dd));
+  };
 }
 
 /**
@@ -450,20 +720,22 @@ function toneSampler(tones: Tones, photo: Photo, w: number, h: number) {
   const [c0, c1, c2, c3] = photo.crop ?? [0, 0, 1, 1];
   // Split by colour: this layer draws its colour group's area, as much of its pen's ink there as
   // comes nearest the photo's colour - so a pale part of its area gets few lines.
-  if (photo.ink && photo.regions && photo.region !== undefined) {
-    const areas = areasOf(tones, photo.regions, photo.brightness, photo.contrast);
-    const d = densityOf(photo.ink);
-    const dd = d[0] * d[0] + d[1] * d[1] + d[2] * d[2];
-    const mine = photo.region;
+  if (photo.plate && photo.plates?.length === 4) {
+    const sample = plateSampler(tones, photo);
     return {
       toneAt: (x: number, y: number) => {
         if (x < 0 || x > w || y < 0 || y > h) return -1;
-        const u = c0 + (x / w) * (c2 - c0);
-        const v = c1 + (y / h) * (c3 - c1);
-        const at = Math.min(areas.h - 1, Math.round(v * (areas.h - 1))) * areas.w + Math.min(areas.w - 1, Math.round(u * (areas.w - 1)));
-        if (areas.group[at] !== mine || dd < 1e-9) return -1;
-        const want = areas.want;
-        return Math.min(1, Math.max(0, (want[at * 3] * d[0] + want[at * 3 + 1] * d[1] + want[at * 3 + 2] * d[2]) / dd));
+        return sample(c0 + (x / w) * (c2 - c0), c1 + (y / h) * (c3 - c1));
+      },
+      fromWhite: true,
+    };
+  }
+  if (photo.ink && photo.regions && (photo.region !== undefined || photo.key)) {
+    const sample = colourSampler(tones, photo);
+    return {
+      toneAt: (x: number, y: number) => {
+        if (x < 0 || x > w || y < 0 || y > h) return -1;
+        return sample(c0 + (x / w) * (c2 - c0), c1 + (y / h) * (c3 - c1));
       },
       fromWhite: true,
     };
@@ -538,6 +810,192 @@ function waves(tones: Tones, photo: Photo, w: number, h: number): PhotoMarks {
       run.push(`${n(x)} ${n(y)}`);
     }
     close();
+  }
+  return { passes: [parts.join("")], strokes };
+}
+
+// ---------- Outlines ----------
+
+/** The longer side of the grid outlines are traced on: fine enough for a pen, quick to trace. */
+const OUTLINE_EDGE = 480;
+
+/** A blur of a grid, a box three times over - near enough a gaussian - `r` cells either way. */
+function blurGrid(v: Float32Array, gw: number, gh: number, r: number) {
+  if (r < 0.5) return;
+  const k = Math.max(1, Math.round(r));
+  const tmp = new Float32Array(v.length);
+  for (let pass = 0; pass < 3; pass++) {
+    for (let y = 0; y < gh; y++) {
+      let sum = 0;
+      for (let x = -k; x <= k; x++) sum += v[y * gw + Math.min(gw - 1, Math.max(0, x))];
+      for (let x = 0; x < gw; x++) {
+        tmp[y * gw + x] = sum / (2 * k + 1);
+        sum += v[y * gw + Math.min(gw - 1, x + k + 1)] - v[y * gw + Math.max(0, x - k)];
+      }
+    }
+    for (let x = 0; x < gw; x++) {
+      let sum = 0;
+      for (let y = -k; y <= k; y++) sum += tmp[Math.min(gh - 1, Math.max(0, y)) * gw + x];
+      for (let y = 0; y < gh; y++) {
+        v[y * gw + x] = sum / (2 * k + 1);
+        sum += tmp[Math.min(gh - 1, y + k + 1) * gw + x] - tmp[Math.max(0, y - k) * gw + x];
+      }
+    }
+  }
+}
+
+/**
+ * The lines along which a grid crosses a level - marching squares - joined up into runs: each run a
+ * list of grid points, closed where it comes back round to its start.
+ */
+function contour(v: Float32Array, gw: number, gh: number, level: number): number[][][] {
+  // A point on the edge between two grid points, where the level falls between them. Keyed by the
+  // edge, so the two cells that share an edge find the same point and the pieces join up.
+  const points = new Map<number, number[]>();
+  const pointOn = (x0: number, y0: number, x1: number, y1: number) => {
+    const key = y1 > y0 ? ((y0 * gw + x0) * 2 + 1) : (y0 * gw + x0) * 2;
+    let p = points.get(key);
+    if (!p) {
+      const a = v[y0 * gw + x0];
+      const b = v[y1 * gw + x1];
+      const t = b !== a ? (level - a) / (b - a) : 0.5;
+      p = [x0 + (x1 - x0) * t, y0 + (y1 - y0) * t, key];
+      points.set(key, p);
+    }
+    return p;
+  };
+  const next = new Map<number, number[]>(); // edge key -> the edge keys it joins
+  const link = (a: number[], b: number[]) => {
+    (next.get(a[2]) ?? next.set(a[2], []).get(a[2])!).push(b[2]);
+    (next.get(b[2]) ?? next.set(b[2], []).get(b[2])!).push(a[2]);
+  };
+  for (let y = 0; y < gh - 1; y++) {
+    for (let x = 0; x < gw - 1; x++) {
+      const tl = v[y * gw + x] > level ? 8 : 0;
+      const tr = v[y * gw + x + 1] > level ? 4 : 0;
+      const br = v[(y + 1) * gw + x + 1] > level ? 2 : 0;
+      const bl = v[(y + 1) * gw + x] > level ? 1 : 0;
+      const c = tl | tr | br | bl;
+      if (c === 0 || c === 15) continue;
+      const top = () => pointOn(x, y, x + 1, y);
+      const bottom = () => pointOn(x, y + 1, x + 1, y + 1);
+      const left = () => pointOn(x, y, x, y + 1);
+      const right = () => pointOn(x + 1, y, x + 1, y + 1);
+      switch (c) {
+        case 1: case 14: link(left(), bottom()); break;
+        case 2: case 13: link(bottom(), right()); break;
+        case 3: case 12: link(left(), right()); break;
+        case 4: case 11: link(top(), right()); break;
+        case 6: case 9: link(top(), bottom()); break;
+        case 7: case 8: link(left(), top()); break;
+        case 5: link(left(), top()); link(bottom(), right()); break;
+        case 10: link(top(), right()); link(left(), bottom()); break;
+      }
+    }
+  }
+  // Walk each chain from an end (an edge joined once), then what's left are closed loops.
+  const used = new Set<number>();
+  const runs: number[][][] = [];
+  const walk = (start: number) => {
+    const run: number[][] = [];
+    let at: number | undefined = start;
+    let from = -1;
+    while (at !== undefined && !used.has(at)) {
+      used.add(at);
+      const p = points.get(at)!;
+      run.push([p[0], p[1]]);
+      const onward: number | undefined = (next.get(at) ?? []).find((k) => k !== from && !used.has(k));
+      from = at;
+      at = onward;
+    }
+    // Back round to the start: close it.
+    if (run.length > 2 && (next.get(from) ?? []).includes(start)) run.push(run[0]);
+    if (run.length > 1) runs.push(run);
+  };
+  for (const [key, joins] of next) if (joins.length === 1 && !used.has(key)) walk(key);
+  for (const key of next.keys()) if (!used.has(key)) walk(key);
+  return runs;
+}
+
+/**
+ * Tone as outlines: the photo traced as contour lines, like a map's - along the places its tone
+ * crosses a level, so they follow its edges and its shapes. Smoothed first, so a speck of noise is
+ * not a contour. A whole photo is traced at levels spread from white to black; a tone band at its own
+ * lower edge and levels inside it, so an edge two bands share is drawn once; a colour layer around
+ * its colour's area.
+ */
+function outlines(tones: Tones, photo: Photo, w: number, h: number): PhotoMarks {
+  const gw = Math.max(2, Math.round((OUTLINE_EDGE * w) / Math.max(w, h)));
+  const gh = Math.max(2, Math.round((OUTLINE_EDGE * h) / Math.max(w, h)));
+  const cell = w / (gw - 1);
+  const cellY = h / (gh - 1);
+  const [c0, c1, c2, c3] = photo.crop ?? [0, 0, 1, 1];
+  const field = new Float32Array(gw * gh);
+  const levels: number[] = [];
+  const count = Math.max(1, Math.min(40, Math.round(photo.contours ?? OUTLINE_DEFAULTS.contours)));
+  if (photo.plate && photo.plates?.length === 4) {
+    // A plate: how much of its pen the photo needs, traced at levels spread across it like tone.
+    const sample = plateSampler(tones, photo);
+    for (let gy = 0; gy < gh; gy++) {
+      for (let gx = 0; gx < gw; gx++) {
+        field[gy * gw + gx] = Math.max(0, sample(c0 + (gx / (gw - 1)) * (c2 - c0), c1 + (gy / (gh - 1)) * (c3 - c1)));
+      }
+    }
+    for (let k = 1; k <= count; k++) levels.push(k / (count + 1));
+  } else if (photo.ink && photo.regions && photo.key) {
+    // The key: how much of it the photo needs, traced at levels spread across it like tone.
+    const sample = colourSampler(tones, photo);
+    for (let gy = 0; gy < gh; gy++) {
+      for (let gx = 0; gx < gw; gx++) {
+        field[gy * gw + gx] = Math.max(0, sample(c0 + (gx / (gw - 1)) * (c2 - c0), c1 + (gy / (gh - 1)) * (c3 - c1)));
+      }
+    }
+    for (let k = 1; k <= count; k++) levels.push(k / (count + 1));
+  } else if (photo.ink && photo.regions && photo.region !== undefined) {
+    // A colour layer: 1 inside its colour's area, 0 outside, traced at the half-way line.
+    const areas = areasOf(tones, photo.regions, photo.brightness, photo.contrast);
+    for (let gy = 0; gy < gh; gy++) {
+      for (let gx = 0; gx < gw; gx++) {
+        const u = c0 + (gx / (gw - 1)) * (c2 - c0);
+        const vv = c1 + (gy / (gh - 1)) * (c3 - c1);
+        const at = Math.min(areas.h - 1, Math.round(vv * (areas.h - 1))) * areas.w + Math.min(areas.w - 1, Math.round(u * (areas.w - 1)));
+        field[gy * gw + gx] = inArea(areas, at, photo.region, Math.max(0, photo.bleed ?? 0)) ? 1 : 0;
+      }
+    }
+    levels.push(0.5);
+  } else {
+    const lift = photo.brightness / 200;
+    const c = Math.max(-99, Math.min(99, photo.contrast)) / 100;
+    const gain = c >= 0 ? 1 / (1 - c) : 1 + c;
+    for (let gy = 0; gy < gh; gy++) {
+      for (let gx = 0; gx < gw; gx++) {
+        field[gy * gw + gx] = darknessAt(tones, c0 + (gx / (gw - 1)) * (c2 - c0), c1 + (gy / (gh - 1)) * (c3 - c1), lift, gain);
+      }
+    }
+    if (photo.band) {
+      const [lo, hi] = photo.band;
+      for (let k = 0; k < count; k++) {
+        const t = lo + ((hi - lo) * k) / count;
+        if (t > 0) levels.push(t); // the lightest band's lower edge is white: nothing to trace
+      }
+    } else {
+      for (let k = 1; k <= count; k++) levels.push(k / (count + 1));
+    }
+  }
+  blurGrid(field, gw, gh, Math.max(0, photo.smoothMm ?? OUTLINE_DEFAULTS.smoothMm) / 25.4 / cell);
+  // A contour shorter than this is a speck, not a shape.
+  const shortest = 2 / 25.4;
+  const n = (val: number) => Number(val.toFixed(4));
+  const parts: string[] = [];
+  let strokes = 0;
+  for (const level of levels) {
+    for (const run of contour(field, gw, gh, level)) {
+      let length = 0;
+      for (let i = 1; i < run.length; i++) length += Math.hypot((run[i][0] - run[i - 1][0]) * cell, (run[i][1] - run[i - 1][1]) * cellY);
+      if (length < shortest) continue;
+      parts.push(`M${run.map(([gx, gy]) => `${n(gx * cell)} ${n(gy * cellY)}`).join("L")}`);
+      strokes++;
+    }
   }
   return { passes: [parts.join("")], strokes };
 }
@@ -625,13 +1083,24 @@ export function photoFromData(raw: Record<string, unknown>): Photo | null {
       ? { crop: raw.crop.map(Number) as [number, number, number, number] }
       : {}),
     ...(raw.fit === "fit" || raw.fit === "fill" ? { fit: raw.fit } : {}),
-    ...(raw.style === "waves" ? { style: "waves" as const } : {}),
+    ...(raw.style === "waves" || raw.style === "outlines" ? { style: raw.style } : {}),
+    ...(Number.isFinite(Number(raw.contours)) && raw.contours !== undefined ? { contours: Number(raw.contours) } : {}),
+    ...(Number.isFinite(Number(raw.smooth_mm)) && raw.smooth_mm !== undefined ? { smoothMm: Number(raw.smooth_mm) } : {}),
     ...(typeof raw.ink === "string" ? { ink: raw.ink } : {}),
     ...(Array.isArray(raw.offset_mm) && raw.offset_mm.length === 2 && raw.offset_mm.every((v) => Number.isFinite(Number(v)))
       ? { offsetMm: [Number(raw.offset_mm[0]), Number(raw.offset_mm[1])] as [number, number] }
       : {}),
     ...(Array.isArray(raw.regions) && raw.regions.every((v) => typeof v === "string") ? { regions: raw.regions as string[] } : {}),
     ...(Number.isInteger(Number(raw.region)) && raw.region !== undefined ? { region: Number(raw.region) } : {}),
+    ...(raw.key === true ? { key: true } : {}),
+    ...(raw.modes && typeof raw.modes === "object" ? { modes: raw.modes as Photo["modes"] } : {}),
+    ...(typeof raw.key_ink === "string" ? { keyInk: raw.key_ink } : {}),
+    ...(Number.isFinite(Number(raw.key_strength)) && raw.key_strength !== undefined ? { keyStrength: Number(raw.key_strength) } : {}),
+    ...(Number.isFinite(Number(raw.key_from)) && raw.key_from !== undefined ? { keyFrom: Number(raw.key_from) } : {}),
+    ...(typeof raw.plate === "string" && (PLATES as string[]).includes(raw.plate) ? { plate: raw.plate as Plate } : {}),
+    ...(Array.isArray(raw.plates) && raw.plates.every((v) => typeof v === "string") ? { plates: raw.plates as string[] } : {}),
+    ...(Number.isFinite(Number(raw.black_share)) && raw.black_share !== undefined ? { blackShare: Number(raw.black_share) } : {}),
+    ...(Array.isArray(raw.region_inks) ? { regionInks: raw.region_inks.map((c) => (typeof c === "string" ? c : null)) } : {}),
     ...(Number.isFinite(Number(raw.row_mm)) && raw.row_mm !== undefined ? { rowMm: Number(raw.row_mm) } : {}),
     ...(Number.isFinite(Number(raw.wave_mm)) && raw.wave_mm !== undefined ? { waveMm: Number(raw.wave_mm) } : {}),
     ...(Number.isFinite(Number(raw.bleed)) && raw.bleed !== undefined ? { bleed: Number(raw.bleed) } : {}),
@@ -650,8 +1119,18 @@ export const photoData = (p: Photo) => ({
   ...(p.band ? { band: p.band } : {}),
   ...(p.crop ? { crop: p.crop } : {}),
   ...(p.fit ? { fit: p.fit } : {}),
-  ...(p.style === "waves" ? { style: "waves" } : {}),
+  ...(p.style === "waves" || p.style === "outlines" ? { style: p.style } : {}),
+  ...(p.contours !== undefined ? { contours: p.contours } : {}),
+  ...(p.smoothMm !== undefined ? { smooth_mm: p.smoothMm } : {}),
   ...(p.ink ? { ink: p.ink, regions: p.regions, region: p.region } : {}),
+  ...(p.key ? { key: true } : {}),
+  ...(p.modes ? { modes: p.modes } : {}),
+  ...(p.keyInk ? { key_ink: p.keyInk } : {}),
+  ...(p.keyStrength !== undefined ? { key_strength: p.keyStrength } : {}),
+  ...(p.keyFrom !== undefined ? { key_from: p.keyFrom } : {}),
+  ...(p.plate ? { plate: p.plate, plates: p.plates } : {}),
+  ...(p.blackShare !== undefined ? { black_share: p.blackShare } : {}),
+  ...(p.regionInks ? { region_inks: p.regionInks } : {}),
   ...(p.offsetMm && (p.offsetMm[0] || p.offsetMm[1]) ? { offset_mm: p.offsetMm } : {}),
   ...(p.rowMm !== undefined ? { row_mm: p.rowMm } : {}),
   ...(p.waveMm !== undefined ? { wave_mm: p.waveMm } : {}),
