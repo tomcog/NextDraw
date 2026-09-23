@@ -94,6 +94,15 @@
   vector-effect: non-scaling-stroke;
 }
 
+/* The box round a selection with no grips of its own - a whole big layer - is what picks it up. */
+.wrap[data-tool="select"] .carryBox {
+  fill: transparent;
+  pointer-events: all;
+  cursor: move;
+}
+
+.wrap[data-tool="select"][data-drag="move"] .carryBox { cursor: grabbing; }
+
 .hint {
   position: absolute;
   inset: 0;

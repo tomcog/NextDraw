@@ -1,4 +1,4 @@
-import { useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
+import { memo, useMemo, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
 import {
   angleFromCenter, boxAround, boxOf, clampToPage, dragHandleTurned, handlePoints, isDegenerate,
   drawnNodes, moveBy, newShapeId, scaleInto, turnAround, turnAttr, turnGrip, CURSOR,
@@ -81,11 +81,16 @@ interface Props {
 
 // One drag at a time, and what it means depends on where it started: on the page it draws a new
 // shape, on a shape it moves that shape, on a selected shape's handle it reshapes it. A shape being
-// moved or reshaped is updated as the pointer goes, so the page and the size in the list stay
-// truthful mid-drag rather than catching up at the end.
+// reshaped is updated as the pointer goes, so the page and the size in the list stay truthful
+// mid-drag. One being moved is only drawn moved until it's let go: its size doesn't change, and a
+// whole layer rewritten on every pointer move is what made a big drawing crawl.
 type Drag =
   | { mode: "new"; shape: Shape }
-  | { mode: "move"; from: { x: number; y: number }; origins: Shape[] }
+  // Carried, not rewritten: what's being moved is drawn shifted by `by` while the pointer goes, and
+  // the shapes themselves are moved once, when it's let go. Rewriting a whole layer of marks on every
+  // pointer move is what made dragging a big drawing crawl. `box` is round all of it, for the page's
+  // edges, and `ids` says what's being carried without searching the list for it.
+  | { mode: "move"; from: { x: number; y: number }; origins: Shape[]; ids: Set<string>; box: ReturnType<typeof boxOf>; by: { x: number; y: number } }
   // Rubber band: drawn on the empty page to gather up everything it touches.
   | { mode: "marquee"; from: { x: number; y: number }; to: { x: number; y: number }; add: string[] }
   // A whole selection at once: scaled by a corner of the box round it, or turned about its middle.
@@ -123,6 +128,139 @@ function straighten(x: number, y: number, toX: number, toY: number) {
   return { x: x + along * Math.cos(angle), y: y + along * Math.sin(angle) };
 }
 
+/**
+ * Past this many marks, a layer gets no grip for each of them: a separation of fifty thousand strokes
+ * would be fifty thousand more elements on the page, for picking out strokes nobody picks one at a
+ * time. Its marks are picked up together - Select all on layer, or a band dragged round them - and
+ * moved by the box round the selection.
+ */
+export const GRIP_LIMIT = 2000;
+
+const sameItems = <T,>(a: T[], b: T[]) => a.length === b.length && a.every((x, i) => x === b[i]);
+
+type LayerLists = Map<string, { shapes: Shape[]; fills: Fill[] }>;
+
+/**
+ * The shapes and fills on each layer, keeping last time's list for a layer where nothing on it
+ * changed. An edit replaces one shape and leaves the rest as they were, so every layer it didn't
+ * touch comes back as the very same list - and a layer drawn from the same list isn't drawn again.
+ */
+function listsByLayer(shapes: Shape[], fills: Fill[], was: LayerLists): LayerLists {
+  const onLayer = new Map<string, Shape[]>();
+  for (const sh of shapes) {
+    const list = onLayer.get(sh.layerId);
+    if (list) list.push(sh);
+    else onLayer.set(sh.layerId, [sh]);
+  }
+  const fillsOf = new Map<string, Fill[]>();
+  for (const f of fills) {
+    const list = fillsOf.get(f.shapeId);
+    if (list) list.push(f);
+    else fillsOf.set(f.shapeId, [f]);
+  }
+  const next: LayerLists = new Map();
+  for (const [id, list] of onLayer) {
+    const own = list.flatMap((sh) => fillsOf.get(sh.id) ?? []);
+    const before = was.get(id);
+    next.set(id, {
+      shapes: before && sameItems(before.shapes, list) ? before.shapes : list,
+      fills: before && sameItems(before.fills, own) ? before.fills : own,
+    });
+  }
+  return next;
+}
+
+// One shape as an SVG element. The caller says what it's for; nothing here decides how it looks.
+// Ink is painted by the shared preview rules (see lib/ink.ts), and the interface pieces by
+// Canvas.module.css, so a mark and the thing you grab to move it are drawn separately even though
+// they're the same rectangle.
+function shapeElement(s: Shape, key: string, props: Record<string, unknown>, fonts: Record<string, StrokeFont>) {
+  const b = boxOf(s);
+  // A turned shape is drawn turned about the middle of its box; the box itself stays square.
+  const common = { ...props, ...(turnAttr(s) ? { transform: turnAttr(s) } : {}) };
+  if (s.kind === "text") {
+    // The glyphs, in the size the box says, with a transparent box behind them so the whole thing
+    // can be picked up rather than only the strokes of the letters. The caller's props go on each
+    // letter rather than on the group: vector-effect doesn't inherit in SVG, so a class on the
+    // group would leave the interface's screen-width lines measured in inches instead.
+    const runs = textRuns(s, fonts[s.font ?? ""]);
+    return (
+      <g key={key} transform={turnAttr(s)}>
+        {props.className === styles.grab && (
+          <rect {...props} x={b.x0} y={b.y0} width={b.x1 - b.x0} height={b.y1 - b.y0} fill="transparent" />
+        )}
+        {runs.map((run, i) => <path key={i} {...props} d={run.d} fill="none" />)}
+      </g>
+    );
+  }
+  if (s.kind === "path") {
+    // One element for the whole path, every run a subpath of it: the browser draws its curves as
+    // curves, from the same handles the file gave them, and a joined shape is one thing to grab.
+    return <path key={key} {...common} fill="none" d={pathData(drawnNodes(s))} />;
+  }
+  if (s.kind === "curve") {
+    // Several strokes where the curve lifts the pen (a parabolic's corners), so what's on screen
+    // is what goes on the paper, pen lifts and all. The caller's props go on each stroke rather
+    // than on the group around them: vector-effect doesn't inherit in SVG, so a class on the group
+    // would leave the interface's screen-width lines measured in inches instead.
+    const runs = curveStrokes(s);
+    return (
+      <g key={key} transform={turnAttr(s)}>
+        {runs.map((run, i) => <polyline key={i} {...props} fill="none" points={pointsAttr(run)} />)}
+      </g>
+    );
+  }
+  if (s.kind === "line") return <line key={key} {...common} x1={s.x} y1={s.y} x2={s.x2} y2={s.y2} />;
+  if (s.kind === "ellipse") {
+    return (
+      <ellipse
+        key={key}
+        {...common}
+        cx={(b.x0 + b.x1) / 2}
+        cy={(b.y0 + b.y1) / 2}
+        rx={(b.x1 - b.x0) / 2}
+        ry={(b.y1 - b.y0) / 2}
+      />
+    );
+  }
+  return <rect key={key} {...common} x={b.x0} y={b.y0} width={b.x1 - b.x0} height={b.y1 - b.y0} />;
+}
+
+/**
+ * Everything some of one layer's shapes will actually put on the paper: the outlines they draw, and
+ * the hatch lines their fills generate. A shape whose outline isn't plotted contributes only its
+ * hatching - the shape itself is a guide, and guides are interface, drawn by the canvas.
+ *
+ * Kept apart and memoised so a layer is only drawn again when its own list changes: moving a shape
+ * on one layer leaves every other layer's thousands of marks exactly where they were on screen.
+ */
+const LayerMarks = memo(function LayerMarks({ shapes, fills, fonts }: { shapes: Shape[]; fills: Fill[]; fonts: Record<string, StrokeFont> }) {
+  const byId = new Map(shapes.map((sh) => [sh.id, sh]));
+  // A repeated shape is drawn once per copy. The copies are marks and nothing else: what you grab,
+  // and what the handles belong to, is always the shape itself.
+  const copies = (sh: Shape, what: (key: string) => ReactNode) =>
+    placements(sh).map((p, i) => (
+      <g key={`${sh.id}-copy-${i}`} transform={placementAttr(sh, p)}>{what(`${sh.id}-${i}`)}</g>
+    ));
+  return (
+    <>
+      {shapes.filter((sh) => sh.outline !== false).map((sh) => copies(sh, (key) => shapeElement(sh, key, {}, fonts)))}
+      {fills.map((fill) => {
+        const shape = byId.get(fill.shapeId);
+        if (!shape) return null;
+        return copies(shape, (key) => (
+          // The fill turns with the shape it fills, since it is that shape's own hatching.
+          <g key={`${key}-fill-${fill.id}`} transform={turnAttr(shape)}>
+            {fillRuns(shape, fill).map((run, i) => (
+              <polyline key={i} fill="none" points={run.map((p) => `${p.x},${p.y}`).join(" ")} />
+            ))}
+          </g>
+        ));
+      })}
+    </>
+  );
+});
+
 // The page at true proportions, with a one-inch grid. It keeps the page's own proportions and is
 // sized to them (--canvas-aspect), so the drawing gets as large as the space allows - the same way
 // Plot's preview fills its column.
@@ -140,22 +278,41 @@ export function Canvas({ page, shapes, fills, layers, activeLayer, model, zoom, 
     paper_y: 0,
     paper_color: "#ffffff",
   };
-  const drawingBox: Box | null = shapes.length
-    ? (shapes.reduce<[number, number, number, number]>(
-        (acc, s) => {
-          const b = boxOf(s);
-          return [Math.min(acc[0], b.x0), Math.min(acc[1], b.y0), Math.max(acc[2], b.x1), Math.max(acc[3], b.y1)];
-        },
-        [Infinity, Infinity, -Infinity, -Infinity],
-      ).map((v) => v * UNITS) as Box)
-    : null;
+  // Worked out when the drawing changes, not on every render: a render happens on every pointer move.
+  const drawingBox: Box | null = useMemo(() => {
+    if (!shapes.length) return null;
+    const b = boxAround(shapes);
+    return [b.x0 * UNITS, b.y0 * UNITS, b.x1 * UNITS, b.y1 * UNITS];
+  }, [shapes]);
 
   // Where a pointer is on the page, in inches from its top-left corner.
   // The pen's real width in inches, so the line on screen is the line on paper.
   const penIn = penWidthMm / 25.4;
   const inkSim = view === "preview";
-  const layerOf = (id: string) => layers.find((l) => l.id === id);
-  const shown = shapes.filter((sh) => !layerOf(sh.layerId)?.hidden);
+  const hiddenLayers = new Set(layers.filter((l) => l.hidden).map((l) => l.id));
+  const shown = useMemo(() => shapes.filter((sh) => !hiddenLayers.has(sh.layerId)), [shapes, layers]); // eslint-disable-line react-hooks/exhaustive-deps
+  const picked = useMemo(() => new Set(selected), [selected]);
+
+  // What's being carried, drawn apart from the rest so the rest can stay as it is while it moves.
+  const carrying = drag?.mode === "move" ? drag : null;
+  const carriedIds = carrying?.ids ?? null;
+  const listsCache = useRef<LayerLists>(new Map());
+  const still = useMemo(() => {
+    const lists = listsByLayer(carriedIds ? shapes.filter((sh) => !carriedIds.has(sh.id)) : shapes, fills, listsCache.current);
+    listsCache.current = lists;
+    return lists;
+  }, [shapes, fills, carriedIds]);
+  const carried = useMemo(
+    () => (carrying ? listsByLayer(carrying.origins, fills, new Map()) : null),
+    [carriedIds, fills], // eslint-disable-line react-hooks/exhaustive-deps
+  );
+  const shift = carrying ? `translate(${carrying.by.x} ${carrying.by.y})` : undefined;
+  // Layers too big for a grip on each mark (GRIP_LIMIT), counted over the whole drawing.
+  const bigLayers = useMemo(() => {
+    const count = new Map<string, number>();
+    for (const sh of shapes) count.set(sh.layerId, (count.get(sh.layerId) ?? 0) + 1);
+    return new Set([...count].filter(([, n]) => n > GRIP_LIMIT).map(([id]) => id));
+  }, [shapes]);
 
   const pointAt = (e: ReactPointerEvent): { x: number; y: number } | null => {
     const at = bed.current?.at(e.clientX, e.clientY);
@@ -212,7 +369,25 @@ export function Canvas({ page, shapes, fills, layers, activeLayer, model, zoom, 
     onSelect(next);
     if (e.shiftKey && !next.includes(shape.id)) return; // just taken out: nothing to drag
     onEditStart();
-    begin(e, { mode: "move", from: p, origins: shapes.filter((s) => next.includes(s.id)) });
+    carry(e, p, next);
+  };
+
+  const carry = (e: ReactPointerEvent, p: { x: number; y: number }, ids: string[]) => {
+    const set = new Set(ids);
+    const origins = shapes.filter((s) => set.has(s.id));
+    if (!origins.length) return;
+    begin(e, { mode: "move", from: p, origins, ids: set, box: boxAround(origins), by: { x: 0, y: 0 } });
+  };
+
+  // Started inside the box round several shapes: move them all. The way a selection with no grips of
+  // its own - a whole big layer - is carried, and a larger target than any one of its marks.
+  const onBoxDown = (e: ReactPointerEvent) => {
+    if (e.button !== 0 || tool !== "select") return;
+    e.stopPropagation();
+    const p = pointAt(e);
+    if (!p) return;
+    onEditStart();
+    carry(e, p, selected);
   };
 
   // Started on the turn grip: turn the shape about the middle of its box. Shift snaps to 15°, the
@@ -267,18 +442,13 @@ export function Canvas({ page, shapes, fills, layers, activeLayer, model, zoom, 
     } else if (drag.mode === "move") {
       // The whole selection moves as one: the limit is the box round all of it, so a group slides
       // along the page's edge instead of collapsing against it.
-      const boxes = drag.origins.map(boxOf);
-      const x0 = Math.min(...boxes.map((b) => b.x0));
-      const y0 = Math.min(...boxes.map((b) => b.y0));
-      const x1 = Math.max(...boxes.map((b) => b.x1));
-      const y1 = Math.max(...boxes.map((b) => b.y1));
+      const { x0, y0, x1, y1 } = drag.box;
       // Snapping moves the corner of what's being carried onto the grid, not the pointer: the shape
       // lands on a line, wherever it was picked up.
       const dx = snap > 0 ? grid(x0 + p.x - drag.from.x) - x0 : p.x - drag.from.x;
       const dy = snap > 0 ? grid(y0 + p.y - drag.from.y) - y0 : p.y - drag.from.y;
-      const byX = Math.max(-x0, Math.min(page.w - x1, dx));
-      const byY = Math.max(-y0, Math.min(page.h - y1, dy));
-      onUpdateMany(drag.origins.map((s) => moveBy(s, byX, byY, page)));
+      const by = { x: Math.max(-x0, Math.min(page.w - x1, dx)), y: Math.max(-y0, Math.min(page.h - y1, dy)) };
+      if (by.x !== drag.by.x || by.y !== drag.by.y) setDrag({ ...drag, by });
     } else if (drag.mode === "groupScale") {
       // The corner opposite the one being dragged stays where it is, as it does for one shape.
       const b = drag.box;
@@ -333,6 +503,10 @@ export function Canvas({ page, shapes, fills, layers, activeLayer, model, zoom, 
     if (pointer.current !== e.pointerId) return;
     pointer.current = null;
     if (drag?.mode === "new" && !isDegenerate(drag.shape)) onAdd(drag.shape);
+    // Put down where it was carried to: the one time the shapes themselves move.
+    if (drag?.mode === "move" && (drag.by.x || drag.by.y)) {
+      onUpdateMany(drag.origins.map((s) => moveBy(s, drag.by.x, drag.by.y, page)));
+    }
     if (drag?.mode === "marquee") {
       const band = {
         x0: Math.min(drag.from.x, drag.to.x), y0: Math.min(drag.from.y, drag.to.y),
@@ -350,97 +524,14 @@ export function Canvas({ page, shapes, fills, layers, activeLayer, model, zoom, 
     setDrag(null);
   };
 
-  // One shape as an SVG element. The caller says what it's for; nothing here decides how it looks.
-  // Ink is painted by the shared preview rules (see lib/ink.ts), and the interface pieces by
-  // Canvas.module.css, so a mark and the thing you grab to move it are drawn separately even though
-  // they're the same rectangle.
-  const element = (s: Shape, key: string, props: Record<string, unknown>) => {
-    const b = boxOf(s);
-    // A turned shape is drawn turned about the middle of its box; the box itself stays square.
-    const common = { ...props, ...(turnAttr(s) ? { transform: turnAttr(s) } : {}) };
-    if (s.kind === "text") {
-      // The glyphs, in the size the box says, with a transparent box behind them so the whole thing
-      // can be picked up rather than only the strokes of the letters. The caller's props go on each
-      // letter rather than on the group: vector-effect doesn't inherit in SVG, so a class on the
-      // group would leave the interface's screen-width lines measured in inches instead.
-      const b = boxOf(s);
-      const runs = textRuns(s, fonts[s.font ?? ""]);
-      return (
-        <g key={key} transform={turnAttr(s)}>
-          {props.className === styles.grab && (
-            <rect {...props} x={b.x0} y={b.y0} width={b.x1 - b.x0} height={b.y1 - b.y0} fill="transparent" />
-          )}
-          {runs.map((run, i) => <path key={i} {...props} d={run.d} fill="none" />)}
-        </g>
-      );
-    }
-    if (s.kind === "path") {
-      // One element for the whole path, every run a subpath of it: the browser draws its curves as
-      // curves, from the same handles the file gave them, and a joined shape is one thing to grab.
-      return <path key={key} {...common} fill="none" d={pathData(drawnNodes(s))} />;
-    }
-    if (s.kind === "curve") {
-      // Several strokes where the curve lifts the pen (a parabolic's corners), so what's on screen
-      // is what goes on the paper, pen lifts and all. The caller's props go on each stroke rather
-      // than on the group around them: vector-effect doesn't inherit in SVG, so a class on the group
-      // would leave the interface's screen-width lines measured in inches instead.
-      const runs = curveStrokes(s);
-      return (
-        <g key={key} transform={turnAttr(s)}>
-          {runs.map((run, i) => <polyline key={i} {...props} fill="none" points={pointsAttr(run)} />)}
-        </g>
-      );
-    }
-    if (s.kind === "line") return <line key={key} {...common} x1={s.x} y1={s.y} x2={s.x2} y2={s.y2} />;
-    if (s.kind === "ellipse") {
-      return (
-        <ellipse
-          key={key}
-          {...common}
-          cx={(b.x0 + b.x1) / 2}
-          cy={(b.y0 + b.y1) / 2}
-          rx={(b.x1 - b.x0) / 2}
-          ry={(b.y1 - b.y0) / 2}
-        />
-      );
-    }
-    return <rect key={key} {...common} x={b.x0} y={b.y0} width={b.x1 - b.x0} height={b.y1 - b.y0} />;
-  };
-
-  // Everything one layer will actually put on the paper: the outlines it draws, and the hatch lines
-  // its fills generate. A shape whose outline isn't plotted contributes only its hatching - the shape
-  // itself is a guide, and guides are interface, drawn further down.
-  const marksOn = (layer: Layer) => {
-    const mine = shapes.filter((sh) => sh.layerId === layer.id);
-    // A repeated shape is drawn once per copy. The copies are marks and nothing else: what you grab,
-    // and what the handles belong to, is always the shape itself.
-    const copies = (sh: Shape, what: (key: string) => ReactNode) =>
-      placements(sh).map((p, i) => (
-        <g key={`${sh.id}-copy-${i}`} transform={placementAttr(sh, p)}>{what(`${sh.id}-${i}`)}</g>
-      ));
-    return (
-      <>
-        {mine.filter((sh) => sh.outline !== false).map((sh) => copies(sh, (key) => element(sh, key, {})))}
-        {fills
-          .filter((f) => mine.some((sh) => sh.id === f.shapeId))
-          .map((fill) => {
-            const shape = mine.find((sh) => sh.id === fill.shapeId)!;
-            return copies(shape, (key) => (
-              // The fill turns with the shape it fills, since it is that shape's own hatching.
-              <g key={`${key}-fill-${fill.id}`} transform={turnAttr(shape)}>
-                {fillRuns(shape, fill).map((run, i) => (
-                  <polyline key={i} fill="none" points={run.map((p) => `${p.x},${p.y}`).join(" ")} />
-                ))}
-              </g>
-            ));
-          })}
-      </>
-    );
-  };
+  const element = (s: Shape, key: string, props: Record<string, unknown>) => shapeElement(s, key, props, fonts);
 
   // The cards edit the last shape picked; its handles are shown while it is the only one.
   const chosen = selected.length === 1 ? shapes.find((s) => s.id === selected[0]) ?? null : null;
-  const group = selected.length > 1 ? shapes.filter((s) => selected.includes(s.id)) : [];
+  const group = useMemo(() => (selected.length > 1 ? shapes.filter((s) => picked.has(s.id)) : []), [shapes, selected, picked]);
+  const groupBox = useMemo(() => (group.length ? boxAround(group) : null), [group]);
+  // A selection holding marks with no grips of their own is picked up by its box instead.
+  const boxCarries = group.some((sh) => bigLayers.has(sh.layerId));
   const showHandles = chosen && drag?.mode !== "new" && drag?.mode !== "move";
   // Far enough off the edge that the grip never sits on a corner handle, in the page's inches.
 
@@ -496,7 +587,18 @@ export function Canvas({ page, shapes, fills, layers, activeLayer, model, zoom, 
             >
               {layers.map((layer) => {
                 const { base, buildPass } = inkLayer(layer.color, inkBuild, inkBuilds, inkSim);
-                const marks = marksOn(layer);
+                const here = still.get(layer.id);
+                const moving = carried?.get(layer.id);
+                const marks = (
+                  <>
+                    {here && <LayerMarks shapes={here.shapes} fills={here.fills} fonts={fonts} />}
+                    {moving && (
+                      <g transform={shift}>
+                        <LayerMarks shapes={moving.shapes} fills={moving.fills} fonts={fonts} />
+                      </g>
+                    )}
+                  </>
+                );
                 return (
                   <g
                     key={layer.id}
@@ -524,9 +626,10 @@ export function Canvas({ page, shapes, fills, layers, activeLayer, model, zoom, 
                 guide or a transparent grip would come out as a stroke the plotter appears to make. */}
             <g className={styles.chrome}>
               {shown.map((sh) => {
+                if (bigLayers.has(sh.layerId)) return null; // picked up with the rest of their layer
                 const guide = sh.outline === false;
                 return (
-                  <g key={sh.id}>
+                  <g key={sh.id} transform={carriedIds?.has(sh.id) ? shift : undefined}>
                     {/* Filled but not outlined: shown thin and dashed, so it reads as a guide rather
                         than as a line the pen will make. You still have to see what the hatch came from. */}
                     {guide && element(sh, `${sh.id}-guide`, { className: styles.guide })}
@@ -534,7 +637,7 @@ export function Canvas({ page, shapes, fills, layers, activeLayer, model, zoom, 
                         hitting a stroke that may be a fraction of a millimetre wide. */}
                     {element(sh, `${sh.id}-grab`, {
                       className: styles.grab,
-                      "data-selected": selected.includes(sh.id) ? "true" : undefined,
+                      "data-selected": picked.has(sh.id) ? "true" : undefined,
                       onPointerDown: (e: ReactPointerEvent) => onShapeDown(e, sh),
                     })}
                   </g>
@@ -555,8 +658,8 @@ export function Canvas({ page, shapes, fills, layers, activeLayer, model, zoom, 
               )}
               {/* A group is moved, scaled and turned as one: the box round it, its four corners and
                   a grip on a stalk, the same as one shape has. */}
-              {group.length > 0 && drag?.mode !== "marquee" && (() => {
-                const b = boxAround(group);
+              {groupBox && drag?.mode !== "marquee" && (() => {
+                const b = groupBox;
                 const grip = { x: (b.x0 + b.x1) / 2, y: b.y0 - handleR * 4 };
                 const corners: { id: Handle; x: number; y: number }[] = [
                   { id: "nw", x: b.x0, y: b.y0 }, { id: "ne", x: b.x1, y: b.y0 },
@@ -564,7 +667,15 @@ export function Canvas({ page, shapes, fills, layers, activeLayer, model, zoom, 
                 ];
                 return (
                   <>
-                    <rect className={styles.draft} x={b.x0} y={b.y0} width={b.x1 - b.x0} height={b.y1 - b.y0} />
+                    <rect
+                      className={boxCarries ? `${styles.draft} ${styles.carryBox}` : styles.draft}
+                      x={b.x0}
+                      y={b.y0}
+                      width={b.x1 - b.x0}
+                      height={b.y1 - b.y0}
+                      transform={shift}
+                      onPointerDown={boxCarries ? onBoxDown : undefined}
+                    />
                     {drag?.mode !== "move" && (
                       <g className={styles.handles}>
                         <line className={styles.stalk} x1={grip.x} y1={b.y0} x2={grip.x} y2={grip.y} />

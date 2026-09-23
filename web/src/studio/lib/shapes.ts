@@ -168,14 +168,18 @@ export const outlinePoints = (s: Shape): Point[] => {
 };
 
 /** The box around several shapes: what a group of them is scaled and turned by. */
+// A loop rather than Math.min(...boxes): spread into arguments, a layer of a hundred thousand marks
+// is more arguments than a call can take.
 export const boxAround = (shapes: Shape[]) => {
-  const boxes = shapes.map(boxOf);
-  return {
-    x0: Math.min(...boxes.map((b) => b.x0)),
-    y0: Math.min(...boxes.map((b) => b.y0)),
-    x1: Math.max(...boxes.map((b) => b.x1)),
-    y1: Math.max(...boxes.map((b) => b.y1)),
-  };
+  const box = { x0: Infinity, y0: Infinity, x1: -Infinity, y1: -Infinity };
+  for (const s of shapes) {
+    const b = boxOf(s);
+    if (b.x0 < box.x0) box.x0 = b.x0;
+    if (b.y0 < box.y0) box.y0 = b.y0;
+    if (b.x1 > box.x1) box.x1 = b.x1;
+    if (b.y1 > box.y1) box.y1 = b.y1;
+  }
+  return box;
 };
 
 /**

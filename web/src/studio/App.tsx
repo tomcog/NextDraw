@@ -28,7 +28,7 @@ import { parseDrawing } from "./lib/parse";
 import { PaletteMenu } from "../shared/components/controls/PaletteMenu";
 import { Hints } from "../shared/components/controls/Hints";
 import { RowMenu } from "./components/controls/RowMenu";
-import { boxOf, centerOf, clampToPage, drawnNodes, drawnRuns, moveBy, newLayerId, newShapeId, outlinePoints, pathRuns, pointsBox, resizeTo, shapeName, turnPoint, POINT_HANDLE_LIMIT, type Layer, type Page, type Shape } from "./lib/shapes";
+import { boxAround, boxOf, centerOf, clampToPage, drawnNodes, drawnRuns, moveBy, newLayerId, newShapeId, outlinePoints, pathRuns, pointsBox, resizeTo, shapeName, turnPoint, POINT_HANDLE_LIMIT, type Layer, type Page, type Shape } from "./lib/shapes";
 import { buildSvg, svgForMarks, cleanFileName } from "./lib/svg";
 import styles from "./App.module.css";
 
@@ -101,6 +101,8 @@ const REPEATS: { kind: RepeatKind; label: string; hint: string; icon: JSX.Elemen
 // The drawing being worked on, remembered so that handing one to Plot - which navigates away - isn't
 // the same as losing it. Its own key: Plot's keys share this origin and still carry the old name.
 const LAST_FILE_KEY = "studio-last-file";
+/** The most shapes the Shapes card lists a row for. */
+const SHAPE_LIST_LIMIT = 200;
 
 // Undo keeps whole copies of the drawing rather than a list of changes: a drawing is a handful of
 // shapes, so a copy costs nothing, and there's no way for a replayed change to go wrong.
@@ -286,7 +288,8 @@ export default function App() {
    setLayers(next.layers);
    setPage(next.page);
    // A shape that isn't there any more can't stay selected, or its handles would hang in the air.
-   setSelected((ids) => ids.filter((id) => next.shapes.some((s) => s.id === id)));
+   const still = new Set(next.shapes.map((s) => s.id));
+   setSelected((ids) => ids.filter((id) => still.has(id)));
   },
   [shapes, fills, layers, page],
  );
@@ -412,13 +415,10 @@ export default function App() {
   // Worked out from the list as it stands rather than from this render's copy, so two presses in
   // one tick both count instead of the second undoing the first.
   setShapes((list) => {
-   const moving = list.filter((s) => selected.includes(s.id));
+   const ids = new Set(selected);
+   const moving = list.filter((s) => ids.has(s.id));
    if (!moving.length) return list;
-   const boxes = moving.map(boxOf);
-   const x0 = Math.min(...boxes.map((b) => b.x0));
-   const y0 = Math.min(...boxes.map((b) => b.y0));
-   const x1 = Math.max(...boxes.map((b) => b.x1));
-   const y1 = Math.max(...boxes.map((b) => b.y1));
+   const { x0, y0, x1, y1 } = boxAround(moving);
    const byX = Math.max(-x0, Math.min(page.w - x1, dx));
    const byY = Math.max(-y0, Math.min(page.h - y1, dy));
    if (!byX && !byY) return list;
@@ -792,6 +792,7 @@ export default function App() {
  // The layer new shapes land on, and the one the Shapes card lists. Always a real layer.
  const active = layers.find((l) => l.id === activeLayer) ?? layers[0];
  const onActive = shapes.filter((sh) => sh.layerId === active?.id);
+ const pickedIds = useMemo(() => new Set(selected), [selected]);
 
  const newFill = (angle: number): Fill => ({
   id: newFillId(),
@@ -1001,7 +1002,8 @@ export default function App() {
   * with several runs to count against, a ring inside a ring leaves a hole.
   */
  const joinShapes = () => {
-  const picked = shapes.filter((s) => selected.includes(s.id));
+  const ids = new Set(selected);
+  const picked = shapes.filter((s) => ids.has(s.id));
   if (picked.length < 2) return;
   const runs = picked.flatMap((s) => nodesOf(s));
   if (!runs.length) return;
@@ -1811,7 +1813,7 @@ export default function App() {
          }
         >
          <ul className={styles.shapeList}>
-           {onActive.map((sh, i) => {
+           {onActive.slice(0, SHAPE_LIST_LIMIT).map((sh, i) => {
             const b = boxOf(sh);
             const name = shapeName(sh, i);
             return (
@@ -1831,7 +1833,7 @@ export default function App() {
                // the row right above says which it is.
                hideVisibility
                hideHandle
-               checked={selected.includes(sh.id)}
+               checked={pickedIds.has(sh.id)}
                aria-label={`Shape ${i + 1}, ${name}`}
                // The click decides, not the box: several shapes can be picked, which
                // a radio would otherwise undo for us. Shift adds one to the selection
@@ -1867,7 +1869,7 @@ export default function App() {
                   />
                  ) : (
                   <span
-                   className={selected.includes(sh.id)
+                   className={pickedIds.has(sh.id)
                     ? `${styles.shapeName} ${styles.shapeNameOn}`
                     : styles.shapeName}
                    title="Click to pick this shape"
@@ -1897,6 +1899,13 @@ export default function App() {
              </li>
             );
            })}
+           {onActive.length > SHAPE_LIST_LIMIT && (
+            // A separation's layer is tens of thousands of marks: a row each would be a list nobody
+            // reads, and the slowest thing on the page. They're picked up together instead.
+            <li className={styles.empty}>
+             {`And ${(onActive.length - SHAPE_LIST_LIMIT).toLocaleString()} more - too many to list. Select all on layer, from the layer’s menu, picks them all.`}
+            </li>
+           )}
          </ul>
         </Section>
        )}

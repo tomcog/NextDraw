@@ -115,7 +115,7 @@ def allowed_folders():
 # Where Studio writes a new drawing: the shared iCloud folder when there is one, so it syncs to the
 # other Mac like every other drawing, and otherwise whichever folder the browser lists first.
 DRAWINGS_FOLDER = ICLOUD_DRAWINGS if ICLOUD_DRAWINGS.is_dir() else next(iter(BUILT_IN_FOLDERS))
-MAX_STUDIO_SVG = 20 * 1024 * 1024  # generous: hatch fills will make these big
+MAX_STUDIO_SVG = 50 * 1024 * 1024  # generous: hatch fills and stacked separations make these big
 # What "Trim to drawing" leaves around the drawing, in inches. Small enough to be invisible on
 # paper and to cost nothing in placement; large enough that nothing sits on the page's edge.
 TRIM_MARGIN_IN = 0.01
@@ -2517,6 +2517,60 @@ def unused_prefix(used):
     return f"c{n}-"
 
 
+STYLE_DECL = re.compile(r"\s*([\w-]+)\s*:\s*([^;]+?)\s*(?:;|$)")
+TEXT_TAGS = {SVG_NS + t for t in ("text", "tspan", "textPath", "style")}
+
+
+def hoist_styles(layer):
+    """
+    Say once on the layer what every mark in it says for itself. Illustrator writes the whole of a
+    mark's look - fill, stroke, width, caps, joins, mitre limit - onto every one of tens of thousands
+    of lines, which is most of a separation's size. A declaration every mark makes the same way moves
+    to the layer; one that differs anywhere stays where it is, so nothing is drawn any differently.
+    Left alone when anything in between could get in the way: a class on a mark (a class rule would
+    then win over the layer), or the same property set as an attribute or on a group inside.
+    """
+    marks = [el for el in layer.iter() if el.tag in SHAPE_TAGS]
+    if len(marks) < 2 or any(el.get("class") for el in marks):
+        return
+    common = None
+    for el in marks:
+        decls = dict(STYLE_DECL.findall(el.get("style") or ""))
+        common = decls if common is None else {k: v for k, v in common.items() if decls.get(k) == v}
+        if not common:
+            return
+    for el in layer.iter():
+        if el is layer or not isinstance(el.tag, str):
+            continue
+        inside = el.tag not in SHAPE_TAGS
+        for key in list(common):
+            if el.get(key) is not None or (inside and key in dict(STYLE_DECL.findall(el.get("style") or ""))):
+                del common[key]
+    if not common:
+        return
+    own = dict(STYLE_DECL.findall(layer.get("style") or ""))
+    own.update(common)
+    layer.set("style", ";".join(f"{k}:{v}" for k, v in own.items()))
+    for el in marks:
+        left = [(k, v) for k, v in STYLE_DECL.findall(el.get("style") or "") if k not in common]
+        if left:
+            el.set("style", ";".join(f"{k}:{v}" for k, v in left))
+        else:
+            el.attrib.pop("style", None)
+
+
+def drop_indentation(layer):
+    """The line breaks and tabs an exporter lays its file out with, which say nothing inside a layer."""
+    for el in layer.iter():
+        if not isinstance(el.tag, str) or el.tag in TEXT_TAGS:
+            continue
+        if el.text is not None and not el.text.strip():
+            el.text = None
+        parent = el.getparent()
+        if el.tail is not None and not el.tail.strip() and (parent is None or parent.tag not in TEXT_TAGS):
+            el.tail = None
+
+
 def as_layer(root, name, transform):
     """
     A file's drawing as one layer, and what it keeps at the top of its document (its defs and style),
@@ -2540,6 +2594,9 @@ def as_layer(root, name, transform):
     for group in layer.iter(SVG_NS + "g"):
         if group is not layer:
             group.attrib.pop(INKSCAPE_NS + "groupmode", None)
+    hoist_styles(layer)
+    drop_indentation(layer)
+    layer.tail = "\n"
     return layer, carried
 
 

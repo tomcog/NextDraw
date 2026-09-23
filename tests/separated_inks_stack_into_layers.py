@@ -51,6 +51,17 @@ INKSCAPE = '''<?xml version="1.0" encoding="UTF-8"?>
   </g>
 </svg>
 '''
+# Illustrator's other way: the whole look written onto every mark, the same on each but the width.
+INLINE = '''<?xml version="1.0" encoding="UTF-8"?>
+<!-- Generator: Adobe Illustrator 30.8.1, SVG Export Plug-In . SVG Version: 9.03 Build 0)  -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 792 612">
+<g>
+	<line style="fill:none;stroke:#2E7D32;stroke-width:0.85;stroke-linecap:round" x1="72" y1="72" x2="144" y2="72"/>
+	<line style="fill:none;stroke:#2E7D32;stroke-width:0.85;stroke-linecap:round" x1="72" y1="80" x2="144" y2="80"/>
+	<line style="fill:none;stroke:#2E7D32;stroke-width:1.5;stroke-linecap:round" x1="72" y1="88" x2="144" y2="88"/>
+</g>
+</svg>
+'''
 # A page of another size.
 SMALL = '''<svg xmlns="http://www.w3.org/2000/svg" width="5in" height="5in" viewBox="0 0 5 5">
   <path d="M1 1 L2 1" stroke="#d6322b" fill="none"/>
@@ -81,6 +92,7 @@ with tempfile.TemporaryDirectory() as tmp:
     (folder / "orange.svg").write_text(ILLUSTRATOR.format(color="#E86A1F", layer="Orange"))
     (folder / "blue.svg").write_text(INKSCAPE)
     (folder / "small.svg").write_text(SMALL)
+    (folder / "green.svg").write_text(INLINE)
     originals = {p.name: p.read_bytes() for p in folder.iterdir()}
 
     # Keep everything in the temporary folder: the loaded drawing too, so a Plot that happens to be
@@ -109,6 +121,15 @@ with tempfile.TemporaryDirectory() as tmp:
     check(res["mismatched"] == [], "same-sized pages aren't flagged")
     check(res["name"] == "black combined.svg", f"named after the first file: {res['name']}")
     check(not (folder / "black combined.svg").exists(), "Studio's combine writes nothing: Studio saves it")
+
+    # What every mark says the same way is said once, on the layer; what differs stays on the mark.
+    res = client.post("/api/studio/combine", json={"paths": [str(folder / "black.svg"), str(folder / "green.svg")]}).get_json()
+    root = etree.fromstring(res["svg"].encode())
+    green = server.layer_groups(root)[1]
+    marks = list(green.iter(server.SVG_NS + "line"))
+    check("stroke:#2E7D32" in (green.get("style") or "") and "stroke-linecap:round" in green.get("style"), f"the shared look moves to the layer: {green.get('style')}")
+    check([m.get("style") for m in marks] == ["stroke-width:0.85", "stroke-width:0.85", "stroke-width:1.5"], f"what differs stays on the mark: {[m.get('style') for m in marks]}")
+    check(server.read_layers(root)[1]["color"] == "#2e7d32", "and the layer still reads as its colour")
 
     res = client.post("/api/studio/combine", json={"paths": [str(folder / "black.svg"), str(folder / "small.svg")]}).get_json()
     check(res.get("mismatched") == ["small"], f"a page of another size is flagged: {res.get('mismatched')}")
