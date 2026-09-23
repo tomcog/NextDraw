@@ -79,6 +79,13 @@ export interface Photo {
    */
   plate?: Plate;
   plates?: string[];
+  /**
+   * A separation made elsewhere: this layer's picture is one greyscale plate of a photo already
+   * split - cyan, magenta, yellow, black, or any other ink - darker where more of this layer's pen
+   * goes. Named by what it is: a plate's name ("Cyan") or the file's. Its layers are one photo on
+   * the page, as a split is, but each draws its own picture rather than a part of a shared one.
+   */
+  separation?: string;
   /** CMYK: how much of the grey the colours share goes to the black plate, 0 to 1. The whole photo's. */
   blackShare?: number;
   /**
@@ -194,6 +201,26 @@ export function platePens<P extends { color: string }>(palette: P[]): (P | undef
   }
   return out;
 }
+
+/**
+ * Which plate a separation's file is, from the last word of its name that says: "portrait_C",
+ * "portrait-cyan", "Portrait K". Undefined when none does.
+ */
+export function plateNamed(name: string): Plate | undefined {
+  const words = name.replace(/\.[^.]+$/, "").toLowerCase().split(/[\s_\-.()]+/).filter(Boolean);
+  for (let i = words.length - 1; i >= 0; i--) {
+    const w = words[i];
+    if (w === "c" || w === "cyan") return "c";
+    if (w === "m" || w === "magenta") return "m";
+    if (w === "y" || w === "yellow") return "y";
+    if (w === "k" || w === "black" || w === "key") return "k";
+  }
+  return undefined;
+}
+
+/** A separation file's name without its plate word, for naming the photo they make together. */
+export const stemWithoutPlate = (name: string) =>
+  name.replace(/\.[^.]+$/, "").replace(/[\s_\-.(]+(c|m|y|k|cyan|magenta|yellow|black|key)\)?$/i, "").trim() || name.replace(/\.[^.]+$/, "");
 
 /** How much of the colours' shared grey goes to the black plate unless set: half, as print often does. */
 export const BLACK_SHARE = 0.5;
@@ -1594,6 +1621,7 @@ export function photoFromData(raw: Record<string, unknown>): Photo | null {
     ...(typeof raw.key_ink === "string" ? { keyInk: raw.key_ink } : {}),
     ...(Number.isFinite(Number(raw.key_strength)) && raw.key_strength !== undefined ? { keyStrength: Number(raw.key_strength) } : {}),
     ...(Number.isFinite(Number(raw.key_from)) && raw.key_from !== undefined ? { keyFrom: Number(raw.key_from) } : {}),
+    ...(typeof raw.separation === "string" ? { separation: raw.separation } : {}),
     ...(typeof raw.plate === "string" && (PLATES as string[]).includes(raw.plate) ? { plate: raw.plate as Plate } : {}),
     ...(Array.isArray(raw.plates) && raw.plates.every((v) => typeof v === "string") ? { plates: raw.plates as string[] } : {}),
     ...(Number.isFinite(Number(raw.black_share)) && raw.black_share !== undefined ? { blackShare: Number(raw.black_share) } : {}),
@@ -1629,6 +1657,7 @@ export const photoData = (p: Photo) => ({
   ...(p.keyStrength !== undefined ? { key_strength: p.keyStrength } : {}),
   ...(p.keyFrom !== undefined ? { key_from: p.keyFrom } : {}),
   ...(p.plate ? { plate: p.plate, plates: p.plates } : {}),
+  ...(p.separation ? { separation: p.separation } : {}),
   ...(p.blackShare !== undefined ? { black_share: p.blackShare } : {}),
   ...(p.regionInks ? { region_inks: p.regionInks } : {}),
   ...(p.offsetMm && (p.offsetMm[0] || p.offsetMm[1]) ? { offset_mm: p.offsetMm } : {}),

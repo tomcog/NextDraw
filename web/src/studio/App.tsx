@@ -29,7 +29,7 @@ import { flattenPath, flattenRun, mapNode, parsePath, simplifyRun, type Node } f
 import { fitText, textRuns } from "./lib/text";
 import { defaultRepeat, placements, REPEAT_FIELDS, type Repeat, type RepeatKind } from "./lib/repeat";
 import { parseDrawing } from "./lib/parse";
-import { BAND_NAMES, BLACK_SHARE, KEY_FROM, LAYER_SETTINGS, PLATES, PLATE_AIMS, MOST_LAYERS, PHOTO_DEFAULTS, WAVE_DEFAULTS, OUTLINE_DEFAULTS, CENTER_DEFAULTS, photoMarks, colourGroups, darkestOf, isColourful, matchPens, placeOnPage, platePens, readTones, workingCopy, type Photo, type PhotoPart } from "./lib/photo";
+import { BAND_NAMES, BLACK_SHARE, KEY_FROM, LAYER_SETTINGS, PLATES, PLATE_AIMS, MOST_LAYERS, PHOTO_DEFAULTS, WAVE_DEFAULTS, OUTLINE_DEFAULTS, CENTER_DEFAULTS, photoMarks, colourGroups, darkestOf, isColourful, matchPens, placeOnPage, plateNamed, platePens, readTones, stemWithoutPlate, workingCopy, type Photo, type PhotoPart, type Plate } from "./lib/photo";
 import { usePhotoRead } from "./lib/usePhotoRead";
 import { PaletteMenu } from "../shared/components/controls/PaletteMenu";
 import { Hints } from "../shared/components/controls/Hints";
@@ -146,8 +146,8 @@ function uniqueName(wanted: string, taken: string[]): string {
  * A photo split into tone bands is one photo on the page: whatever moved, sized or turned one band
  * takes the rest of its bands along with it.
  */
-/** How a photo is split: by value, into colour groups, or into CMYK plates. */
-const photoMode = (p: Photo) => (p.plate ? "cmyk" : p.ink ? "colour" : "value");
+/** How a photo is split: by value, into colour groups, into CMYK plates, or already split into separations elsewhere. */
+const photoMode = (p: Photo) => (p.separation ? "separations" : p.plate ? "cmyk" : p.ink ? "colour" : "value");
 
 function withPhotoGroups(list: Shape[], changed: Shape[]): Shape[] {
  const leads = new Map(changed.filter((s) => s.photo?.group).map((s) => [s.photo!.group!, s]));
@@ -982,6 +982,96 @@ export default function App() {
   }
  };
  /**
+  * Separations made elsewhere - a photo already split into greyscale plates, one file each - put in
+  * as one photo on the page with a layer per plate, each drawing its own picture: darker where more
+  * of its pen goes. A file named for its plate ("_C", "cyan", "-K") gets the palette's pen nearest
+  * that plate and its screen angle; four files that don't say are taken as C, M, Y and K in the
+  * order given; anything else is its own ink, in the darkest pen. Sized by the first, and the rest
+  * over it, so they register. Layers stack by their pens' lightness, lightest at the bottom.
+  */
+ const addSeparations = async (files: File[]) => {
+  if (!active || !files.length) return;
+  try {
+   const copies = await Promise.all(files.map(async (file) => {
+    const copy = await workingCopy(file);
+    await readTones(copy.src);
+    return { file, copy };
+   }));
+   const pens = tool2?.palette ?? [];
+   const matched = pens.length >= 4 ? platePens(pens) : [];
+   const named = copies.map(({ file }) => plateNamed(file.name));
+   // Four files and none named: C, M, Y and K, in the order they came.
+   const plates = named.every((p) => !p) && copies.length === 4 ? [...PLATES] : named;
+   const darkest = darkestPen(pens);
+   const [first] = copies;
+   const margin = 0.5;
+   const { crop, ...box } = placeOnPage(first.copy.width / first.copy.height, page, "fit", margin);
+   const stem = stemWithoutPlate(first.file.name);
+   const group = copies.length > 1 ? newShapeId() : undefined;
+   const parts = copies.map(({ file, copy }, i) => {
+    const plate = plates[i];
+    const pen = plate ? matched[PLATES.indexOf(plate)] ?? darkest : darkest;
+    const separation = plate ? PLATE_AIMS[plate].name : file.name.replace(/\.[^.]+$/, "");
+    return {
+     pen,
+     separation,
+     layerName: pen?.name ?? separation,
+     layerColor: pen?.color ?? active.color,
+     photo: {
+      ...copy, ...PHOTO_DEFAULTS, spacingMm: defaults.spacingMm, crop, fit: "fit" as const, margin, group, separation,
+      angle: plate ? PLATE_AIMS[plate].angle : PHOTO_DEFAULTS.angle + 15 * i,
+     } as Photo,
+    };
+   }).sort((a, b) => (lightness(b.layerColor) ?? 0) - (lightness(a.layerColor) ?? 0));
+   record();
+   const reuse = !shapes.some((sh) => sh.layerId === active.id);
+   const newLayers: Layer[] = parts.map((part, i) => (i === 0 && reuse
+    ? { ...active, name: part.layerName, color: part.layerColor }
+    : { id: newLayerId(), name: part.layerName, color: part.layerColor }));
+   const made: Shape[] = parts.map((part, i) => ({
+    id: newShapeId(), layerId: newLayers[i].id, kind: "photo", name: `${stem} ${part.separation}`, ...box, photo: part.photo,
+   }));
+   setLayers((list) => {
+    const at = list.findIndex((l) => l.id === active.id);
+    const kept = reuse ? list.map((l) => (l.id === active.id ? newLayers[0] : l)) : list;
+    const adding = reuse ? newLayers.slice(1) : newLayers;
+    return [...kept.slice(0, at + 1), ...adding, ...kept.slice(at + 1)];
+   });
+   setShapes((list) => [...list, ...made]);
+   setActiveLayer(newLayers[0].id);
+   pick(made[0].id);
+   setTool("select");
+   // Pictures of other proportions are stretched over the first, which puts them out of register.
+   const aspect = first.copy.width / first.copy.height;
+   const odd = copies.filter(({ copy }) => Math.abs(copy.width / copy.height / aspect - 1) > 0.01).map(({ file }) => file.name);
+   setMessage(odd.length
+    ? { text: `${odd.join(", ")} ${odd.length === 1 ? "isn't" : "aren't"} the same shape as ${first.file.name}, so ${odd.length === 1 ? "it's" : "they're"} stretched to it and won't line up`, ok: false }
+    : { text: `Added ${copies.length} separations: ${parts.map((p) => `${p.separation} in ${p.layerName}`).join(", ")}`, ok: true });
+  } catch (err) {
+   setMessage({ text: (err as Error).message, ok: false });
+  }
+ };
+
+ /**
+  * Which plate the chosen separation is: its name, its screen angle, and its layer's pen - the
+  * palette's nearest to that plate, if the tool has four pens.
+  */
+ const setSeparationPlate = (plate: Plate | "other") => {
+  if (!chosen?.photo?.separation) return;
+  const pens = tool2?.palette ?? [];
+  const pen = plate !== "other" && pens.length >= 4 ? platePens(pens)[PLATES.indexOf(plate)] : undefined;
+  const was = chosen.photo.separation;
+  const wasPlate = PLATES.some((p) => PLATE_AIMS[p].name === was);
+  const separation = plate === "other" ? (wasPlate ? "Ink" : was) : PLATE_AIMS[plate].name;
+  const name = chosen.name?.endsWith(` ${was}`) ? chosen.name.slice(0, -was.length - 1) : chosen.name ?? "Photo";
+  record();
+  setShapes((list) => list.map((sh) => (sh.id === chosen.id
+   ? { ...sh, name: `${name} ${separation}`, photo: { ...sh.photo!, separation, ...(plate !== "other" ? { angle: PLATE_AIMS[plate].angle } : {}) } }
+   : sh)));
+  if (pen) setLayers((list) => list.map((l) => (l.id === chosen.layerId ? { ...l, name: pen.name, color: pen.color } : l)));
+ };
+
+ /**
   * Split the chosen photo into tone bands, one layer each, or put it back to one. The lightest band
   * keeps the photo's own layer and settings; each darker one gets a layer of its own above it, in the
   * same ink, named after the ink and the band - so the layers still say which pen to load, and the
@@ -1300,6 +1390,16 @@ export default function App() {
     crop = undefined;
    }
    record();
+   if (was.separation) {
+    // A separation is one plate of the photo: only its own picture changes, in the same place, so it
+    // stays in register with the rest.
+    setShapes((list) => list.map((sh) => (sh.id === chosen.id ? { ...sh, photo: { ...sh.photo!, src: copy.src, width: copy.width, height: copy.height } } : sh)));
+    const aspect0 = was.width / was.height;
+    setMessage(Math.abs(aspect / aspect0 - 1) > 0.01
+     ? { text: `${file.name} isn't the same shape as the other plates, so it's stretched to them and won't line up`, ok: false }
+     : { text: `Replaced the ${was.separation} plate with ${file.name}`, ok: true });
+    return;
+   }
    const group = was.group;
    setShapes((list) => list.map((sh) => (sh.id === chosen.id || (group && sh.photo?.group === group)
     ? { ...sh, ...box, photo: { ...sh.photo!, src: copy.src, width: copy.width, height: copy.height, crop } }
@@ -2182,7 +2282,7 @@ export default function App() {
          size="sm"
          icon={<ImagePlus />}
          aria-label="Add a photo"
-         title="Add a photo: it's drawn as hatching, in the ink of the layer you're drawing on"
+         title="Add a photo, matched to the tool's pens. Pick several greyscale separations at once (…_C, …_M, …_Y, …_K) for a layer each"
          disabled={busy}
          onClick={() => photoInput.current?.click()}
         />
@@ -2191,8 +2291,12 @@ export default function App() {
          type="file"
          accept="image/*"
          hidden
+         multiple
          onChange={(e) => {
-          addPhoto(e.target.files?.[0]);
+          // Several at once are separations: one photo already split into plates, a layer each.
+          const files = [...(e.target.files ?? [])];
+          if (files.length > 1) addSeparations(files);
+          else addPhoto(files[0]);
           e.target.value = ""; // so the same photo can be added again
          }}
         />
@@ -2481,7 +2585,7 @@ export default function App() {
          collapsibleKey="photo"
          action={
           <>
-           <Button size="sm" variant="secondary" title="Put a different photo in, keeping every setting" onClick={() => replaceInput.current?.click()}>
+           <Button size="sm" variant="secondary" title={chosen.photo.separation ? "Put a different picture in for this plate, keeping its settings" : "Put a different photo in, keeping every setting"} onClick={() => replaceInput.current?.click()}>
             Replace…
            </Button>
            <input
@@ -2502,6 +2606,23 @@ export default function App() {
          {/* By value: read as black and white, split into tone bands. By colour: split into groups
            of similar colours, each drawn in the tool's nearest pen. Either way, a layer each, with
            its own lines. */}
+         {chosen.photo.separation ? (
+          // Separations made elsewhere: each layer is its own picture, so there's nothing to split.
+          // Which plate this one is sets its name, its screen angle and its pen.
+          <>
+           <InputSelect
+            size="md"
+            label="Plate"
+            value={PLATES.find((p) => PLATE_AIMS[p].name === chosen.photo!.separation) ?? "other"}
+            onChange={(e) => setSeparationPlate(e.target.value as Plate | "other")}
+           >
+            {PLATES.map((p) => <option key={p} value={p}>{PLATE_AIMS[p].name}</option>)}
+            <option value="other">{PLATES.some((p) => PLATE_AIMS[p].name === chosen.photo!.separation) ? "Another ink" : chosen.photo.separation}</option>
+           </InputSelect>
+           <p className={styles.empty}>A separation: this layer draws its own greyscale picture, more of its pen where it's darker. Replace swaps this plate alone.</p>
+          </>
+         ) : (
+         <>
          <SegmentedControl size="sm" variant="dark" aria-label="Split by">
           <Segment selected={photoMode(chosen.photo) === "value"} title="By value: the photo as black and white, split into tone bands" onClick={() => switchPhotoMode("value")}>Value</Segment>
           <Segment selected={photoMode(chosen.photo) === "colour"} title="By colour: the photo's colours gathered into groups, each drawn in the tool's nearest pen" onClick={() => switchPhotoMode("colour")}>Colour</Segment>
@@ -2546,6 +2667,8 @@ export default function App() {
            value={chosen.photo.group ? shapes.filter((sh) => sh.photo?.group === chosen.photo!.group).length : 1}
            onChange={splitPhoto}
           />
+         )}
+         </>
          )}
          {/* Sized to the page, inside the margin: the whole photo as large as it fits, or the page
            filled and the photo cropped. Moved or sized by hand, it's neither. */}
