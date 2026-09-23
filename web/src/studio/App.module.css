@@ -73,6 +73,13 @@
 
 .fillRow > * { flex: 1 1 4.5rem; min-width: 4.5rem; }
 
+/* The way back to the tool's own spacing sits under the spacing field it undoes, at the right,
+   rather than under the angle beside it. */
+.fillFollow {
+  display: flex;
+  justify-content: flex-end;
+}
+
 /* Layers: the library's own row, with a bin after it. */
 .layerList {
   position: relative; /* rows measure their offsetTop against the list */
@@ -259,6 +266,8 @@ span.shapeName { cursor: pointer; }
 .settings fieldset fieldset { padding: 0.25rem 0; }
 
 .settings fieldset fieldset + fieldset { padding-top: 0.5rem; }
+
+.settings > fieldset > legend { font-size: 13px; }
 
 .settings fieldset fieldset legend { font-size: 12px; font-weight: 500; }
 

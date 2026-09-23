@@ -30,14 +30,14 @@ interface Props {
  * Three SegmentedControls, as the mock draws them, each keeping the library's own grey well against
  * the white bar. Nothing here overrides the components.
  *
- * Worth knowing rather than worth changing here: the history pair are two actions, so the group
- * carries no selection. A SegmentedControl is a radiogroup, so a screen reader announces it with
- * nothing chosen. That is a question for the library rather than for this file.
+ * The history pair takes the control's `actions` mode: undo and redo are things you do, never a
+ * choice one of which holds, so the track is a group of plain buttons rather than a radiogroup.
+ * Nothing about it looks different.
  */
 export function StudioToolbar({ view, onView, zoom, onZoom, canDrawing, canUndo, canRedo, onUndo, onRedo, disabled }: Props) {
   return (
     <Toolbar tone="white" aria-label="Drawing view">
-      <SegmentedControl size="sm" variant="dark" aria-label="History">
+      <SegmentedControl size="sm" variant="dark" actions aria-label="History">
         <Segment
           icon={<Undo2 />}
           title="Undo the last change"

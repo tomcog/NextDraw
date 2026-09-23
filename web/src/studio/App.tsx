@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ToolNote } from "../shared/components/controls/ToolNote";
 import { TipMark } from "../shared/components/controls/TipMark";
 import { Button, ButtonRound, Card, Checkbox, ConfirmButton, InputSelect, InputText, InputTextarea, LayerController } from "@tomcoggia/ui";
-import { AlignJustify, ArrowDownToLine, AudioWaveform, Circle, CircleDashed, ClipboardCopy, ClipboardPaste, Copy, Ellipsis, EllipsisVertical, FilePlus, FlameKindling, FolderOpen, Grid2x2, Layers2, LayersArrowDown, LayersArrowUp, LineStyle, LoaderPinwheel, Menu, Minus, MoveHorizontal, MoveVertical, MousePointer2, Orbit, PaintBucket, PenLine, Pentagon, Plus, Rainbow, RotateCw, Save, Send, Shell, Signal, Spline, Square, SquareDimensions, SquareStack, Star, Trash2, Type, Waves } from "lucide-react";
+import { ArrowDownToLine, AudioWaveform, Circle, ClipboardCopy, ClipboardPaste, Copy, Ellipsis, EllipsisVertical, FilePlus, FlameKindling, FolderOpen, Grid2x2, Layers2, LayersArrowDown, LayersArrowUp, LineStyle, LoaderPinwheel, Menu, Minus, MoveHorizontal, MoveVertical, MousePointer2, Orbit, PaintBucket, PenLine, Pentagon, Plus, Rainbow, RotateCw, Save, Send, Shell, Signal, Spline, Square, SquareDimensions, SquareStack, Star, Target, Trash2, Type, Waves } from "lucide-react";
 import { FileBrowser, LAST_FOLDER_KEY, type OpenResult } from "../shared/components/FileBrowser";
 import { Section } from "../shared/components/controls/Section";
 import { NumberField } from "../shared/components/controls/NumberField";
@@ -54,7 +54,7 @@ const TOOLS: { kind: Tool; label: string; hint: string; icon: JSX.Element }[] = 
  { kind: "star", label: "Star", hint: "Star (S): drag on the page, then set its points", icon: <Star /> },
  { kind: "spiral", label: "Spiral", hint: "Draw a spiral: drag on the page, then set its turns", icon: <Shell /> },
  { kind: "arc", label: "Arc", hint: "Arc (A): drag on the page, then set where it starts and how far it goes", icon: <Rainbow /> },
- { kind: "wave", label: "Wave", hint: "Draw a wave: drag on the page, then set how many", icon: <Waves /> },
+ { kind: "wave", label: "Wave", hint: "Draw a wave: drag on the page, then set how many", icon: <AudioWaveform /> },
  { kind: "text", label: "Text", hint: "Text (T): drag to say how tall, then type the words", icon: <Type /> },
 ];
 
@@ -80,9 +80,9 @@ const TOOL_KEYS: Record<string, Tool> = {
 
 const FILL_ICON: Record<FillKind, JSX.Element> = {
  hatch: <Menu />,
- concentric: <CircleDashed />,
- wavy: <AudioWaveform />,
- dashes: <AlignJustify />,
+ concentric: <Target />,
+ wavy: <Waves />,
+ dashes: <LineStyle />,
 };
 
 const FILL_HINT: Record<FillKind, string> = {
@@ -2162,9 +2162,9 @@ export default function App() {
          {/* No sentence saying the spacing was set by hand: the field above says the number,
            and the way back to the tool's own is the only part of it worth the room. */}
          {chosenFills.map((fill, i) => (fill.custom ? (
-          <p key={`${fill.id}-note`} className={styles.empty}>
+          <p key={`${fill.id}-note`} className={`${styles.empty} ${styles.fillFollow}`}>
            <Button size="sm" variant="ghost" onClick={() => followTool(i, fill)}>
-            {toolName ? `Follow ${toolName}` : "Follow the tool"}
+            Use tool spacing
            </Button>
           </p>
          ) : null))}
