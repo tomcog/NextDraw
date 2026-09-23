@@ -41,6 +41,8 @@ const shapeFor = (tool: Exclude<Tool, "select">, layerId: string, x: number, y: 
 };
 
 interface Props {
+  /** A lens over the page that follows the pointer, magnified (BedCanvas). */
+  loupe?: boolean;
   page: Page;
   /** The paper's colour, as Plot draws it: the page is this colour and the inks blend with it. */
   paperColor: string;
@@ -321,7 +323,7 @@ const LayerMarks = memo(function LayerMarks({ shapes, fills, fonts, photos }: { 
 // The page at true proportions, with a one-inch grid. It keeps the page's own proportions and is
 // sized to them (--canvas-aspect), so the drawing gets as large as the space allows - the same way
 // Plot's preview fills its column.
-export function Canvas({ page, paperColor, shapes, fills, layers, activeLayer, model, zoom, toolbar, toolbarLeft, fonts, font, snap, penWidthMm, inkOpacity, inkBuilds, inkBuild, view, tool, selected, onSelect, onAdd, onUpdate, onUpdateMany, onEditStart }: Props) {
+export function Canvas({ loupe, page, paperColor, shapes, fills, layers, activeLayer, model, zoom, toolbar, toolbarLeft, fonts, font, snap, penWidthMm, inkOpacity, inkBuilds, inkBuild, view, tool, selected, onSelect, onAdd, onUpdate, onUpdateMany, onEditStart }: Props) {
   const bed = useRef<BedCanvasHandle>(null);
   const [drag, setDrag] = useState<Drag | null>(null);
   const pointer = useRef<number | null>(null);
@@ -619,6 +621,7 @@ export function Canvas({ page, paperColor, shapes, fills, layers, activeLayer, m
 
   return (
     <BedCanvas
+      loupe={loupe}
       zoom={zoom}
       model={model}
       settings={settings}

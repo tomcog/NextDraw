@@ -13,6 +13,7 @@ export type { Zoom };
 
 interface Props {
   zoom: Zoom;
+  loupe?: boolean; // a lens over the preview that follows the pointer, magnified (BedCanvas)
   model: PlotterModel | undefined;
   settings: Settings;
   preview: Preview | null;
@@ -324,6 +325,7 @@ export function Bed(props: Props) {
 
   return (
     <BedCanvas
+      loupe={props.loupe}
       zoom={props.zoom}
       model={model}
       settings={s}

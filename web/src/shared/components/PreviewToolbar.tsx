@@ -1,5 +1,5 @@
 import { Segment, SegmentedControl, Spinner, Toolbar } from "@tomcoggia/ui";
-import { Camera, Eye, EyeDashed, Grid3x3, ImageIcon, Redo2, Route, StickyNote, Undo2 } from "lucide-react";
+import { Camera, Eye, EyeDashed, Grid3x3, ImageIcon, Redo2, Route, Search, StickyNote, Undo2 } from "lucide-react";
 import type { Zoom } from "./Bed";
 import styles from "./PreviewToolbar.module.css";
 
@@ -23,6 +23,9 @@ interface Props {
   /** Studio only: the drawing being made has a history. Plot's drawings are read, not changed, so it has none. */
   history?: { canUndo: boolean; canRedo: boolean; onUndo: () => void; onRedo: () => void };
   disabled?: boolean;
+  /** The loupe: a lens that follows the pointer over the drawing, magnified. */
+  loupe?: boolean;
+  onLoupe?: (on: boolean) => void;
   /** Something still being worked out about the view, said beside the bar with a spinner: Plot's plot time. */
   working?: string;
 }
@@ -44,7 +47,7 @@ interface Props {
  * choice one of which holds, so the track is a group of plain buttons rather than a radiogroup.
  * Nothing about it looks different.
  */
-export function PreviewToolbar({ view, onView, canProgress, canPhoto, zoom, onZoom, canPaper = true, canDrawing, history, disabled, working }: Props) {
+export function PreviewToolbar({ view, onView, canProgress, canPhoto, zoom, onZoom, canPaper = true, canDrawing, history, disabled, working, loupe, onLoupe }: Props) {
   return (
     <span className={styles.row}>
       <Toolbar tone="white" aria-label="Drawing view">
@@ -128,6 +131,22 @@ export function PreviewToolbar({ view, onView, canProgress, canPhoto, zoom, onZo
             aria-label="Drawing"
           />
         </SegmentedControl>
+
+        {onLoupe && (
+          // A look, not a change: it sits with the zoom, as a switch of its own.
+          // A switch, so the track is a plain button rather than a radio: a radio group selects on
+          // focus, and a click would turn the loupe on and straight back off.
+          <SegmentedControl size="sm" variant="dark" actions aria-label="Loupe">
+            <Segment
+              aria-pressed={Boolean(loupe)}
+              className={loupe ? styles.on : undefined}
+              onClick={() => onLoupe(!loupe)}
+              icon={<Search />}
+              title={loupe ? "Put the loupe away" : "Loupe: a lens that follows the pointer for a close look at the lines. Scroll to magnify more or less"}
+              aria-label="Loupe"
+            />
+          </SegmentedControl>
+        )}
       </Toolbar>
       {working && (
         <span className={styles.status} role="status">

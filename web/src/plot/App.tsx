@@ -350,6 +350,8 @@ export default function App() {
   const [hudOpen, setHudOpen] = useState(() => load<boolean>(STORAGE.hudOpen) ?? false);
   useEffect(() => save(STORAGE.hudOpen, hudOpen), [hudOpen]);
   const [zoomChoice, setZoomChoice] = useState<Zoom>(() => load<Zoom>(STORAGE.zoom) ?? "plotter");
+  // The loupe over the preview, for a close look at the lines. Put away each time the page opens.
+  const [loupe, setLoupe] = useState(false);
   useEffect(() => save(STORAGE.zoom, zoomChoice), [zoomChoice]);
 
   // Refs let the polling loop see current values without restarting.
@@ -1294,6 +1296,7 @@ export default function App() {
               />
             ) : (
             <Bed
+              loupe={loupe}
               zoom={zoom}
               model={model}
               settings={settings}
@@ -1337,6 +1340,8 @@ export default function App() {
                   canPaper={settings.paper_w > 0 && settings.paper_h > 0}
                   canDrawing={Boolean(fp)}
                   working={updating && fp ? "Updating plot time…" : undefined}
+                  loupe={loupe}
+                  onLoupe={setLoupe}
                 />
               }
             />

@@ -237,6 +237,8 @@ export default function App() {
  const [model, setModel] = useState<PlotterModel | undefined>();
  // Paper to begin with: the page is what's being drawn on, and the bed is context around it.
  const [zoom, setZoom] = useState<Zoom>("paper");
+ // The loupe over the page, for a close look at the lines. The same switch as Plot's.
+ const [loupe, setLoupe] = useState(false);
  const [toolName, setToolName] = useState<string>(() => load<string>(TOOL_KEY) ?? "");
  const [tool, setTool] = useState<Tool>("rect");
  // Everything picked, in the order it was picked. The cards edit the last of them; a drag, a delete
@@ -2092,6 +2094,7 @@ export default function App() {
    <main className={styles.layout}>
     <section className={styles.stage} aria-label="Drawing page">
      <Canvas
+      loupe={loupe}
       page={page}
       paperColor={paperColor}
       shapes={shapes}
@@ -2111,6 +2114,8 @@ export default function App() {
         canPhoto={shapes.some((sh) => sh.kind === "photo")}
         history={{ canUndo: past.length > 0, canRedo: future.length > 0, onUndo: undo, onRedo: redo }}
         disabled={busy}
+        loupe={loupe}
+        onLoupe={setLoupe}
        />
       )}
       layers={layers}

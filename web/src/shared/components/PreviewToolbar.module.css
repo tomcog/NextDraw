@@ -17,3 +17,13 @@
   color: var(--ui-text-muted);
   background: var(--ui-surface-pale);
 }
+
+/* The loupe's switch while it's out: the red of an action rather than the dark of a choice, since
+   it isn't a way of looking at the drawing like the rest of the bar but something over it that follows
+   the pointer about. A plain button (see PreviewToolbar), so it draws its own ground - inside the
+   bar's row, to outrank the segment's own transparent one. */
+.row .on,
+.row .on:hover:not(:disabled) {
+  background: var(--ui-action);
+  color: var(--ui-text-on-action);
+}

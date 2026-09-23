@@ -1,4 +1,4 @@
-import { useEffect, useImperativeHandle, useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode, type Ref } from "react";
+import { useEffect, useId, useImperativeHandle, useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode, type Ref } from "react";
 import styles from "./BedCanvas.module.css";
 import { MM, UNITS } from "../lib/constants";
 import { fmtIn } from "../lib/format";
@@ -50,7 +50,15 @@ interface Props {
   onPointerDown?: (e: React.PointerEvent<SVGSVGElement>) => void;
   onPointerMove?: (e: React.PointerEvent<SVGSVGElement>) => void;
   onPointerUp?: (e: React.PointerEvent<SVGSVGElement>) => void;
+  /** A lens that follows the pointer and shows what's under it magnified, for a close look at the lines. */
+  loupe?: boolean;
 }
+
+// The loupe: how wide the lens is on screen, and how far it can magnify. The wheel steps between.
+const LOUPE_PX = 220;
+const LOUPE_MIN = 2;
+const LOUPE_MAX = 16;
+const LOUPE_STEP = 1.25; // per notch of a mouse wheel (100px of scrolling)
 
 // Margins around what's framed, in pads (7.5% of its longer side): a slim left one with just room
 // for the side dimension line, and a top one with room for the width line, its label, and the bar
@@ -115,6 +123,43 @@ export function BedCanvas(props: Props) {
       return { x: p.x, y: p.y };
     },
   }));
+
+  // The loupe: where the pointer is, in bed units, while it's over the canvas, and how much the lens
+  // magnifies. The lens is the page itself drawn again through a <use>, bigger and clipped to a
+  // circle, so it always shows exactly what the page does - ink, layers, the plot in progress -
+  // without a copy of the drawing to keep in step. Hairlines stay hairlines in it, so the line work
+  // is seen as it is rather than thickened, while a pen's real width grows with the magnification.
+  const [lens, setLens] = useState<{ x: number; y: number } | null>(null);
+  const [power, setPower] = useState(4);
+  const ids = useId().replace(/[^\w-]/g, "");
+  const contentId = `bed-content-${ids}`; // the bed and the paper
+  const drawnId = `bed-drawn-${ids}`; // what each app puts on it
+  const clipId = `bed-loupe-${ids}`;
+  const loupe = Boolean(props.loupe);
+  useEffect(() => {
+    if (!loupe) setLens(null);
+  }, [loupe]);
+  // The wheel sets the magnification while the loupe is out. A listener of its own, since React's
+  // wheel handler is passive and couldn't stop the page scrolling instead.
+  useEffect(() => {
+    const svg = ownRef.current;
+    if (!svg || !loupe) return;
+    const onWheel = (e: WheelEvent) => {
+      e.preventDefault();
+      // By how far the wheel turned, so a mouse's notch is one step and a trackpad's stream of small
+      // movements glides rather than racing to the end. A line-mode wheel counts each line as 33px.
+      const px = e.deltaMode === 1 ? e.deltaY * 33 : e.deltaY;
+      setPower((p) => Math.min(LOUPE_MAX, Math.max(LOUPE_MIN, p * LOUPE_STEP ** (-px / 100))));
+    };
+    svg.addEventListener("wheel", onWheel, { passive: false });
+    return () => svg.removeEventListener("wheel", onWheel);
+  }, [loupe, Boolean(model)]); // eslint-disable-line react-hooks/exhaustive-deps
+  const follow = (e: React.PointerEvent<SVGSVGElement>) => {
+    const ctm = ownRef.current?.getScreenCTM();
+    if (!ctm) return;
+    const p = new DOMPoint(e.clientX, e.clientY).matrixTransform(ctm.inverse());
+    setLens({ x: p.x, y: p.y });
+  };
 
   // The width label sits in what the toolbar leaves of the dimension line rather than on the
   // line's own middle: the bar grows and shrinks as its segments show their labels, and a label
@@ -218,11 +263,18 @@ export function BedCanvas(props: Props) {
         viewBox={viewBox}
         role="img"
         aria-label={`Drawing area of the ${model.name}: ${fmtIn(tx)} by ${fmtIn(ty)}`}
+        data-loupe={loupe || undefined}
         onPointerDown={props.onPointerDown}
-        onPointerMove={props.onPointerMove}
+        onPointerMove={(e) => {
+          if (loupe) follow(e);
+          props.onPointerMove?.(e);
+        }}
         onPointerUp={props.onPointerUp}
         onPointerCancel={props.onPointerUp}
+        onPointerLeave={loupe ? () => setLens(null) : undefined}
       >
+        {/* Everything on the bed, as the loupe draws it again: not the dimension lines around it. */}
+        <g id={contentId}>
         <rect className={styles.travel} x={0} y={0} width={W} height={H} />
         <g className={styles.grid}>
           {gridLines(tx, "x")}
@@ -249,6 +301,8 @@ export function BedCanvas(props: Props) {
           </>
         )}
 
+        </g>
+
         <g className={styles.dim}>
           <line x1={dimX0} y1={dy} x2={dimX1} y2={dy} />
           <line x1={dimX0} y1={dy - tick} x2={dimX0} y2={dy + tick} />
@@ -260,9 +314,37 @@ export function BedCanvas(props: Props) {
           <DimLabel x={dx} y={(dimY0 + dimY1) / 2} font={labelFont} upright>{fmtIn((dimY1 - dimY0) / UNITS)}</DimLabel>
         </g>
 
-        {typeof props.children === "function" ? props.children({ mark: font, viewBox }) : props.children}
+        <g id={drawnId}>
+          {typeof props.children === "function" ? props.children({ mark: font, viewBox }) : props.children}
+        </g>
 
         <circle className={styles.home} cx={0} cy={0} r={font * 0.28} />
+
+        {loupe && lens && (() => {
+          // The lens is a fixed size on screen whatever the zoom, so its radius is found from how many
+          // screen pixels a bed unit is now.
+          const perUnit = ownRef.current?.getScreenCTM()?.a || 1;
+          const r = LOUPE_PX / 2 / perUnit;
+          const grow = `translate(${lens.x} ${lens.y}) scale(${power}) translate(${-lens.x} ${-lens.y})`;
+          return (
+            <g className={styles.loupe} pointerEvents="none" aria-hidden>
+              <clipPath id={clipId}>
+                <circle cx={lens.x} cy={lens.y} r={r} />
+              </clipPath>
+              <circle className={styles.loupeBack} cx={lens.x} cy={lens.y} r={r} />
+              <g clipPath={`url(#${clipId})`}>
+                <g transform={grow}>
+                  <use href={`#${contentId}`} />
+                  <use href={`#${drawnId}`} />
+                </g>
+              </g>
+              <circle className={styles.loupeRing} cx={lens.x} cy={lens.y} r={r} />
+              <text className={styles.loupeLabel} x={lens.x} y={lens.y + r * 0.82} textAnchor="middle" fontSize={11 / perUnit}>
+                {`${Math.round(power * 10) / 10}×`}
+              </text>
+            </g>
+          );
+        })()}
       </svg>
 
       {props.overlay}

@@ -107,3 +107,23 @@
 
   .toolbarLeft { justify-content: flex-start; margin: 0.25rem 0 0; }
 }
+
+/* The loupe: a round lens over the canvas showing what's under the pointer magnified (BedCanvas).
+   Its back is the page's own, so where the lens reaches past the bed it shows nothing rather than the
+   unmagnified canvas through it. The ring is a screen hairline at any zoom. */
+.bed[data-loupe] { cursor: crosshair; }
+.loupeBack { fill: var(--ui-surface-pale); }
+.loupeRing {
+  fill: none;
+  stroke: var(--ui-text-default);
+  stroke-width: 1.5;
+  vector-effect: non-scaling-stroke;
+}
+.loupeLabel {
+  fill: var(--ui-text-muted);
+  font-family: inherit;
+  paint-order: stroke;
+  stroke: var(--ui-surface-pale);
+  stroke-width: 3px;
+  vector-effect: non-scaling-stroke;
+}
