@@ -29,6 +29,12 @@ export interface Photo {
   /** How dark this band is, from and to: 0 is white, 1 black. Absent, the whole photo. */
   band?: [number, number];
   /**
+   * How far each band reaches into its neighbours, as a share of the whole range from white to black:
+   * 0.05 takes a middle third from 33-67% to 28-72%. Where bands meet, both draw, so their lines
+   * overlap there rather than stopping at a hard edge. The whole photo's, like its contrast.
+   */
+  bleed?: number;
+  /**
    * The part of the picture that is drawn, as fractions of it across and down: left, top, right,
    * bottom. Absent, all of it. Filling the page crops whatever would hang off it, rather than
    * drawing lines past the paper's edge.
@@ -171,7 +177,7 @@ const marksCache = new Map<string, PhotoMarks>();
 export function photoMarks(photo: Photo, w: number, h: number): PhotoMarks | null {
   const tones = tonesOf(photo.src);
   if (!tones || w <= 0 || h <= 0) return null;
-  const key = [photo.src.length, photo.src.slice(-32), w.toFixed(4), h.toFixed(4), photo.brightness, photo.contrast, photo.angle, photo.spacingMm, photo.levels, photo.band?.join(",") ?? "", photo.crop?.join(",") ?? ""].join("|");
+  const key = [photo.src.length, photo.src.slice(-32), w.toFixed(4), h.toFixed(4), photo.brightness, photo.contrast, photo.angle, photo.spacingMm, photo.levels, photo.band?.join(",") ?? "", photo.crop?.join(",") ?? "", photo.bleed ?? 0].join("|");
   const known = marksCache.get(key);
   if (known) return known;
   const made = hatch(tones, photo, w, h);
@@ -223,7 +229,11 @@ function hatch(tones: Tones, photo: Photo, w: number, h: number): PhotoMarks {
   // A band draws only where the photo's tone falls in it, and grades its lines across its own range.
   // Every part of a band gets at least its first set of lines, so two bands meet without a gap -
   // except the lightest, where white is still left as paper.
-  const [lo, hi] = photo.band ?? [0, 1];
+  // Widened by the bleed, into the bands either side: the lines are graded across the wider range,
+  // so what spills over starts sparse and builds, like a haze rather than a second edge.
+  const bleed = photo.band ? Math.max(0, photo.bleed ?? 0) : 0;
+  const lo = photo.band ? Math.max(0, photo.band[0] - (photo.band[0] > 0 ? bleed : 0)) : 0;
+  const hi = photo.band ? Math.min(1, photo.band[1] + (photo.band[1] < 1 ? bleed : 0)) : 1;
   const fromWhite = lo <= 0;
   const [c0, c1, c2, c3] = photo.crop ?? [0, 0, 1, 1];
   const toneAt = (x: number, y: number) => {
@@ -294,6 +304,7 @@ export function photoFromData(raw: Record<string, unknown>): Photo | null {
       ? { crop: raw.crop.map(Number) as [number, number, number, number] }
       : {}),
     ...(raw.fit === "fit" || raw.fit === "fill" ? { fit: raw.fit } : {}),
+    ...(Number.isFinite(Number(raw.bleed)) && raw.bleed !== undefined ? { bleed: Number(raw.bleed) } : {}),
     ...(Number.isFinite(Number(raw.margin)) && raw.margin !== undefined ? { margin: Number(raw.margin) } : {}),
     ...(Array.isArray(raw.band) && raw.band.length === 2 && raw.band.every((v) => Number.isFinite(Number(v)))
       ? { band: [Number(raw.band[0]), Number(raw.band[1])] as [number, number] }
@@ -309,5 +320,6 @@ export const photoData = (p: Photo) => ({
   ...(p.band ? { band: p.band } : {}),
   ...(p.crop ? { crop: p.crop } : {}),
   ...(p.fit ? { fit: p.fit } : {}),
+  ...(p.bleed ? { bleed: p.bleed } : {}),
   ...(p.margin !== undefined ? { margin: p.margin } : {}),
 });

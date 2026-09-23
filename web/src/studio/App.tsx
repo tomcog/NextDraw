@@ -968,6 +968,7 @@ export default function App() {
   const whole: Partial<Photo> = {};
   if (patch.brightness !== undefined) whole.brightness = patch.brightness;
   if (patch.contrast !== undefined) whole.contrast = patch.contrast;
+  if (patch.bleed !== undefined) whole.bleed = patch.bleed;
   setShapes((list) => list.map((sh) => {
    if (sh.id === chosen.id) return { ...sh, photo: { ...sh.photo!, ...patch } };
    if (group && sh.photo?.group === group && Object.keys(whole).length) return { ...sh, photo: { ...sh.photo, ...whole } };
@@ -1900,11 +1901,13 @@ export default function App() {
              disabled={busy}
              onChange={() => {
               setActiveLayer(layer.id);
-              // A photo's band on this layer is what its card should now be about: the bands sit
-              // on top of each other on the page, so this is the plain way to reach each one.
-              const band = chosen?.photo?.group
-               && shapes.find((sh) => sh.layerId === layer.id && sh.photo?.group === chosen.photo!.group);
-              if (band) pick(band.id);
+              // A layer with one shape on it is that shape: picking the layer picks it, so its card
+              // comes up without a second click. With more on it, a photo's band on this layer still
+              // is - the bands sit on top of each other on the page, so this is how to reach each.
+              const on = shapes.filter((sh) => sh.layerId === layer.id);
+              const band = chosen?.photo?.group && on.find((sh) => sh.photo?.group === chosen.photo!.group);
+              if (on.length === 1) pick(on[0].id);
+              else if (band) pick(band.id);
              }}
              aria-label={`Draw on layer ${at + 1}, ${layer.name}`}
              label={renamingLayer === layer.id ? (
@@ -2155,11 +2158,19 @@ export default function App() {
            </SegmentedControl>
           );
          })()}
-         {chosen.photo.band && (
-          <p className={styles.empty}>
-           {`This layer draws the tones from ${Math.round(chosen.photo.band[0] * 100)}% to ${Math.round(chosen.photo.band[1] * 100)}% dark.`}
-          </p>
-         )}
+         {chosen.photo.band && (() => {
+          const [lo, hi] = chosen.photo.band;
+          const bleed = chosen.photo.bleed ?? 0;
+          const from = Math.round(Math.max(0, lo - (lo > 0 ? bleed : 0)) * 100);
+          const to = Math.round(Math.min(1, hi + (hi < 1 ? bleed : 0)) * 100);
+          return (
+           <>
+            {/* How far the bands reach into each other, so their lines overlap where they meet. */}
+            <NumberField label="Bleed" unit="%" min={0} max={25} step={1} value={Math.round(bleed * 100)} onChange={(v) => setPhotoOf({ bleed: v / 100 })} />
+            <p className={styles.empty}>{`This layer draws the tones from ${from}% to ${to}% dark.`}</p>
+           </>
+          );
+         })()}
          <div className={styles.fillRow}>
           <NumberField label="Brightness" min={-100} max={100} step={5} value={chosen.photo.brightness} onChange={(brightness) => setPhotoOf({ brightness })} />
           <NumberField label="Contrast" min={-100} max={100} step={5} value={chosen.photo.contrast} onChange={(contrast) => setPhotoOf({ contrast })} />
