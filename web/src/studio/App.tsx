@@ -14,7 +14,7 @@ import { DEFAULT_SETTINGS, PAPER_SIZES, PLOT_CHANNEL } from "../shared/lib/const
 import type { Info, PenColor, PlotterModel, Preset } from "../shared/lib/types";
 import { listOf, trimNum } from "../shared/lib/format";
 import { lightness } from "../shared/lib/color";
-import { isPalettePen } from "../shared/lib/ink";
+import { isPalettePen, nameInPen } from "../shared/lib/ink";
 import { APP_URL } from "../shared/lib/apps";
 import { PreviewToolbar, type View } from "../shared/components/PreviewToolbar";
 import type { Zoom } from "../shared/components/BedCanvas";
@@ -1958,8 +1958,13 @@ export default function App() {
      palette={palette}
      current={layers.find((l) => l.id === colorMenu.id)?.color ?? null}
      onPick={(pen) => {
-      // The name travels with the colour: Plot colours a layer from the pen its name matches.
-      patchLayer(colorMenu.id, { name: uniqueName(pen.name, layers.filter((l) => l.id !== colorMenu.id).map((l) => l.name)), color: pen.color });
+      // The name travels with the colour: Plot colours a layer from the pen its name matches. Named
+      // the way Plot shows a layer given another pen (nameInPen), so both apps call it the same:
+      // the number in front and anything after the colour kept, "8-sky blue print" in Turquoise
+      // becoming "8-turquoise print", and a name with no pen in it ("13-date") left alone.
+      const layer = layers.find((l) => l.id === colorMenu.id);
+      const wanted = layer ? nameInPen(layer.name, pen.name, presets.flatMap((p) => p.palette ?? [])) : pen.name;
+      patchLayer(colorMenu.id, { name: uniqueName(wanted, layers.filter((l) => l.id !== colorMenu.id).map((l) => l.name)), color: pen.color });
       setColorMenu(null);
      }}
      onCustom={() => pickCustomColor(colorMenu.id, colorMenu.anchor)}

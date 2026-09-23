@@ -117,6 +117,30 @@ export function isPalettePen(name: string, color: string | null, palette: PenCol
   });
 }
 
+/**
+ * What a layer is called once it's being plotted in another pen: the pen its name starts with swapped
+ * for the one chosen, keeping the number in front and whatever comes after - "8-sky blue print" in
+ * Turquoise is "8-turquoise print", in the name's own capitals. A name that doesn't start with one of
+ * the pens given ("13-date") says nothing about the pen, so it stays as it is. Plot gives it every
+ * tool's pens, since a name can come from a tool other than the one in the holder.
+ * For showing only: the drawing's name is Studio's, and this is worked out afresh from it each time,
+ * so choosing the drawing's own ink again brings the name back.
+ */
+export function nameInPen(name: string, pen: string, pens: PenColor[]): string {
+  const lead = name.match(/^\s*\d+\s*[-.:)]?\s*(?=\S)/)?.[0] ?? "";
+  const rest = name.slice(lead.length).trim().replace(/\s+/g, " ");
+  const said = rest.toLowerCase();
+  // Longest first, so a name is matched to the whole of the pen it names.
+  const was = pens
+    .map((p) => p.name.trim().toLowerCase().replace(/\s+/g, " "))
+    .sort((a, b) => b.length - a.length)
+    .find((p) => said === p || said.startsWith(`${p} `));
+  if (!was) return name;
+  const own = rest.slice(0, was.length);
+  const shown = own === own.toLowerCase() ? pen.toLowerCase() : own === own.toUpperCase() ? pen.toUpperCase() : pen;
+  return lead + shown + rest.slice(was.length);
+}
+
 /** The pen of this palette that draws this colour, by name. Null when no pen of it does. */
 export const penNameAt = (color: string | null, palette: PenColor[]) =>
   (color ? palette.find((p) => p.color.toLowerCase() === color.toLowerCase())?.name ?? null : null);

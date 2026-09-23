@@ -251,7 +251,10 @@ export function LayersSection({ mode, onMode, layers, target, linksOf, onLink, o
           palette={paletteFor(menuLayer.id)}
           current={menuLayer.color}
           own={menuLayer.ownColor}
-          onPick={(pen) => onColor(menuLayer.id, pen.color === menuLayer.ownColor ? null : { pen })}
+          swapped={menuLayer.inkPen !== null || menuLayer.color?.toLowerCase() !== menuLayer.ownColor?.toLowerCase()}
+          // A pen is recorded as that pen even when it's the colour the drawing already has, since the
+          // layer is then shown under its name. Only "The drawing's own" (no name) hands the layer back.
+          onPick={(pen) => onColor(menuLayer.id, pen.name ? { pen } : null)}
           onClose={() => setColorMenu(null)}
         />
       )}

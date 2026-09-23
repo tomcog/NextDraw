@@ -11,6 +11,8 @@ interface Props {
   current: string | null; // the layer's color now, to mark in the list
   /** The color the drawing gives this layer, offered as a way back when an ink has been chosen. */
   own?: string | null;
+  /** An ink has been chosen for the layer, even one in the drawing's own colour: the way back is offered. */
+  swapped?: boolean;
   onPick: (pen: PenColor) => void;
   onClose: () => void;
   /** Offer any colour at all, from the system colour picker, after the pens. Called on the click. */
@@ -19,7 +21,7 @@ interface Props {
 
 // The drawing tool's pen colors, opened from a layer's color dot. Arrow keys move through the list,
 // Enter picks, Escape or a click elsewhere closes, and focus goes back to the dot.
-export function PaletteMenu({ anchor, palette: pens, current, own, onPick, onClose, onCustom }: Props) {
+export function PaletteMenu({ anchor, palette: pens, current, own, swapped, onPick, onClose, onCustom }: Props) {
   // Darkest at the top, lightest at the bottom, the way the layers themselves stack. Colors that
   // can't be read keep their place at the end.
   const palette = useMemo(
@@ -86,8 +88,9 @@ export function PaletteMenu({ anchor, palette: pens, current, own, onPick, onClo
       style={position ? { left: position.left, top: position.top } : { visibility: "hidden" }}
       onKeyDown={onKeyDown}
     >
-      {/* Only once an ink has actually been swapped in - otherwise it's a row that does nothing. */}
-      {own && current?.toLowerCase() !== own.toLowerCase() && (
+      {/* Only once an ink has actually been swapped in - otherwise it's a row that does nothing. A pen
+        in the drawing's own colour counts: choosing it is what names the layer after it. */}
+      {own && (swapped ?? current?.toLowerCase() !== own.toLowerCase()) && (
         <button
           type="button"
           role="menuitem"

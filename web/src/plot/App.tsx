@@ -10,7 +10,7 @@ import { parsePlotPaths, type PlotPaths } from "../shared/lib/progressPaths";
 import { parsePreview, type Preview } from "../shared/lib/preview";
 import { load, save } from "../shared/lib/storage";
 import type { Confirmation, Estimate, Info, Ink, Layer, PenColor, LayerView, Message, Placement, Preset, Settings, Status, Plot } from "../shared/lib/types";
-import { inkHex, isPalettePen, penNameAt, penNameOf } from "../shared/lib/ink";
+import { inkHex, isPalettePen, nameInPen, penNameAt, penNameOf } from "../shared/lib/ink";
 import { Hints } from "../shared/components/controls/Hints";
 import { Header } from "./components/Header";
 import { Bed, type Zoom } from "../shared/components/Bed";
@@ -139,20 +139,24 @@ export default function App() {
       // The colour this layer is going down in: an ink chosen for today, else the pen its name calls
       // for, else the colour the drawing was made in.
       const color = inkHex(inkColors[layer.id], palette, paletteOfTool) || penColors[layer.id] || layer.color;
-      // The pen that draws that colour - which is the pen to put in the holder. The layer keeps the
-      // name the drawing gives it, which is Studio's to set: "Lime register" is a layer Plot has to
-      // be able to tell from "Lime". The dot says which ink it goes down in, and the row's tooltip
-      // names the pen.
+      // The pen that draws that colour - which is the pen to put in the holder. The drawing's name
+      // is Studio's to set and the file keeps it; a layer given another pen here is shown under
+      // that pen's name instead, with its number and the rest kept ("8-sky blue print" in
+      // Turquoise reads "8-turquoise print"), worked out from the ink chosen rather than stored.
+      // "Lime register" is still a layer Plot has to be able to tell from "Lime".
       const pen = penNameAt(color, palette);
       const skipped = layer.name.startsWith("%");
       const tool = toolOfLayer(layer.id);
-      const name = layer.name;
+      const inkPen = penNameOf(inkColors[layer.id], palette);
+      // The colour a name starts with is looked for among every tool's pens, not just this one's: a
+      // layer named for an EnerGel "Forest Green" is still that when plotting with a Flair.
+      const name = inkPen ? nameInPen(layer.name, inkPen, presets.flatMap((p) => p.palette ?? [])) : layer.name;
       return {
         ...layer,
         name,
         pen,
         color,
-        inkPen: penNameOf(inkColors[layer.id], palette),
+        inkPen,
         // Judged by the name the row shows: that is what you load a pen by.
         inPalette: isPalettePen(name, color, palette),
         penKey: pen && tool && !skipped ? `${tool}/${pen}` : null,
@@ -162,7 +166,7 @@ export default function App() {
         skipped,
       };
     });
-  }, [fileLayers, hiddenLayers, penColors, inkColors, plotOrder, paletteOfTool, toolOfLayer]);
+  }, [fileLayers, hiddenLayers, penColors, inkColors, plotOrder, paletteOfTool, toolOfLayer, presets]);
   // Lightest at the bottom: layer 1 is plotted first and everything darker goes over it, which is how
   // the inks build on paper. Layers whose color can't be read stay at the bottom, under the ones that
   // can; ties keep the order they already had.
