@@ -2328,9 +2328,12 @@ export default function App() {
          {/* Which band's lines the rest of the card sets. The bands lie on top of each other, so
            this is how to reach each one; its layer in the list does the same. */}
          {chosen.photo.group && (() => {
+          // In the order of their layers, bottom first: the same order as the numbers in the
+          // Layers list, lightest ink on the left once the layers are sorted by darkness.
+          const place = (sh: Shape) => layers.findIndex((l) => l.id === sh.layerId);
           const bands = shapes
            .filter((sh) => sh.photo?.group === chosen.photo!.group)
-           .sort((a, b) => (a.photo!.band?.[0] ?? 0) - (b.photo!.band?.[0] ?? 0));
+           .sort((a, b) => place(a) - place(b));
           // Bands by value are named for their tone; by colour, for their ink.
           // Each band by its layer: the number the Layers list gives it, and a dot in its ink - up
           // to six of them, too many for words.
