@@ -2409,6 +2409,329 @@ def import_from_illustrator(ai_path):
     return svg_path
 
 
+# ---------- Combining single-colour files ----------
+#
+# Artwork often arrives already separated: one file per ink, each a single colour on a single layer,
+# all exported from the same artboard. Combining stacks them into one drawing with a layer per file,
+# so they can be coloured, ordered and plotted a layer at a time like any other drawing. It happens
+# here, once, for both apps: Plot opens what this makes, and Studio edits it.
+
+COMBINED_ATTR = "{%s}combined" % PLOT_NS  # on a drawing this made: adding a file to it rewrites it
+SAME_PAGE_IN = 0.5 / 25.4  # pages within half a millimetre of each other are the same page
+CARRIED_TAGS = {SVG_NS + t for t in ("defs", "style")}  # anything in the file may refer to these
+DROPPED_TAGS = {SVG_NS + t for t in ("metadata", "title", "desc")} | {
+    "{http://sodipodi.sourceforge.net/DTD/sodipodi-0.dtd}namedview"}
+# What a file's own <svg> can set for everything in it, and so what its layer has to carry instead.
+INHERITED_ATTRS = ("style", "class", "fill", "stroke", "stroke-width", "stroke-linecap", "stroke-linejoin",
+                   "stroke-miterlimit", "opacity")
+LENGTH = re.compile(r"^\s*([0-9]*\.?[0-9]+(?:e[-+]?\d+)?)\s*([a-z]*)\s*$", re.I)
+URL_REF = re.compile(r"url\(\s*['\"]?#([^)'\"\s]+)['\"]?\s*\)")
+CLASS_SELECTOR = re.compile(r"\.(-?[_a-zA-Z][\w-]*)")
+XLINK_HREF = "{http://www.w3.org/1999/xlink}href"
+
+
+def page_frame(root):
+    """
+    Where a document's own units land on its page, in inches - on each axis, inch = s * (unit - min)
+    + offset - and the page's size. The page is sized the way the NextDraw software sizes it
+    (normalize_size, which this applies), so Illustrator's points stay points. None when nothing in
+    the file gives it a size.
+    """
+    normalize_size(root)
+
+    def inches(value):
+        m = LENGTH.match(value or "")
+        unit = m.group(2).lower() if m else None
+        return float(m.group(1)) * PX_PER_UNIT[unit] / 96.0 if m and unit in PX_PER_UNIT else None
+
+    w, h = inches(root.get("width")), inches(root.get("height"))
+    if not w or not h:
+        return None
+    vb = root.get("viewBox")
+    try:
+        vb = [float(v) for v in re.split(r"[\s,]+", vb.strip())] if vb else [0.0, 0.0, w * 96, h * 96]
+    except ValueError:
+        return None
+    if len(vb) != 4 or vb[2] <= 0 or vb[3] <= 0:
+        return None
+    sx, sy = w / vb[2], h / vb[3]
+    ox = oy = 0.0
+    fit = (root.get("preserveAspectRatio") or "xMidYMid meet").split()
+    if fit[0] != "none":
+        # A viewBox of another shape than its page is fitted into it, as a browser would.
+        s = max(sx, sy) if "slice" in fit else min(sx, sy)
+        ax = 0.0 if "xMin" in fit[0] else 1.0 if "xMax" in fit[0] else 0.5
+        ay = 0.0 if "YMin" in fit[0] else 1.0 if "YMax" in fit[0] else 0.5
+        ox, oy = (w - s * vb[2]) * ax, (h - s * vb[3]) * ay
+        sx = sy = s
+    return {"w": w, "h": h, "sx": sx, "sy": sy, "ox": ox, "oy": oy, "x": vb[0], "y": vb[1]}
+
+
+def names_in(root):
+    """Every id and class a document uses."""
+    used = set()
+    for el in root.iter():
+        if isinstance(el.tag, str):
+            used.update(filter(None, [el.get("id")]))
+            used.update((el.get("class") or "").split())
+    return used
+
+
+def keep_apart(root, prefix):
+    """
+    Put a prefix on every id and class in a file, and on everything that refers to them. Illustrator
+    names its classes .st0, .st1 ... in every file it exports, so two files stacked as they are would
+    share a class - and whichever file's style came last would colour both.
+    """
+    ids = {el.get("id") for el in root.iter() if isinstance(el.tag, str) and el.get("id")}
+
+    def ref(m):
+        return f"url(#{prefix}{m.group(1)})" if m.group(1) in ids else m.group(0)
+
+    for el in root.iter():
+        if not isinstance(el.tag, str):
+            continue
+        if el.get("id"):
+            el.set("id", prefix + el.get("id"))
+        if el.get("class"):
+            el.set("class", " ".join(prefix + c for c in el.get("class").split()))
+        for attr, value in list(el.attrib.items()):
+            if attr in ("href", XLINK_HREF) and value.startswith("#") and value[1:] in ids:
+                el.set(attr, "#" + prefix + value[1:])
+            elif "url(" in value:
+                el.set(attr, URL_REF.sub(ref, value))
+    for style in root.iter(SVG_NS + "style"):
+        # Selectors sit outside the braces and declarations inside them. Every class selector is
+        # prefixed, used or not: an unused .st1 left as it is would reach the other files' .st1.
+        parts = re.split(r"(\{[^}]*\})", style.text or "")
+        style.text = "".join(
+            URL_REF.sub(ref, p) if p.startswith("{") else CLASS_SELECTOR.sub(lambda m: f".{prefix}{m.group(1)}", p)
+            for p in parts
+        )
+
+
+def unused_prefix(used):
+    n = 1
+    while any(name.startswith(f"c{n}-") for name in used):
+        n += 1
+    return f"c{n}-"
+
+
+def as_layer(root, name, transform):
+    """
+    A file's drawing as one layer, and what it keeps at the top of its document (its defs and style),
+    which have to move to the top of the combined one. What the file's own <svg> set for everything in
+    it moves onto the layer, and layers the file had inside it become plain groups: it is one layer now.
+    """
+    from lxml import etree
+    layer = etree.Element(SVG_NS + "g")
+    layer.set(INKSCAPE_NS + "groupmode", "layer")
+    layer.set(INKSCAPE_NS + "label", name)
+    for attr in INHERITED_ATTRS:
+        if root.get(attr):
+            layer.set(attr, root.get(attr))
+    if transform:
+        layer.set("transform", transform)
+    carried = []
+    for child in list(root):
+        if not isinstance(child.tag, str) or child.tag in DROPPED_TAGS or child.tag in (PLOT_TAG, LEGACY_PLOT_TAG):
+            continue
+        (carried if child.tag in CARRIED_TAGS else layer).append(child)
+    for group in layer.iter(SVG_NS + "g"):
+        if group is not layer:
+            group.attrib.pop(INKSCAPE_NS + "groupmode", None)
+    return layer, carried
+
+
+def make_layers_explicit(root):
+    """
+    Mark a drawing's layers as layers. A file with no Inkscape layers has its top-level groups read as
+    its layers (Illustrator's way), and one Inkscape layer added beside them would hide every one.
+    """
+    if any(g.get(INKSCAPE_NS + "groupmode") == "layer" for g in root if g.tag == SVG_NS + "g"):
+        return
+    illustrator = is_illustrator_svg(root)
+    for group in layer_groups(root):
+        group.set(INKSCAPE_NS + "groupmode", "layer")
+        name = layer_name(group, illustrator)
+        if name and not group.get(INKSCAPE_NS + "label"):
+            group.set(INKSCAPE_NS + "label", name)
+
+
+def combine_drawings(parts, base=None):
+    """
+    Stack files into one drawing, a layer each. `parts` is (name, root) for each file, bottom first:
+    the first is layer 1 and plots first. With a `base` - a drawing already open - they are added on
+    top of it and it keeps its page and its layers as they were; without one, the first file's page is
+    the page. Each file keeps its place on its own page, so files exported from one artboard register
+    exactly. Returns the combined root, and the names of any files whose page isn't the same size,
+    which will need lining up by hand.
+    """
+    from lxml import etree
+    if base is None:
+        first_name, first = parts[0]
+        frame = page_frame(first)
+        if frame is None:
+            raise ValueError(f"{first_name} has no page size, so there's nothing to line the others up to.")
+        out = etree.Element(SVG_NS + "svg", nsmap={None: SVG_NS[1:-1], "inkscape": INKSCAPE_NS[1:-1], "nds": PLOT_NS})
+        for attr in ("width", "height", "viewBox", "preserveAspectRatio"):
+            if first.get(attr):
+                out.set(attr, first.get(attr))
+    else:
+        out = base
+        frame = page_frame(out)
+        if frame is None:
+            raise ValueError("The open drawing has no page size, so there's nothing to line the files up to.")
+        make_layers_explicit(out)
+    out.set(COMBINED_ATTR, "true")
+
+    used = names_in(out)
+    mismatched = []
+    for name, root in parts:
+        f = page_frame(root)
+        if f is None:
+            raise ValueError(f"{name} has no page size, so there's nothing to line it up by.")
+        if abs(f["w"] - frame["w"]) > SAME_PAGE_IN or abs(f["h"] - frame["h"]) > SAME_PAGE_IN:
+            mismatched.append(name)
+        prefix = unused_prefix(used)
+        keep_apart(root, prefix)
+        used |= names_in(root)
+        # This file's units into the page's: each is a scale and a shift, so the two together are too.
+        kx, ky = f["sx"] / frame["sx"], f["sy"] / frame["sy"]
+        tx = (f["ox"] - frame["ox"] - f["sx"] * f["x"]) / frame["sx"] + frame["x"]
+        ty = (f["oy"] - frame["oy"] - f["sy"] * f["y"]) / frame["sy"] + frame["y"]
+        same = abs(kx - 1) < 1e-9 and abs(ky - 1) < 1e-9 and abs(tx) < 1e-9 and abs(ty) < 1e-9
+        layer, carried = as_layer(root, name, None if same else f"matrix({kx:.10g} 0 0 {ky:.10g} {tx:.10g} {ty:.10g})")
+        layer_id = f"{AUTO_LAYER_ID}{len(layer_groups(out)) + 1}"
+        while layer_id in used:
+            layer_id += "_"
+        layer.set("id", layer_id)
+        used.add(layer_id)
+        out.extend(carried)
+        out.append(layer)
+    return out, mismatched
+
+
+def combine_sources(raw_paths, mode):
+    """
+    The files the page chose to combine, read: (name, root) each, named after the file. An .ai file is
+    imported the way /api/open imports one, and asks the same question when its SVG is already there -
+    once for all of them. Returns (parts, first path), or (None, response) with what to send back instead.
+    """
+    if not isinstance(raw_paths, list) or not raw_paths:
+        return None, (jsonify(error="Choose the files to combine."), 400)
+    paths = []
+    for raw in raw_paths:
+        path = allowed_path(raw)
+        if path is None or not path.is_file():
+            return None, (jsonify(error="One of those files isn't in a folder the app can open drawings from."), 403)
+        if path.suffix.lower() not in (".svg", ".ai"):
+            return None, (jsonify(error=f"{path.name} isn't an SVG or Illustrator (.ai) file."), 400)
+        paths.append(path)
+    waiting = [p.with_suffix(".svg").name for p in paths if p.suffix.lower() == ".ai" and p.with_suffix(".svg").exists()]
+    if waiting and mode not in ("existing", "import"):
+        return None, (jsonify(choice=True, svg_names=waiting))
+    parts = []
+    try:
+        for path in paths:
+            if path.suffix.lower() == ".ai":
+                existing = path.with_suffix(".svg")
+                path = existing if existing.exists() and mode == "existing" else import_from_illustrator(path)
+            if path.stat().st_size > MAX_STUDIO_SVG:
+                return None, (jsonify(error=f"{path.name} is too big to combine."), 413)
+            parts.append((path.stem, parse_svg(path).getroot()))
+    except (OSError, ValueError, RuntimeError) as exc:
+        return None, (jsonify(error=str(exc)), 400)
+    except Exception as exc:  # noqa: BLE001 - lxml's own errors, from a file that isn't well-formed SVG
+        return None, (jsonify(error=f"Couldn't read {path.name}: {exc}"), 400)
+    return parts, paths[0]
+
+
+def combined_path(folder, stem):
+    """A new file next to the originals, never one of them: "<stem> combined.svg", numbered if taken."""
+    path = folder / f"{stem} combined.svg"
+    n = 2
+    while path.exists():
+        path = folder / f"{stem} combined {n}.svg"
+        n += 1
+    return path
+
+
+@app.post("/api/combine")
+def combine():
+    """
+    Plot: open several single-colour files as one drawing, a layer each - or, with add, put them on
+    top of the drawing that's open. The result is saved as a new SVG next to the first file and opened.
+    A drawing this made is rewritten when more is added to it; anything else is left as it is and a
+    new file is made. Files whose page isn't the same size come back as mismatched: Studio lines
+    them up.
+    """
+    if job.busy():
+        return jsonify(error="Wait for the plotter to finish before opening a drawing."), 409
+    body = request.json or {}
+    add = bool(body.get("add"))
+    if add and not CURRENT_SVG.exists():
+        return jsonify(error="Open a drawing to add to first."), 400
+    parts, first_path = combine_sources(body.get("paths"), body.get("mode"))
+    if parts is None:
+        return first_path  # what to answer instead
+    try:
+        if add:
+            tree = parse_svg(CURRENT_SVG)
+            disk = Path(CURRENT_PATH.read_text()) if CURRENT_PATH.exists() else None
+            ours = disk is not None and disk.exists() and tree.getroot().get(COMBINED_ATTR) == "true"
+            name = (JOBS / "current.name").read_text() if (JOBS / "current.name").exists() else first_path.name
+            root, mismatched = combine_drawings(parts, base=tree.getroot())
+            out = disk if ours else combined_path((disk or first_path).parent, Path(name).stem)
+        else:
+            root, mismatched = combine_drawings(parts)
+            out = combined_path(first_path.parent, first_path.stem)
+        if allowed_path(out) is None:
+            return jsonify(error="That folder isn't one the app can save drawings in."), 403
+        from lxml import etree
+        etree.cleanup_namespaces(root, top_nsmap={"inkscape": INKSCAPE_NS[1:-1], "nds": PLOT_NS})
+        tmp = out.with_name(f".{out.name}.combining")
+        tmp.write_bytes(etree.tostring(root, xml_declaration=True, encoding="utf-8"))
+        os.replace(tmp, out)
+        plot = load_drawing(out)
+    except (OSError, ValueError) as exc:
+        return jsonify(error=str(exc)), 400
+    return jsonify(name=out.name, path=str(out), folder=display_path(out.parent), plot=plot,
+                   opened=opened_token(), mismatched=mismatched)
+
+
+@app.post("/api/studio/combine")
+def studio_combine():
+    """
+    Studio: the same combining, handed back rather than saved - Studio saves when it is asked to, like
+    any drawing it makes. With base, the files go on top of the drawing Studio has open (its SVG, as
+    Studio would save it). The name and folder are where the drawing would be saved: next to the first
+    file, never over it.
+    """
+    body = request.json or {}
+    base = body.get("base")
+    if base is not None and (not isinstance(base, str) or "<svg" not in base):
+        return jsonify(error="That doesn't look like an SVG."), 400
+    parts, first_path = combine_sources(body.get("paths"), body.get("mode"))
+    if parts is None:
+        return first_path  # what to answer instead
+    from lxml import etree
+    try:
+        base_root = etree.fromstring(base.encode("utf-8"), etree.XMLParser(huge_tree=True)) if base else None
+        root, mismatched = combine_drawings(parts, base=base_root)
+    except ValueError as exc:
+        return jsonify(error=str(exc)), 400
+    except etree.XMLSyntaxError as exc:
+        return jsonify(error=f"Couldn't read the open drawing: {exc}"), 400
+    etree.cleanup_namespaces(root, top_nsmap={"inkscape": INKSCAPE_NS[1:-1], "nds": PLOT_NS})
+    svg = etree.tostring(root, encoding="unicode")
+    if len(svg.encode("utf-8")) > MAX_STUDIO_SVG:
+        return jsonify(error="Together those files are too big to edit here."), 413
+    out = combined_path(first_path.parent, first_path.stem)
+    return jsonify(name=out.name, folder=display_path(out.parent), folder_path=str(out.parent), svg=svg,
+                   mismatched=mismatched)
+
+
 @app.post("/api/open")
 def open_file():
     """
