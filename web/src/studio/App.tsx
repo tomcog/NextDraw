@@ -1489,7 +1489,7 @@ export default function App() {
      <Card variant="flat" className={styles.controls}>
       <div className={`${styles.cardBody} ${controls.cardSections}`}>
        <Section
-        title="Drawing"
+        title="File"
         action={
          <span className={styles.headerTools}>
           {/* In the order they come up: the drawing in hand is saved, another is opened,
@@ -1535,7 +1535,7 @@ export default function App() {
         <InputText
          size="md"
          label="Name"
-         // The card is called Drawing and the field holds its name: saying so twice under
+         // The card is called File and the field holds the drawing's name: saying so twice under
          // the words themselves helps nobody who can see them.
          hideLabel
          value={name}
