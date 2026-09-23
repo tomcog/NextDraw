@@ -12,6 +12,8 @@ import { DEFAULT_SETTINGS, PAPER_SIZES, PLOT_CHANNEL } from "../shared/lib/const
 import type { Info, PenColor, PlotterModel, Preset } from "../shared/lib/types";
 import { listOf, trimNum } from "../shared/lib/format";
 import { lightness } from "../shared/lib/color";
+import { isPalettePen } from "../shared/lib/ink";
+import { APP_URL } from "../shared/lib/apps";
 import { PreviewToolbar, type View } from "../shared/components/PreviewToolbar";
 import type { Zoom } from "../shared/components/BedCanvas";
 import { useRowDrag } from "./lib/useRowDrag";
@@ -246,6 +248,15 @@ export default function App() {
     was.name !== name,
   );
  }, [shapes, fills, layers, page, name]);
+
+ // Leaving with work that's only on screen - a reload, a closed tab, going to Plot where the browser
+ // won't open a tab of its own - asks first, in the browser's own words.
+ useEffect(() => {
+  if (!dirty || !shapes.length) return;
+  const hold = (e: BeforeUnloadEvent) => e.preventDefault();
+  window.addEventListener("beforeunload", hold);
+  return () => window.removeEventListener("beforeunload", hold);
+ }, [dirty, shapes.length]);
 
  // Called by whoever just read or wrote the file, with the very values that went to disk.
  const markClean = useCallback((written: OnDisk) => {
@@ -560,7 +571,7 @@ export default function App() {
     setBusy(false);
     return;
    }
-   if (!window.open("/", PLOT_CHANNEL)) window.location.href = "/";
+   if (!window.open(APP_URL.plot, PLOT_CHANNEL)) window.location.href = APP_URL.plot;
    setBusy(false);
   } catch (err) {
    setMessage({ text: (err as Error).message, ok: false });
@@ -1710,8 +1721,13 @@ export default function App() {
              purpose="draw"
              number={at + 1}
              color={layer.color}
+             // Struck through when the layer isn't one of this tool's pens by name and colour - the
+             // same rule as Plot's Layers card. Only a tool with a palette of its own is asked.
+             swatchCut={isPalettePen(layer.name, layer.color, tool2?.palette ?? []) === false}
              swatchProps={{
-              "aria-label": `Pen color for ${layer.name}`,
+              "aria-label": isPalettePen(layer.name, layer.color, tool2?.palette ?? []) === false
+               ? `Pen color for ${layer.name} - no ${tool2?.name ?? ""} pen is called that, in that colour`
+               : `Pen color for ${layer.name}`,
               "aria-haspopup": "menu",
               "aria-expanded": colorMenu?.id === layer.id,
               title: "Choose the pen this layer draws with",

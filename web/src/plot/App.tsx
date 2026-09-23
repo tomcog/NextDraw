@@ -10,12 +10,13 @@ import { parsePlotPaths, type PlotPaths } from "../shared/lib/progressPaths";
 import { parsePreview, type Preview } from "../shared/lib/preview";
 import { load, save } from "../shared/lib/storage";
 import type { Confirmation, Estimate, Info, Ink, Layer, PenColor, LayerView, Message, Placement, Preset, Settings, Status, Plot } from "../shared/lib/types";
-import { hasPen, inkHex, penNameAt, penNameOf } from "../shared/lib/ink";
+import { inkHex, isPalettePen, penNameAt, penNameOf } from "../shared/lib/ink";
 import { Hints } from "../shared/components/controls/Hints";
 import { Header } from "./components/Header";
 import { Bed, type Zoom } from "../shared/components/Bed";
 import { PaletteEditor } from "./components/PaletteEditor";
 import { PreviewToolbar, type View } from "../shared/components/PreviewToolbar";
+import { openInStudio } from "../shared/lib/apps";
 import { FileBrowser, type OpenResult } from "../shared/components/FileBrowser";
 import { MachinePanel } from "./components/MachinePanel";
 import { Section } from "../shared/components/controls/Section";
@@ -146,14 +147,16 @@ export default function App() {
       const pen = penNameAt(color, palette);
       const skipped = layer.name.startsWith("%");
       const tool = toolOfLayer(layer.id);
+      const name = skipped ? layer.name : layerNames[layer.id] || pen || layer.name;
       return {
         ...layer,
-        name: skipped ? layer.name : layerNames[layer.id] || pen || layer.name,
+        name,
         // What the drawing calls it, for handing the name back and for telling the two apart.
         ownName: layer.name,
         color,
         inkPen: penNameOf(inkColors[layer.id], palette),
-        inPalette: hasPen(color, palette),
+        // Judged by the name the row shows: that is what you load a pen by.
+        inPalette: isPalettePen(name, color, palette),
         penKey: pen && tool && !skipped ? `${tool}/${pen}` : null,
         // What the drawing itself says, so a swapped ink can be told from the planned one and undone.
         ownColor: penColors[layer.id] || layer.color,
@@ -805,11 +808,7 @@ export default function App() {
   // doesn't move layers - Studio does. Said for as long as that drawing is the one open.
   const [misfits, setMisfits] = useState<{ drawing: string; path: string; files: string[] } | null>(null);
   const shownMisfits = misfits && misfits.drawing === fileName ? misfits : null;
-  // A tab of its own, never one already open: that could be a Studio with changes not yet saved.
-  const lineUpInStudio = (path: string) => {
-    const url = `/static/studio.html?open=${encodeURIComponent(path)}`;
-    if (!window.open(url, "_blank")) window.location.href = url;
-  };
+
   const openBrowser = () => {
     if (!busy) setBrowserOpen(true);
   };
@@ -1463,13 +1462,15 @@ export default function App() {
                 trimming={trimming}
                 onTrim={trimPage}
                 onRotate={(turn) => setRotation((r) => (((r + turn * 90) % 360) + 360) % 360)}
+                // Only a drawing that lives in a folder: an uploaded copy has nowhere for Studio to read it from.
+                onEditInStudio={status?.file_path ? () => openInStudio(status.file_path!) : undefined}
               />
               {shownMisfits && (
                 <div className={styles.misfits} role="status">
                   <p>
                     {`${listOf(shownMisfits.files)} ${shownMisfits.files.length === 1 ? "isn’t" : "aren’t"} on a page the size of the first file’s, so ${shownMisfits.files.length === 1 ? "it" : "they"} may not line up.`}
                   </p>
-                  <Button size="sm" variant="secondary" onClick={() => lineUpInStudio(shownMisfits.path)}>
+                  <Button size="sm" variant="secondary" onClick={() => openInStudio(shownMisfits.path)}>
                     Line up in Studio
                   </Button>
                 </div>

@@ -1,6 +1,7 @@
 import { Tag } from "@tomcoggia/ui";
 import { PenTool } from "lucide-react";
 import { ThemeToggle } from "../../shared/components/ThemeToggle";
+import { AppSwitch } from "../../shared/components/AppSwitch";
 import styles from "../../shared/components/Header.module.css";
 
 interface Props {
@@ -22,6 +23,7 @@ export function StudioHeader({ message, ok }: Props) {
         <span className={styles.titleApp}>Studio</span>
       </h1>
       <span className={styles.tools}>
+        <AppSwitch current="studio" />
         <Tag className={styles.status} data-found={ok}>
           <span className={styles.dot} aria-hidden="true" />
           {message}

@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Button, ButtonRound, InputText } from "@tomcoggia/ui";
-import { Crop, RotateCcw, RotateCcwSquare, RotateCwSquare, ScanSquare, X } from "lucide-react";
+import { Crop, PenTool, RotateCcw, RotateCcwSquare, RotateCwSquare, ScanSquare, X } from "lucide-react";
 import styles from "../../../shared/components/controls/controls.module.css";
 import { Section } from "../../../shared/components/controls/Section";
 import { fmtLen, trimNum } from "../../../shared/lib/format";
@@ -24,10 +24,12 @@ interface Props {
   trimming: boolean;
   onTrim: (restore: boolean) => void;
   onRotate: (quarterTurns: 1 | -1) => void;
+  /** Open this drawing in Studio. Left out for a drawing Studio can't read from a folder. */
+  onEditInStudio?: () => void;
 }
 
 export function FileSection({
-  fileName, busy, preview, previewScale, scale, units, folder, saveState, saveError, onScale, onOpen, onClear, trimmed, trimming, onTrim, onRotate,
+  fileName, busy, preview, previewScale, scale, units, folder, saveState, saveError, onScale, onOpen, onClear, trimmed, trimming, onTrim, onRotate, onEditInStudio,
 }: Props) {
   const [draft, setDraft] = useState(trimNum(scale, 1));
   useEffect(() => setDraft(trimNum(scale, 1)), [scale]);
@@ -141,6 +143,11 @@ export function FileSection({
           />
           <ButtonRound size="sm" icon={<RotateCcwSquare />} aria-label="Turn the drawing left" title="Turn the drawing 90° left" disabled={busy} onClick={() => onRotate(-1)} />
           <ButtonRound size="sm" icon={<RotateCwSquare />} aria-label="Turn the drawing right" title="Turn the drawing 90° right" disabled={busy} onClick={() => onRotate(1)} />
+          {/* The way back to Studio with this drawing, as Studio's Send is the way here: Studio's
+              nib, as its name in the header carries. A tab of its own, so no open Studio is touched. */}
+          {onEditInStudio && (
+            <ButtonRound size="sm" icon={<PenTool />} aria-label="Edit in Studio" title="Edit this drawing in Studio, in a tab of its own" onClick={onEditInStudio} />
+          )}
         </div>
       )}
     </Section>

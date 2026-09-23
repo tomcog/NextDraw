@@ -132,10 +132,10 @@ export interface LayerView extends Layer {
    */
   inkPen: string | null;
   /**
-   * Whether the colour this layer is being shown in is one the tool actually has a pen for. False
-   * means there is no pen to put in the holder that draws what the preview is showing - usually the
-   * drawing's own colour, made with another tool. Null when the tool has no palette at all, where
-   * the question doesn't arise.
+   * Whether this layer is one of the tool's pens: named after one, in its colour (isPalettePen). False means
+   * the row doesn't tell you which pen to put in the holder - usually the drawing's own colour or
+   * name, made with another tool. Null when the tool has no palette at all, where the question
+   * doesn't arise.
    */
   inPalette: boolean | null;
   /**

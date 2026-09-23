@@ -7,25 +7,26 @@ import { resolve } from "node:path";
 // what the single-server decision was meant to avoid (see docs/studio.md).
 // The Flask server (server.py) serves the built pages from ../static at /static/.
 // During `npm run dev`, Vite proxies /api and /fonts to the running Flask server.
-// In dev, the preview opens the bare origin, and Vite sends that to /static/, which is Plot. So
-// every time a server started, Plot was what came up, and Studio had to be typed in by hand. The
-// bare origin now goes to Studio instead. Plot keeps its own dev address at /static/ and
-// /static/index.html, and nothing about the built pages Flask serves changes.
-const studioAtTheRoot = () => ({
-  name: "studio-at-the-root",
-  configureServer(server: { middlewares: { use: (fn: (req: { url?: string }, res: { writeHead: (code: number, headers: Record<string, string>) => void; end: () => void }, next: () => void) => void) => void } }) {
-    server.middlewares.use((req, res, next) => {
-      // Served at the root rather than redirected to it. A redirect answers 30x, and the harness
-      // that runs this server probes the root for a plain 200 before it calls the server ready -
-      // it never was, so every one of these was marked unhealthy and eventually stopped under us.
-      if (req.url === "/" || req.url === "") req.url = "/static/studio.html";
+// In dev, the pages answer at the same addresses Flask gives them: Plot at the bare origin and Studio
+// at /studio. Two sets of addresses - Studio at the root here, Plot at the root there - meant a link
+// between the apps could land in the wrong one. The pages themselves live under /static/ in both.
+const sameAddressesAsFlask = () => ({
+  name: "same-addresses-as-flask",
+  configureServer(server: { middlewares: { use: (fn: (req: { url?: string }, res: unknown, next: () => void) => void) => void } }) {
+    server.middlewares.use((req, _res, next) => {
+      // Served at these addresses rather than redirected to them. A redirect answers 30x, and the
+      // harness that runs this server probes the root for a plain 200 before it calls the server
+      // ready - it never was, so every one of these was marked unhealthy and stopped under us.
+      const [path, query] = (req.url ?? "").split("?");
+      const page = path === "/" || path === "" ? "/static/index.html" : path === "/studio" ? "/static/studio.html" : null;
+      if (page) req.url = query ? `${page}?${query}` : page;
       next();
     });
   },
 });
 
 export default defineConfig({
-  plugins: [react(), studioAtTheRoot()],
+  plugins: [react(), sameAddressesAsFlask()],
   base: "/static/",
   build: {
     outDir: "../static",
