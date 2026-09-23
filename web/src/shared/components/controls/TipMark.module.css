@@ -7,6 +7,9 @@
   flex: none;
   width: 2.75rem;
 }
+.tipMark[data-clickable] {
+  cursor: pointer;
+}
 .tipMarkArt {
   position: absolute;    /* out of the flow, so the drawing can't stretch the row to its own size */
   inset: 0;

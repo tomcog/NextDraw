@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import { useRef, type ReactNode } from "react";
 import { Button, InputSelect } from "@tomcoggia/ui";
 import type { Preset } from "../../lib/types";
 import { TipMark } from "./TipMark";
@@ -45,9 +45,24 @@ export function ToolPicker({ tools, value, onPick, label, placeholder, changed, 
   // A drawing can name a tool this Mac has no preset for. It is still the tool chosen, so it stays
   // in the menu rather than the menu quietly showing another.
   const missing = value && !tool ? value : "";
+  // The tip's drawing opens the menu too: it's the biggest thing in the card, and what it shows is
+  // what the menu chooses. Where a browser can't open a menu for a click it didn't get, the menu is
+  // focused instead, ready for the arrow keys.
+  const select = useRef<HTMLSelectElement>(null);
+  const openMenu = () => {
+    const el = select.current;
+    if (!el || el.disabled) return;
+    el.focus();
+    try {
+      el.showPicker();
+    } catch {
+      // focused is as far as this browser goes
+    }
+  };
 
   const menu = (
     <InputSelect
+      ref={select}
       size="md"
       label={label}
       hideLabel
@@ -77,7 +92,7 @@ export function ToolPicker({ tools, value, onPick, label, placeholder, changed, 
       {/* The tip's own drawing, in front of the marker and the tips it belongs to: it stands as tall
         as they do together, since it is what both of them name. */}
       <div className={styles.toolPick}>
-        <TipMark tool={tool} />
+        <TipMark tool={tool} onClick={disabled || !tools.length ? undefined : openMenu} />
         <div className={styles.toolPickMain}>
           {action ? <div className={styles.menuRow}>{menu}{action}</div> : menu}
           {tips.length <= 1 && (
