@@ -2007,7 +2007,7 @@ def clean_preset_settings(raw):
 # drawing that names a tool, a menu that lists one, and /api/presets/<name> all still find it.
 # Inherited per key, not per block: a tip that says nothing about tilt takes the marker's, and one
 # that sets it to null has none.
-VARIANT_KEYS = ("hatch", "tilt", "drag", "barrel_mm", "palette")
+VARIANT_KEYS = ("hatch", "tilt", "drag", "barrel_mm", "palette", "calibration")
 
 
 def resolved_name(preset, variant):
@@ -3508,6 +3508,8 @@ def put_preset(name):
         entry["drag"] = previous["drag"]  # a soft tip that may only be pulled, never pushed
     if previous.get("hatch"):
         entry["hatch"] = previous["hatch"]  # the angle and line spacing this tool fills with
+    if previous.get("calibration"):
+        entry["calibration"] = previous["calibration"]  # its pens as measured off a plotted sheet
     presets.append(entry)
     presets.sort(key=lambda p: p["name"].lower())
     save_presets(presets)
@@ -3576,6 +3578,43 @@ def put_palette(name):
         preset["palette"] = colors
     else:
         preset.pop("palette", None)
+    save_presets(presets)
+    return jsonify(presets=resolve_presets(presets))
+
+
+# What a calibration sheet read back from a photo holds: for each pen, the colour it came out at each
+# share of the paper covered ("100", "50", "25", "12.5"), measured against the paper beside it.
+CALIBRATION_COVERS = {"100", "50", "25", "12.5"}
+
+
+def clean_calibration(raw):
+    raw = raw if isinstance(raw, dict) else {}
+    pens = {}
+    for name, covers in (raw.get("pens") or {}).items() if isinstance(raw.get("pens"), dict) else []:
+        if not isinstance(name, str) or not isinstance(covers, dict):
+            continue
+        kept = {k: v.lower() for k, v in covers.items()
+                if k in CALIBRATION_COVERS and isinstance(v, str) and HEX_COLOR.match(v)}
+        if kept:
+            pens[name.strip()[:40]] = kept
+    paper = raw.get("paper") if isinstance(raw.get("paper"), str) and HEX_COLOR.match(raw["paper"]) else "#ffffff"
+    measured = str(raw.get("measured") or "")[:40]
+    return {"measured": measured, "paper": paper.lower(), "pens": pens}
+
+
+@app.put("/api/presets/<name>/calibration")
+def put_calibration(name):
+    """Save a tool's pens as measured off its calibration sheet. They go where its palette is - on the
+    marker, unless this tip has a palette of its own - since it is the ink that was measured."""
+    presets = load_presets()
+    marker, tip = find_preset(presets, name.strip()[:40])
+    preset = tip if (tip is not None and "palette" in tip) else marker
+    if preset is None:
+        return jsonify(error="That drawing tool isn't on this Mac."), 404
+    calibration = clean_calibration(request.json or {})
+    if not calibration["pens"]:
+        return jsonify(error="Nothing was measured."), 400
+    preset["calibration"] = calibration
     save_presets(presets)
     return jsonify(presets=resolve_presets(presets))
 

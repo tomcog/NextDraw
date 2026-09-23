@@ -62,6 +62,9 @@ export function PaperSection({ w, h, sizeId, units, color, collapsibleKey, disab
     <Section
       title="Paper"
       collapsibleKey={collapsibleKey}
+      actionWhenOpen
+      // Folded, the row says what paper the drawing is on, as the Drawing tool row names the tool.
+      closedAction={<span className={styles.toolInTitle}>{`${fmtLen(w, units, false)} × ${fmtLen(h, units)}`}</span>}
       action={
         <ButtonRound
           size="sm"

@@ -9,13 +9,16 @@
   flex: 1;
   display: grid;
   grid-template-columns: 16.25rem minmax(0, 1fr);
-  gap: 1.5rem 0.75rem;
+  /* No gap across: the preview's own left margin (room for its side dimension line) is the space
+     between the cards and the page. The stage pulls 4px further in (12px of gap + 4px = 16px less). */
+  gap: 1.5rem 0;
   padding: 0 1.5rem 1.5rem;
   align-items: start;
 }
 
 .stage {
   grid-column: 2;
+  margin-left: -4px;
   grid-row: 1;
   position: sticky;
   top: 1rem;
@@ -270,3 +273,46 @@ span.shapeName { cursor: pointer; }
   box-shadow: inset 0 0 0 1px rgb(0 0 0 / 0.2);
   vertical-align: middle;
 }
+
+/* A calibration sheet read back: each pen as its palette says, then as it came out on paper at each
+   strength, so a bad reading - a patch that missed, a pen that wasn't plotted - shows at a glance. */
+.calibration {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  font-size: 0.8125rem;
+}
+
+.calibrationRow {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) repeat(5, 1.125rem);
+  align-items: center;
+  gap: 0.25rem;
+}
+
+.calibrationRow > :first-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.calibrationHead {
+  color: var(--ui-text-muted);
+  font-size: 0.6875rem;
+  text-align: center;
+}
+
+.calibrationHead:first-child { text-align: left; }
+
+.swatch {
+  width: 1.125rem;
+  height: 1.125rem;
+  border-radius: 3px;
+  box-shadow: inset 0 0 0 1px var(--ui-border-default);
+}
+
+/* The palette's own colour, set apart from the measured ones after it. */
+.swatch[data-palette="true"] { margin-right: 0.25rem; }

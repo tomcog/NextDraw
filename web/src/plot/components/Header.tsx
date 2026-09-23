@@ -1,6 +1,5 @@
-import { Tag } from "@tomcoggia/ui";
+import { Logo, Tag } from "@tomcoggia/ui";
 import { Waypoints } from "lucide-react";
-import { ThemeToggle } from "../../shared/components/ThemeToggle";
 import { AppSwitch } from "../../shared/components/AppSwitch";
 import styles from "../../shared/components/Header.module.css";
 
@@ -12,11 +11,13 @@ interface Props {
 export function Header({ plotterFound, lostContact }: Props) {
   const text = lostContact
     ? "Lost contact with NextDraw Plot. Is server.py still running?"
-    : plotterFound ? "Plotter connected" : "No plotter found on USB";
+    : plotterFound ? "Plotter connected" : "No plotter found";
   return (
     <header className={styles.header}>
       {/* The mark replaces the space, so the name needs saying in full for anything reading it. */}
       <h1 className={styles.title} aria-label="NextDraw Plot">
+        {/* Tom's mark, ahead of the name. Decorative: the heading names the app. */}
+        <Logo size="1.5em" className={styles.logo} />
         NextDraw
         {/* Waypoints stands in for the space: the path the pen is sent along. Decorative - the
             heading still reads "NextDraw Plot" to anything listening. */}
@@ -29,7 +30,6 @@ export function Header({ plotterFound, lostContact }: Props) {
           <span className={styles.dot} aria-hidden="true" />
           {text}
         </Tag>
-        <ThemeToggle />
       </span>
     </header>
   );

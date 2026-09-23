@@ -3,7 +3,7 @@ import { DrawingToolSection } from "../shared/components/controls/DrawingToolSec
 import { PaperSection } from "../shared/components/controls/PaperSection";
 import { SettingsSection } from "../shared/components/controls/SettingsSection";
 import { Button, ButtonRound, Card, Checkbox, ConfirmButton, InputSelect, InputText, InputTextarea, LayerController, Segment, SegmentedControl } from "@tomcoggia/ui";
-import { ArrowDownToLine, AudioWaveform, Circle, ClipboardCopy, ClipboardPaste, Copy, Ellipsis, EllipsisVertical, FilePlus, FlameKindling, FolderOpen, Image as ImageIcon, ImagePlus, Grid2x2, Layers2, LayersArrowDown, LayersArrowUp, LineStyle, LoaderPinwheel, Menu, Minus, MousePointer2, Orbit, PaintBucket, PenLine, Pentagon, Plus, Rainbow, RotateCw, Save, Send, Shell, Signal, Spline, Square, SquareDimensions, SquareStack, Star, SwatchBook, Target, Trash2, Type, Waves } from "lucide-react";
+import { ArrowDownToLine, AudioWaveform, Circle, ClipboardCopy, ClipboardPaste, Copy, Ellipsis, EllipsisVertical, FilePlus, FlameKindling, FolderOpen, Image as ImageIcon, ImagePlus, Grid2x2, Layers2, LayersArrowDown, LayersArrowUp, LineStyle, LoaderPinwheel, Menu, Minus, MousePointer2, Orbit, PaintBucket, PenLine, Pentagon, Plus, Rainbow, RotateCw, Save, Send, Shell, Signal, Spline, Square, SquareDimensions, SquareStack, Star, Target, Trash2, Type, Waves } from "lucide-react";
 import { FileBrowser, LAST_FOLDER_KEY, type CombineResult, type OpenResult } from "../shared/components/FileBrowser";
 import { Section } from "../shared/components/controls/Section";
 import { NumberField } from "../shared/components/controls/NumberField";
@@ -16,12 +16,13 @@ import { listOf, trimNum } from "../shared/lib/format";
 import { lightness } from "../shared/lib/color";
 import { isPalettePen, nameInPen } from "../shared/lib/ink";
 import { APP_URL } from "../shared/lib/apps";
-import { PreviewToolbar, type View } from "../shared/components/PreviewToolbar";
+import { PreviewToolbar, SetupToolbar, type View } from "../shared/components/PreviewToolbar";
 import type { Zoom } from "../shared/components/BedCanvas";
 import { useRowDrag } from "./lib/useRowDrag";
 import { Canvas, type Tool } from "./components/Canvas";
 import { SizePopover } from "./components/SizePopover";
 import { StudioHeader } from "./components/StudioHeader";
+import { ThemeToggle } from "../shared/components/ThemeToggle";
 import { canConnect, canFill, fillNumbers, fillRuns, newFillId, FILL_LABEL, type Fill, type FillKind } from "./lib/hatch";
 import { closingTurns, curveStrokes, CURVE_FIELDS, type Curve, type Point } from "./lib/parametric";
 import { fontNames, loadFont, type StrokeFont } from "./lib/font";
@@ -36,7 +37,8 @@ import { Hints } from "../shared/components/controls/Hints";
 import { RowMenu } from "./components/controls/RowMenu";
 import { boxAround, boxOf, centerOf, clampToPage, drawnNodes, drawnRuns, moveBy, newLayerId, newShapeId, outlinePoints, pathRuns, pointsBox, resizeTo, shapeName, turnPoint, POINT_HANDLE_LIMIT, type Layer, type Page, type Shape } from "./lib/shapes";
 import { buildSvg, svgForMarks, cleanFileName } from "./lib/svg";
-import { calibrationSheet } from "./lib/calibration";
+import { CALIBRATION_COVERS, calibrationSheet } from "./lib/calibration";
+import { readCalibration, readingProblems, sheetLayout } from "./lib/calibrationRead";
 import styles from "./App.module.css";
 
 // Page sizes, in inches, from the list Plot already offers. Stored width-first the way they're drawn
@@ -260,8 +262,8 @@ export default function App() {
  // first of them, not in the shared folder a new drawing goes to. Null means the server's default.
  const [saveTo, setSaveTo] = useState<string | null>(null);
  const [message, setMessage] = useState<{ text: string; ok: boolean }>({
-  text: "Nothing saved yet",
-  ok: false,
+  text: "",
+  ok: true,
  });
  // Anything drawn since the last save has to be written again before Plot can print it. State
  // rather than a ref, because the Save button is disabled while it's false and so has to re-render
@@ -875,6 +877,51 @@ export default function App() {
   remember(LAST_FILE_KEY, null);
   setDirty(true);
   setMessage({ text: `${sheetName}: ${sheet.layers.length} pens`, ok: true });
+ };
+
+ // The drawing open is a calibration sheet when it has the sheet's corner marks and named patches.
+ // A photo of it, plotted, is read back into the tool's preset: each pen as it really came out.
+ const [setupOpen, setSetupOpen] = useState(false);
+
+ // Whether the plotter is on USB, for the header - asked now and then, since Studio doesn't drive it.
+ const [plotterFound, setPlotterFound] = useState<boolean | null>(null);
+ useEffect(() => {
+  const ask = () => api<{ plotter_found: boolean }>("/api/status")
+   .then((st) => setPlotterFound(Boolean(st.plotter_found)))
+   .catch(() => setPlotterFound(false));
+  ask();
+  const timer = window.setInterval(ask, 5000);
+  return () => window.clearInterval(timer);
+ }, []);
+ const sheet = useMemo(() => sheetLayout(shapes), [shapes]);
+ // Read into the drawing tool only when the sheet is of its pens: a sheet made for one marker read
+ // into another would write the first one's colours over the second's.
+ const sheetPens = useMemo(() => [...new Set(sheet?.patches.map((p) => p.pen) ?? [])], [sheet]);
+ const strangers = sheetPens.filter((pen) => !(tool2?.palette ?? []).some((p) => p.name === pen));
+ const sheetIsTool = Boolean(sheet && tool2 && sheetPens.length && !strangers.length);
+ const calibrationInput = useRef<HTMLInputElement>(null);
+ const readSheetPhoto = async (file: File | undefined) => {
+  if (!file || !sheet || !tool2 || !sheetIsTool) return;
+  setBusy(true);
+  setMessage({ text: `Reading ${file.name}…`, ok: true });
+  try {
+   const calibration = await readCalibration(file, sheet, paperColor);
+   const res = await api<{ presets: Preset[] }>(`/api/presets/${encodeURIComponent(tool2.name)}/calibration`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(calibration),
+   });
+   setPresets(res.presets);
+   const problems = readingProblems(calibration);
+   const count = Object.keys(calibration.pens).length;
+   setMessage(problems.length
+    ? { text: `Read ${count} pens, but ${problems.join(" ")}`, ok: false }
+    : { text: `Read ${count} pens into ${tool2.name}`, ok: true });
+  } catch (err) {
+   setMessage({ text: (err as Error).message, ok: false });
+  } finally {
+   setBusy(false);
+  }
  };
  const palette: PenColor[] = tool2?.palette?.length ? tool2.palette : [PLAIN_PEN];
  // Darkest last in the list, so the default pen is the one you'd reach for first.
@@ -1974,6 +2021,137 @@ export default function App() {
   setPage(landscape ? { w: Math.max(size.w, size.h), h: Math.min(size.w, size.h) } : { w: Math.min(size.w, size.h), h: Math.max(size.w, size.h) });
  };
 
+ // Asked in the rail rather than in a dialog: the question is about this drawing, and the answer is
+ // one of three buttons. Saving first is offered because wanting a new drawing is rarely the same as
+ // wanting to lose this one. Shown in whichever rail is up, since Setup starts new drawings too.
+ const confirmNewBlock = confirmNew && (
+         <div className={styles.confirm} role="alertdialog" aria-label="Start a new drawing">
+          <p>
+           {saved ? `“${name}” has` : "This drawing has"} changes that aren’t saved.
+          </p>
+          <div className={styles.actions}>
+           <Button
+            size="sm"
+            disabled={busy}
+            onClick={async () => {
+             if (await save()) beginNew();
+            }}
+           >
+            Save, then start new
+           </Button>
+           <Button size="sm" tone="danger" variant="secondary" onClick={beginNew}>
+            Discard and start new
+           </Button>
+           <Button size="sm" variant="tertiary" onClick={() => setConfirmNew(null)}>
+            Keep editing
+           </Button>
+          </div>
+         </div>
+ );
+
+ // The same Paper card in both rails: a calibration sheet is laid out on the paper chosen here.
+ const paperSection = (
+  <PaperSection
+   w={page.w * 25.4}
+   h={page.h * 25.4}
+   sizeId={sizeId}
+   units="in"
+   color={paperColor}
+   collapsibleKey="paper"
+   onSize={setSize}
+   onDimensions={(w, h) => {
+    record();
+    setPage({ w: w / 25.4, h: h / 25.4 });
+   }}
+   onColor={setPaperColor}
+  />
+ );
+
+ // Setup: getting the drawing tools ready, away from the drawing. For now that is calibration -
+ // a sheet of every pen plotted and photographed, read back as each pen really comes out.
+ const calibrated = tool2?.calibration;
+ const setupRail = (
+  <Card variant="flat" className={styles.controls}>
+   <div className={`${styles.cardBody} ${controls.cardSections}`}>
+    <Section title="Setup">
+     <p className={controls.hint}>Getting the drawing tools ready. The drawing stays as it is; the gear goes back to it.</p>
+    </Section>
+    {paperSection}
+    <DrawingToolSection tools={presets} value={toolName} onPick={pickTool} collapsibleKey="setup-pen" disabled={busy} />
+    <Section
+     title="Calibration"
+     collapsibleKey="calibration"
+     action={<span className={controls.toolInTitle}>{calibrated ? `Measured ${calibrated.measured}` : "Not measured"}</span>}
+    >
+     <p className={controls.hint}>
+      1. Make the sheet: every {tool2?.name ?? "drawing tool"} pen at four strengths, on this paper. Save it and plot it on the paper you’ll use.
+     </p>
+     <Button
+      size="sm"
+      variant="secondary"
+      disabled={busy || !tool2?.palette?.length}
+      title={tool2?.palette?.length ? undefined : "This drawing tool has no colours yet"}
+      onClick={() => startNew("calibration")}
+     >
+      New calibration sheet
+     </Button>
+     <p className={controls.hint}>
+      2. Photograph the plotted sheet flat and evenly lit, with the whole sheet in view, and read it in with the sheet open here.
+     </p>
+     <Button
+      size="sm"
+      variant="secondary"
+      disabled={busy || !sheetIsTool}
+      title={!sheet ? "Open the calibration sheet first" : !sheetIsTool ? `This sheet isn’t of ${toolName || "the drawing tool"}’s pens: choose the tool it was made for` : undefined}
+      onClick={() => calibrationInput.current?.click()}
+     >
+      Read a photo of the sheet
+     </Button>
+     <input
+      ref={calibrationInput}
+      type="file"
+      accept="image/*"
+      hidden
+      onChange={(e) => {
+       readSheetPhoto(e.target.files?.[0]);
+       e.target.value = ""; // so the same photo can be read again
+      }}
+     />
+     {sheet && !sheetIsTool && tool2 && (
+      <p className={controls.hint}>The open sheet is of other pens than {tool2.name}’s ({strangers.length > 3 ? `${strangers.slice(0, 3).join(", ")} and ${strangers.length - 3} more` : listOf(strangers)}).</p>
+     )}
+     {confirmNewBlock}
+     {calibrated && tool2 && (
+      <ul className={styles.calibration} aria-label={`${tool2.name} as measured`}>
+       <li className={styles.calibrationRow}>
+        <span className={styles.calibrationHead}>Pen</span>
+        <span className={styles.calibrationHead} title="The palette's colour">Pal.</span>
+        {CALIBRATION_COVERS.map((c) => <span key={c} className={styles.calibrationHead}>{Math.round(c * 1000) / 10}</span>)}
+       </li>
+       {(tool2.palette ?? []).map((pen) => {
+        const covers = calibrated.pens[pen.name];
+        return (
+         <li key={pen.name} className={styles.calibrationRow}>
+          <span title={pen.name}>{pen.name}</span>
+          <span className={styles.swatch} data-palette="true" style={{ background: pen.color }} title={`${pen.name}: palette ${pen.color}`} />
+          {CALIBRATION_COVERS.map((c) => {
+           const key = `${Math.round(c * 1000) / 10}`;
+           const hex = covers?.[key];
+           return <span key={key} className={styles.swatch} style={{ background: hex ?? "transparent" }} title={hex ? `${pen.name} at ${key}%: ${hex}` : "Not measured"} />;
+          })}
+         </li>
+        );
+       })}
+      </ul>
+     )}
+    </Section>
+    <Section title="Appearance" action={<ThemeToggle />}>
+     <p className={controls.hint}>Light or dark. Plot follows the same choice.</p>
+    </Section>
+   </div>
+  </Card>
+ );
+
  return (
   <div className={styles.app}>
    <Hints />
@@ -1990,7 +2168,7 @@ export default function App() {
      onCombined: openCombined,
     }}
    />
-   <StudioHeader message={message.text} ok={message.ok} />
+   <StudioHeader plotterFound={plotterFound} />
    {colorMenu && layers.some((l) => l.id === colorMenu.id) && (
     <PaletteMenu
      anchor={colorMenu.anchor}
@@ -2141,8 +2319,10 @@ export default function App() {
       // One bar over the page for everything true of what is being looked at: what has just
       // been done, how the drawing is drawn, and how close the view sits. It used to be two
       // groups at opposite ends of the width line.
+      toolbar={<SetupToolbar open={setupOpen} onToggle={() => setSetupOpen((open) => !open)} />}
       toolbarLeft={(
        <PreviewToolbar
+        note={message.text ? { text: message.text, error: !message.ok } : undefined}
         view={view}
         onView={setView}
         zoom={zoom}
@@ -2176,6 +2356,7 @@ export default function App() {
     </section>
 
     <div className={styles.side}>
+     {setupOpen ? setupRail : (<>
      <Card variant="flat" className={styles.controls}>
       <div className={`${styles.cardBody} ${controls.cardSections}`}>
        <Section
@@ -2213,14 +2394,6 @@ export default function App() {
           />
           <ButtonRound
            size="sm"
-           icon={<SwatchBook />}
-           aria-label="New calibration sheet"
-           title={`Start a calibration sheet: every ${toolName || "drawing tool"} pen, hatched at four strengths, to plot and photograph`}
-           disabled={busy || !tool2?.palette?.length}
-           onClick={() => startNew("calibration")}
-          />
-          <ButtonRound
-           size="sm"
            icon={<Send />}
            aria-label="Send to Plot"
            title="Save this drawing and open it in Plot, ready to draw"
@@ -2244,55 +2417,22 @@ export default function App() {
          {saved ? saved.folder : "Not saved yet"}
         </p>
 
-        {/* Asked here rather than in a dialog: the question is about this card's drawing, and
-          the answer is one of two buttons. Saving first is offered because wanting a new
-          drawing is rarely the same as wanting to lose this one. */}
-        {confirmNew && (
-         <div className={styles.confirm} role="alertdialog" aria-label="Start a new drawing">
-          <p>
-           {saved ? `“${name}” has` : "This drawing has"} changes that aren’t saved.
-          </p>
-          <div className={styles.actions}>
-           <Button
-            size="sm"
-            disabled={busy}
-            onClick={async () => {
-             if (await save()) beginNew();
-            }}
-           >
-            Save, then start new
-           </Button>
-           <Button size="sm" tone="danger" variant="secondary" onClick={beginNew}>
-            Discard and start new
-           </Button>
-           <Button size="sm" variant="tertiary" onClick={() => setConfirmNew(null)}>
-            Keep editing
-           </Button>
-          </div>
-         </div>
-        )}
+        {confirmNewBlock}
 
        </Section>
 
        {/* What the drawing is made on and with, in the same card as the drawing itself: the same
          Settings, Paper and Drawing tool cards as Plot's, with the grid, which is Studio's alone. */}
-       <SettingsSection tool={toolName} collapsibleKey="settings">
-        <PaperSection
-         w={page.w * 25.4}
-         h={page.h * 25.4}
-         sizeId={sizeId}
-         units="in"
-         color={paperColor}
-         collapsibleKey="paper"
-         onSize={setSize}
-         onDimensions={(w, h) => {
-          record();
-          setPage({ w: w / 25.4, h: h / 25.4 });
-         }}
-         onColor={setPaperColor}
-        />
+       <SettingsSection collapsibleKey="settings">
+        {paperSection}
 
-        <Section title="Grid" collapsibleKey="grid">
+        <Section
+         title="Grid"
+         collapsibleKey="grid"
+         actionWhenOpen
+         // Folded, the row says whether shapes are snapping, as Paper and Drawing tool say theirs.
+         closedAction={snapping ? <span className={controls.toolInTitle}>On</span> : undefined}
+        >
          <Checkbox
           checked={snapping}
           label="Snap to the grid"
@@ -3279,6 +3419,7 @@ export default function App() {
        </div>
       </Card>
      )}
+     </>)}
 
     </div>
    </main>

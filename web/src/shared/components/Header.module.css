@@ -35,6 +35,9 @@
   align-items: center;
 }
 
+/* The TC mark in front of the name, with room before the word. */
+.logo { margin-right: 0.5rem; flex: none; }
+
 /* Which app this is, in the brand colour: "NextDraw" is the family, the second word is the tool. */
 .titleApp { color: var(--ui-brand); }
 

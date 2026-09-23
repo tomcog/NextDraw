@@ -3,7 +3,7 @@ import { ButtonRound } from "@tomcoggia/ui";
 import { Moon, Sun } from "lucide-react";
 import { applyTheme, readTheme, type Theme } from "../lib/theme";
 
-// Both apps put this at the top right. It shows the theme you'd switch to, not the one you're in,
+// In Studio's Setup area; both apps follow what it sets. It shows the theme you'd switch to, not the one you're in,
 // which is what makes a single button legible without a label.
 export function ThemeToggle({ className }: { className?: string }) {
   const [theme, setTheme] = useState<Theme>(readTheme);

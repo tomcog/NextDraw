@@ -14,6 +14,8 @@ interface Props {
   /** Plot: the chosen tool's settings have been changed from its preset. */
   changed?: boolean;
   placeholder?: string;
+  /** What the heading names while folded, when it isn't just the tool: Plot's two tools, "EnerGel + Flair". */
+  label?: string;
   /** Buttons at the end of the heading: Plot's tool setup and palette. */
   action?: ReactNode;
   /** Plot: this tool is the one the layer about to be plotted is drawn with, so it is ringed. */
@@ -30,9 +32,17 @@ interface Props {
  * and one-way switches, a second tool, Chill mode - is passed in by that app, and simply isn't there
  * in the other.
  */
-export function DrawingToolSection({ tools, value, onPick, collapsibleKey, disabled, changed, placeholder, action, inUse, under, children }: Props) {
+export function DrawingToolSection({ tools, value, onPick, collapsibleKey, disabled, changed, placeholder, label, action, inUse, under, children }: Props) {
+  const named = label ?? value;
   return (
-    <Section title="Drawing tool" collapsibleKey={collapsibleKey} action={action}>
+    <Section
+      title="Drawing tool"
+      collapsibleKey={collapsibleKey}
+      action={action}
+      actionWhenOpen
+      // Folded, the row says which tool is loaded; open, the picker under it does.
+      closedAction={named ? <span className={styles.toolInTitle}>{named}</span> : undefined}
+    >
       <div className={styles.toolBlock} data-in-use={inUse}>
         <ToolPicker
           tools={tools}

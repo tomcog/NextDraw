@@ -8,6 +8,8 @@ import { Slider } from "./Slider";
 import type { Preset } from "../../../shared/lib/types";
 
 interface Props {
+  /** What the Drawing tool row names while folded: the tool, or both of them. */
+  label?: string;
   presets: Preset[];
   active: Preset | undefined;
   changed: boolean;
@@ -44,6 +46,7 @@ const SHOW_PRESET_ACTIONS = false;
 const SHOW_INK_TUNING = false;
 
 export function PresetSection({
+  label,
   presets, active, changed, disabled, onApply, onSave, onDelete,
   secondTool, secondLayers, layers, inUse, onAddSecond, onSecondTool, onRemoveSecond, onAssign,
   smallPaths, onSmallPaths, tiltOn, onTilt, dragOn, onDrag, paletteOpen, onPalette, hudOpen, onHud, onInk,
@@ -110,6 +113,7 @@ export function PresetSection({
     <DrawingToolSection
       tools={presets}
       value={active?.name ?? ""}
+      label={label}
       onPick={onApply}
       collapsibleKey="plot-pen"
       // A tool is always chosen once presets load, so this only shows if none is.

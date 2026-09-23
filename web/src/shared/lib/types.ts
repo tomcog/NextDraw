@@ -185,6 +185,11 @@ export interface Preset {
   hatch?: { angle?: number; spacing_mm?: number }; // measured by hand; what a fill starts from
   barrel_mm?: number; // the barrel's width where the clip holds it; a fat one moves the tip down the page
   /**
+   * Its pens as they really come out on paper, read off a plotted calibration sheet: for each pen,
+   * the colour at each share of the paper its lines cover ("100", "50", "25", "12.5").
+   */
+  calibration?: Calibration;
+  /**
    * Which marker this is a tip of, and which tip. A marker that comes with more than one - two ends
    * of the same pen, or the same ink in a second barrel - is one preset in the file and one of
    * these per tip, resolved by the server. `name` is still the whole of it, "Betem Acrylic Fine",
@@ -208,6 +213,12 @@ export interface Tilt {
   offset_mm: number;
   on: boolean; // compensation is on unless turned off for this tool
   fixed?: boolean; // a tool that is only ever used tilted: no switch, compensation always on
+}
+
+export interface Calibration {
+  measured: string; // when, as an ISO date
+  paper: string; // the paper colour the pens were measured against
+  pens: Record<string, Record<string, string>>;
 }
 
 export interface PenColor {

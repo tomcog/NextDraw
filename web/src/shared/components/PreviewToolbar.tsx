@@ -1,5 +1,5 @@
 import { Segment, SegmentedControl, Spinner, Toolbar } from "@tomcoggia/ui";
-import { Camera, Eye, EyeDashed, Grid3x3, ImageIcon, Redo2, Route, Search, StickyNote, Undo2 } from "lucide-react";
+import { Camera, Eye, EyeDashed, Grid3x3, ImageIcon, Redo2, Route, Search, Settings, StickyNote, Undo2 } from "lucide-react";
 import type { Zoom } from "./Bed";
 import styles from "./PreviewToolbar.module.css";
 
@@ -26,6 +26,8 @@ interface Props {
   /** The loupe: a lens that follows the pointer over the drawing, magnified. */
   loupe?: boolean;
   onLoupe?: (on: boolean) => void;
+  /** Studio: what the app last has to say - saved, added, or what went wrong - beside the bar. */
+  note?: { text: string; error?: boolean };
   /** Something still being worked out about the view, said beside the bar with a spinner: Plot's plot time. */
   working?: string;
 }
@@ -47,7 +49,7 @@ interface Props {
  * choice one of which holds, so the track is a group of plain buttons rather than a radiogroup.
  * Nothing about it looks different.
  */
-export function PreviewToolbar({ view, onView, canProgress, canPhoto, zoom, onZoom, canPaper = true, canDrawing, history, disabled, working, loupe, onLoupe }: Props) {
+export function PreviewToolbar({ view, onView, canProgress, canPhoto, zoom, onZoom, canPaper = true, canDrawing, history, disabled, working, loupe, onLoupe, note }: Props) {
   return (
     <span className={styles.row}>
       <Toolbar tone="white" aria-label="Drawing view">
@@ -148,12 +150,40 @@ export function PreviewToolbar({ view, onView, canProgress, canPhoto, zoom, onZo
           </SegmentedControl>
         )}
       </Toolbar>
-      {working && (
+      {working ? (
         <span className={styles.status} role="status">
           <Spinner size={14} label={working} />
           {working}
         </span>
-      )}
+      ) : note?.text ? (
+        <span className={styles.status} role="status" data-tone={note.error ? "error" : undefined}>
+          {note.text}
+        </span>
+      ) : null}
+    </span>
+  );
+}
+
+/**
+ * The way to Setup: a bar of its own at the far end of the width line, holding one switch. Set apart
+ * from the view controls because it isn't a way of looking at the drawing but a different part of the
+ * app - where the drawing tools are got ready - and pressed, like the loupe, while you're in it.
+ */
+export function SetupToolbar({ open, onToggle }: { open: boolean; onToggle: () => void }) {
+  return (
+    <span className={styles.row}>
+      <Toolbar tone="white" aria-label="Setup">
+        <SegmentedControl size="sm" variant="dark" actions aria-label="Setup">
+          <Segment
+            aria-pressed={open}
+            className={open ? styles.on : undefined}
+            onClick={onToggle}
+            icon={<Settings />}
+            title={open ? "Back to the drawing" : "Setup: getting the drawing tools ready - calibrating their pens"}
+            aria-label="Setup"
+          />
+        </SegmentedControl>
+      </Toolbar>
     </span>
   );
 }

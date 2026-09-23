@@ -18,6 +18,8 @@
   background: var(--ui-surface-pale);
 }
 
+.status[data-tone="error"] { color: var(--ui-danger); }
+
 /* The loupe's switch while it's out: the red of an action rather than the dark of a choice, since
    it isn't a way of looking at the drawing like the rest of the bar but something over it that follows
    the pointer about. A plain button (see PreviewToolbar), so it draws its own ground - inside the

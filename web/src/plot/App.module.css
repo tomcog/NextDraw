@@ -9,13 +9,16 @@
   flex: 1;
   display: grid;
   grid-template-columns: 16.25rem minmax(0, 1fr);
-  gap: 1.5rem 0.75rem; /* the preview's own left margin (room for its side dimension line) adds to this */
+  /* No gap across: the preview's own left margin (room for its side dimension line) is the space
+     between the cards and the page. The stage pulls 4px further in (12px of gap + 4px = 16px less). */
+  gap: 1.5rem 0;
   padding: 0 1.5rem 1.5rem;
   align-items: start;
 }
 
 .stage {
   grid-column: 2;
+  margin-left: -4px;
   grid-row: 1;
   position: sticky;
   top: 1rem;
@@ -51,6 +54,9 @@
   background: var(--ui-surface-raised);
   min-width: 0;
 }
+
+/* Under the preview: the same sections, on the page itself rather than on a card. */
+.lessOften { min-width: 0; }
 
 .cardBody,
 .controlsForm {

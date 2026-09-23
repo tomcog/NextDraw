@@ -1371,10 +1371,10 @@ export default function App() {
             )}
           </div>
 
-          {/* What is set less often, in one card of sections that start folded - the same sections
-            as the cards beside the preview, rather than rows of their own. */}
+          {/* What is set less often, in sections that start folded - the same sections as the cards
+            beside the preview, rather than rows of their own - set on the page rather than in a card. */}
           {(!paletteOpen || (preview && estimate)) && (
-          <Card variant="flat" className={styles.controls}>
+          <div className={styles.lessOften}>
             <div className={`${styles.cardBody} ${controls.cardSections}`}>
               {!paletteOpen && <>
               <Section title="Drawing position" collapsibleKey="plot-position" defaultOpen={false}>
@@ -1421,7 +1421,7 @@ export default function App() {
                 rotated={Boolean(fp?.rotated)}
               />
             </div>
-          </Card>
+          </div>
           )}
         </section>
 
@@ -1481,7 +1481,7 @@ export default function App() {
               )}
               {/* The same Settings, Paper and Drawing tool cards as Studio's. Grid is Studio's alone;
                   the units, and the plotting-only rows of the tool card, are Plot's alone. */}
-              <SettingsSection tool={toolLabel} collapsibleKey="plot-settings">
+              <SettingsSection collapsibleKey="plot-settings">
                 <PaperSection
                   w={settings.paper_w}
                   h={settings.paper_h}
@@ -1496,6 +1496,7 @@ export default function App() {
                   onUnits={(units) => updateSettings({ units })}
                 />
                 <PresetSection
+                  label={toolLabel}
                   presets={presets}
                   active={active}
                   secondTool={secondTool}

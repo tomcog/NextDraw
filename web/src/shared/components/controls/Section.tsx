@@ -15,9 +15,13 @@ interface Props {
    */
   collapsibleKey?: string;
   defaultOpen?: boolean;
+  /** Hide the action while the section is folded: buttons that only act on what's inside it. */
+  actionWhenOpen?: boolean;
+  /** What the heading row shows at its end while the section is folded, in place of the action. */
+  closedAction?: ReactNode;
 }
 
-export function Section({ title, action, children, collapsibleKey, defaultOpen = true }: Props) {
+export function Section({ title, action, children, collapsibleKey, defaultOpen = true, actionWhenOpen = false, closedAction }: Props) {
   const [open, setOpen] = useState(() =>
     collapsibleKey ? load<boolean>(`studio-open-${collapsibleKey}`) ?? defaultOpen : true,
   );
@@ -39,10 +43,10 @@ export function Section({ title, action, children, collapsibleKey, defaultOpen =
   return (
     <fieldset className={styles.section} data-collapsed={collapsibleKey ? !open : undefined}>
       <legend className={styles.legend}>
-        {action ? (
+        {(open || !actionWhenOpen ? action : closedAction) ? (
           <span className={styles.legendRow}>
             {heading}
-            {action}
+            {open || !actionWhenOpen ? action : closedAction}
           </span>
         ) : heading}
       </legend>
