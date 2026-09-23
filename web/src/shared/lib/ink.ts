@@ -97,16 +97,22 @@ export function penNameOf(ink: Ink | undefined, palette: PenColor[]): string | n
  * Whether a layer is one of this tool's pens: a pen in its palette by the layer's name, in the
  * layer's colour. Both, because each alone can mislead - "Brown" in another maker's brown names a pen
  * this tool has but isn't drawn in it, and "Mono" in this tool's black is drawable but doesn't say
- * which pen to load. Names are matched as a person reads them, not minding capitals or stray spaces.
+ * which pen to load. A name that starts with the pen's counts: "Lime register" is still Lime. Names
+ * are matched as a person reads them, not minding capitals or stray spaces.
  * A tool with no palette answers null: it draws in whatever is clipped into it, so nothing is off it.
  * Both apps strike the layer's dot through when this is false.
  */
 export function isPalettePen(name: string, color: string | null, palette: PenColor[]): boolean | null {
   if (!palette.length) return null;
   if (!color) return false;
-  // A second layer in the same pen is numbered to tell them apart ("Yellow 2"): still that pen.
-  const wanted = [name.trim().toLowerCase(), name.trim().toLowerCase().replace(/ \d+$/, "")];
-  return palette.some((p) => wanted.includes(p.name.trim().toLowerCase()) && p.color.toLowerCase() === color.toLowerCase());
+  // The pen's name, or the pen's name with more after it: "Lime register" is the Lime layer that
+  // registers the others, and "Yellow 2" the second layer in Yellow. A whole word, so "Limestone"
+  // isn't Lime. Stray spaces inside a name count as one, as they read.
+  const said = name.trim().toLowerCase().replace(/\s+/g, " ");
+  return palette.some((p) => {
+    const pen = p.name.trim().toLowerCase().replace(/\s+/g, " ");
+    return (said === pen || said.startsWith(`${pen} `)) && p.color.toLowerCase() === color.toLowerCase();
+  });
 }
 
 /** The pen of this palette that draws this colour, by name. Null when no pen of it does. */
