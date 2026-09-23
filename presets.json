@@ -1,78 +1,185 @@
 [
   {
+    "name": "Betem Acrylic",
+    "settings": {
+      "handling": 1,
+      "speed_pendown": 45,
+      "speed_penup": 75,
+      "accel": 50,
+      "pen_pos_up": 65,
+      "pen_setup": 60,
+      "pen_rate_lower": 12,
+      "pen_rate_raise": 100,
+      "ink_opacity": 1.0,
+      "ink_build": 0.15,
+      "ink_builds": false
+    },
+    "barrel_mm": 11.0,
+    "palette": [
+      {
+        "name": "324 Black",
+        "color": "#262626"
+      },
+      {
+        "name": "311 Royal Blue",
+        "color": "#223a81"
+      },
+      {
+        "name": "330 Prussian Blue",
+        "color": "#386b75"
+      },
+      {
+        "name": "332 Lavender",
+        "color": "#7b62c0"
+      },
+      {
+        "name": "316 Red",
+        "color": "#db3229"
+      },
+      {
+        "name": "329 Cerulean",
+        "color": "#0c8cac"
+      },
+      {
+        "name": "318 Brown",
+        "color": "#a77e6c"
+      },
+      {
+        "name": "315 Jade",
+        "color": "#109d6e"
+      },
+      {
+        "name": "306 Mauve",
+        "color": "#c5729e"
+      },
+      {
+        "name": "308 Violet",
+        "color": "#a278de"
+      },
+      {
+        "name": "326 Orange",
+        "color": "#f5825c"
+      },
+      {
+        "name": "327 Orchid",
+        "color": "#e882c8"
+      },
+      {
+        "name": "314 Teal",
+        "color": "#07bba6"
+      },
+      {
+        "name": "309 Sky Blue",
+        "color": "#5dafee"
+      },
+      {
+        "name": "319 Gray",
+        "color": "#aaa9b7"
+      },
+      {
+        "name": "305 Pink",
+        "color": "#fb98b1"
+      },
+      {
+        "name": "303 Apricot",
+        "color": "#ffa366"
+      },
+      {
+        "name": "328 Emerald",
+        "color": "#41d2a2"
+      },
+      {
+        "name": "323 Gold Glitter",
+        "color": "#d5cf5d"
+      },
+      {
+        "name": "333 Pale Salmon",
+        "color": "#f9bfae"
+      },
+      {
+        "name": "322 Silver Glitter",
+        "color": "#cfcfcf"
+      },
+      {
+        "name": "325 Yellow",
+        "color": "#ffdf52"
+      },
+      {
+        "name": "313 Chartreuse",
+        "color": "#e0ec6f"
+      },
+      {
+        "name": "320 White",
+        "color": "#ffffff"
+      }
+    ],
+    "variants": [
+      {
+        "name": "Dot",
+        "settings": {
+          "pen_pos_down": 30,
+          "pen_width": 1.7
+        },
+        "hatch": {
+          "spacing_mm": 1.8
+        }
+      },
+      {
+        "name": "Fine",
+        "settings": {
+          "pen_pos_down": 24,
+          "pen_width": 0.7
+        },
+        "hatch": {
+          "angle": 45,
+          "spacing_mm": 0.706
+        },
+        "tilt": {
+          "angle": 45,
+          "offset_mm": 66.5,
+          "on": true,
+          "fixed": true
+        }
+      }
+    ]
+  },
+  {
     "name": "EnerGel",
     "settings": {
       "handling": 1,
-      "speed_pendown": 55,
-      "speed_penup": 65,
-      "accel": 75,
-      "pen_pos_down": 45,
-      "pen_pos_up": 70,
+      "speed_pendown": 50,
+      "speed_penup": 75,
+      "accel": 50,
+      "pen_pos_down": 30,
+      "pen_pos_up": 60,
       "pen_setup": 60,
-      "pen_rate_lower": 30,
-      "pen_rate_raise": 75,
-      "pen_width": 0.7
+      "pen_rate_lower": 12,
+      "pen_rate_raise": 100,
+      "pen_width": 0.35,
+      "ink_opacity": 0.95,
+      "join_gap": 0.152,
+      "ink_builds": false
     },
     "palette": [
       {
-        "name": "Yellow",
-        "color": "#fee338"
+        "name": "Black",
+        "color": "#231f20"
       },
       {
-        "name": "Orange",
-        "color": "#ed681f"
-      },
-      {
-        "name": "Red",
-        "color": "#ed3221"
-      },
-      {
-        "name": "Coral pink",
-        "color": "#ff6b63"
-      },
-      {
-        "name": "Pink",
-        "color": "#ee3f89"
-      },
-      {
-        "name": "Lilac",
-        "color": "#6a56b0"
-      },
-      {
-        "name": "Magenta",
-        "color": "#912474"
-      },
-      {
-        "name": "Violet",
-        "color": "#732594"
-      },
-      {
-        "name": "Lime Green",
-        "color": "#3cb227"
-      },
-      {
-        "name": "Green",
-        "color": "#008252"
-      },
-      {
-        "name": "Forest Green",
-        "color": "#1f4736"
-      },
-      {
-        "name": "Sky Blue",
-        "color": "#0086b2"
-      },
-      {
-        "name": "Turquoise",
-        "color": "#00838a"
+        "name": "Navy Blue",
+        "color": "#211f45"
       },
       {
         "name": "Blue",
         "color": "#391e9c"
       },
       {
-        "name": "Navy Blue",
-        "color": "#211f45"
+        "name": "Sepia",
+        "color": "#4f3737"
+      },
+      {
+        "name": "Forest Green",
+        "color": "#1f4736"
       },
       {
         "name": "Burgundy",
@@ -83,16 +190,204 @@
         "color": "#663b28"
       },
       {
-        "name": "Sepia",
-        "color": "#4f3737"
+        "name": "Violet",
+        "color": "#732594"
+      },
+      {
+        "name": "Magenta",
+        "color": "#912474"
       },
       {
         "name": "Gray",
         "color": "#5b5e66"
       },
       {
+        "name": "Lilac",
+        "color": "#6a56b0"
+      },
+      {
+        "name": "Green",
+        "color": "#008252"
+      },
+      {
+        "name": "Turquoise",
+        "color": "#00838a"
+      },
+      {
+        "name": "Sky Blue",
+        "color": "#0f94e6"
+      },
+      {
+        "name": "Red",
+        "color": "#ed3221"
+      },
+      {
+        "name": "Pink",
+        "color": "#ee3f89"
+      },
+      {
+        "name": "Orange",
+        "color": "#ed681f"
+      },
+      {
+        "name": "Coral pink",
+        "color": "#ff6b63"
+      },
+      {
+        "name": "Lime Green",
+        "color": "#3cb227"
+      },
+      {
+        "name": "Yellow",
+        "color": "#fee338"
+      }
+    ],
+    "hatch": {
+      "angle": 45,
+      "spacing_mm": 0.35
+    },
+    "barrel_mm": 11.44
+  },
+  {
+    "name": "Faber-Castell AD",
+    "settings": {
+      "handling": 1,
+      "speed_pendown": 55,
+      "speed_penup": 65,
+      "accel": 40,
+      "pen_pos_up": 75,
+      "pen_setup": 60,
+      "pen_rate_lower": 10,
+      "pen_rate_raise": 50,
+      "ink_opacity": 0.75,
+      "ink_build": 0.45,
+      "ink_builds": true
+    },
+    "barrel_mm": 15.0,
+    "variants": [
+      {
+        "name": "Soft",
+        "settings": {
+          "pen_pos_down": 54,
+          "pen_width": 1.41
+        },
+        "hatch": {
+          "angle": 45,
+          "spacing_mm": 1.711
+        },
+        "drag": {
+          "on": true,
+          "fixed": true
+        },
+        "tilt": {
+          "angle": 40,
+          "offset_mm": 59.34,
+          "on": true,
+          "fixed": true
+        }
+      },
+      {
+        "name": "Sturdy",
+        "settings": {}
+      }
+    ]
+  },
+  {
+    "name": "Paper-Mate Flair",
+    "settings": {
+      "handling": 1,
+      "speed_pendown": 26,
+      "speed_penup": 65,
+      "accel": 75,
+      "pen_pos_up": 70,
+      "pen_setup": 60,
+      "pen_rate_lower": 12,
+      "pen_rate_raise": 75,
+      "ink_opacity": 0.85,
+      "ink_build": 0.35,
+      "ink_builds": true
+    },
+    "barrel_mm": 10.6,
+    "palette": [
+      {
         "name": "Black",
-        "color": "#231f20"
+        "color": "#000000"
+      },
+      {
+        "name": "Blue",
+        "color": "#0620a2"
+      },
+      {
+        "name": "Green",
+        "color": "#054d17"
+      },
+      {
+        "name": "Purple",
+        "color": "#610bb7"
+      },
+      {
+        "name": "Magenta",
+        "color": "#9e0a45"
+      },
+      {
+        "name": "Brown",
+        "color": "#a94f14"
+      },
+      {
+        "name": "Red",
+        "color": "#d3122c"
+      },
+      {
+        "name": "Pink",
+        "color": "#f74a8f"
+      },
+      {
+        "name": "Tangerine",
+        "color": "#f9731a"
+      },
+      {
+        "name": "Lilac",
+        "color": "#b5a8f5"
+      },
+      {
+        "name": "Sky Blue",
+        "color": "#17d0d3"
+      },
+      {
+        "name": "Lime",
+        "color": "#97d11a"
+      },
+      {
+        "name": "Marigold",
+        "color": "#fdb212"
+      },
+      {
+        "name": "Yellow",
+        "color": "#fff01a"
+      }
+    ],
+    "variants": [
+      {
+        "name": "Medium",
+        "settings": {
+          "pen_pos_down": 25,
+          "pen_width": 0.4
+        },
+        "hatch": {
+          "angle": 45,
+          "spacing_mm": 0.3
+        },
+        "tilt": {
+          "angle": 40,
+          "offset_mm": 51.4,
+          "on": true
+        }
+      },
+      {
+        "name": "Bold",
+        "settings": {
+          "pen_width": 0.8
+        }
       }
     ]
   }
