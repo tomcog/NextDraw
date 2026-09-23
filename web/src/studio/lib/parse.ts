@@ -210,13 +210,14 @@ export function parseDrawing(text: string): Opened {
   // Layers come from the groups themselves, in the order the file stacks them - not from the shapes
   // inside them. A layer holding nothing but a hatch fill has no shapes to be found by, and those
   // are skipped on the way past, so building layers from shapes would lose it entirely.
-  // Labelled groups where the file has any - Studio's own files and Inkscape's - and otherwise the
-  // top-level groups that hold something to draw, which is how Illustrator writes its layers. The
-  // same choice Plot makes (layer_groups in server.py), so both apps see the same layers.
-  const labelled = Array.from(svg.querySelectorAll("g")).filter((g) => labelOf(g));
-  const groups = labelled.length
-    ? labelled
-    : Array.from(svg.children).filter((g) => g.nodeName.toLowerCase() === "g" && g.querySelector(ART));
+  // The top-level groups marked as layers where the file has any - Studio's own files and
+  // Inkscape's - and otherwise the top-level groups that hold something to draw, which is how
+  // Illustrator writes its layers. The same choice Plot makes (layer_groups in server.py), so both
+  // apps see the same layers. Only the top level: a labelled group inside a layer - an exporter's
+  // "Mono" inside each of a stack of separations - is part of that layer, not one of its own.
+  const top = Array.from(svg.children).filter((g) => g.nodeName.toLowerCase() === "g");
+  const marked = top.filter((g) => g.getAttribute("inkscape:groupmode") === "layer");
+  const groups = marked.length ? marked : top.filter((g) => g.querySelector(ART));
   const layers: Layer[] = [];
   const byGroup = new Map<Element, string>();
   groups.forEach((g, i) => {

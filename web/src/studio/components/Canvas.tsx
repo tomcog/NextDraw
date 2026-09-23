@@ -238,10 +238,14 @@ const LayerMarks = memo(function LayerMarks({ shapes, fills, fonts }: { shapes: 
   const byId = new Map(shapes.map((sh) => [sh.id, sh]));
   // A repeated shape is drawn once per copy. The copies are marks and nothing else: what you grab,
   // and what the handles belong to, is always the shape itself.
+  // A shape that isn't repeated is drawn as itself, with no group round it: in a separation of fifty
+  // thousand strokes, a group each would double what the browser has to draw.
   const copies = (sh: Shape, what: (key: string) => ReactNode) =>
-    placements(sh).map((p, i) => (
-      <g key={`${sh.id}-copy-${i}`} transform={placementAttr(sh, p)}>{what(`${sh.id}-${i}`)}</g>
-    ));
+    sh.repeat
+      ? placements(sh).map((p, i) => (
+          <g key={`${sh.id}-copy-${i}`} transform={placementAttr(sh, p)}>{what(`${sh.id}-${i}`)}</g>
+        ))
+      : what(`${sh.id}-0`);
   return (
     <>
       {shapes.filter((sh) => sh.outline !== false).map((sh) => copies(sh, (key) => shapeElement(sh, key, {}, fonts)))}
@@ -296,15 +300,25 @@ export function Canvas({ page, shapes, fills, layers, activeLayer, model, zoom, 
   // What's being carried, drawn apart from the rest so the rest can stay as it is while it moves.
   const carrying = drag?.mode === "move" ? drag : null;
   const carriedIds = carrying?.ids ?? null;
+  // A layer carried whole - Select all on layer, then drag - is shifted where it already is, not
+  // taken apart into what stays and what moves: taking a layer of tens of thousands of marks out of
+  // its place and putting it back would draw every one of them again, twice.
+  const carriedWhole = useMemo(() => {
+    if (!carriedIds) return null;
+    const left = new Map<string, number>();
+    for (const sh of shapes) if (!carriedIds.has(sh.id)) left.set(sh.layerId, (left.get(sh.layerId) ?? 0) + 1);
+    return new Set(carrying!.origins.map((sh) => sh.layerId).filter((id) => !left.get(id)));
+  }, [shapes, carriedIds]); // eslint-disable-line react-hooks/exhaustive-deps
   const listsCache = useRef<LayerLists>(new Map());
   const still = useMemo(() => {
-    const lists = listsByLayer(carriedIds ? shapes.filter((sh) => !carriedIds.has(sh.id)) : shapes, fills, listsCache.current);
+    const kept = carriedIds ? shapes.filter((sh) => !carriedIds.has(sh.id) || carriedWhole!.has(sh.layerId)) : shapes;
+    const lists = listsByLayer(kept, fills, listsCache.current);
     listsCache.current = lists;
     return lists;
-  }, [shapes, fills, carriedIds]);
+  }, [shapes, fills, carriedIds, carriedWhole]);
   const carried = useMemo(
-    () => (carrying ? listsByLayer(carrying.origins, fills, new Map()) : null),
-    [carriedIds, fills], // eslint-disable-line react-hooks/exhaustive-deps
+    () => (carrying ? listsByLayer(carrying.origins.filter((sh) => !carriedWhole!.has(sh.layerId)), fills, new Map()) : null),
+    [carriedIds, carriedWhole, fills], // eslint-disable-line react-hooks/exhaustive-deps
   );
   const shift = carrying ? `translate(${carrying.by.x} ${carrying.by.y})` : undefined;
   // Layers too big for a grip on each mark (GRIP_LIMIT), counted over the whole drawing.
@@ -591,7 +605,11 @@ export function Canvas({ page, shapes, fills, layers, activeLayer, model, zoom, 
                 const moving = carried?.get(layer.id);
                 const marks = (
                   <>
-                    {here && <LayerMarks shapes={here.shapes} fills={here.fills} fonts={fonts} />}
+                    {/* Always inside this group, shifted or not, so picking a whole layer up doesn't
+                        move its marks to another place in the page and draw them all again. */}
+                    <g transform={carriedWhole?.has(layer.id) ? shift : undefined}>
+                      {here && <LayerMarks shapes={here.shapes} fills={here.fills} fonts={fonts} />}
+                    </g>
                     {moving && (
                       <g transform={shift}>
                         <LayerMarks shapes={moving.shapes} fills={moving.fills} fonts={fonts} />
