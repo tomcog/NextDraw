@@ -1154,7 +1154,16 @@ export default function App() {
     setActivePreset(preset ? preset.name : null);
     if (preset) {
       updateSettings(preset.settings);
-      setLocalMessage({ text: `Using “${preset.name}”.`, tone: "ok" });
+      // A new tool is about to be seated with the sizing block, which only works from the setup height:
+      // wherever the clip was left - down after a pen test, or at the last tool's lifted height - the
+      // pen ends up seated too low or too high. So the clip goes to the setup height as the tool is
+      // picked, with the new tool's settings (this render's are still the old tool's).
+      if (plotterReady && !busy) {
+        manual("pen_setup", { settings: { ...settings, ...preset.settings } });
+        setLocalMessage({ text: `Using “${preset.name}”. The clip is going to the setup height: seat the pen with your sizing block.`, tone: "ok" });
+      } else {
+        setLocalMessage({ text: `Using “${preset.name}”. Move to setup height before you seat the pen.`, tone: "ok" });
+      }
     }
   };
 
