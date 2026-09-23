@@ -3,6 +3,9 @@
 // few numbers, and the lines are made from those every time. Nothing here is a shape to edit line by
 // line: a photo is tens of thousands of strokes, and it is the photo and its numbers that are edited.
 
+import type { Point } from "./parametric";
+import { catmullNodes, pathData, simplifyRun, type Node } from "./path";
+
 /** What a photo shape keeps: its working copy, and how it is turned into lines. */
 export interface Photo {
   /** The working copy, as a data URL: a JPEG no longer than WORKING_EDGE pixels on its longer side. */
@@ -24,11 +27,20 @@ export interface Photo {
    * What the tone is drawn as: hatching, lines crossing and filling in as it darkens; or tone lines,
    * one line along each row that waves harder and tighter where it's darker. Absent, hatching.
    */
-  style?: "hatch" | "waves" | "outlines";
+  style?: "hatch" | "waves" | "outlines" | "centerlines";
   /** Outlines: how many contours, spread across the tones this layer draws. */
   contours?: number;
   /** Outlines: how much fine detail and noise is smoothed away first, in mm on the page. */
   smoothMm?: number;
+  /**
+   * Centerlines: how dark, 0 to 1, a part of the picture is before it counts as a line. Each dark
+   * stroke of the picture is drawn once, down its middle, however wide it is.
+   */
+  centerFrom?: number;
+  /** Centerlines: how much the picture is smoothed first, in mm on the page, so a ragged edge doesn't sprout whiskers. */
+  centerSmoothMm?: number;
+  /** Centerlines: lines and whiskers shorter than this are left out, in mm. */
+  centerShortestMm?: number;
   /** Tone lines: how far apart the rows are, in mm. */
   rowMm?: number;
   /** Tone lines: the length of one wave where the photo is darkest, in mm. Lighter tones stretch it. */
@@ -196,7 +208,7 @@ export interface PhotoPart {
 
 /** The settings a layer of a photo keeps as its own, as opposed to the photo's: what a mode remembers. */
 export const LAYER_SETTINGS = [
-  "style", "angle", "spacingMm", "levels", "rowMm", "waveMm", "contours", "smoothMm", "offsetMm",
+  "style", "angle", "spacingMm", "levels", "rowMm", "waveMm", "contours", "smoothMm", "centerFrom", "centerSmoothMm", "centerShortestMm", "offsetMm",
   "band", "ink", "regions", "region", "key", "regionInks", "keyInk", "plate", "plates",
 ] as const;
 
@@ -222,6 +234,9 @@ export const WAVE_DEFAULTS = { rowMm: 2, waveMm: 1 };
 
 /** What outlines start from: a handful of contours, a millimetre's detail smoothed away. */
 export const OUTLINE_DEFAULTS = { contours: 6, smoothMm: 1 };
+
+/** What centerlines start from: anything darker than half-way is a line; a fifth of a millimetre smoothed. */
+export const CENTER_DEFAULTS = { from: 0.5, smoothMm: 0.2, shortestMm: 1 };
 
 // ---------- Reading the photo ----------
 
@@ -304,6 +319,10 @@ export async function workingCopy(file: File): Promise<Pick<Photo, "src" | "widt
 export interface PhotoMarks {
   passes: string[];
   strokes: number;
+  /** Centerlines: how wide the picture's lines typically are, in mm on the page. */
+  widthMm?: number;
+  /** Centerlines: how many of the lines came out as true circles. */
+  circles?: number;
 }
 
 const marksCache = new Map<string, PhotoMarks>();
@@ -316,11 +335,12 @@ const marksCache = new Map<string, PhotoMarks>();
 export function photoMarks(photo: Photo, w: number, h: number): PhotoMarks | null {
   const tones = tonesOf(photo.src);
   if (!tones || w <= 0 || h <= 0) return null;
-  const key = [photo.src.length, photo.src.slice(-32), w.toFixed(4), h.toFixed(4), photo.brightness, photo.contrast, photo.angle, photo.spacingMm, photo.levels, photo.band?.join(",") ?? "", photo.crop?.join(",") ?? "", photo.bleed ?? 0, photo.style ?? "hatch", photo.rowMm ?? "", photo.waveMm ?? "", photo.ink ?? "", photo.regions?.join(",") ?? "", photo.region ?? "", photo.contours ?? "", photo.smoothMm ?? "", photo.key ? "key" : "", photo.keyInk ?? "", photo.regionInks?.join(",") ?? "", photo.keyStrength ?? "", photo.keyFrom ?? "", photo.plate ?? "", photo.plates?.join(",") ?? "", photo.blackShare ?? ""].join("|");
+  const key = [photo.src.length, photo.src.slice(-32), w.toFixed(4), h.toFixed(4), photo.brightness, photo.contrast, photo.angle, photo.spacingMm, photo.levels, photo.band?.join(",") ?? "", photo.crop?.join(",") ?? "", photo.bleed ?? 0, photo.style ?? "hatch", photo.rowMm ?? "", photo.waveMm ?? "", photo.ink ?? "", photo.regions?.join(",") ?? "", photo.region ?? "", photo.contours ?? "", photo.smoothMm ?? "", photo.key ? "key" : "", photo.keyInk ?? "", photo.regionInks?.join(",") ?? "", photo.keyStrength ?? "", photo.keyFrom ?? "", photo.plate ?? "", photo.plates?.join(",") ?? "", photo.blackShare ?? "", photo.centerFrom ?? "", photo.centerSmoothMm ?? "", photo.centerShortestMm ?? ""].join("|");
   const known = marksCache.get(key);
   if (known) return known;
   const made = photo.style === "waves" ? waves(tones, photo, w, h)
     : photo.style === "outlines" ? outlines(tones, photo, w, h)
+    : photo.style === "centerlines" ? centerlines(tones, photo, w, h)
     : hatch(tones, photo, w, h);
   if (marksCache.size > 24) marksCache.delete(marksCache.keys().next().value!);
   marksCache.set(key, made);
@@ -918,21 +938,15 @@ function contour(v: Float32Array, gw: number, gh: number, level: number): number
 }
 
 /**
- * Tone as outlines: the photo traced as contour lines, like a map's - along the places its tone
- * crosses a level, so they follow its edges and its shapes. Smoothed first, so a speck of noise is
- * not a contour. A whole photo is traced at levels spread from white to black; a tone band at its own
- * lower edge and levels inside it, so an edge two bands share is drawn once; a colour layer around
- * its colour's area.
+ * What a layer of the photo is traced from, on a grid `gw` by `gh` over its box: how dark the photo
+ * is at each point - or, for a colour layer, 1 inside its colour's area and 0 outside; for a plate or
+ * the key, how much of its pen is wanted there. With the levels a contour is traced at, `count` of
+ * them spread across it (a colour layer has just the one, half-way).
  */
-function outlines(tones: Tones, photo: Photo, w: number, h: number): PhotoMarks {
-  const gw = Math.max(2, Math.round((OUTLINE_EDGE * w) / Math.max(w, h)));
-  const gh = Math.max(2, Math.round((OUTLINE_EDGE * h) / Math.max(w, h)));
-  const cell = w / (gw - 1);
-  const cellY = h / (gh - 1);
+function fieldOf(tones: Tones, photo: Photo, gw: number, gh: number, count: number) {
   const [c0, c1, c2, c3] = photo.crop ?? [0, 0, 1, 1];
   const field = new Float32Array(gw * gh);
   const levels: number[] = [];
-  const count = Math.max(1, Math.min(40, Math.round(photo.contours ?? OUTLINE_DEFAULTS.contours)));
   if (photo.plate && photo.plates?.length === 4) {
     // A plate: how much of its pen the photo needs, traced at levels spread across it like tone.
     const sample = plateSampler(tones, photo);
@@ -982,6 +996,23 @@ function outlines(tones: Tones, photo: Photo, w: number, h: number): PhotoMarks 
       for (let k = 1; k <= count; k++) levels.push(k / (count + 1));
     }
   }
+  return { field, levels };
+}
+
+/**
+ * Tone as outlines: the photo traced as contour lines, like a map's - along the places its tone
+ * crosses a level, so they follow its edges and its shapes. Smoothed first, so a speck of noise is
+ * not a contour. A whole photo is traced at levels spread from white to black; a tone band at its own
+ * lower edge and levels inside it, so an edge two bands share is drawn once; a colour layer around
+ * its colour's area.
+ */
+function outlines(tones: Tones, photo: Photo, w: number, h: number): PhotoMarks {
+  const gw = Math.max(2, Math.round((OUTLINE_EDGE * w) / Math.max(w, h)));
+  const gh = Math.max(2, Math.round((OUTLINE_EDGE * h) / Math.max(w, h)));
+  const cell = w / (gw - 1);
+  const cellY = h / (gh - 1);
+  const count = Math.max(1, Math.min(40, Math.round(photo.contours ?? OUTLINE_DEFAULTS.contours)));
+  const { field, levels } = fieldOf(tones, photo, gw, gh, count);
   blurGrid(field, gw, gh, Math.max(0, photo.smoothMm ?? OUTLINE_DEFAULTS.smoothMm) / 25.4 / cell);
   // A contour shorter than this is a speck, not a shape.
   const shortest = 2 / 25.4;
@@ -999,6 +1030,469 @@ function outlines(tones: Tones, photo: Photo, w: number, h: number): PhotoMarks 
   }
   return { passes: [parts.join("")], strokes };
 }
+
+// ---------- Centerlines ----------
+
+/** The longer side of the grid centerlines are traced on, at most: fine enough for a line a pen draws. */
+const CENTER_EDGE = 1000;
+
+/** The eight neighbours of a grid point, clockwise from above, as steps across and down. */
+const RING: [number, number][] = [[0, -1], [1, -1], [1, 0], [1, 1], [0, 1], [-1, 1], [-1, 0], [-1, -1]];
+
+/**
+ * A black-and-white grid worn down to lines one point wide, down the middle of each dark stroke:
+ * Zhang-Suen thinning, which peels a point off a stroke's edge only where that leaves the stroke
+ * in one piece and doesn't shorten its ends, from each side in turn until nothing more comes off.
+ */
+function thin(on: Uint8Array, gw: number, gh: number) {
+  // Only points still on are looked at, and the list shrinks as they come off.
+  let live: number[] = [];
+  for (let y = 1; y < gh - 1; y++) for (let x = 1; x < gw - 1; x++) if (on[y * gw + x]) live.push(y * gw + x);
+  const gone: number[] = [];
+  const p = new Uint8Array(8);
+  for (let changed = true; changed;) {
+    changed = false;
+    for (let step = 0; step < 2; step++) {
+      gone.length = 0;
+      for (const i of live) {
+        if (!on[i]) continue;
+        p[0] = on[i - gw]; p[1] = on[i - gw + 1]; p[2] = on[i + 1]; p[3] = on[i + gw + 1];
+        p[4] = on[i + gw]; p[5] = on[i + gw - 1]; p[6] = on[i - 1]; p[7] = on[i - gw - 1];
+        let count = 0;
+        let turns = 0;
+        for (let k = 0; k < 8; k++) {
+          count += p[k];
+          if (!p[k] && p[(k + 1) & 7]) turns++;
+        }
+        if (count < 2 || count > 6 || turns !== 1) continue;
+        // p[0] above, p[2] right, p[4] below, p[6] left.
+        if (step === 0 ? (p[0] && p[2] && p[4]) || (p[2] && p[4] && p[6]) : (p[0] && p[2] && p[6]) || (p[0] && p[4] && p[6])) continue;
+        gone.push(i);
+      }
+      for (const i of gone) on[i] = 0;
+      if (gone.length) {
+        changed = true;
+        live = live.filter((i) => on[i]);
+      }
+    }
+  }
+  // Thinning leaves a point at the inside of each step of a staircase, which reads as a junction.
+  // Take out any point whose neighbours are joined to each other without it.
+  for (const i of live) if (on[i] && neighbours(on, i, gw).length >= 2 && joinedWithout(on, i, gw)) on[i] = 0;
+}
+
+const neighbours = (on: Uint8Array, i: number, gw: number) => {
+  const out: number[] = [];
+  for (const [dx, dy] of RING) if (on[i + dy * gw + dx]) out.push(i + dy * gw + dx);
+  return out;
+};
+
+/** Whether a point's neighbours touch one another in a single chain, so taking it out breaks nothing. */
+function joinedWithout(on: Uint8Array, i: number, gw: number) {
+  const near = neighbours(on, i, gw);
+  const seen = new Set([near[0]]);
+  const todo = [near[0]];
+  while (todo.length) {
+    const a = todo.pop()!;
+    for (const b of near) {
+      if (seen.has(b)) continue;
+      if (Math.abs((a % gw) - (b % gw)) <= 1 && Math.abs(Math.floor(a / gw) - Math.floor(b / gw)) <= 1) {
+        seen.add(b);
+        todo.push(b);
+      }
+    }
+  }
+  return seen.size === near.length;
+}
+
+/** How far each dark point is from the nearest light one, in grid steps: a 3-4 chamfer, so half a stroke's width on its middle line. */
+function distances(on: Uint8Array, gw: number, gh: number): Float32Array {
+  const d = new Float32Array(gw * gh);
+  const far = 1e9;
+  for (let i = 0; i < d.length; i++) d[i] = on[i] ? far : 0;
+  for (let y = 0; y < gh; y++) {
+    for (let x = 0; x < gw; x++) {
+      const i = y * gw + x;
+      if (!d[i]) continue;
+      let v = d[i];
+      if (x > 0) v = Math.min(v, d[i - 1] + 3);
+      if (y > 0) {
+        v = Math.min(v, d[i - gw] + 3);
+        if (x > 0) v = Math.min(v, d[i - gw - 1] + 4);
+        if (x < gw - 1) v = Math.min(v, d[i - gw + 1] + 4);
+      }
+      d[i] = v;
+    }
+  }
+  for (let y = gh - 1; y >= 0; y--) {
+    for (let x = gw - 1; x >= 0; x--) {
+      const i = y * gw + x;
+      if (!d[i]) continue;
+      let v = d[i];
+      if (x < gw - 1) v = Math.min(v, d[i + 1] + 3);
+      if (y < gh - 1) {
+        v = Math.min(v, d[i + gw] + 3);
+        if (x < gw - 1) v = Math.min(v, d[i + gw + 1] + 4);
+        if (x > 0) v = Math.min(v, d[i + gw - 1] + 4);
+      }
+      d[i] = v;
+    }
+  }
+  for (let i = 0; i < d.length; i++) d[i] /= 3;
+  return d;
+}
+
+/**
+ * Whiskers taken off: thinning grows a short branch toward every bump in a stroke's edge. A branch
+ * from a free end to a junction that is shorter than the stroke is wide there, or than `shortest`,
+ * is one of those rather than a line of the picture.
+ */
+function prune(on: Uint8Array, gw: number, gh: number, dist: Float32Array, shortest: number) {
+  for (let round = 0; round < 3; round++) {
+    let cut = false;
+    for (let y = 1; y < gh - 1; y++) {
+      for (let x = 1; x < gw - 1; x++) {
+        const start = y * gw + x;
+        if (!on[start] || neighbours(on, start, gw).length !== 1) continue;
+        const branch = [start];
+        let prev = -1;
+        let at = start;
+        let junction = -1;
+        for (;;) {
+          const next = neighbours(on, at, gw).filter((k) => k !== prev && !branch.includes(k));
+          if (next.length !== 1) break;
+          if (neighbours(on, next[0], gw).length > 2) {
+            junction = next[0];
+            break;
+          }
+          prev = at;
+          at = next[0];
+          branch.push(at);
+          if (branch.length > shortest + 40) break;
+        }
+        if (junction < 0) continue;
+        if (branch.length < Math.max(shortest, dist[junction] * 1.5)) {
+          for (const k of branch) on[k] = 0;
+          cut = true;
+        }
+      }
+    }
+    if (!cut) break;
+    thin(on, gw, gh);
+  }
+}
+
+interface Run {
+  pts: number[];
+  /** What each end meets: a junction's number, or -1 at a free end. */
+  ends: [number, number];
+  closed: boolean;
+}
+
+/**
+ * The thinned lines walked into runs, from junction to junction or free end to free end, and the
+ * loops that have neither. A junction is the points of three or more lines' meeting, taken together.
+ */
+function traceRuns(on: Uint8Array, gw: number, gh: number): Run[] {
+  const degree = new Uint8Array(gw * gh);
+  for (let i = 0; i < on.length; i++) if (on[i]) degree[i] = neighbours(on, i, gw).length;
+  // Neighbouring junction points are one junction.
+  const junction = new Int32Array(gw * gh).fill(-1);
+  let junctions = 0;
+  for (let i = 0; i < on.length; i++) {
+    if (!on[i] || degree[i] < 3 || junction[i] >= 0) continue;
+    const todo = [i];
+    junction[i] = junctions;
+    while (todo.length) {
+      const a = todo.pop()!;
+      for (const b of neighbours(on, a, gw)) {
+        if (degree[b] >= 3 && junction[b] < 0) {
+          junction[b] = junctions;
+          todo.push(b);
+        }
+      }
+    }
+    junctions++;
+  }
+  const isNode = (i: number) => degree[i] !== 2;
+  const endOf = (i: number) => (degree[i] >= 3 ? junction[i] : -1);
+  const walked = new Uint8Array(gw * gh);
+  const runs: Run[] = [];
+  const pairs = new Set<string>();
+  for (let i = 0; i < on.length; i++) {
+    if (!on[i] || !isNode(i)) continue;
+    for (const m of neighbours(on, i, gw)) {
+      if (isNode(m)) {
+        // Two ends side by side, or a step inside one junction: only a line if they're different things.
+        const key = i < m ? `${i},${m}` : `${m},${i}`;
+        if (pairs.has(key) || (degree[i] >= 3 && degree[m] >= 3 && junction[i] === junction[m])) continue;
+        pairs.add(key);
+        runs.push({ pts: [i, m], ends: [endOf(i), endOf(m)], closed: false });
+        continue;
+      }
+      if (walked[m]) continue;
+      const pts = [i];
+      let prev = i;
+      let at = m;
+      for (;;) {
+        pts.push(at);
+        if (isNode(at)) break;
+        walked[at] = 1;
+        const next = neighbours(on, at, gw).find((k) => k !== prev && (isNode(k) || !walked[k]));
+        if (next === undefined) break;
+        prev = at;
+        at = next;
+      }
+      runs.push({ pts, ends: [endOf(i), isNode(pts[pts.length - 1]) ? endOf(pts[pts.length - 1]) : -1], closed: false });
+    }
+  }
+  // What's left are loops with no junction on them: a ring, an O.
+  for (let i = 0; i < on.length; i++) {
+    if (!on[i] || walked[i] || isNode(i)) continue;
+    const pts = [i];
+    walked[i] = 1;
+    let prev = i;
+    let at = neighbours(on, i, gw)[0];
+    while (at !== undefined && !walked[at]) {
+      walked[at] = 1;
+      pts.push(at);
+      const next = neighbours(on, at, gw).find((k) => k !== prev && !walked[k]);
+      prev = at;
+      at = next ?? -1;
+      if (at < 0) break;
+    }
+    if (pts.length > 2) runs.push({ pts, ends: [-1, -1], closed: true });
+  }
+  return runs;
+}
+
+/**
+ * Runs that meet at a junction joined where one carries straight on into another, so a line that
+ * another crosses or branches off is still drawn as one stroke. The straightest pair at a junction
+ * goes first; a run that comes back round to its own junction closes into a loop.
+ */
+function joinRuns(runs: Run[], gw: number): Run[] {
+  const at = new Map<number, Set<Run>>();
+  const add = (r: Run) => {
+    for (const e of r.ends) if (e >= 0) (at.get(e) ?? at.set(e, new Set()).get(e)!).add(r);
+  };
+  const drop = (r: Run) => {
+    for (const e of r.ends) if (e >= 0) at.get(e)?.delete(r);
+  };
+  runs.forEach(add);
+  // Which way a run leaves its end: toward a point a few steps in, so a pixel's jag doesn't decide it.
+  const leaving = (r: Run, end: 0 | 1) => {
+    const n = r.pts.length;
+    const a = r.pts[end ? n - 1 : 0];
+    const b = r.pts[end ? Math.max(0, n - 7) : Math.min(n - 1, 6)];
+    const dx = (b % gw) - (a % gw);
+    const dy = Math.floor(b / gw) - Math.floor(a / gw);
+    const len = Math.hypot(dx, dy) || 1;
+    return [dx / len, dy / len];
+  };
+  for (const [j, set] of at) {
+    for (;;) {
+      const ends: [Run, 0 | 1][] = [];
+      for (const r of set) for (const e of [0, 1] as const) if (!r.closed && r.ends[e] === j) ends.push([r, e]);
+      let best: [number, number] | null = null;
+      let bestCos = -0.4; // straighter than this or not at all: a sharp corner is two strokes
+      for (let a = 0; a < ends.length; a++) {
+        for (let b = a + 1; b < ends.length; b++) {
+          const u = leaving(...ends[a]);
+          const v = leaving(...ends[b]);
+          const cos = u[0] * v[0] + u[1] * v[1];
+          if (cos < bestCos) {
+            bestCos = cos;
+            best = [a, b];
+          }
+        }
+      }
+      if (!best) break;
+      const [ra, ea] = ends[best[0]];
+      const [rb, eb] = ends[best[1]];
+      if (ra === rb) {
+        // Both ends of one run: it goes round and comes back, so it's a loop.
+        drop(ra);
+        ra.closed = true;
+        ra.ends = [-1, -1];
+        continue;
+      }
+      drop(ra);
+      drop(rb);
+      const first = ea === 1 ? ra.pts : [...ra.pts].reverse();
+      const second = eb === 0 ? rb.pts : [...rb.pts].reverse();
+      const joined: Run = { pts: [...first, ...second], ends: [ra.ends[1 - ea], rb.ends[1 - eb]], closed: false };
+      runs.push(joined);
+      ra.pts = [];
+      rb.pts = [];
+      add(joined);
+    }
+  }
+  return runs.filter((r) => r.pts.length > 1);
+}
+
+/** A loop that is a circle, near enough, as its centre and radius; null if it isn't one. */
+function circleOf(pts: Point[], tolerance: number): { cx: number; cy: number; r: number } | null {
+  if (pts.length < 12) return null;
+  // Kasa's fit: the circle that best explains every point, by least squares, in one solve.
+  let sx = 0, sy = 0;
+  for (const p of pts) { sx += p.x; sy += p.y; }
+  const mx = sx / pts.length;
+  const my = sy / pts.length;
+  let suu = 0, svv = 0, suv = 0, suuu = 0, svvv = 0, suvv = 0, svuu = 0;
+  for (const p of pts) {
+    const u = p.x - mx;
+    const v = p.y - my;
+    suu += u * u; svv += v * v; suv += u * v;
+    suuu += u * u * u; svvv += v * v * v; suvv += u * v * v; svuu += v * u * u;
+  }
+  const det = suu * svv - suv * suv;
+  if (Math.abs(det) < 1e-12) return null;
+  const bu = (suuu + suvv) / 2;
+  const bv = (svvv + svuu) / 2;
+  const uc = (bu * svv - bv * suv) / det;
+  const vc = (bv * suu - bu * suv) / det;
+  const r = Math.sqrt(uc * uc + vc * vc + (suu + svv) / pts.length);
+  const cx = mx + uc;
+  const cy = my + vc;
+  let worst = 0;
+  for (const p of pts) worst = Math.max(worst, Math.abs(Math.hypot(p.x - cx, p.y - cy) - r));
+  return worst <= Math.max(tolerance, r * 0.04) ? { cx, cy, r } : null;
+}
+
+/** A circle as four cubic curves, starting at `from` radians and going the way the loop went. */
+function circleNodes(c: { cx: number; cy: number; r: number }, from: number, clockwise: boolean): Node[] {
+  const k = 0.5523 * c.r; // how long a quarter circle's handles are
+  const s = clockwise ? 1 : -1;
+  const nodes: Node[] = [];
+  for (let q = 0; q <= 4; q++) {
+    const a = from + (s * q * Math.PI) / 2;
+    const x = c.cx + c.r * Math.cos(a);
+    const y = c.cy + c.r * Math.sin(a);
+    const tx = -Math.sin(a) * s;
+    const ty = Math.cos(a) * s;
+    nodes.push({ x, y, in: { x: x - tx * k, y: y - ty * k }, out: { x: x + tx * k, y: y + ty * k } });
+  }
+  delete nodes[0].in;
+  delete nodes[4].out;
+  return nodes;
+}
+
+/**
+ * Line art as centerlines: each dark stroke of the picture drawn once, down its middle, however wide
+ * it is - a ring is one circle rather than the two edges of a filled band. The picture is made black
+ * and white at `centerFrom`, worn down to lines one point wide, and those are walked into strokes:
+ * whiskers off, lines carried straight on through where others cross them, smoothed into curves, and
+ * a loop that is a circle drawn as an exact one. Split into bands or colours, each layer traces its
+ * own part the same way.
+ */
+function centerlines(tones: Tones, photo: Photo, w: number, h: number): PhotoMarks {
+  const [c0, c1, c2, c3] = photo.crop ?? [0, 0, 1, 1];
+  // No finer than the picture itself, which has nothing more to say.
+  const across = tones.w * (c2 - c0);
+  const down = tones.h * (c3 - c1);
+  const edge = Math.min(CENTER_EDGE, Math.max(across, down));
+  const gw = Math.max(3, Math.round((edge * w) / Math.max(w, h)));
+  const gh = Math.max(3, Math.round((edge * h) / Math.max(w, h)));
+  const cell = w / (gw - 1);
+  const cellY = h / (gh - 1);
+  const { field } = fieldOf(tones, photo, gw, gh, 1);
+  blurGrid(field, gw, gh, Math.max(0, photo.centerSmoothMm ?? CENTER_DEFAULTS.smoothMm) / 25.4 / cell);
+  // Which points are line: past `centerFrom`; a colour layer's own area; a band's own tones.
+  const from = Math.min(0.99, Math.max(0.01, photo.centerFrom ?? CENTER_DEFAULTS.from));
+  const colourArea = photo.ink && photo.regions && photo.region !== undefined && !photo.key;
+  const toneBand = !photo.plate && !photo.ink && photo.band;
+  const lo = colourArea ? 0.5 : toneBand ? Math.max(from, photo.band![0]) : from;
+  const hi = toneBand && photo.band![1] < 1 ? photo.band![1] : Infinity;
+  const on = new Uint8Array(gw * gh);
+  // The grid's own edge stays light, so a line that runs off the picture ends at its edge.
+  for (let y = 1; y < gh - 1; y++) for (let x = 1; x < gw - 1; x++) {
+    const v = field[y * gw + x];
+    if (v > lo && v <= hi) on[y * gw + x] = 1;
+  }
+  const dist = distances(on, gw, gh);
+  thin(on, gw, gh);
+  const shortest = Math.max(0, photo.centerShortestMm ?? CENTER_DEFAULTS.shortestMm) / 25.4 / cell;
+  prune(on, gw, gh, dist, Math.max(2, shortest));
+
+  // How wide the picture's lines are: twice the distance to the edge, along their middles.
+  const widths: number[] = [];
+  for (let i = 0; i < on.length; i++) if (on[i]) widths.push(dist[i] * 2);
+  widths.sort((a, b) => a - b);
+  const widthMm = widths.length ? widths[Math.floor(widths.length / 2)] * cell * 25.4 : undefined;
+
+  const runs = joinRuns(traceRuns(on, gw, gh), gw);
+  const toPoint = (i: number): Point => ({ x: (i % gw) * cell, y: Math.floor(i / gw) * cellY });
+  const strokes: Node[][] = [];
+  let circles = 0;
+  for (const run of runs) {
+    let pts = run.pts.map(toPoint);
+    let length = 0;
+    for (let i = 1; i < pts.length; i++) length += Math.hypot(pts[i].x - pts[i - 1].x, pts[i].y - pts[i - 1].y);
+    if (length < Math.max(2, shortest) * cell) continue;
+    // Pixel steps smoothed out: each point moved to the average of its neighbours, a few either
+    // way. A loop wraps round; an open line keeps its ends where they are, so lines still meet.
+    const k = 2;
+    const n = pts.length;
+    pts = pts.map((p, i) => {
+      if (!run.closed && (i < 1 || i > n - 2)) return p;
+      let sx = 0, sy = 0, c = 0;
+      for (let d = -k; d <= k; d++) {
+        const j = run.closed ? (i + d + n) % n : Math.min(n - 1, Math.max(0, i + d));
+        sx += pts[j].x;
+        sy += pts[j].y;
+        c++;
+      }
+      return { x: sx / c, y: sy / c };
+    });
+    if (run.closed) {
+      const ring = circleOf(pts, cell * 1.2);
+      if (ring) {
+        // Clockwise on the page (y down) when the area it goes round is positive.
+        let area = 0;
+        for (let i = 0; i < n; i++) area += pts[i].x * pts[(i + 1) % n].y - pts[(i + 1) % n].x * pts[i].y;
+        strokes.push(circleNodes(ring, Math.atan2(pts[0].y - ring.cy, pts[0].x - ring.cx), area > 0));
+        circles++;
+        continue;
+      }
+      pts.push({ ...pts[0] });
+    }
+    strokes.push(catmullNodes(simplifyRun(pts, Math.max(cell, cellY) * 0.6)));
+  }
+  // Drawn in an order that keeps the pen's travel short: each next the nearest to where the last
+  // ended, turned round if its far end is nearer.
+  const ordered: Node[][] = [];
+  const left = new Set(strokes.keys());
+  let x = 0, y = 0;
+  while (left.size) {
+    let best = -1;
+    let flip = false;
+    let bestD = Infinity;
+    for (const i of left) {
+      const s = strokes[i];
+      const a = s[0];
+      const b = s[s.length - 1];
+      const da = (a.x - x) ** 2 + (a.y - y) ** 2;
+      const db = (b.x - x) ** 2 + (b.y - y) ** 2;
+      if (da < bestD) { bestD = da; best = i; flip = false; }
+      if (db < bestD) { bestD = db; best = i; flip = true; }
+    }
+    left.delete(best);
+    const s = flip ? reverseNodes(strokes[best]) : strokes[best];
+    ordered.push(s);
+    x = s[s.length - 1].x;
+    y = s[s.length - 1].y;
+  }
+  return { passes: [pathData(ordered)], strokes: ordered.length, widthMm, circles };
+}
+
+/** A run drawn the other way: the same curve, its handles swapped end for end. */
+const reverseNodes = (run: Node[]): Node[] => [...run].reverse().map((p) => {
+  const out: Node = { x: p.x, y: p.y };
+  if (p.out) out.in = p.out;
+  if (p.in) out.out = p.in;
+  return out;
+});
 
 /**
  * Tone as hatching, the way an engraver builds it: a first set of lines where the photo is darker
@@ -1083,7 +1577,10 @@ export function photoFromData(raw: Record<string, unknown>): Photo | null {
       ? { crop: raw.crop.map(Number) as [number, number, number, number] }
       : {}),
     ...(raw.fit === "fit" || raw.fit === "fill" ? { fit: raw.fit } : {}),
-    ...(raw.style === "waves" || raw.style === "outlines" ? { style: raw.style } : {}),
+    ...(raw.style === "waves" || raw.style === "outlines" || raw.style === "centerlines" ? { style: raw.style } : {}),
+    ...(Number.isFinite(Number(raw.center_from)) && raw.center_from !== undefined ? { centerFrom: Number(raw.center_from) } : {}),
+    ...(Number.isFinite(Number(raw.center_smooth_mm)) && raw.center_smooth_mm !== undefined ? { centerSmoothMm: Number(raw.center_smooth_mm) } : {}),
+    ...(Number.isFinite(Number(raw.center_shortest_mm)) && raw.center_shortest_mm !== undefined ? { centerShortestMm: Number(raw.center_shortest_mm) } : {}),
     ...(Number.isFinite(Number(raw.contours)) && raw.contours !== undefined ? { contours: Number(raw.contours) } : {}),
     ...(Number.isFinite(Number(raw.smooth_mm)) && raw.smooth_mm !== undefined ? { smoothMm: Number(raw.smooth_mm) } : {}),
     ...(typeof raw.ink === "string" ? { ink: raw.ink } : {}),
@@ -1119,7 +1616,10 @@ export const photoData = (p: Photo) => ({
   ...(p.band ? { band: p.band } : {}),
   ...(p.crop ? { crop: p.crop } : {}),
   ...(p.fit ? { fit: p.fit } : {}),
-  ...(p.style === "waves" || p.style === "outlines" ? { style: p.style } : {}),
+  ...(p.style === "waves" || p.style === "outlines" || p.style === "centerlines" ? { style: p.style } : {}),
+  ...(p.centerFrom !== undefined ? { center_from: p.centerFrom } : {}),
+  ...(p.centerSmoothMm !== undefined ? { center_smooth_mm: p.centerSmoothMm } : {}),
+  ...(p.centerShortestMm !== undefined ? { center_shortest_mm: p.centerShortestMm } : {}),
   ...(p.contours !== undefined ? { contours: p.contours } : {}),
   ...(p.smoothMm !== undefined ? { smooth_mm: p.smoothMm } : {}),
   ...(p.ink ? { ink: p.ink, regions: p.regions, region: p.region } : {}),

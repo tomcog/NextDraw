@@ -29,7 +29,7 @@ import { flattenPath, flattenRun, mapNode, parsePath, simplifyRun, type Node } f
 import { fitText, textRuns } from "./lib/text";
 import { defaultRepeat, placements, REPEAT_FIELDS, type Repeat, type RepeatKind } from "./lib/repeat";
 import { parseDrawing } from "./lib/parse";
-import { BAND_NAMES, BLACK_SHARE, KEY_FROM, LAYER_SETTINGS, PLATES, PLATE_AIMS, MOST_LAYERS, PHOTO_DEFAULTS, WAVE_DEFAULTS, OUTLINE_DEFAULTS, photoMarks, colourGroups, darkestOf, isColourful, matchPens, placeOnPage, platePens, readTones, workingCopy, type Photo, type PhotoPart } from "./lib/photo";
+import { BAND_NAMES, BLACK_SHARE, KEY_FROM, LAYER_SETTINGS, PLATES, PLATE_AIMS, MOST_LAYERS, PHOTO_DEFAULTS, WAVE_DEFAULTS, OUTLINE_DEFAULTS, CENTER_DEFAULTS, photoMarks, colourGroups, darkestOf, isColourful, matchPens, placeOnPage, platePens, readTones, workingCopy, type Photo, type PhotoPart } from "./lib/photo";
 import { usePhotoRead } from "./lib/usePhotoRead";
 import { PaletteMenu } from "../shared/components/controls/PaletteMenu";
 import { Hints } from "../shared/components/controls/Hints";
@@ -2636,18 +2636,39 @@ export default function App() {
           <NumberField label="Contrast" min={-100} max={100} step={5} value={chosen.photo.contrast} onChange={(contrast) => setPhotoOf({ contrast })} />
          </div>
          {/* What this band's tone is drawn as, and the numbers that style has. Each band its own. */}
-         <SegmentedControl size="sm" variant="dark" aria-label="Lines">
-          <Segment selected={!chosen.photo.style || chosen.photo.style === "hatch"} title="Hatching: lines that cross and fill in as the photo darkens" onClick={() => setPhotoOf({ style: undefined })}>Hatching</Segment>
-          <Segment selected={chosen.photo.style === "waves"} title="Tone lines: one line along each row, waving harder and tighter where it's darker" onClick={() => setPhotoOf({ style: "waves" })}>Tone lines</Segment>
-          <Segment selected={chosen.photo.style === "outlines"} title="Outlines: the photo traced as contour lines, following its edges and shapes" onClick={() => setPhotoOf({ style: "outlines" })}>Outlines</Segment>
-         </SegmentedControl>
+         <InputSelect
+          size="md"
+          label="Drawn as"
+          value={chosen.photo.style ?? "hatch"}
+          title={({
+           hatch: "Hatching: lines that cross and fill in as the photo darkens",
+           waves: "Tone lines: one line along each row, waving harder and tighter where it's darker",
+           outlines: "Outlines: the photo traced as contour lines, following its edges and shapes",
+           centerlines: "Centerlines: each dark stroke of a line drawing drawn once, down its middle, so a ring is one circle",
+          } as const)[chosen.photo.style ?? "hatch"]}
+          onChange={(e) => {
+           const style = e.target.value as NonNullable<Photo["style"]>;
+           setPhotoOf({ style: style === "hatch" ? undefined : style });
+          }}
+         >
+          <option value="hatch">Hatching</option>
+          <option value="waves">Tone lines</option>
+          <option value="outlines">Outlines</option>
+          <option value="centerlines">Centerlines</option>
+         </InputSelect>
          {/* This layer's lines shifted from where the photo puts them: into register with the
            others, or out of it on purpose. Its own; the rest stay put. */}
          <div className={styles.fillRow}>
           <NumberField label="Offset X" unit="mm" min={-100} max={100} step={0.1} value={chosen.photo.offsetMm?.[0] ?? 0} onChange={(x) => setPhotoOf({ offsetMm: [x, chosen.photo!.offsetMm?.[1] ?? 0] })} />
           <NumberField label="Offset Y" unit="mm" min={-100} max={100} step={0.1} value={chosen.photo.offsetMm?.[1] ?? 0} onChange={(y) => setPhotoOf({ offsetMm: [chosen.photo!.offsetMm?.[0] ?? 0, y] })} />
          </div>
-         {chosen.photo.style === "outlines" ? (
+         {chosen.photo.style === "centerlines" ? (
+          <div className={styles.fillRow}>
+           <NumberField label="Darker than" unit="%" min={1} max={99} step={5} value={Math.round((chosen.photo.centerFrom ?? CENTER_DEFAULTS.from) * 100)} onChange={(v) => setPhotoOf({ centerFrom: v / 100 })} />
+           <NumberField label="Smoothing" unit="mm" min={0} max={5} step={0.05} value={chosen.photo.centerSmoothMm ?? CENTER_DEFAULTS.smoothMm} onChange={(centerSmoothMm) => setPhotoOf({ centerSmoothMm })} />
+           <NumberField label="Shortest" unit="mm" min={0} max={20} step={0.25} value={chosen.photo.centerShortestMm ?? CENTER_DEFAULTS.shortestMm} onChange={(centerShortestMm) => setPhotoOf({ centerShortestMm })} />
+          </div>
+         ) : chosen.photo.style === "outlines" ? (
           <div className={styles.fillRow}>
            <NumberField label="Lines" min={1} max={40} step={1} value={chosen.photo.contours ?? OUTLINE_DEFAULTS.contours} onChange={(contours) => setPhotoOf({ contours })} />
            <NumberField label="Smoothing" unit="mm" min={0} max={20} step={0.25} value={chosen.photo.smoothMm ?? OUTLINE_DEFAULTS.smoothMm} onChange={(smoothMm) => setPhotoOf({ smoothMm })} />
@@ -2667,7 +2688,9 @@ export default function App() {
          )}
          <p className={styles.empty}>
           {marks
-           ? chosen.photo.style === "outlines"
+           ? chosen.photo.style === "centerlines"
+            ? `${marks.strokes.toLocaleString()} ${marks.strokes === 1 ? "line" : "lines"}${marks.circles ? `, ${marks.circles} of them ${marks.circles === 1 ? "a circle" : "circles"}` : ""}, each drawn once down the middle of a stroke in the picture${marks.widthMm ? ` (they're about ${marks.widthMm.toFixed(1)} mm wide there)` : ""}. Darker than sets what counts as a line; Shortest drops specks and whiskers.`
+            : chosen.photo.style === "outlines"
             ? `${marks.strokes.toLocaleString()} contours, along the photo's edges and shapes. More lines follow finer changes of tone; more smoothing, only the big ones.`
             : chosen.photo.style === "waves"
             ? `${marks.strokes.toLocaleString()} strokes. Each row waves harder and tighter where the photo is darker; white is left as paper.`
