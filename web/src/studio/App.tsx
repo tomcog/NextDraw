@@ -3,7 +3,7 @@ import { DrawingToolSection } from "../shared/components/controls/DrawingToolSec
 import { PaperSection } from "../shared/components/controls/PaperSection";
 import { SettingsSection } from "../shared/components/controls/SettingsSection";
 import { Button, ButtonRound, Card, Checkbox, ConfirmButton, InputSelect, InputText, InputTextarea, LayerController, Segment, SegmentedControl } from "@tomcoggia/ui";
-import { ArrowDownToLine, AudioWaveform, Circle, ClipboardCopy, ClipboardPaste, Copy, Ellipsis, EllipsisVertical, FilePlus, FlameKindling, FolderOpen, Image as ImageIcon, ImagePlus, Grid2x2, Layers2, LayersArrowDown, LayersArrowUp, LineStyle, LoaderPinwheel, Menu, Minus, MousePointer2, Orbit, PaintBucket, PenLine, Pentagon, Plus, Rainbow, RotateCw, Save, Send, Shell, Signal, Spline, Square, SquareDimensions, SquareStack, Star, Target, Trash2, Type, Waves } from "lucide-react";
+import { ArrowDownToLine, AudioWaveform, Circle, ClipboardCopy, ClipboardPaste, Copy, Ellipsis, EllipsisVertical, FilePlus, FlameKindling, FolderOpen, Image as ImageIcon, ImagePlus, Grid2x2, Layers2, LayersArrowDown, LayersArrowUp, Merge, LineStyle, LoaderPinwheel, Menu, Minus, MousePointer2, Orbit, PaintBucket, PenLine, Pentagon, Plus, Rainbow, RotateCw, Save, Send, Shell, Signal, Spline, Square, SquareDimensions, SquareStack, Star, Target, Trash2, Type, Waves } from "lucide-react";
 import { FileBrowser, LAST_FOLDER_KEY, type CombineResult, type OpenResult } from "../shared/components/FileBrowser";
 import { Section } from "../shared/components/controls/Section";
 import { NumberField } from "../shared/components/controls/NumberField";
@@ -20,6 +20,7 @@ import { PreviewToolbar, SetupToolbar, type View } from "../shared/components/Pr
 import type { Zoom } from "../shared/components/BedCanvas";
 import { useRowDrag } from "./lib/useRowDrag";
 import { Canvas, type Tool } from "./components/Canvas";
+import { mergeLines } from "./lib/mergeLines";
 import { SizePopover } from "./components/SizePopover";
 import { StudioHeader } from "./components/StudioHeader";
 import { ThemeToggle } from "../shared/components/ThemeToggle";
@@ -524,6 +525,24 @@ export default function App() {
   * and a hundredth with Alt for the last little bit; the limit is the box round the whole selection,
   * so a group slides along the page's edge rather than piling up against it.
   */
+ // Straight lines lying along one another - a halftone's overrunning dashes, a line drawn twice -
+ // merged into the strokes they look like, so the pen draws each bit of line once.
+ const mergeOverlaps = () => {
+  const merged = mergeLines(shapes, fills.map((f) => f.shapeId));
+  if (!merged) {
+   setMessage({ text: "No lines overlap: nothing to merge", ok: true });
+   return;
+  }
+  record();
+  setShapes(merged.shapes);
+  setSelected([]);
+  const saved = merged.saved * 0.0254;
+  setMessage({
+   text: `Merged ${merged.before.toLocaleString()} overlapping lines into ${merged.after.toLocaleString()} - ${saved >= 1 ? `${saved.toFixed(1)} m` : `${Math.round(saved * 1000)} mm`} less to draw`,
+   ok: true,
+  });
+ };
+
  const nudge = (dx: number, dy: number) => {
   if (!selected.length) return;
   record();
@@ -2512,6 +2531,11 @@ export default function App() {
            <ButtonRound size="sm" icon={<LayersArrowUp />} aria-label="Sort layers by darkness"
             title="Sort by darkness: the lightest ink is layer 1 and drawn first, with darker inks over it"
             disabled={busy} onClick={sortLayersByLightness} />
+          )}
+          {shapes.length > 1 && (
+           <ButtonRound size="sm" icon={<Merge />} aria-label="Merge overlapping lines"
+            title="Merge overlapping lines: straight lines that run over one another along the same line - a halftone's dashes, a line drawn twice - joined into single strokes, so each bit is drawn once. Looks the same; draws faster"
+            disabled={busy} onClick={mergeOverlaps} />
           )}
           <ButtonRound size="sm" icon={<Plus />} aria-label="Add a layer"
            title="Add a layer: one more pen to draw with" disabled={busy} onClick={addLayer} />
