@@ -27,7 +27,7 @@ export interface Photo {
    * What the tone is drawn as: hatching, lines crossing and filling in as it darkens; or tone lines,
    * one line along each row that waves harder and tighter where it's darker. Absent, hatching.
    */
-  style?: "hatch" | "waves" | "outlines" | "centerlines";
+  style?: "hatch" | "waves" | "outlines" | "centerlines" | "silhouette";
   /** Outlines: how many contours, spread across the tones this layer draws. */
   contours?: number;
   /** Outlines: how much fine detail and noise is smoothed away first, in mm on the page. */
@@ -41,6 +41,15 @@ export interface Photo {
   centerSmoothMm?: number;
   /** Centerlines: lines and whiskers shorter than this are left out, in mm. */
   centerShortestMm?: number;
+  /**
+   * Silhouette: how light, 0 to 1, a part of the picture is before it counts as paper. The shape is
+   * drawn round where paint meets paper - its outline, and each hole in it as a loop of its own.
+   */
+  silhouetteFrom?: number;
+  /** Silhouette: how much the edge is smoothed first, in mm on the page, so brush texture isn't followed. */
+  silhouetteSmoothMm?: number;
+  /** Silhouette: loops shorter than this all the way round are left out, in mm: specks of paint, flecks of paper. */
+  silhouetteSmallestMm?: number;
   /** Tone lines: how far apart the rows are, in mm. */
   rowMm?: number;
   /** Tone lines: the length of one wave where the photo is darkest, in mm. Lighter tones stretch it. */
@@ -235,7 +244,7 @@ export interface PhotoPart {
 
 /** The settings a layer of a photo keeps as its own, as opposed to the photo's: what a mode remembers. */
 export const LAYER_SETTINGS = [
-  "style", "angle", "spacingMm", "levels", "rowMm", "waveMm", "contours", "smoothMm", "centerFrom", "centerSmoothMm", "centerShortestMm", "offsetMm",
+  "style", "angle", "spacingMm", "levels", "rowMm", "waveMm", "contours", "smoothMm", "centerFrom", "centerSmoothMm", "centerShortestMm", "silhouetteFrom", "silhouetteSmoothMm", "silhouetteSmallestMm", "offsetMm",
   "band", "ink", "regions", "region", "key", "regionInks", "keyInk", "plate", "plates",
 ] as const;
 
@@ -264,6 +273,9 @@ export const OUTLINE_DEFAULTS = { contours: 6, smoothMm: 1 };
 
 /** What centerlines start from: anything darker than half-way is a line; a fifth of a millimetre smoothed. */
 export const CENTER_DEFAULTS = { from: 0.5, smoothMm: 0.2, shortestMm: 1 };
+
+/** What a silhouette starts from: paper is lighter than 88% in every colour; a third of a millimetre smoothed; loops under 3 mm left out. */
+export const SILHOUETTE_DEFAULTS = { from: 0.88, smoothMm: 0.3, smallestMm: 3 };
 
 // ---------- Reading the photo ----------
 
@@ -362,16 +374,22 @@ const marksCache = new Map<string, PhotoMarks>();
 export function photoMarks(photo: Photo, w: number, h: number): PhotoMarks | null {
   const tones = tonesOf(photo.src);
   if (!tones || w <= 0 || h <= 0) return null;
-  const key = [photo.src.length, photo.src.slice(-32), w.toFixed(4), h.toFixed(4), photo.brightness, photo.contrast, photo.angle, photo.spacingMm, photo.levels, photo.band?.join(",") ?? "", photo.crop?.join(",") ?? "", photo.bleed ?? 0, photo.style ?? "hatch", photo.rowMm ?? "", photo.waveMm ?? "", photo.ink ?? "", photo.regions?.join(",") ?? "", photo.region ?? "", photo.contours ?? "", photo.smoothMm ?? "", photo.key ? "key" : "", photo.keyInk ?? "", photo.regionInks?.join(",") ?? "", photo.keyStrength ?? "", photo.keyFrom ?? "", photo.plate ?? "", photo.plates?.join(",") ?? "", photo.blackShare ?? "", photo.centerFrom ?? "", photo.centerSmoothMm ?? "", photo.centerShortestMm ?? ""].join("|");
+  const key = marksKey(photo, w, h);
   const known = marksCache.get(key);
   if (known) return known;
   const made = photo.style === "waves" ? waves(tones, photo, w, h)
     : photo.style === "outlines" ? outlines(tones, photo, w, h)
     : photo.style === "centerlines" ? centerlines(tones, photo, w, h)
+    : photo.style === "silhouette" ? silhouette(tones, photo, w, h)
     : hatch(tones, photo, w, h);
   if (marksCache.size > 24) marksCache.delete(marksCache.keys().next().value!);
   marksCache.set(key, made);
   return made;
+}
+
+/** Everything a photo's lines depend on, as one string: the same key, the same lines. */
+function marksKey(photo: Photo, w: number, h: number) {
+  return [photo.src.length, photo.src.slice(-32), w.toFixed(4), h.toFixed(4), photo.brightness, photo.contrast, photo.angle, photo.spacingMm, photo.levels, photo.band?.join(",") ?? "", photo.crop?.join(",") ?? "", photo.bleed ?? 0, photo.style ?? "hatch", photo.rowMm ?? "", photo.waveMm ?? "", photo.ink ?? "", photo.regions?.join(",") ?? "", photo.region ?? "", photo.contours ?? "", photo.smoothMm ?? "", photo.key ? "key" : "", photo.keyInk ?? "", photo.regionInks?.join(",") ?? "", photo.keyStrength ?? "", photo.keyFrom ?? "", photo.plate ?? "", photo.plates?.join(",") ?? "", photo.blackShare ?? "", photo.centerFrom ?? "", photo.centerSmoothMm ?? "", photo.centerShortestMm ?? "", photo.silhouetteFrom ?? "", photo.silhouetteSmoothMm ?? "", photo.silhouetteSmallestMm ?? ""].join("|");
 }
 
 /** How dark the photo is at a point of its box (0 to 1 across and down), after brightness and contrast. */
@@ -1482,24 +1500,21 @@ function circleNodes(c: { cx: number; cy: number; r: number }, from: number, clo
   return nodes;
 }
 
-/**
- * Line art as centerlines: each dark stroke of the picture drawn once, down its middle, however wide
- * it is - a ring is one circle rather than the two edges of a filled band. The picture is made black
- * and white at `centerFrom`, worn down to lines one point wide, and those are walked into strokes:
- * whiskers off, lines carried straight on through where others cross them, smoothed into curves, and
- * a loop that is a circle drawn as an exact one. Split into bands or colours, each layer traces its
- * own part the same way.
- */
-function centerlines(tones: Tones, photo: Photo, w: number, h: number): PhotoMarks {
+/** The grid a line is traced on over a box `w` by `h`: CENTER_EDGE on its longer side, and no finer than the picture itself, which has nothing more to say. */
+function pictureGrid(tones: Tones, photo: Photo, w: number, h: number) {
   const [c0, c1, c2, c3] = photo.crop ?? [0, 0, 1, 1];
-  // No finer than the picture itself, which has nothing more to say.
-  const across = tones.w * (c2 - c0);
-  const down = tones.h * (c3 - c1);
-  const edge = Math.min(CENTER_EDGE, Math.max(across, down));
+  const edge = Math.min(CENTER_EDGE, Math.max(tones.w * (c2 - c0), tones.h * (c3 - c1)));
   const gw = Math.max(3, Math.round((edge * w) / Math.max(w, h)));
   const gh = Math.max(3, Math.round((edge * h) / Math.max(w, h)));
-  const cell = w / (gw - 1);
-  const cellY = h / (gh - 1);
+  return { gw, gh, cell: w / (gw - 1), cellY: h / (gh - 1) };
+}
+
+/**
+ * What centerlines are traced from: the picture as black and white on a grid over its box - 1 where
+ * it is a line, past `centerFrom` after smoothing; a colour layer's own area; a band's own tones.
+ */
+function centerOn(tones: Tones, photo: Photo, w: number, h: number) {
+  const { gw, gh, cell, cellY } = pictureGrid(tones, photo, w, h);
   const { field } = fieldOf(tones, photo, gw, gh, 1);
   blurGrid(field, gw, gh, Math.max(0, photo.centerSmoothMm ?? CENTER_DEFAULTS.smoothMm) / 25.4 / cell);
   // Which points are line: past `centerFrom`; a colour layer's own area; a band's own tones.
@@ -1514,6 +1529,19 @@ function centerlines(tones: Tones, photo: Photo, w: number, h: number): PhotoMar
     const v = field[y * gw + x];
     if (v > lo && v <= hi) on[y * gw + x] = 1;
   }
+  return { gw, gh, cell, cellY, on };
+}
+
+/**
+ * Line art as centerlines: each dark stroke of the picture drawn once, down its middle, however wide
+ * it is - a ring is one circle rather than the two edges of a filled band. The picture is made black
+ * and white at `centerFrom`, worn down to lines one point wide, and those are walked into strokes:
+ * whiskers off, lines carried straight on through where others cross them, smoothed into curves, and
+ * a loop that is a circle drawn as an exact one. Split into bands or colours, each layer traces its
+ * own part the same way.
+ */
+function centerlines(tones: Tones, photo: Photo, w: number, h: number): PhotoMarks {
+  const { gw, gh, cell, cellY, on } = centerOn(tones, photo, w, h);
   const dist = distances(on, gw, gh);
   thin(on, gw, gh);
   const shortest = Math.max(0, photo.centerShortestMm ?? CENTER_DEFAULTS.shortestMm) / 25.4 / cell;
@@ -1573,8 +1601,15 @@ function centerlines(tones: Tones, photo: Photo, w: number, h: number): PhotoMar
     }
     strokes.push(fitNodes(pts, Math.max(cell, cellY) * FIT_CELLS, corners));
   }
-  // Drawn in an order that keeps the pen's travel short: each next the nearest to where the last
-  // ended, turned round if its far end is nearer.
+  const ordered = shortTravel(strokes);
+  return { passes: [pathData(ordered)], strokes: ordered.length, widthMm, circles };
+}
+
+/**
+ * Strokes drawn in an order that keeps the pen's travel short: each next the nearest to where the
+ * last ended, turned round if its far end is nearer.
+ */
+function shortTravel(strokes: Node[][]): Node[][] {
   const ordered: Node[][] = [];
   const left = new Set(strokes.keys());
   let x = 0, y = 0;
@@ -1597,7 +1632,66 @@ function centerlines(tones: Tones, photo: Photo, w: number, h: number): PhotoMar
     x = s[s.length - 1].x;
     y = s[s.length - 1].y;
   }
-  return { passes: [pathData(ordered)], strokes: ordered.length, widthMm, circles };
+  return ordered;
+}
+
+// ---------- Silhouette ----------
+
+/**
+ * A painted or photographed thing on white paper as the line round its shape: traced where paint
+ * meets paper, so it's the outline and, as loops of their own, the holes in it - whatever the paint
+ * does inside. Paper is what is light in every colour, so a pale yellow-green highlight is still
+ * paint. The edge of the picture counts as paper, so a shape cut off by it is closed along it.
+ * Every layer of a split photo draws the same shape: it doesn't depend on tone or colour.
+ */
+function silhouette(tones: Tones, photo: Photo, w: number, h: number): PhotoMarks {
+  const { gw, gh, cell, cellY, field } = paintField(tones, photo, w, h);
+  const from = Math.min(0.99, Math.max(0.01, photo.silhouetteFrom ?? SILHOUETTE_DEFAULTS.from));
+  const smallest = Math.max(0, photo.silhouetteSmallestMm ?? SILHOUETTE_DEFAULTS.smallestMm) / 25.4;
+  const strokes: Node[][] = [];
+  for (const run of contour(field, gw, gh, 1 - from)) {
+    const pts = run.map(([gx, gy]) => ({ x: gx * cell, y: gy * cellY }));
+    let length = 0;
+    for (let i = 1; i < pts.length; i++) length += Math.hypot(pts[i].x - pts[i - 1].x, pts[i].y - pts[i - 1].y);
+    if (length < Math.max(smallest, 2 * cell)) continue;
+    strokes.push(fitNodes(pts, Math.max(cell, cellY) * FIT_CELLS));
+  }
+  const ordered = shortTravel(strokes);
+  return { passes: [pathData(ordered)], strokes: ordered.length };
+}
+
+/**
+ * What a silhouette is traced from: how much paint there is at each point of a grid over the box -
+ * 0 on white paper, 1 where the darkest colour is black - smoothed. The grid's own edge is paper.
+ */
+function paintField(tones: Tones, photo: Photo, w: number, h: number) {
+  const [c0, c1, c2, c3] = photo.crop ?? [0, 0, 1, 1];
+  const { gw, gh, cell, cellY } = pictureGrid(tones, photo, w, h);
+  // How light each pixel is in its darkest colour, after brightness and contrast.
+  const adjust = adjuster(photo.brightness, photo.contrast);
+  const pale = new Float32Array(tones.w * tones.h);
+  for (let p = 0, i = 0; p < pale.length; p++, i += 4) {
+    pale[p] = Math.min(adjust(tones.rgba[i]), adjust(tones.rgba[i + 1]), adjust(tones.rgba[i + 2])) / 255;
+  }
+  const paleAt = (u: number, v: number) => {
+    const x = Math.min(tones.w - 1, Math.max(0, u * (tones.w - 1)));
+    const y = Math.min(tones.h - 1, Math.max(0, v * (tones.h - 1)));
+    const x0 = Math.floor(x), y0 = Math.floor(y);
+    const x1 = Math.min(tones.w - 1, x0 + 1), y1 = Math.min(tones.h - 1, y0 + 1);
+    const fx = x - x0, fy = y - y0;
+    const top = pale[y0 * tones.w + x0] * (1 - fx) + pale[y0 * tones.w + x1] * fx;
+    const bottom = pale[y1 * tones.w + x0] * (1 - fx) + pale[y1 * tones.w + x1] * fx;
+    return top * (1 - fy) + bottom * fy;
+  };
+  // How much paint: 0 on white paper, 1 where the darkest colour is black. The grid's own edge is paper.
+  const field = new Float32Array(gw * gh);
+  for (let gy = 1; gy < gh - 1; gy++) {
+    for (let gx = 1; gx < gw - 1; gx++) {
+      field[gy * gw + gx] = 1 - paleAt(c0 + (gx / (gw - 1)) * (c2 - c0), c1 + (gy / (gh - 1)) * (c3 - c1));
+    }
+  }
+  blurGrid(field, gw, gh, Math.max(0, photo.silhouetteSmoothMm ?? SILHOUETTE_DEFAULTS.smoothMm) / 25.4 / cell);
+  return { gw, gh, cell, cellY, field };
 }
 
 /** A run drawn the other way: the same curve, its handles swapped end for end. */
@@ -1691,10 +1785,13 @@ export function photoFromData(raw: Record<string, unknown>): Photo | null {
       ? { crop: raw.crop.map(Number) as [number, number, number, number] }
       : {}),
     ...(raw.fit === "fit" || raw.fit === "fill" ? { fit: raw.fit } : {}),
-    ...(raw.style === "waves" || raw.style === "outlines" || raw.style === "centerlines" ? { style: raw.style } : {}),
+    ...(raw.style === "waves" || raw.style === "outlines" || raw.style === "centerlines" || raw.style === "silhouette" ? { style: raw.style } : {}),
     ...(Number.isFinite(Number(raw.center_from)) && raw.center_from !== undefined ? { centerFrom: Number(raw.center_from) } : {}),
     ...(Number.isFinite(Number(raw.center_smooth_mm)) && raw.center_smooth_mm !== undefined ? { centerSmoothMm: Number(raw.center_smooth_mm) } : {}),
     ...(Number.isFinite(Number(raw.center_shortest_mm)) && raw.center_shortest_mm !== undefined ? { centerShortestMm: Number(raw.center_shortest_mm) } : {}),
+    ...(Number.isFinite(Number(raw.silhouette_from)) && raw.silhouette_from !== undefined ? { silhouetteFrom: Number(raw.silhouette_from) } : {}),
+    ...(Number.isFinite(Number(raw.silhouette_smooth_mm)) && raw.silhouette_smooth_mm !== undefined ? { silhouetteSmoothMm: Number(raw.silhouette_smooth_mm) } : {}),
+    ...(Number.isFinite(Number(raw.silhouette_smallest_mm)) && raw.silhouette_smallest_mm !== undefined ? { silhouetteSmallestMm: Number(raw.silhouette_smallest_mm) } : {}),
     ...(Number.isFinite(Number(raw.contours)) && raw.contours !== undefined ? { contours: Number(raw.contours) } : {}),
     ...(Number.isFinite(Number(raw.smooth_mm)) && raw.smooth_mm !== undefined ? { smoothMm: Number(raw.smooth_mm) } : {}),
     ...(typeof raw.ink === "string" ? { ink: raw.ink } : {}),
@@ -1731,10 +1828,13 @@ export const photoData = (p: Photo) => ({
   ...(p.band ? { band: p.band } : {}),
   ...(p.crop ? { crop: p.crop } : {}),
   ...(p.fit ? { fit: p.fit } : {}),
-  ...(p.style === "waves" || p.style === "outlines" || p.style === "centerlines" ? { style: p.style } : {}),
+  ...(p.style === "waves" || p.style === "outlines" || p.style === "centerlines" || p.style === "silhouette" ? { style: p.style } : {}),
   ...(p.centerFrom !== undefined ? { center_from: p.centerFrom } : {}),
   ...(p.centerSmoothMm !== undefined ? { center_smooth_mm: p.centerSmoothMm } : {}),
   ...(p.centerShortestMm !== undefined ? { center_shortest_mm: p.centerShortestMm } : {}),
+  ...(p.silhouetteFrom !== undefined ? { silhouette_from: p.silhouetteFrom } : {}),
+  ...(p.silhouetteSmoothMm !== undefined ? { silhouette_smooth_mm: p.silhouetteSmoothMm } : {}),
+  ...(p.silhouetteSmallestMm !== undefined ? { silhouette_smallest_mm: p.silhouetteSmallestMm } : {}),
   ...(p.contours !== undefined ? { contours: p.contours } : {}),
   ...(p.smoothMm !== undefined ? { smooth_mm: p.smoothMm } : {}),
   ...(p.ink ? { ink: p.ink, regions: p.regions, region: p.region } : {}),

@@ -31,7 +31,7 @@ import { flattenPath, flattenRun, mapNode, parsePath, simplifyRun, type Node } f
 import { fitText, textRuns } from "./lib/text";
 import { defaultRepeat, placements, REPEAT_FIELDS, type Repeat, type RepeatKind } from "./lib/repeat";
 import { parseDrawing } from "./lib/parse";
-import { BAND_NAMES, BLACK_SHARE, KEY_FROM, LAYER_SETTINGS, PLATES, PLATE_AIMS, MOST_LAYERS, PHOTO_DEFAULTS, WAVE_DEFAULTS, OUTLINE_DEFAULTS, CENTER_DEFAULTS, photoMarks, colourGroups, darkestOf, isColourful, matchPens, placeOnPage, plateNamed, platePens, readTones, stemWithoutPlate, workingCopy, type Photo, type PhotoPart, type Plate } from "./lib/photo";
+import { BAND_NAMES, BLACK_SHARE, KEY_FROM, LAYER_SETTINGS, PLATES, PLATE_AIMS, MOST_LAYERS, PHOTO_DEFAULTS, WAVE_DEFAULTS, OUTLINE_DEFAULTS, CENTER_DEFAULTS, SILHOUETTE_DEFAULTS, photoMarks, colourGroups, darkestOf, isColourful, matchPens, placeOnPage, plateNamed, platePens, readTones, stemWithoutPlate, workingCopy, type Photo, type PhotoPart, type Plate } from "./lib/photo";
 import { usePhotoRead } from "./lib/usePhotoRead";
 import { PaletteMenu } from "../shared/components/controls/PaletteMenu";
 import { Hints } from "../shared/components/controls/Hints";
@@ -3030,6 +3030,7 @@ export default function App() {
            waves: "Tone lines: one line along each row, waving harder and tighter where it's darker",
            outlines: "Outlines: the photo traced as contour lines, following its edges and shapes",
            centerlines: "Centerlines: each dark stroke of a line drawing drawn once, down its middle, so a ring is one circle",
+           silhouette: "Silhouette: the line round a shape on white paper - its outline, and each hole in it",
           } as const)[chosen.photo.style ?? "hatch"]}
           onChange={(e) => {
            const style = e.target.value as NonNullable<Photo["style"]>;
@@ -3040,6 +3041,7 @@ export default function App() {
           <option value="waves">Tone lines</option>
           <option value="outlines">Outlines</option>
           <option value="centerlines">Centerlines</option>
+          <option value="silhouette">Silhouette</option>
          </InputSelect>
          {/* This layer's lines shifted from where the photo puts them: into register with the
            others, or out of it on purpose. Its own; the rest stay put. */}
@@ -3047,7 +3049,13 @@ export default function App() {
           <NumberField label="Offset X" unit="mm" min={-100} max={100} step={0.1} value={chosen.photo.offsetMm?.[0] ?? 0} onChange={(x) => setPhotoOf({ offsetMm: [x, chosen.photo!.offsetMm?.[1] ?? 0] })} />
           <NumberField label="Offset Y" unit="mm" min={-100} max={100} step={0.1} value={chosen.photo.offsetMm?.[1] ?? 0} onChange={(y) => setPhotoOf({ offsetMm: [chosen.photo!.offsetMm?.[0] ?? 0, y] })} />
          </div>
-         {chosen.photo.style === "centerlines" ? (
+         {chosen.photo.style === "silhouette" ? (
+          <div className={styles.fillRow}>
+           <NumberField label="Paper lighter than" unit="%" min={1} max={99} step={1} value={Math.round((chosen.photo.silhouetteFrom ?? SILHOUETTE_DEFAULTS.from) * 100)} onChange={(v) => setPhotoOf({ silhouetteFrom: v / 100 })} />
+           <NumberField label="Smoothing" unit="mm" min={0} max={5} step={0.05} value={chosen.photo.silhouetteSmoothMm ?? SILHOUETTE_DEFAULTS.smoothMm} onChange={(silhouetteSmoothMm) => setPhotoOf({ silhouetteSmoothMm })} />
+           <NumberField label="Smallest" unit="mm" min={0} max={50} step={0.5} value={chosen.photo.silhouetteSmallestMm ?? SILHOUETTE_DEFAULTS.smallestMm} onChange={(silhouetteSmallestMm) => setPhotoOf({ silhouetteSmallestMm })} />
+          </div>
+         ) : chosen.photo.style === "centerlines" ? (
           <div className={styles.fillRow}>
            <NumberField label="Darker than" unit="%" min={1} max={99} step={5} value={Math.round((chosen.photo.centerFrom ?? CENTER_DEFAULTS.from) * 100)} onChange={(v) => setPhotoOf({ centerFrom: v / 100 })} />
            <NumberField label="Smoothing" unit="mm" min={0} max={5} step={0.05} value={chosen.photo.centerSmoothMm ?? CENTER_DEFAULTS.smoothMm} onChange={(centerSmoothMm) => setPhotoOf({ centerSmoothMm })} />
@@ -3073,7 +3081,9 @@ export default function App() {
          )}
          <p className={styles.empty}>
           {marks
-           ? chosen.photo.style === "centerlines"
+           ? chosen.photo.style === "silhouette"
+            ? `${marks.strokes.toLocaleString()} ${marks.strokes === 1 ? "loop" : "loops"}: the shape's outline${marks.strokes > 1 ? " and the holes in it" : ""}, where the picture meets white paper. Paper lighter than sets what counts as paper; Smallest drops specks and flecks.`
+            : chosen.photo.style === "centerlines"
             ? `${marks.strokes.toLocaleString()} ${marks.strokes === 1 ? "line" : "lines"}${marks.circles ? `, ${marks.circles} of them ${marks.circles === 1 ? "a circle" : "circles"}` : ""}, each drawn once down the middle of a stroke in the picture${marks.widthMm ? ` (they're about ${marks.widthMm.toFixed(1)} mm wide there)` : ""}. Darker than sets what counts as a line; Shortest drops specks and whiskers.`
             : chosen.photo.style === "outlines"
             ? `${marks.strokes.toLocaleString()} contours, along the photo's edges and shapes. More lines follow finer changes of tone; more smoothing, only the big ones.`
