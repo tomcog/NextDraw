@@ -73,6 +73,17 @@
 
 .fillRow > * { flex: 1 1 4.5rem; min-width: 4.5rem; }
 
+/* Lining the active layer up with another: which one, then the six ways, under the layer list. */
+.alignRow {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.5rem;
+  margin-top: 0.5rem;
+}
+
+.alignRow > :first-child { align-self: stretch; }
+
 /* The way back to the tool's own spacing sits under the spacing field it undoes, at the right,
    rather than under the angle beside it. */
 .fillFollow {

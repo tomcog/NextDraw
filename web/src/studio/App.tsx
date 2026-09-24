@@ -3,7 +3,7 @@ import { DrawingToolSection } from "../shared/components/controls/DrawingToolSec
 import { PaperSection } from "../shared/components/controls/PaperSection";
 import { SettingsSection } from "../shared/components/controls/SettingsSection";
 import { Button, ButtonRound, Card, Checkbox, ConfirmButton, InputSelect, InputText, InputTextarea, LayerController, Segment, SegmentedControl } from "@tomcoggia/ui";
-import { ArrowDownToLine, AudioWaveform, Circle, ClipboardCopy, ClipboardPaste, Copy, Ellipsis, EllipsisVertical, FilePlus, FlameKindling, FolderOpen, Image as ImageIcon, ImagePlus, Grid2x2, Layers2, LayersArrowDown, LayersArrowUp, Merge, LineStyle, LoaderPinwheel, Menu, Minus, MousePointer2, Orbit, PaintBucket, PenLine, Pentagon, Plus, Rainbow, RotateCw, Save, Send, Shell, Signal, Spline, Square, SquareDimensions, SquareStack, Star, Target, Trash2, Type, Waves } from "lucide-react";
+import { AlignCenterHorizontal, AlignCenterVertical, AlignEndHorizontal, AlignEndVertical, AlignStartHorizontal, AlignStartVertical, ArrowDownToLine, AudioWaveform, Circle, ClipboardCopy, ClipboardPaste, Copy, Ellipsis, EllipsisVertical, FilePlus, FlameKindling, FolderOpen, Image as ImageIcon, ImagePlus, Grid2x2, Layers2, LayersArrowDown, LayersArrowUp, Merge, LineStyle, LoaderPinwheel, Menu, Minus, MousePointer2, Orbit, PaintBucket, PenLine, Pentagon, Plus, Rainbow, RotateCw, Save, Send, Shell, Signal, Spline, Square, SquareDimensions, SquareStack, Star, Target, Trash2, Type, Waves } from "lucide-react";
 import { FileBrowser, LAST_FOLDER_KEY, type CombineResult, type OpenResult } from "../shared/components/FileBrowser";
 import { Section } from "../shared/components/controls/Section";
 import { NumberField } from "../shared/components/controls/NumberField";
@@ -543,13 +543,16 @@ export default function App() {
   });
  };
 
- const nudge = (dx: number, dy: number) => {
-  if (!selected.length) return;
+ const nudge = (dx: number, dy: number) => moveShapes(selected, dx, dy);
+
+ /** Move these shapes together, kept on the page; a photo's other layers go with it. */
+ const moveShapes = (which: string[], dx: number, dy: number) => {
+  if (!which.length) return;
   record();
   // Worked out from the list as it stands rather than from this render's copy, so two presses in
   // one tick both count instead of the second undoing the first.
   setShapes((list) => {
-   const ids = new Set(selected);
+   const ids = new Set(which);
    const moving = list.filter((s) => ids.has(s.id));
    if (!moving.length) return list;
    const { x0, y0, x1, y1 } = boxAround(moving);
@@ -1014,6 +1017,29 @@ export default function App() {
  // The layer new shapes land on, and the one the Shapes card lists. Always a real layer.
  const active = layers.find((l) => l.id === activeLayer) ?? layers[0];
  const onActive = shapes.filter((sh) => sh.layerId === active?.id);
+
+ // Lining one layer up with another: everything on the active layer moved as one, so its box meets
+ // the other layer's - or the paper's - at the edge or middle asked for. The layers that can be
+ // lined up with are those with something on them; the paper when there's none.
+ const [alignTo, setAlignTo] = useState("");
+ // A layer that is all another part of the same photo moves with the active one, so it can't be
+ // lined up with: the photo's layers are already in register.
+ const activePhotos = new Set(onActive.flatMap((sh) => (sh.photo?.group ? [sh.photo.group] : [])));
+ const alignable = layers.filter((l) => {
+  if (l.id === active?.id) return false;
+  const on = shapes.filter((sh) => sh.layerId === l.id);
+  return on.length > 0 && !on.every((sh) => sh.photo?.group && activePhotos.has(sh.photo.group));
+ });
+ const alignTarget = alignTo === "paper" || alignable.some((l) => l.id === alignTo) ? alignTo : alignable[0]?.id ?? "paper";
+ const alignLayer = (edge: "left" | "centre" | "right" | "top" | "middle" | "bottom") => {
+  if (!onActive.length) return;
+  const to = alignTarget === "paper" ? { x0: 0, y0: 0, x1: page.w, y1: page.h } : boxAround(shapes.filter((sh) => sh.layerId === alignTarget));
+  const from = boxAround(onActive);
+  const dx = edge === "left" ? to.x0 - from.x0 : edge === "right" ? to.x1 - from.x1 : edge === "centre" ? (to.x0 + to.x1 - from.x0 - from.x1) / 2 : 0;
+  const dy = edge === "top" ? to.y0 - from.y0 : edge === "bottom" ? to.y1 - from.y1 : edge === "middle" ? (to.y0 + to.y1 - from.y0 - from.y1) / 2 : 0;
+  if (Math.abs(dx) < 1e-6 && Math.abs(dy) < 1e-6) return;
+  moveShapes(onActive.map((sh) => sh.id), dx, dy);
+ };
  const pickedIds = useMemo(() => new Set(selected), [selected]);
  // The chosen photo's card counts its lines, which can only be made once the photo has been read.
  usePhotoRead(chosen?.photo?.src);
@@ -2645,6 +2671,23 @@ export default function App() {
           );
          })}
         </ul>
+        {/* The active layer lined up with another, by the boxes round what's on them. */}
+        {active && onActive.length > 0 && (
+         <div className={styles.alignRow}>
+          <InputSelect size="md" label={`Align ${active.name} to`} value={alignTarget} disabled={busy} onChange={(e) => setAlignTo(e.target.value)}>
+           {alignable.map((l) => <option key={l.id} value={l.id}>{l.name}</option>)}
+           <option value="paper">The paper</option>
+          </InputSelect>
+          <SegmentedControl size="sm" variant="dark" actions aria-label={`Align ${active.name}`}>
+           <Segment icon={<AlignStartVertical />} aria-label="Left edges" title="Left edges: move this layer so its left edge meets the other's" disabled={busy} onClick={() => alignLayer("left")} />
+           <Segment icon={<AlignCenterVertical />} aria-label="Centres" title="Centres: move this layer across so the two are centred on each other" disabled={busy} onClick={() => alignLayer("centre")} />
+           <Segment icon={<AlignEndVertical />} aria-label="Right edges" title="Right edges: move this layer so its right edge meets the other's" disabled={busy} onClick={() => alignLayer("right")} />
+           <Segment icon={<AlignStartHorizontal />} aria-label="Top edges" title="Top edges: move this layer so its top meets the other's" disabled={busy} onClick={() => alignLayer("top")} />
+           <Segment icon={<AlignCenterHorizontal />} aria-label="Middles" title="Middles: move this layer up or down so the two are centred on each other" disabled={busy} onClick={() => alignLayer("middle")} />
+           <Segment icon={<AlignEndHorizontal />} aria-label="Bottom edges" title="Bottom edges: move this layer so its bottom meets the other's" disabled={busy} onClick={() => alignLayer("bottom")} />
+          </SegmentedControl>
+         </div>
+        )}
        </Section>
 
        {/* Only while there is something on the layer: a heading over a line saying there is
