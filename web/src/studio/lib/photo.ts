@@ -4,7 +4,7 @@
 // line: a photo is tens of thousands of strokes, and it is the photo and its numbers that are edited.
 
 import type { Point } from "./parametric";
-import { catmullNodes, pathData, simplifyRun, type Node } from "./path";
+import { fitNodes, pathData, type Node } from "./path";
 
 /** What a photo shape keeps: its working copy, and how it is turned into lines. */
 export interface Photo {
@@ -1063,6 +1063,9 @@ function outlines(tones: Tones, photo: Photo, w: number, h: number): PhotoMarks 
 /** The longer side of the grid centerlines are traced on, at most: fine enough for a line a pen draws. */
 const CENTER_EDGE = 1000;
 
+/** How far a centerline's curves may stray from the traced points, in grid steps: past a pixel's jag, short of the picture's own bends. */
+const FIT_CELLS = 1.5;
+
 /** The eight neighbours of a grid point, clockwise from above, as steps across and down. */
 const RING: [number, number][] = [[0, -1], [1, -1], [1, 0], [1, 1], [0, 1], [-1, 1], [-1, 0], [-1, -1]];
 
@@ -1293,6 +1296,89 @@ function traceRuns(on: Uint8Array, gw: number, gh: number): Run[] {
   return runs;
 }
 
+/** Which way a run leaves its end: toward a point `steps` in, so a pixel's jag doesn't decide it. */
+function leavingDir(r: Run, end: 0 | 1, gw: number, steps = 6): [number, number] {
+  const n = r.pts.length;
+  const a = r.pts[end ? n - 1 : 0];
+  const b = r.pts[end ? Math.max(0, n - 1 - steps) : Math.min(n - 1, steps)];
+  const dx = (b % gw) - (a % gw);
+  const dy = Math.floor(b / gw) - Math.floor(a / gw);
+  const len = Math.hypot(dx, dy) || 1;
+  return [dx / len, dy / len];
+}
+
+/**
+ * Sharp tips made whole. Where two lines of a drawing meet in a point - a leaf's tip, a V - the ink
+ * runs together into a wedge, and thinning makes that a Y: the two lines meeting a short tail that
+ * runs on out to the point. A junction of just three, where two lines arrive from much the same
+ * side and the third is a free end pointing away between them, is one of those: the tail is taken
+ * off and the two lines joined as one, running into the point and back out, with the point kept
+ * sharp. The points that are tips are added to `tips`.
+ */
+function joinTips(runs: Run[], gw: number, dist: Float32Array, tips: Set<number>): Run[] {
+  const at = new Map<number, Set<Run>>();
+  const add = (r: Run) => {
+    for (const e of r.ends) if (e >= 0) (at.get(e) ?? at.set(e, new Set()).get(e)!).add(r);
+  };
+  const drop = (r: Run) => {
+    for (const e of r.ends) if (e >= 0) at.get(e)?.delete(r);
+  };
+  runs.forEach(add);
+  const reach = 10;
+  for (const [j, set] of at) {
+    const ends: [Run, 0 | 1][] = [];
+    for (const r of set) for (const e of [0, 1] as const) if (!r.closed && r.ends[e] === j) ends.push([r, e]);
+    if (ends.length !== 3) continue;
+    for (let s = 0; s < 3; s++) {
+      const [tail, te] = ends[s];
+      if (tail.ends[1 - te] !== -1) continue;
+      const [[ra, ea], [rb, eb]] = ends.filter((_, k) => k !== s);
+      // The tail is no longer than the wedge is likely to be: a few times the ink's width there.
+      const where = tail.pts[te ? tail.pts.length - 1 : 0];
+      if (tail.pts.length > Math.max(8, dist[where] * 8)) continue;
+      const u = leavingDir(ra, ea, gw, reach);
+      const v = leavingDir(rb, eb, gw, reach);
+      // The two lines leave together, less than about 75 degrees apart...
+      if (u[0] * v[0] + u[1] * v[1] < 0.25) continue;
+      const mx = u[0] + v[0];
+      const my = u[1] + v[1];
+      const ml = Math.hypot(mx, my) || 1;
+      const t = leavingDir(tail, te, gw);
+      // ...and the tail points away from them both, out of the V.
+      if ((t[0] * mx + t[1] * my) / ml > -0.7) continue;
+      const apex = tail.pts[te ? 0 : tail.pts.length - 1];
+      // Each line is cut back from the junction by the length of the bend it makes into the tail, and
+      // runs from there straight into the point.
+      const cut = Math.max(1, Math.round(dist[where] * 3));
+      const trim = (r: Run, e: 0 | 1) => {
+        const pts = e === 1 ? r.pts : [...r.pts].reverse(); // toward the junction
+        return pts.slice(0, Math.max(2, pts.length - cut));
+      };
+      drop(ra);
+      drop(rb);
+      drop(tail);
+      tail.pts = [];
+      tips.add(apex);
+      if (ra === rb) {
+        // One run leaves the junction and comes back to it: a loop with a point, like a teardrop.
+        const loop = ra.pts.length > cut * 2 + 2 ? ra.pts.slice(cut, ra.pts.length - cut) : ra.pts;
+        ra.pts = [apex, ...loop, apex];
+        ra.ends = [-1, -1];
+      } else {
+        const inward = trim(ra, ea);
+        const outward = trim(rb, eb).reverse();
+        const joined: Run = { pts: [...inward, apex, ...outward], ends: [ra.ends[1 - ea], rb.ends[1 - eb]], closed: false };
+        ra.pts = [];
+        rb.pts = [];
+        runs.push(joined);
+        add(joined);
+      }
+      break;
+    }
+  }
+  return runs.filter((r) => r.pts.length > 1);
+}
+
 /**
  * Runs that meet at a junction joined where one carries straight on into another, so a line that
  * another crosses or branches off is still drawn as one stroke. The straightest pair at a junction
@@ -1307,16 +1393,7 @@ function joinRuns(runs: Run[], gw: number): Run[] {
     for (const e of r.ends) if (e >= 0) at.get(e)?.delete(r);
   };
   runs.forEach(add);
-  // Which way a run leaves its end: toward a point a few steps in, so a pixel's jag doesn't decide it.
-  const leaving = (r: Run, end: 0 | 1) => {
-    const n = r.pts.length;
-    const a = r.pts[end ? n - 1 : 0];
-    const b = r.pts[end ? Math.max(0, n - 7) : Math.min(n - 1, 6)];
-    const dx = (b % gw) - (a % gw);
-    const dy = Math.floor(b / gw) - Math.floor(a / gw);
-    const len = Math.hypot(dx, dy) || 1;
-    return [dx / len, dy / len];
-  };
+  const leaving = (r: Run, end: 0 | 1) => leavingDir(r, end, gw);
   for (const [j, set] of at) {
     for (;;) {
       const ends: [Run, 0 | 1][] = [];
@@ -1448,12 +1525,16 @@ function centerlines(tones: Tones, photo: Photo, w: number, h: number): PhotoMar
   widths.sort((a, b) => a - b);
   const widthMm = widths.length ? widths[Math.floor(widths.length / 2)] * cell * 25.4 : undefined;
 
-  const runs = joinRuns(traceRuns(on, gw, gh), gw);
+  const tips = new Set<number>();
+  const runs = joinRuns(joinTips(traceRuns(on, gw, gh), gw, dist, tips), gw);
   const toPoint = (i: number): Point => ({ x: (i % gw) * cell, y: Math.floor(i / gw) * cellY });
   const strokes: Node[][] = [];
   let circles = 0;
   for (const run of runs) {
     let pts = run.pts.map(toPoint);
+    // A tip stays where it is and stays sharp.
+    const corners: number[] = [];
+    run.pts.forEach((g, i) => { if (tips.has(g)) corners.push(i); });
     let length = 0;
     for (let i = 1; i < pts.length; i++) length += Math.hypot(pts[i].x - pts[i - 1].x, pts[i].y - pts[i - 1].y);
     if (length < Math.max(2, shortest) * cell) continue;
@@ -1463,12 +1544,18 @@ function centerlines(tones: Tones, photo: Photo, w: number, h: number): PhotoMar
     const n = pts.length;
     pts = pts.map((p, i) => {
       if (!run.closed && (i < 1 || i > n - 2)) return p;
-      let sx = 0, sy = 0, c = 0;
-      for (let d = -k; d <= k; d++) {
-        const j = run.closed ? (i + d + n) % n : Math.min(n - 1, Math.max(0, i + d));
-        sx += pts[j].x;
-        sy += pts[j].y;
-        c++;
+      if (corners.includes(i)) return p;
+      let sx = p.x, sy = p.y, c = 1;
+      // Out either way as far as `k`, stopping short of a tip: the straight run into it is a long
+      // step, and averaging across it would pull the line out of true.
+      for (const way of [-1, 1]) {
+        for (let d = 1; d <= k; d++) {
+          const j = run.closed ? (i + way * d + n) % n : Math.min(n - 1, Math.max(0, i + way * d));
+          if (corners.includes(j)) break;
+          sx += pts[j].x;
+          sy += pts[j].y;
+          c++;
+        }
       }
       return { x: sx / c, y: sy / c };
     });
@@ -1484,7 +1571,7 @@ function centerlines(tones: Tones, photo: Photo, w: number, h: number): PhotoMar
       }
       pts.push({ ...pts[0] });
     }
-    strokes.push(catmullNodes(simplifyRun(pts, Math.max(cell, cellY) * 0.6)));
+    strokes.push(fitNodes(pts, Math.max(cell, cellY) * FIT_CELLS, corners));
   }
   // Drawn in an order that keeps the pen's travel short: each next the nearest to where the last
   // ended, turned round if its far end is nearer.

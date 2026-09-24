@@ -344,3 +344,147 @@ export function simplifyRun(points: Point[], tolerance: number): Point[] {
   }
   return points.filter((_, i) => keep[i]);
 }
+
+/**
+ * A run of points drawn as the fewest curves that pass within `tolerance` of every one of them:
+ * Schneider's fit, from Graphics Gems. Each stretch is one cubic, its handles found by least
+ * squares along the directions the run leaves and arrives; where no cubic is close enough, the
+ * stretch is split at its worst point and each half fitted again, meeting smoothly there. So a
+ * traced line's pixel steps are passed through rather than drawn, and a long gentle bend is one
+ * curve. The points at `corners` are kept sharp: the fit starts afresh on either side of them.
+ */
+export function fitNodes(points: Point[], tolerance: number, corners: number[] = []): Node[] {
+  const n = points.length;
+  if (n < 2) return points.map((p) => ({ x: p.x, y: p.y }));
+  const closed = n > 3 && Math.hypot(points[0].x - points[n - 1].x, points[0].y - points[n - 1].y) < 1e-9;
+  const breaks = [...new Set([0, ...corners.filter((i) => i > 0 && i < n - 1), n - 1])].sort((a, b) => a - b);
+  // Directions are read a few points along, so one pixel's jag doesn't turn a whole curve.
+  const reach = 3;
+  const toward = (from: Point, to: Point) => {
+    const dx = to.x - from.x;
+    const dy = to.y - from.y;
+    const len = Math.hypot(dx, dy) || 1;
+    return { x: dx / len, y: dy / len };
+  };
+  // A loop with no corner of its own is smooth round its join: it leaves and arrives along one line.
+  const seam = closed && breaks.length === 2 ? toward(points[n - 1 - reach], points[reach]) : null;
+  const out: Node[] = [{ x: points[0].x, y: points[0].y }];
+  for (let b = 0; b + 1 < breaks.length; b++) {
+    const first = breaks[b];
+    const last = breaks[b + 1];
+    const leave = seam && first === 0 ? seam : toward(points[first], points[Math.min(last, first + reach)]);
+    const arrive = seam && last === n - 1 ? { x: -seam.x, y: -seam.y } : toward(points[last], points[Math.max(first, last - reach)]);
+    fitCubic(points, first, last, leave, arrive, tolerance, out, reach);
+  }
+  return out;
+}
+
+const bez = (p: Point[], t: number): Point => {
+  const s = 1 - t;
+  const a = s * s * s, b = 3 * s * s * t, c = 3 * s * t * t, d = t * t * t;
+  return { x: a * p[0].x + b * p[1].x + c * p[2].x + d * p[3].x, y: a * p[0].y + b * p[1].y + c * p[2].y + d * p[3].y };
+};
+
+/** One stretch of `fitNodes`: a cubic from `first` to `last` if one is close enough, else two halves. */
+function fitCubic(d: Point[], first: number, last: number, leave: Point, arrive: Point, tolerance: number, out: Node[], reach: number) {
+  const push = (c: Point[]) => {
+    out[out.length - 1].out = c[1];
+    out.push({ x: c[3].x, y: c[3].y, in: c[2] });
+  };
+  const p0 = d[first];
+  const p3 = d[last];
+  const span = Math.hypot(p3.x - p0.x, p3.y - p0.y);
+  if (last - first === 1) {
+    push([p0, { x: p0.x + leave.x * span / 3, y: p0.y + leave.y * span / 3 }, { x: p3.x + arrive.x * span / 3, y: p3.y + arrive.y * span / 3 }, p3]);
+    return;
+  }
+  // Where along the curve each point should fall: first by the distance walked, then refined.
+  let u: number[] = [0];
+  for (let i = first + 1; i <= last; i++) u.push(u[u.length - 1] + Math.hypot(d[i].x - d[i - 1].x, d[i].y - d[i - 1].y));
+  const total = u[u.length - 1] || 1;
+  u = u.map((v) => v / total);
+  let curve = handles(d, first, last, u, leave, arrive);
+  let [worst, split] = maxError(d, first, last, curve, u);
+  if (worst < tolerance) return push(curve);
+  if (worst < tolerance * 4) {
+    for (let k = 0; k < 4; k++) {
+      u = reparameterize(d, first, u, curve);
+      curve = handles(d, first, last, u, leave, arrive);
+      [worst, split] = maxError(d, first, last, curve, u);
+      if (worst < tolerance) return push(curve);
+    }
+  }
+  // Split at the worst point, both halves meeting it along the line through its neighbours.
+  split = Math.max(first + 1, Math.min(last - 1, split));
+  const a = d[Math.max(first, split - reach)];
+  const b = d[Math.min(last, split + reach)];
+  const dx = b.x - a.x;
+  const dy = b.y - a.y;
+  const len = Math.hypot(dx, dy) || 1;
+  fitCubic(d, first, split, leave, { x: -dx / len, y: -dy / len }, tolerance, out, reach);
+  fitCubic(d, split, last, { x: dx / len, y: dy / len }, arrive, tolerance, out, reach);
+}
+
+/** The handle lengths along `leave` and `arrive` that bring the cubic closest to the points, by least squares. */
+function handles(d: Point[], first: number, last: number, u: number[], leave: Point, arrive: Point): Point[] {
+  const p0 = d[first];
+  const p3 = d[last];
+  let c00 = 0, c01 = 0, c11 = 0, x0 = 0, x1 = 0;
+  for (let i = 0; i < u.length; i++) {
+    const t = u[i];
+    const s = 1 - t;
+    const b0 = s * s * s, b1 = 3 * s * s * t, b2 = 3 * s * t * t, b3 = t * t * t;
+    const a0 = { x: leave.x * b1, y: leave.y * b1 };
+    const a1 = { x: arrive.x * b2, y: arrive.y * b2 };
+    c00 += a0.x * a0.x + a0.y * a0.y;
+    c01 += a0.x * a1.x + a0.y * a1.y;
+    c11 += a1.x * a1.x + a1.y * a1.y;
+    const rx = d[first + i].x - (p0.x * (b0 + b1) + p3.x * (b2 + b3));
+    const ry = d[first + i].y - (p0.y * (b0 + b1) + p3.y * (b2 + b3));
+    x0 += a0.x * rx + a0.y * ry;
+    x1 += a1.x * rx + a1.y * ry;
+  }
+  const det = c00 * c11 - c01 * c01;
+  let al = det ? (x0 * c11 - x1 * c01) / det : 0;
+  let ar = det ? (c00 * x1 - c01 * x0) / det : 0;
+  const span = Math.hypot(p3.x - p0.x, p3.y - p0.y);
+  // A handle backwards, vanishing or wildly long makes a loop or a kink: a third of the way instead.
+  if (!(al > span * 1e-3 && ar > span * 1e-3 && al < span * 2 && ar < span * 2)) al = ar = span / 3;
+  return [p0, { x: p0.x + leave.x * al, y: p0.y + leave.y * al }, { x: p3.x + arrive.x * ar, y: p3.y + arrive.y * ar }, p3];
+}
+
+/** The furthest any point lies from where the curve puts it, and which point that is. */
+function maxError(d: Point[], first: number, last: number, curve: Point[], u: number[]): [number, number] {
+  let worst = 0;
+  let at = Math.floor((first + last) / 2);
+  for (let i = first + 1; i < last; i++) {
+    const q = bez(curve, u[i - first]);
+    const e = Math.hypot(q.x - d[i].x, q.y - d[i].y);
+    if (e > worst) {
+      worst = e;
+      at = i;
+    }
+  }
+  return [worst, at];
+}
+
+/** Each point's place along the curve moved to where the curve comes nearest it: one Newton step. */
+function reparameterize(d: Point[], first: number, u: number[], c: Point[]): number[] {
+  return u.map((t, i) => {
+    const p = d[first + i];
+    const q = bez(c, t);
+    const s = 1 - t;
+    const q1 = {
+      x: 3 * (s * s * (c[1].x - c[0].x) + 2 * s * t * (c[2].x - c[1].x) + t * t * (c[3].x - c[2].x)),
+      y: 3 * (s * s * (c[1].y - c[0].y) + 2 * s * t * (c[2].y - c[1].y) + t * t * (c[3].y - c[2].y)),
+    };
+    const q2 = {
+      x: 6 * (s * (c[2].x - 2 * c[1].x + c[0].x) + t * (c[3].x - 2 * c[2].x + c[1].x)),
+      y: 6 * (s * (c[2].y - 2 * c[1].y + c[0].y) + t * (c[3].y - 2 * c[2].y + c[1].y)),
+    };
+    const num = (q.x - p.x) * q1.x + (q.y - p.y) * q1.y;
+    const den = q1.x * q1.x + q1.y * q1.y + (q.x - p.x) * q2.x + (q.y - p.y) * q2.y;
+    const next = den ? t - num / den : t;
+    return Number.isFinite(next) ? Math.min(1, Math.max(0, next)) : t;
+  });
+}
