@@ -131,13 +131,21 @@ export function BedCanvas(props: Props) {
   // is seen as it is rather than thickened, while a pen's real width grows with the magnification.
   const [lens, setLens] = useState<{ x: number; y: number } | null>(null);
   const [power, setPower] = useState(4);
+  // Pinned, the lens stays where it was clicked rather than following the pointer: left over one
+  // spot while the settings beside the page change, to see what they do there.
+  const [pinned, setPinned] = useState(false);
+  // A click that pinned the lens is the loupe's: the app beneath doesn't get its pointer-down or -up.
+  const pinning = useRef(false);
   const ids = useId().replace(/[^\w-]/g, "");
   const contentId = `bed-content-${ids}`; // the bed and the paper
   const drawnId = `bed-drawn-${ids}`; // what each app puts on it
   const clipId = `bed-loupe-${ids}`;
   const loupe = Boolean(props.loupe);
   useEffect(() => {
-    if (!loupe) setLens(null);
+    if (!loupe) {
+      setLens(null);
+      setPinned(false);
+    }
   }, [loupe]);
   // The wheel sets the magnification while the loupe is out. A listener of its own, since React's
   // wheel handler is passive and couldn't stop the page scrolling instead.
@@ -154,11 +162,25 @@ export function BedCanvas(props: Props) {
     svg.addEventListener("wheel", onWheel, { passive: false });
     return () => svg.removeEventListener("wheel", onWheel);
   }, [loupe, Boolean(model)]); // eslint-disable-line react-hooks/exhaustive-deps
-  const follow = (e: React.PointerEvent<SVGSVGElement>) => {
+  const pointAt = (e: React.PointerEvent<SVGSVGElement>) => {
     const ctm = ownRef.current?.getScreenCTM();
-    if (!ctm) return;
+    if (!ctm) return null;
     const p = new DOMPoint(e.clientX, e.clientY).matrixTransform(ctm.inverse());
-    setLens({ x: p.x, y: p.y });
+    return { x: p.x, y: p.y };
+  };
+  const follow = (e: React.PointerEvent<SVGSVGElement>) => {
+    const p = pointAt(e);
+    if (p) setLens(p);
+  };
+  // A click pins the lens there, or moves it there if it's pinned elsewhere; a click on the pinned
+  // lens itself lets it follow the pointer again.
+  const pin = (e: React.PointerEvent<SVGSVGElement>) => {
+    const p = pointAt(e);
+    if (!p) return;
+    const r = LOUPE_PX / 2 / (ownRef.current?.getScreenCTM()?.a || 1);
+    const onLens = pinned && lens && Math.hypot(p.x - lens.x, p.y - lens.y) <= r;
+    setPinned(!onLens);
+    setLens(p);
   };
 
   // The width label sits in what the toolbar leaves of the dimension line rather than on the
@@ -264,14 +286,34 @@ export function BedCanvas(props: Props) {
         role="img"
         aria-label={`Drawing area of the ${model.name}: ${fmtIn(tx)} by ${fmtIn(ty)}`}
         data-loupe={loupe || undefined}
+        data-pinned={(loupe && pinned) || undefined}
+        // Caught on the way down, before the shapes on the page: while the loupe is out, a click is
+        // for it, and mustn't also pick up or draw something underneath.
+        onPointerDownCapture={(e) => {
+          pinning.current = loupe;
+          if (!loupe) return;
+          e.stopPropagation();
+          pin(e);
+        }}
+        onPointerUpCapture={(e) => {
+          if (!pinning.current) return;
+          e.stopPropagation();
+          pinning.current = false;
+        }}
         onPointerDown={props.onPointerDown}
         onPointerMove={(e) => {
-          if (loupe) follow(e);
+          if (loupe && !pinned) follow(e);
           props.onPointerMove?.(e);
         }}
-        onPointerUp={props.onPointerUp}
-        onPointerCancel={props.onPointerUp}
-        onPointerLeave={loupe ? () => setLens(null) : undefined}
+        onPointerUp={(e) => {
+          if (!pinning.current) props.onPointerUp?.(e);
+          pinning.current = false;
+        }}
+        onPointerCancel={(e) => {
+          if (!pinning.current) props.onPointerUp?.(e);
+          pinning.current = false;
+        }}
+        onPointerLeave={loupe && !pinned ? () => setLens(null) : undefined}
       >
         {/* Everything on the bed, as the loupe draws it again: not the dimension lines around it. */}
         <g id={contentId}>
@@ -340,7 +382,7 @@ export function BedCanvas(props: Props) {
               </g>
               <circle className={styles.loupeRing} cx={lens.x} cy={lens.y} r={r} />
               <text className={styles.loupeLabel} x={lens.x} y={lens.y + r * 0.82} textAnchor="middle" fontSize={11 / perUnit}>
-                {`${Math.round(power * 10) / 10}×`}
+                {`${Math.round(power * 10) / 10}×${pinned ? " · pinned" : ""}`}
               </text>
             </g>
           );

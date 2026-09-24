@@ -144,7 +144,7 @@ export function PreviewToolbar({ view, onView, canProgress, canPhoto, zoom, onZo
               className={loupe ? styles.on : undefined}
               onClick={() => onLoupe(!loupe)}
               icon={<Search />}
-              title={loupe ? "Put the loupe away" : "Loupe: a lens that follows the pointer for a close look at the lines. Scroll to magnify more or less"}
+              title={loupe ? "Put the loupe away" : "Loupe: a lens that follows the pointer for a close look at the lines. Click to pin it over one spot while you change settings; click the lens to let it follow again. Scroll to magnify more or less"}
               aria-label="Loupe"
             />
           </SegmentedControl>

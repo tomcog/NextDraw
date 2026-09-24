@@ -119,6 +119,9 @@
   stroke-width: 1.5;
   vector-effect: non-scaling-stroke;
 }
+/* Pinned: left over one spot while the settings change, and ringed in the red of something that's
+   on rather than followed about, like the loupe's own switch while it's out. */
+.bed[data-pinned] .loupeRing { stroke: var(--ui-action); }
 .loupeLabel {
   fill: var(--ui-text-muted);
   font-family: inherit;
