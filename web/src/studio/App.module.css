@@ -327,3 +327,9 @@ span.shapeName { cursor: pointer; }
 
 /* The palette's own colour, set apart from the measured ones after it. */
 .swatch[data-palette="true"] { margin-right: 0.25rem; }
+
+/* The drawing's name takes the File card's width, less the Close button beside it. */
+.nameField {
+  flex: 1;
+  min-width: 0;
+}
