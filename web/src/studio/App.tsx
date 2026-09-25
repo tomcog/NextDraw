@@ -3,7 +3,7 @@ import { DrawingToolSection } from "../shared/components/controls/DrawingToolSec
 import { PaperSection } from "../shared/components/controls/PaperSection";
 import { SettingsSection } from "../shared/components/controls/SettingsSection";
 import { Button, ButtonRound, Card, Checkbox, ConfirmButton, InputSelect, InputText, InputTextarea, LayerController, Segment, SegmentedControl } from "@tomcoggia/ui";
-import { AlignCenterHorizontal, AlignCenterVertical, AlignEndHorizontal, AlignEndVertical, AlignStartHorizontal, AlignStartVertical, ArrowDownToLine, AudioWaveform, Circle, ClipboardCopy, ClipboardPaste, Copy, Ellipsis, EllipsisVertical, FilePlus, FlameKindling, FolderOpen, Image as ImageIcon, ImagePlus, Grid2x2, Layers2, LayersArrowDown, LayersArrowUp, Merge, LineStyle, LoaderPinwheel, Menu, Minus, MousePointer2, Orbit, PaintBucket, PenLine, Pentagon, Plus, Rainbow, RotateCw, Save, Send, Shell, Signal, Spline, Square, SquareDimensions, SquareStack, Star, Target, Trash2, Type, Waves } from "lucide-react";
+import { AlignCenterHorizontal, AlignCenterVertical, AlignEndHorizontal, AlignEndVertical, AlignStartHorizontal, AlignStartVertical, ArrowDownToLine, AudioWaveform, Circle, ClipboardCopy, ClipboardPaste, Copy, Ellipsis, EllipsisVertical, FilePlus, FlameKindling, FolderOpen, Image as ImageIcon, ImagePlus, Grid2x2, Layers2, LayersArrowDown, LayersArrowUp, Merge, LineStyle, LoaderPinwheel, Menu, Minus, MousePointer2, Orbit, PaintBucket, PenLine, Pentagon, Plus, Rainbow, RotateCw, Save, Send, Shell, Signal, Spline, Square, SquareDimensions, SquareStack, Star, Target, Trash2, Type, Waves, X } from "lucide-react";
 import { FileBrowser, LAST_FOLDER_KEY, type CombineResult, type OpenResult } from "../shared/components/FileBrowser";
 import { Section } from "../shared/components/controls/Section";
 import { NumberField } from "../shared/components/controls/NumberField";
@@ -707,9 +707,10 @@ export default function App() {
 
  // Close whatever is open and begin again on a blank page. The page size stays as it is: it's the
  // paper you're working on today, and a new drawing is almost always for the same sheet.
- // Which new drawing is waiting on the question: a blank one, or a calibration sheet.
- const [confirmNew, setConfirmNew] = useState<"blank" | "calibration" | null>(null);
- const newDrawing = useCallback(() => {
+ // Which new drawing is waiting on the question: a blank one, or a calibration sheet. "close" is a
+ // blank one too, reached by closing the drawing rather than asking for a new one.
+ const [confirmNew, setConfirmNew] = useState<"blank" | "calibration" | "close" | null>(null);
+ const newDrawing = useCallback((note = "New drawing") => {
   const noShapes: Shape[] = [];
   const noFills: Fill[] = [];
   const first = { id: newLayerId(), name: "Black", color: "#262626" };
@@ -728,19 +729,19 @@ export default function App() {
   setOpenedAs(null);
   setConfirmNew(null);
   remember(LAST_FILE_KEY, null); // don't reopen the old drawing next time Studio starts
-  setMessage({ text: "New drawing", ok: true });
+  setMessage({ text: note, ok: true });
   // An empty page is not unsaved work, and the paper it's on came from the drawing before it.
   markClean({ shapes: noShapes, fills: noFills, layers: onlyLayer, page, name: "Untitled" });
  }, [markClean, page]);
 
  // Undo can't bring back which file was open - a snapshot is the drawing, not the drawing's name -
  // so unsaved work gets a question rather than a silent discard.
- const startNew = (what: "blank" | "calibration" = "blank") => {
+ const startNew = (what: "blank" | "calibration" | "close" = "blank") => {
   if (dirty && shapes.length) setConfirmNew(what);
   else if (what === "calibration") newCalibration();
-  else newDrawing();
+  else newDrawing(what === "close" ? "Closed" : undefined);
  };
- const beginNew = () => (confirmNew === "calibration" ? newCalibration() : newDrawing());
+ const beginNew = () => (confirmNew === "calibration" ? newCalibration() : newDrawing(confirmNew === "close" ? "Closed" : undefined));
 
  const openDrawing = useCallback((res: OpenResult, note: (n: number) => string) => {
   const drawing = parseDrawing(res.svg ?? "");
@@ -2070,7 +2071,7 @@ export default function App() {
  // one of three buttons. Saving first is offered because wanting a new drawing is rarely the same as
  // wanting to lose this one. Shown in whichever rail is up, since Setup starts new drawings too.
  const confirmNewBlock = confirmNew && (
-         <div className={styles.confirm} role="alertdialog" aria-label="Start a new drawing">
+         <div className={styles.confirm} role="alertdialog" aria-label={confirmNew === "close" ? "Close this drawing" : "Start a new drawing"}>
           <p>
            {saved ? `“${name}” has` : "This drawing has"} changes that aren’t saved.
           </p>
@@ -2082,10 +2083,10 @@ export default function App() {
              if (await save()) beginNew();
             }}
            >
-            Save, then start new
+            {confirmNew === "close" ? "Save, then close" : "Save, then start new"}
            </Button>
            <Button size="sm" tone="danger" variant="secondary" onClick={beginNew}>
-            Discard and start new
+            {confirmNew === "close" ? "Discard and close" : "Discard and start new"}
            </Button>
            <Button size="sm" variant="tertiary" onClick={() => setConfirmNew(null)}>
             Keep editing
@@ -2448,16 +2449,33 @@ export default function App() {
          </span>
         }
        >
-        <InputText
-         size="md"
-         label="Name"
-         // The card is called File and the field holds the drawing's name: saying so twice under
-         // the words themselves helps nobody who can see them.
-         hideLabel
-         value={name}
-         disabled={busy}
-         onChange={(e) => setName(e.target.value)}
-        />
+        <div className={controls.fileRow}>
+         <InputText
+          size="md"
+          className={styles.nameField}
+          label="Name"
+          // The card is called File and the field holds the drawing's name: saying so twice under
+          // the words themselves helps nobody who can see them.
+          hideLabel
+          value={name}
+          disabled={busy}
+          onChange={(e) => setName(e.target.value)}
+         />
+         {/* Plot's clear-the-drawing X, beside the name as it is there. Shown only while there's
+           something to close: a saved file, or lines on the page. */}
+         {(saved || shapes.length > 0) && (
+          <ButtonRound
+           size="sm"
+           variant="ghost"
+           className={controls.clearFile}
+           icon={<X />}
+           aria-label="Close this drawing"
+           title="Close this drawing"
+           disabled={busy}
+           onClick={() => startNew("close")}
+          />
+         )}
+        </div>
         <p className={controls.fileWhere} title={saved?.path ?? undefined}>
          {saved ? saved.folder : "Not saved yet"}
         </p>
