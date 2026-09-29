@@ -109,11 +109,13 @@ export function isPalettePen(name: string, color: string | null, palette: PenCol
   // The pen's name, or the pen's name with more after it: "Lime register" is the Lime layer that
   // registers the others, and "Yellow 2" the second layer in Yellow. A whole word, so "Limestone"
   // isn't Lime. Stray spaces inside a name count as one, as they read. A number in front is the
-  // layer's place in the plotting order, not part of the pen: "2-Orange" and "2 Orange" are Orange.
-  const said = name.trim().toLowerCase().replace(/\s+/g, " ").replace(/^\d+\s*[-.:)]?\s*(?=\S)/, "");
+  // layer's place in the plotting order, not part of the pen: "2-Orange" and "2 Orange" are Orange -
+  // unless the pen's own name starts with it, as a Stabilo's does: "324 Black" is the pen 324 Black.
+  const whole = name.trim().toLowerCase().replace(/\s+/g, " ");
+  const said = [whole, whole.replace(/^\d+\s*[-.:)]?\s*(?=\S)/, "")];
   return palette.some((p) => {
     const pen = p.name.trim().toLowerCase().replace(/\s+/g, " ");
-    return (said === pen || said.startsWith(`${pen} `)) && p.color.toLowerCase() === color.toLowerCase();
+    return said.some((n) => n === pen || n.startsWith(`${pen} `)) && p.color.toLowerCase() === color.toLowerCase();
   });
 }
 
@@ -128,14 +130,24 @@ export function isPalettePen(name: string, color: string | null, palette: PenCol
  * so choosing the drawing's own ink again brings the name back.
  */
 export function nameInPen(name: string, pen: string, pens: PenColor[]): string {
-  const lead = name.match(/^\s*\d+\s*[-.:)]?\s*(?=\S)/)?.[0] ?? "";
-  const rest = name.slice(lead.length).trim().replace(/\s+/g, " ");
-  const said = rest.toLowerCase();
   // Longest first, so a name is matched to the whole of the pen it names.
-  const was = pens
-    .map((p) => p.name.trim().toLowerCase().replace(/\s+/g, " "))
-    .sort((a, b) => b.length - a.length)
-    .find((p) => said === p || said.startsWith(`${p} `));
+  const names = pens.map((p) => p.name.trim().toLowerCase().replace(/\s+/g, " ")).sort((a, b) => b.length - a.length);
+  const penIn = (text: string) => names.find((p) => text === p || text.startsWith(`${p} `));
+  // The whole name first, number and all: a pen can have a number in its name ("324 Black"), and
+  // that number is the pen's, not the layer's place in the order.
+  const whole = name.trim().replace(/\s+/g, " ");
+  let lead = "";
+  let rest = whole;
+  let was = penIn(whole.toLowerCase());
+  if (!was) {
+    lead = name.match(/^\s*\d+\s*[-.:)]?\s*(?=\S)/)?.[0] ?? "";
+    rest = name.slice(lead.length).trim().replace(/\s+/g, " ");
+    was = penIn(rest.toLowerCase());
+  }
+  // A number in front that is the new pen's own number is the pen's, said twice ("324 324 Black",
+  // from before pens could have numbers): it goes, rather than staying on as the layer's place.
+  const number = lead.match(/\d+/)?.[0];
+  if (number && new RegExp(`^${number}\\b`).test(pen.trim())) lead = "";
   if (!was) return lead + pen;
   const own = rest.slice(0, was.length);
   const shown = own === own.toLowerCase() ? pen.toLowerCase() : own === own.toUpperCase() ? pen.toUpperCase() : pen;
