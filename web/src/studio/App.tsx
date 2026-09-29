@@ -1761,7 +1761,8 @@ export default function App() {
     : shape.curve ? curveStrokes(shape)
     : shape.kind === "path" ? drawnNodes(shape)
     : [outlinePoints(shape)];
-   if (shape.outline !== false) out.push(...own.map((run) => run.map((n) => mapNode(n, put))));
+   // A loop, not push(...runs): a path of many thousands of subpaths is too many arguments for a call.
+   if (shape.outline !== false) for (const run of own) out.push(run.map((n) => mapNode(n, put)));
   }
   return out;
  };

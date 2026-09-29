@@ -5,7 +5,7 @@
 // Every generator fills the shape's box, so moving and resizing a curve works like any other shape
 // and the box stays its footprint.
 
-import { boxOf, type Shape } from "./shapes";
+import { boxOf, pointsBox, type Shape } from "./shapes";
 
 export type CurveKind = "hypotrochoid" | "parabolic" | "polygon" | "star" | "spiral" | "arc" | "wave";
 
@@ -222,16 +222,14 @@ function roundPoints(c: Spiral | Arc): Point[] {
 function arcRings(c: Arc, b: ReturnType<typeof boxOf>): Point[][] {
   const arcs = Math.max(1, Math.round(c.arcs));
   const inner = Math.max(0.01, Math.min(0.99, c.inner / 100));
-  const outer = arcPoints(c, 1);
-  const xs = outer.map((p) => p.x);
-  const ys = outer.map((p) => p.y);
-  const w = Math.max(...xs) - Math.min(...xs);
-  const h = Math.max(...ys) - Math.min(...ys);
+  const o = pointsBox(arcPoints(c, 1));
+  const w = o.x1 - o.x0;
+  const h = o.y1 - o.y0;
   const kx = w > 1e-9 ? (b.x1 - b.x0) / w : 1;
   const ky = h > 1e-9 ? (b.y1 - b.y0) / h : 1;
   // Where the unit circle's middle lands once the outermost arc fills the box.
-  const cx = b.x0 + (0 - Math.min(...xs)) * kx;
-  const cy = b.y0 + (0 - Math.min(...ys)) * ky;
+  const cx = b.x0 + (0 - o.x0) * kx;
+  const cy = b.y0 + (0 - o.y0) * ky;
   return Array.from({ length: arcs }, (_, i) => {
     const radius = arcs === 1 ? 1 : inner + ((1 - inner) * i) / (arcs - 1);
     return arcPoints(c, radius).map((p) => ({ x: cx + p.x * kx, y: cy + p.y * ky }));
@@ -241,10 +239,9 @@ function arcRings(c: Arc, b: ReturnType<typeof boxOf>): Point[][] {
 /** Scale and shift points so they just fill the box, keeping their proportions. */
 function fitToBox(points: Point[], b: ReturnType<typeof boxOf>, stretch = false): Point[] {
   if (!points.length) return points;
-  const xs = points.map((p) => p.x);
-  const ys = points.map((p) => p.y);
-  const w = Math.max(...xs) - Math.min(...xs);
-  const h = Math.max(...ys) - Math.min(...ys);
+  const pb = pointsBox(points);
+  const w = pb.x1 - pb.x0;
+  const h = pb.y1 - pb.y0;
   const across = w > 0 ? (b.x1 - b.x0) / w : Infinity;
   const down = h > 0 ? (b.y1 - b.y0) / h : Infinity;
   // Proportional by default: a spirograph's shape is the point of it. Stretched where the box is
@@ -252,8 +249,8 @@ function fitToBox(points: Point[], b: ReturnType<typeof boxOf>, stretch = false)
   const scale = stretch ? { x: across, y: down } : { x: Math.min(across, down), y: Math.min(across, down) };
   const k = { x: Number.isFinite(scale.x) ? scale.x : 1, y: Number.isFinite(scale.y) ? scale.y : 1 };
   // Centred in the box, so a curve that isn't square doesn't sit against one edge.
-  const cx = (Math.min(...xs) + Math.max(...xs)) / 2;
-  const cy = (Math.min(...ys) + Math.max(...ys)) / 2;
+  const cx = (pb.x0 + pb.x1) / 2;
+  const cy = (pb.y0 + pb.y1) / 2;
   return points.map((p) => ({
     x: (b.x0 + b.x1) / 2 + (p.x - cx) * k.x,
     y: (b.y0 + b.y1) / 2 + (p.y - cy) * k.y,

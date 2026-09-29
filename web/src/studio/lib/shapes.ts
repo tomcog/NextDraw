@@ -124,13 +124,22 @@ export const drawnRuns = (s: Shape): Point[][] => drawnNodes(s).map((run) => fla
 /** All of a path's own points in one list, in the order they are drawn - the nodes, not the curves. */
 export const allPoints = (s: Shape): Node[] => pathRuns(s).flat();
 
-/** The box a path's own points occupy, which is what its handles and its fill are measured against. */
-export const pointsBox = (points: Point[]) => ({
-  x0: Math.min(...points.map((p) => p.x)),
-  y0: Math.min(...points.map((p) => p.y)),
-  x1: Math.max(...points.map((p) => p.x)),
-  y1: Math.max(...points.map((p) => p.y)),
-});
+/**
+ * The box a path's own points occupy, which is what its handles and its fill are measured against.
+ * A loop rather than Math.min(...points), like boxAround: a path of a hundred thousand points is
+ * more arguments than a call can take, and opening the drawing fails with "Maximum call stack size
+ * exceeded".
+ */
+export const pointsBox = (points: Point[]) => {
+  const box = { x0: Infinity, y0: Infinity, x1: -Infinity, y1: -Infinity };
+  for (const p of points) {
+    if (p.x < box.x0) box.x0 = p.x;
+    if (p.y < box.y0) box.y0 = p.y;
+    if (p.x > box.x1) box.x1 = p.x;
+    if (p.y > box.y1) box.y1 = p.y;
+  }
+  return box;
+};
 
 export const boxOf = (s: Shape) => ({
   x0: Math.min(s.x, s.x2),

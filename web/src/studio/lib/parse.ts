@@ -3,7 +3,7 @@ import { curveFromData } from "./parametric";
 import { flattenRun, mapNode, parsePath, type Node } from "./path";
 import { apply, axisAligned, multiply, parseTransform, IDENTITY, type Matrix } from "./transform";
 import { repeatFromData } from "./repeat";
-import { newLayerId, newShapeId, type Layer, type Page, type Shape } from "./shapes";
+import { newLayerId, newShapeId, pointsBox, type Layer, type Page, type Shape } from "./shapes";
 import { FILL_GROUP_PREFIX, PHOTO_GROUP_PREFIX } from "./svg";
 import { photoFromData, PLATES } from "./photo";
 
@@ -62,8 +62,10 @@ export function parseDrawing(text: string): Opened {
     w: lengthIn(svg.getAttribute("width")) ?? (hasBox ? box[2] / perUnit : 11),
     h: lengthIn(svg.getAttribute("height")) ?? (hasBox ? box[3] / perUnit : 8.5),
   };
-  const perInchX = hasBox ? box[2] / page.w : 1;
-  const perInchY = hasBox ? box[3] / page.h : 1;
+  // With no viewBox, the file's own units are the standard's: 96 to the inch (Illustrator's 72), the
+  // way the plotter reads it - not inches, which put a 24-inch drawing 96 times too big, off the page.
+  const perInchX = hasBox ? box[2] / page.w : perUnit;
+  const perInchY = hasBox ? box[3] / page.h : perUnit;
   const originX = hasBox ? box[0] : 0;
   const originY = hasBox ? box[1] : 0;
   const toX = (v: number) => (v - originX) / perInchX;
@@ -93,12 +95,8 @@ export function parseDrawing(text: string): Opened {
   };
   // A box that has been turned or skewed is no longer a box: it is read as a path through its corners.
   const asPath = (id: string, points: Node[]): Shape => {
-    const pts = flattenRun(points);
-    return {
-      id, layerId: "", kind: "path", points,
-      x: Math.min(...pts.map((p) => p.x)), y: Math.min(...pts.map((p) => p.y)),
-      x2: Math.max(...pts.map((p) => p.x)), y2: Math.max(...pts.map((p) => p.y)),
-    };
+    const b = pointsBox(flattenRun(points));
+    return { id, layerId: "", kind: "path", points, x: b.x0, y: b.y0, x2: b.x1, y2: b.y1 };
   };
 
   const shapes: Shape[] = [];
@@ -332,10 +330,7 @@ export function parseDrawing(text: string): Opened {
           break;
         }
         if (el.nodeName.toLowerCase() === "polygon") points.push(points[0]); // a polygon closes itself
-        const pb = {
-          x0: Math.min(...points.map((p) => p.x)), y0: Math.min(...points.map((p) => p.y)),
-          x1: Math.max(...points.map((p) => p.x)), y1: Math.max(...points.map((p) => p.y)),
-        };
+        const pb = pointsBox(points);
         shapes.push({
           id: noteSource(el), layerId: "", kind: "path", points,
           x: pb.x0, y: pb.y0, x2: pb.x1, y2: pb.y1,
@@ -361,12 +356,11 @@ export function parseDrawing(text: string): Opened {
           break;
         }
         // The box round what is drawn, curves included: a curve can bulge past its nodes.
-        const all = runs.flatMap((run) => flattenRun(run));
+        const box = pointsBox(runs.flatMap((run) => flattenRun(run)));
         shapes.push({
           id: noteSource(el), layerId: "", kind: "path",
           ...(runs.length > 1 ? { runs } : { points: runs[0] }),
-          x: Math.min(...all.map((p) => p.x)), y: Math.min(...all.map((p) => p.y)),
-          x2: Math.max(...all.map((p) => p.x)), y2: Math.max(...all.map((p) => p.y)),
+          x: box.x0, y: box.y0, x2: box.x1, y2: box.y1,
         });
         break;
       }

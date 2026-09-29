@@ -6,7 +6,7 @@
 
 import type { Point } from "./parametric";
 import type { Node } from "./path";
-import { newShapeId, pathRuns, type Shape } from "./shapes";
+import { newShapeId, pathRuns, pointsBox, type Shape } from "./shapes";
 
 /** How near, in inches, two lines count as one line, and two ends as touching: far under any pen. */
 const NEAR = 0.001;
@@ -102,7 +102,7 @@ export function mergeLines(shapes: Shape[], filledIds: string[]): Merged | null 
     let back = true;
     let row: Node[][] = [];
     const flush = () => {
-      runs.push(...(back ? row.reverse().map((r) => [r[1], r[0]]) : row));
+      for (const r of back ? row.reverse().map((r) => [r[1], r[0]]) : row) runs.push(r);
       row = [];
     };
     for (const st of kept) {
@@ -120,17 +120,17 @@ export function mergeLines(shapes: Shape[], filledIds: string[]): Merged | null 
     before += count;
     after += runs.length;
     saved += kept.reduce((sum, st) => sum + st.drawn - (st.t1 - st.t0), 0);
-    const all = runs.flat();
+    const box = pointsBox(runs.flat());
     const merged: Shape = {
       id: newShapeId(),
       layerId,
       kind: "path",
       name: "Merged lines",
       ...(runs.length > 1 ? { runs } : { points: runs[0] }),
-      x: Math.min(...all.map((p) => p.x)),
-      y: Math.min(...all.map((p) => p.y)),
-      x2: Math.max(...all.map((p) => p.x)),
-      y2: Math.max(...all.map((p) => p.y)),
+      x: box.x0,
+      y: box.y0,
+      x2: box.x1,
+      y2: box.y1,
     };
     let first = true;
     for (const s of shapes) {

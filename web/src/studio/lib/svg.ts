@@ -3,7 +3,7 @@ import { curveStrokes, pointsAttr, type Point } from "./parametric";
 import { textRuns, type StrokeFont } from "./text";
 import { placementAttr, placements } from "./repeat";
 import { hasCurves, pathData } from "./path";
-import { boxOf, drawnNodes, drawnRuns, pathRuns, turnAttr, type Layer, type Page, type Shape } from "./shapes";
+import { boxOf, drawnNodes, drawnRuns, pathRuns, pointsBox, turnAttr, type Layer, type Page, type Shape } from "./shapes";
 import { photoData, photoMarks, photoOrigin } from "./photo";
 
 // The drawing Studio writes out. Two things matter to Plot at the other end:
@@ -147,10 +147,7 @@ function fillMarkup(shapes: Shape[], fills: Fill[]): string {
 export function svgForMarks(runs: Point[][], strokeIn = STROKE_IN): string {
   const points = runs.flat();
   if (points.length < 2) return "";
-  const x0 = Math.min(...points.map((p) => p.x));
-  const y0 = Math.min(...points.map((p) => p.y));
-  const x1 = Math.max(...points.map((p) => p.x));
-  const y1 = Math.max(...points.map((p) => p.y));
+  const { x0, y0, x1, y1 } = pointsBox(points);
   // A hairline still has width; half of it sits outside the line, so the box grows by that much or
   // the outermost stroke is cut in half by the edge of the file.
   const pad = strokeIn / 2;
