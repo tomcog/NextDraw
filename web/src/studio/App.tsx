@@ -270,7 +270,9 @@ export default function App() {
  // Where a drawing that has never been saved will be: files stacked into one are saved next to the
  // first of them, not in the shared folder a new drawing goes to. Null means the server's default.
  const [saveTo, setSaveTo] = useState<string | null>(null);
- const [message, setMessage] = useState<{ text: string; ok: boolean }>({
+ // What the toolbar says. Only problems, and work still under way (`progress`), are shown: a note
+ // that something went as asked is left unsaid, since the result is there to see.
+ const [message, setMessage] = useState<{ text: string; ok: boolean; progress?: boolean }>({
   text: "",
   ok: true,
  });
@@ -935,7 +937,7 @@ export default function App() {
  const readSheetPhoto = async (file: File | undefined) => {
   if (!file || !sheet || !tool2 || !sheetIsTool) return;
   setBusy(true);
-  setMessage({ text: `Reading ${file.name}…`, ok: true });
+  setMessage({ text: `Reading ${file.name}…`, ok: true, progress: true });
   try {
    const calibration = await readCalibration(file, sheet, paperColor);
    const res = await api<{ presets: Preset[] }>(`/api/presets/${encodeURIComponent(tool2.name)}/calibration`, {
@@ -1088,7 +1090,7 @@ export default function App() {
    }
    if (!parts.length) {
     addShape({ id: newShapeId(), layerId: active.id, kind: "photo", name: stem, ...box, photo });
-    setMessage({ text: `Added ${file.name}, hatched in ${active.name}`, ok: true });
+    setMessage({ text: "", ok: true }); // added: it's there on the page and in Layers, nothing to say
     return;
    }
    // New layers for it, just above the one being drawn on - unless that one is empty, as a new
@@ -1117,7 +1119,7 @@ export default function App() {
    setActiveLayer(newLayers[0].id);
    pick(made[0].id);
    setTool("select");
-   setMessage({ text: `Added ${file.name}, in ${parts.map((p) => p.pen.name).join(", ")}`, ok: true });
+   setMessage({ text: "", ok: true }); // added: it's there on the page and in Layers, nothing to say
   } catch (err) {
    setMessage({ text: (err as Error).message, ok: false });
   }
@@ -2378,7 +2380,7 @@ export default function App() {
       toolbar={<SetupToolbar open={setupOpen} onToggle={() => setSetupOpen((open) => !open)} />}
       toolbarLeft={(
        <PreviewToolbar
-        note={message.text ? { text: message.text, error: !message.ok } : undefined}
+        note={message.text && (!message.ok || message.progress) ? { text: message.text, error: !message.ok } : undefined}
         view={view}
         onView={setView}
         zoom={zoom}
