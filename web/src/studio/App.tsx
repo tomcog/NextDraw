@@ -766,7 +766,8 @@ export default function App() {
       text: `${note(drawing.shapes.length)} - ${drawing.unsupported} other ${drawing.unsupported === 1 ? "mark" : "marks"} can’t be edited here and saving would drop ${drawing.unsupported === 1 ? "it" : "them"}`,
       ok: false,
      }
-    : { text: note(drawing.shapes.length), ok: true },
+    // Opened cleanly, nothing to say: the drawing's name is already in the File card.
+    : { text: "", ok: true },
   );
   // What's on screen is what's in the file, so there's nothing new to write yet.
   markClean({
@@ -811,7 +812,8 @@ export default function App() {
   const foreignNote = drawing.unsupported
    ? ` - ${drawing.unsupported} other ${drawing.unsupported === 1 ? "mark" : "marks"} can’t be edited here and saving would drop ${drawing.unsupported === 1 ? "it" : "them"}`
    : "";
-  setMessage({ text: said + misfit + foreignNote, ok: !misfit && !foreignNote });
+  // Only when something needs attention: a clean open or add is already there to see.
+  setMessage(misfit || foreignNote ? { text: said + misfit + foreignNote, ok: false } : { text: "", ok: true });
  };
 
  // Say so if the server isn't there, rather than only failing at the moment of saving. Then pick up
