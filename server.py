@@ -3255,6 +3255,11 @@ def studio_save():
                 # and those, filed by a layer's place, land on whatever layer is in that place now.
                 kept.pop("layer_names", None)
                 root = etree.fromstring(svg.encode("utf-8"), etree.XMLParser(huge_tree=True))
+                # And the drawing tool, which is chosen in both apps: the one Studio saves with wins,
+                # as Plot's does when Plot saves. Kept whole, a tool picked in Studio was dropped.
+                tool = (read_plot(root) or {}).get("tool")
+                if isinstance(tool, str) and tool.strip():
+                    kept["tool"] = tool
                 write_plot(root, kept)
                 svg = etree.tostring(root, encoding="unicode", xml_declaration=False)
         except Exception:  # noqa: BLE001 - an unreadable old file is simply replaced, as before

@@ -21,6 +21,8 @@ export interface Opened {
   fills: Fill[];
   /** Drawable elements Studio has no way to represent. Saving over the file would lose them. */
   unsupported: number;
+  /** The drawing tool the file was last saved for, by either app ("Paper-Mate Flair Medium"), or null. */
+  tool: string | null;
 }
 
 const PX_PER_INCH: Record<string, number> = {
@@ -524,5 +526,14 @@ export function parseDrawing(text: string): Opened {
     };
   }
 
-  return { page, shapes, layers, fills, unsupported };
+  // The tool, from the block Plot reads - the one both apps write it into.
+  let tool: string | null = null;
+  try {
+    const plotEl = svg.getElementsByTagName("nds:plot")[0];
+    const named = plotEl?.textContent ? JSON.parse(plotEl.textContent)?.tool : null;
+    tool = typeof named === "string" && named.trim() ? named : null;
+  } catch {
+    tool = null; // an unreadable block: the drawing still opens, in whatever tool is chosen
+  }
+  return { page, shapes, layers, fills, unsupported, tool };
 }

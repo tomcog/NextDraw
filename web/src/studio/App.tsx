@@ -213,6 +213,8 @@ export default function App() {
  // Plot's presets rather than being invented here.
  const [defaults, setDefaults] = useState({ angle: 45, spacingMm: 1.5 });
  const [presets, setPresets] = useState<Preset[]>([]);
+ const presetsRef = useRef(presets); // for openDrawing, which is made once
+ presetsRef.current = presets;
  // The single-stroke fonts: the names the app offers, the ones that have been read, and the one new
  // text is set in. A font is only fetched when something wants to be drawn in it.
  const [fontList, setFontList] = useState<string[]>([]);
@@ -768,6 +770,11 @@ export default function App() {
   setForeign(drawing.unsupported);
   setOpenedAs(res.name);
   remember(LAST_FILE_KEY, res.path);
+  // The drawing comes up in the tool it was saved for, in either app - unless that tool is gone
+  // from the presets, when the one already chosen stays. Not a change to the drawing: it's the
+  // file's own. (Presets not loaded yet, at startup: taken as it is, and checked when they come.)
+  const saved = drawing.tool;
+  if (saved) setToolName((current) => (presetsRef.current.length && !presetsRef.current.some((t) => t.name === saved) ? current : saved));
   // Saving would write only what Studio can draw, so anything else in the file has to be said out
   // loud before it's overwritten rather than discovered missing afterwards.
   setMessage(
