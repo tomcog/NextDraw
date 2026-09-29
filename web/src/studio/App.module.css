@@ -152,6 +152,28 @@
   gap: 0.375rem;
 }
 
+/* A parabolic's corners: four toggles set out as the corners sit on the box. */
+.cornerPick {
+  display: flex;
+  flex-direction: column;
+  gap: 0.375rem;
+}
+/* Captioned the way the fields beside it are (the library's input label). */
+.cornerLabel {
+  padding-inline-start: var(--ui-input-text-label-inset);
+  color: var(--ui-input-text-label-color, var(--ui-text-faint));
+  font-size: var(--ui-input-text-label-font-size);
+  line-height: var(--ui-input-text-label-line-height);
+  font-weight: var(--ui-input-text-label-font-weight);
+  letter-spacing: var(--ui-input-text-label-letter-spacing);
+  text-transform: uppercase;
+}
+.cornerGrid {
+  display: grid;
+  grid-template-columns: repeat(2, max-content);
+  gap: 0.375rem;
+}
+
 .empty {
   margin: 0;
   font-size: 11px;

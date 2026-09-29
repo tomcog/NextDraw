@@ -3,7 +3,7 @@ import { DrawingToolSection } from "../shared/components/controls/DrawingToolSec
 import { PaperSection } from "../shared/components/controls/PaperSection";
 import { SettingsSection } from "../shared/components/controls/SettingsSection";
 import { Button, ButtonRound, Card, Checkbox, ConfirmButton, InputSelect, InputText, InputTextarea, LayerController, Segment, SegmentedControl } from "@tomcoggia/ui";
-import { AlignCenterHorizontal, AlignCenterVertical, AlignEndHorizontal, AlignEndVertical, AlignStartHorizontal, AlignStartVertical, ArrowDownToLine, AudioWaveform, Circle, ClipboardCopy, ClipboardPaste, Copy, Ellipsis, EllipsisVertical, FilePlus, FlameKindling, FolderOpen, Image as ImageIcon, ImagePlus, Grid2x2, Layers2, LayersArrowDown, LayersArrowUp, Merge, LineStyle, LoaderPinwheel, Menu, Minus, MousePointer2, Orbit, PaintBucket, PenLine, Pentagon, Plus, Rainbow, RotateCw, Save, Send, Shell, Signal, Spline, Square, SquareDimensions, SquareStack, Star, Target, Trash2, Type, Waves } from "lucide-react";
+import { AlignCenterHorizontal, AlignCenterVertical, AlignEndHorizontal, AlignEndVertical, AlignStartHorizontal, AlignStartVertical, ArrowDownLeft, ArrowDownRight, ArrowDownToLine, ArrowUpLeft, ArrowUpRight, AudioWaveform, Circle, ClipboardCopy, ClipboardPaste, Copy, Ellipsis, EllipsisVertical, FilePlus, FlameKindling, FolderOpen, Image as ImageIcon, ImagePlus, Grid2x2, Layers2, LayersArrowDown, LayersArrowUp, Merge, LineStyle, LoaderPinwheel, Menu, Minus, MousePointer2, Orbit, PaintBucket, PenLine, Pentagon, Plus, Rainbow, RotateCw, Save, Send, Shell, Signal, Spline, Square, SquareDimensions, SquareStack, Star, Target, Trash2, Type, Waves } from "lucide-react";
 import { FileBrowser, LAST_FOLDER_KEY, type CombineResult, type OpenResult } from "../shared/components/FileBrowser";
 import { Section } from "../shared/components/controls/Section";
 import { NumberField } from "../shared/components/controls/NumberField";
@@ -25,7 +25,7 @@ import { SizePopover } from "./components/SizePopover";
 import { StudioHeader } from "./components/StudioHeader";
 import { ThemeToggle } from "../shared/components/ThemeToggle";
 import { canConnect, canFill, fillNumbers, fillRuns, newFillId, FILL_LABEL, type Fill, type FillKind } from "./lib/hatch";
-import { closingTurns, curveStrokes, CURVE_FIELDS, type Curve, type Point } from "./lib/parametric";
+import { closingTurns, curveStrokes, CURVE_FIELDS, type Corner, type Curve, type Point } from "./lib/parametric";
 import { fontNames, loadFont, type StrokeFont } from "./lib/font";
 import { flattenPath, flattenRun, mapNode, parsePath, simplifyRun, type Node } from "./lib/path";
 import { fitText, textRuns } from "./lib/text";
@@ -3204,12 +3204,52 @@ export default function App() {
            />
           ))}
          </div>
-         {chosen.curve.kind === "hypotrochoid" && (
-          // Past this it retraces itself, and a retraced line is a line the pen draws twice.
-          <p className={styles.empty}>
-           {`Closes after ${closingTurns(chosen.curve.R, chosen.curve.r)} turns`}
-          </p>
-         )}
+         {chosen.curve.kind === "parabolic" && (() => {
+          // Which corners the strings are drawn from: any of the four, set out as they sit on the
+          // box. Each toggles on its own; the last one on can't be turned off, or there'd be nothing.
+          const curve = chosen.curve;
+          const corner = (k: Corner, icon: JSX.Element, name: string) => {
+           const on = curve.corners.includes(k);
+           return (
+            <ButtonRound
+             size="sm"
+             icon={icon}
+             className={on ? controls.roundActive : undefined}
+             aria-label={name}
+             aria-pressed={on}
+             title={on ? `${name}: drawn from this corner` : `${name}: draw from this corner too`}
+             disabled={busy || (on && curve.corners.length === 1)}
+             onClick={() => setCurve({ ...curve, corners: on ? curve.corners.filter((c) => c !== k) : [...curve.corners, k] })}
+            />
+           );
+          };
+          return (
+           <div className={styles.cornerPick}>
+            <span className={styles.cornerLabel}>Corners</span>
+            <div className={styles.cornerGrid} role="group" aria-label="Corners to draw from">
+             {corner("tl", <ArrowUpLeft />, "Top left")}
+             {corner("tr", <ArrowUpRight />, "Top right")}
+             {corner("bl", <ArrowDownLeft />, "Bottom left")}
+             {corner("br", <ArrowDownRight />, "Bottom right")}
+            </div>
+           </div>
+          );
+         })()}
+         {chosen.curve.kind === "hypotrochoid" && (() => {
+          // Past this it retraces itself, and a retraced line is a line the pen draws twice. With the
+          // offset changing, each pass lands apart from the last, so it's how long one pass takes.
+          const closes = closingTurns(chosen.curve);
+          const drifting = Boolean(chosen.curve.drift);
+          return (
+           <p className={styles.empty}>
+            {closes == null
+             ? "Doesn’t close within 1,000 turns"
+             : drifting
+              ? `One pass every ${closes} ${closes === 1 ? "turn" : "turns"} - the changing offset keeps them apart`
+              : `Closes after ${closes} ${closes === 1 ? "turn" : "turns"}`}
+           </p>
+          );
+         })()}
         </Section>
         )}
 
