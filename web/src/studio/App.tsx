@@ -3498,9 +3498,6 @@ export default function App() {
           onChange={(e) => setRepeat({ ...(chosen.repeat as Repeat), facing: e.target.checked } as Repeat)}
          />
         )}
-        {chosen.repeat && (
-         <p className={styles.empty}>{`${placements(chosen).length} shapes in all, counting the one you drew`}</p>
-        )}
        </>
        )}
         </Section>
