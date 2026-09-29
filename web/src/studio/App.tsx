@@ -249,6 +249,14 @@ export default function App() {
  // or a nudge takes the lot, which is what makes moving a whole layer at once possible.
  const [selected, setSelected] = useState<string[]>([]);
  const pick = (id: string | null) => setSelected(id ? [id] : []);
+ // Choosing a layer in the Layers card only chooses the layer: its paths are listed, but none is
+ // selected until one is clicked, on the page or in the list. Whatever was selected on the layer
+ // before is let go, so nothing is left selected out of sight.
+ const switchLayer = (id: string) => {
+  if (id === activeLayer) return;
+  setActiveLayer(id);
+  setSelected([]);
+ };
  const [name, setName] = useState("Untitled");
  const [saved, setSaved] = useState<Saved>(null);
  const [busy, setBusy] = useState(false);
@@ -2609,16 +2617,7 @@ export default function App() {
              visible={!layer.hidden}
              onVisibleChange={(visible) => patchLayer(layer.id, { hidden: !visible })}
              disabled={busy}
-             onChange={() => {
-              setActiveLayer(layer.id);
-              // A layer with one shape on it is that shape: picking the layer picks it, so its card
-              // comes up without a second click. With more on it, a photo's band on this layer still
-              // is - the bands sit on top of each other on the page, so this is how to reach each.
-              const on = shapes.filter((sh) => sh.layerId === layer.id);
-              const band = chosen?.photo?.group && on.find((sh) => sh.photo?.group === chosen.photo!.group);
-              if (on.length === 1) pick(on[0].id);
-              else if (band) pick(band.id);
-             }}
+             onChange={() => switchLayer(layer.id)}
              aria-label={`Draw on layer ${at + 1}, ${layer.name}`}
              label={renamingLayer === layer.id ? (
               <input
@@ -2648,7 +2647,7 @@ export default function App() {
                 ? `${styles.shapeName} ${styles.shapeNameOn}`
                 : styles.shapeName}
                title="Click to draw on this layer"
-               onClick={() => setActiveLayer(layer.id)}
+               onClick={() => switchLayer(layer.id)}
               >
                {layer.name}
               </span>
