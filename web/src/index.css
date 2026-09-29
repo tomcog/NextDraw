@@ -45,13 +45,13 @@
   .pv-artwork:not(.pv-colored) :is(path, rect, circle, ellipse, line, polyline, polygon) {
     fill: none !important;
     stroke: var(--nd-ink) !important;
-    stroke-opacity: var(--ink-opacity, 1);
+    stroke-opacity: var(--ink-opacity, 1) !important;
     mix-blend-mode: multiply;
     stroke-width: 1.4px !important;
     vector-effect: non-scaling-stroke;
   }
   .pv-artwork[data-builds="false"] :is(path, rect, circle, ellipse, line, polyline, polygon) {
-    stroke-opacity: 1;
+    stroke-opacity: 1 !important;
     mix-blend-mode: normal;
   }
   .pv-artwork[data-builds="false"] { isolation: isolate; opacity: var(--ink-opacity, 1); }
@@ -73,19 +73,22 @@
     opacity: var(--ink-opacity, 1) !important;
     mix-blend-mode: multiply;
   }
-  /* The ink itself is solid; the copy over it is what darkens a crossing. */
+  /* The ink itself is solid; the copy over it is what darkens a crossing. Every stroke-opacity from
+     here down is !important: a file exported with its strokes translucent (style="stroke-opacity:0.2"
+     on each path) would otherwise beat these rules, and the tool's ink would come out as faint as
+     the file's transparency on top of its own density. */
   .pv-colored .pv-layer[data-builds="true"] :is(path, rect, circle, ellipse, line, polyline, polygon) {
-    stroke-opacity: 1;
+    stroke-opacity: 1 !important;
     mix-blend-mode: normal;
   }
   .pv-colored .pv-layer[data-builds="true"] .pv-build :is(path, rect, circle, ellipse, line, polyline, polygon) {
-    stroke-opacity: var(--ink-build-alpha, 0);
+    stroke-opacity: var(--ink-build-alpha, 0) !important;
     mix-blend-mode: multiply;
   }
   .pv-colored .pv-layer :is(path, rect, circle, ellipse, line, polyline, polygon) {
     fill: none !important;
     stroke: var(--layer-color, var(--nd-ink)) !important;
-    stroke-opacity: var(--ink-stroke-alpha, var(--ink-opacity, 1));
+    stroke-opacity: var(--ink-stroke-alpha, var(--ink-opacity, 1)) !important;
     mix-blend-mode: multiply;
     stroke-width: 1.4px !important;
     stroke-dasharray: none !important;
@@ -101,14 +104,14 @@
     mix-blend-mode: darken;
   }
   .pv-colored .pv-layer[data-builds="false"] :is(path, rect, circle, ellipse, line, polyline, polygon) {
-    stroke-opacity: 1;
+    stroke-opacity: 1 !important;
     mix-blend-mode: normal;
   }
   /* A little build-up of its own all the same (the acrylic): its second pass multiplies inside the
      layer, which is isolated, so only the layer's crossings of itself darken - an outline over its own
      hatch - and the layer still meets the other colours with darken, as above. */
   .pv-colored .pv-layer[data-builds="false"] .pv-build :is(path, rect, circle, ellipse, line, polyline, polygon) {
-    stroke-opacity: var(--ink-build-alpha, 0);
+    stroke-opacity: var(--ink-build-alpha, 0) !important;
     mix-blend-mode: multiply;
   }
   /* Ink simulation off: flat color, nothing to blend.
@@ -122,6 +125,8 @@
     opacity: 1 !important;
     mix-blend-mode: normal !important;
   }
+  /* The first selector outranks the !important stroke rules above, as the layer one does. */
+  .pv-flat.pv-colored .pv-layer[data-builds] :is(path, rect, circle, ellipse, line, polyline, polygon),
   .pv-flat :is(path, rect, circle, ellipse, line, polyline, polygon) {
     stroke-opacity: 1 !important;
     mix-blend-mode: normal !important;
