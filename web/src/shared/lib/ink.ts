@@ -121,8 +121,9 @@ export function isPalettePen(name: string, color: string | null, palette: PenCol
  * What a layer is called once it's being plotted in another pen: the pen its name starts with swapped
  * for the one chosen, keeping the number in front and whatever comes after - "8-sky blue print" in
  * Turquoise is "8-turquoise print", in the name's own capitals. A name that doesn't start with one of
- * the pens given ("13-date") says nothing about the pen, so it stays as it is. Plot gives it every
- * tool's pens, since a name can come from a tool other than the one in the holder.
+ * the pens given ("CMYK Key", "13-date") becomes the pen's name, keeping the number in front, so the
+ * row says which pen to load and its dot is no longer struck through. Plot gives it every tool's
+ * pens, since a name can come from a tool other than the one in the holder.
  * For showing only: the drawing's name is Studio's, and this is worked out afresh from it each time,
  * so choosing the drawing's own ink again brings the name back.
  */
@@ -135,7 +136,7 @@ export function nameInPen(name: string, pen: string, pens: PenColor[]): string {
     .map((p) => p.name.trim().toLowerCase().replace(/\s+/g, " "))
     .sort((a, b) => b.length - a.length)
     .find((p) => said === p || said.startsWith(`${p} `));
-  if (!was) return name;
+  if (!was) return lead + pen;
   const own = rest.slice(0, was.length);
   const shown = own === own.toLowerCase() ? pen.toLowerCase() : own === own.toUpperCase() ? pen.toUpperCase() : pen;
   return lead + shown + rest.slice(was.length);

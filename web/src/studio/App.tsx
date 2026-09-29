@@ -2223,7 +2223,7 @@ export default function App() {
       // The name travels with the colour: Plot colours a layer from the pen its name matches. Named
       // the way Plot shows a layer given another pen (nameInPen), so both apps call it the same:
       // the number in front and anything after the colour kept, "8-sky blue print" in Turquoise
-      // becoming "8-turquoise print", and a name with no pen in it ("13-date") left alone.
+      // becoming "8-turquoise print", and a name with no pen in it ("13-date") becoming "13-Turquoise".
       const layer = layers.find((l) => l.id === colorMenu.id);
       const wanted = layer ? nameInPen(layer.name, pen.name, presets.flatMap((p) => p.palette ?? [])) : pen.name;
       patchLayer(colorMenu.id, { name: uniqueName(wanted, layers.filter((l) => l.id !== colorMenu.id).map((l) => l.name)), color: pen.color });
