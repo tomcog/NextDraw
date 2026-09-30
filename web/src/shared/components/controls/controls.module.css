@@ -156,10 +156,13 @@
 .roundActive {
   /* Ink and white, not the inverse surface: the inverse flips with the theme, so
      in the dark theme a switched-on button came out pale with a dark glyph. */
-  --ui-button-round-bg: var(--ui-ink);
-  --ui-button-round-icon: var(--ui-white);
-  --ui-button-round-bg-hover: var(--ui-ink);
-  --ui-button-round-icon-hover: var(--ui-white);
+  --ui-button-round-secondary-bg: var(--ui-ink);
+  --ui-button-round-secondary-icon: var(--ui-white);
+  --ui-button-round-secondary-bg-hover: var(--ui-ink);
+  --ui-button-round-secondary-icon-hover: var(--ui-white);
+  /* Held on press too: 0.73.0's secondary press is the darker action fill. */
+  --ui-button-round-secondary-bg-active: var(--ui-ink);
+  --ui-button-round-secondary-icon-active: var(--ui-white);
 }
 
 .dimensions p { margin: 0; }
@@ -198,8 +201,8 @@
    --ui-action is the point - the two resolve to the same red today and would
    diverge the moment the app splits the roles. */
 .clearFile {
-  --ui-button-round-bg-hover: var(--ui-danger);
-  --ui-button-round-icon-hover: var(--ui-text-on-danger);
+  --ui-button-round-secondary-bg-hover: var(--ui-danger);
+  --ui-button-round-secondary-icon-hover: var(--ui-text-on-danger);
 }
 
 .fileName {

@@ -191,7 +191,7 @@ export function LayersSection({ mode, onMode, layers, target, linksOf, onLink, o
                 // Primary to unlink them.
                 <ButtonRound
                   size="sm"
-                  variant="ghost"
+                  variant="tertiary"
                   icon={links.length ? <Link2Off /> : <Link2 />}
                   className={links.length ? styles.linkOn : undefined}
                   aria-pressed={links.length > 0}

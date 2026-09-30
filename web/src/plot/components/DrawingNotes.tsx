@@ -50,7 +50,7 @@ export function DrawingNotes({ notes, className }: { notes: string[]; className?
       <ButtonRound
         className={styles.button}
         size="md"
-        variant="ghost"
+        variant="tertiary"
         icon={<SolidCaution />}
         aria-label={label}
         title={label}

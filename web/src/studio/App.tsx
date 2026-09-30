@@ -2668,7 +2668,7 @@ export default function App() {
               onPointerDown: (e) => startLayerDrag(e, layer.id),
              }}
             />
-            <ButtonRound size="sm" variant="ghost" icon={<EllipsisVertical />}
+            <ButtonRound size="sm" variant="tertiary" icon={<EllipsisVertical />}
              aria-label={`More for layer ${layer.name}`}
              aria-haspopup="menu"
              aria-expanded={rowMenu?.id === layer.id}
@@ -2806,7 +2806,7 @@ export default function App() {
                 </span>
                }
               />
-              <ButtonRound size="sm" variant="ghost" icon={<EllipsisVertical />}
+              <ButtonRound size="sm" variant="tertiary" icon={<EllipsisVertical />}
                aria-label={`More for ${name}`}
                aria-haspopup="menu"
                aria-expanded={rowMenu?.id === sh.id}

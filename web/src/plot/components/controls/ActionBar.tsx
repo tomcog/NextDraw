@@ -33,10 +33,10 @@ function SpeedControl({ pct, disabled, onSpeed }: { pct: number; disabled: boole
   return (
     <div className={styles.speedRow} role="group" aria-label="Plot speed">
       <span className={styles.speedLabel}>Speed</span>
-      <ButtonRound size="sm" variant="ghost" icon={<Minus />} aria-label="Slower" title="Slower, from the next line drawn"
+      <ButtonRound size="sm" variant="tertiary" icon={<Minus />} aria-label="Slower" title="Slower, from the next line drawn"
         disabled={disabled || pct <= SPEED_MIN} onClick={() => onSpeed(Math.max(SPEED_MIN, pct - SPEED_STEP))} />
       <span className={styles.speedValue} aria-live="polite">{pct}%</span>
-      <ButtonRound size="sm" variant="ghost" icon={<Plus />} aria-label="Faster" title="Faster, from the next line drawn"
+      <ButtonRound size="sm" variant="tertiary" icon={<Plus />} aria-label="Faster" title="Faster, from the next line drawn"
         disabled={disabled || pct >= SPEED_MAX} onClick={() => onSpeed(Math.min(SPEED_MAX, pct + SPEED_STEP))} />
     </div>
   );

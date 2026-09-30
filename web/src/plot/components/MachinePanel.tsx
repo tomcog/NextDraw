@@ -70,7 +70,7 @@ export function MachinePanel(props: Props) {
         <div className={styles.jog} role="group" aria-label="Move the carriage (arrow keys work here)" onKeyDown={onKeyDown}>
           <ButtonRound className={styles.up} size="md" icon={<ArrowUp />} aria-label="Move carriage toward the back" disabled={walkDisabled} onClick={() => props.onWalk("y", -1)} />
           <ButtonRound className={styles.left} size="md" icon={<ArrowLeft />} aria-label="Move carriage left" disabled={walkDisabled} onClick={() => props.onWalk("x", -1)} />
-          <ButtonRound className={styles.home} size="md" variant="ghost" icon={<House />} aria-label="Return home" title="Return home" disabled={busy} onClick={props.onHome} />
+          <ButtonRound className={styles.home} size="md" variant="tertiary" icon={<House />} aria-label="Return home" title="Return home" disabled={busy} onClick={props.onHome} />
           <ButtonRound className={styles.right} size="md" icon={<ArrowRight />} aria-label="Move carriage right" disabled={walkDisabled} onClick={() => props.onWalk("x", 1)} />
           <ButtonRound className={styles.down} size="md" icon={<ArrowDown />} aria-label="Move carriage toward the front" disabled={walkDisabled} onClick={() => props.onWalk("y", 1)} />
         </div>

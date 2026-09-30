@@ -5,11 +5,11 @@
 
 /* The library has no caution colour, so the app supplies one through ButtonRound's own override hooks. */
 .button {
-  --ui-button-round-ghost-icon: var(--nd-caution);
-  --ui-button-round-bg-hover: color-mix(in srgb, var(--nd-caution) 18%, transparent);
-  --ui-button-round-icon-hover: var(--nd-caution);
-  --ui-button-round-bg-active: color-mix(in srgb, var(--nd-caution) 30%, transparent);
-  --ui-button-round-icon-active: var(--nd-caution);
+  --ui-button-round-tertiary-icon: var(--nd-caution);
+  --ui-button-round-tertiary-bg-hover: color-mix(in srgb, var(--nd-caution) 18%, transparent);
+  --ui-button-round-tertiary-icon-hover: var(--nd-caution);
+  --ui-button-round-tertiary-bg-active: color-mix(in srgb, var(--nd-caution) 30%, transparent);
+  --ui-button-round-tertiary-icon-active: var(--nd-caution);
 }
 
 /* The button sits at the right edge of the left rail, so the callout opens to the right, over the

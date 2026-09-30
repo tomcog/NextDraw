@@ -107,7 +107,7 @@ export function PaletteEditor({ tool, paper, disabled, saving, error, onChange }
                   />
                   <ButtonRound
                     size="sm"
-                    variant="ghost"
+                    variant="tertiary"
                     icon={<Trash2 />}
                     aria-label={`Delete ${pen.name}`}
                     title={`Delete ${pen.name} from this palette`}

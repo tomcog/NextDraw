@@ -11,7 +11,7 @@ export function ThemeToggle({ className }: { className?: string }) {
   return (
     <ButtonRound
       size="sm"
-      variant="ghost"
+      variant="tertiary"
       className={className}
       icon={next === "dark" ? <Moon /> : <Sun />}
       aria-label={`Switch to the ${next} theme`}

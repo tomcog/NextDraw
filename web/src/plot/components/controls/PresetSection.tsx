@@ -166,7 +166,7 @@ export function PresetSection({
             placeholder="Choose a preset"
             disabled={disabled}
             action={
-              <ButtonRound size="sm" variant="ghost" icon={<X />} aria-label="Remove the second drawing tool" title="Remove the second tool; its layers go back to the first" disabled={disabled} onClick={onRemoveSecond} />
+              <ButtonRound size="sm" variant="tertiary" icon={<X />} aria-label="Remove the second drawing tool" title="Remove the second tool; its layers go back to the first" disabled={disabled} onClick={onRemoveSecond} />
             }
           />
           {tiltSwitch(presets.find((p) => p.name === secondTool))}
