@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Button, Card } from "@tomcoggia/ui";
 import styles from "./App.module.css";
 import { api, postJSON } from "../shared/lib/api";
-import { barrelOffsetMm, BUSY_STATES, DEFAULT_SETTINGS, DEFAULT_TOOL, PAPER_SIZES, PLOT_CHANNEL, PLOTTING_STATES, PRESET_FIELDS, STEPS, STORAGE } from "../shared/lib/constants";
+import { barrelOffsetMm, BUSY_STATES, DEFAULT_SETTINGS, DEFAULT_TOOL, IDRAW_MODEL, IDRAW_START, PAPER_SIZES, PLOT_CHANNEL, PLOTTING_STATES, PRESET_FIELDS, STEPS, STORAGE } from "../shared/lib/constants";
 import { cleanNote, listOf } from "../shared/lib/format";
 import { lightness } from "../shared/lib/color";
 import { fitsOnBed, fitsOnPaper, footprint } from "../shared/lib/geometry";
@@ -52,6 +52,9 @@ const SHOW_PEN_AND_SPEED = false;
 const SHOW_PLOTTER_MODEL = false;
 
 const isBusy = (s: Status | null) => Boolean(s && BUSY_STATES.includes(s.state));
+
+// The tools are shared by both plotters, but each is set up on one: Plot lists the connected one's only.
+const PLOTTER_PRESETS = "/api/presets?plotter=connected";
 
 function loadActivePreset(): string | null {
   const parsed = load<string>(STORAGE.preset);
@@ -333,7 +336,10 @@ export default function App() {
   const [lostContact, setLostContact] = useState(false);
   // Nothing plots without a plotter on the USB, so the Plot button waits for one the same way it
   // waits for a layer to be chosen. Losing the server counts too: the plot would have nowhere to go.
-  const plotterReady = Boolean(status?.plotter_found) && !lostContact;
+  // Two plotters plugged into one Mac can't be told which is which by the NextDraw software, so then
+  // neither is ready.
+  const severalPlotters = (status?.plotters ?? 0) > 1;
+  const plotterReady = Boolean(status?.plotter_found) && !severalPlotters && !lostContact;
   const [localMessage, setLocalMessage] = useState<Message | null>(null);
   const [machineError, setMachineError] = useState<string | null>(null);
   const [lastAction, setLastAction] = useState<"plot" | "manual" | null>(null);
@@ -371,7 +377,10 @@ export default function App() {
   const busy = isBusy(status);
   const plotting = Boolean(status && PLOTTING_STATES.includes(status.state));
 
-  const model = info?.models.find((m) => m.id === settings.model) ?? info?.models[0];
+  // The iDraw is told apart by the server; its travel is the A3 model's, under its own name.
+  const onIdraw = status?.plotter === "idraw";
+  const listedModel = info?.models.find((m) => m.id === (onIdraw ? IDRAW_MODEL : settings.model)) ?? info?.models[0];
+  const model = onIdraw && listedModel ? { ...listedModel, name: "iDraw" } : listedModel;
   const fp = footprint(preview, settings, placement);
   const onBed = fitsOnBed(fp, model);
   const onPaper = fitsOnPaper(fp, settings);
@@ -494,7 +503,7 @@ export default function App() {
     api<Info>("/api/info")
       .then(setInfo)
       .catch(() => setLocalMessage({ text: "Couldn’t reach NextDraw Plot. Start it with server.py and reload this page.", tone: "error" }));
-    api<{ presets: Preset[] }>("/api/presets")
+    api<{ presets: Preset[] }>(PLOTTER_PRESETS)
       .then((r) => {
         setPresets(r.presets);
         // Presets are shared (iCloud Drive) and can be edited elsewhere: use the chosen tool's current
@@ -518,7 +527,7 @@ export default function App() {
   useEffect(() => {
     const timer = window.setInterval(async () => {
       try {
-        const r = await api<{ presets: Preset[] }>("/api/presets");
+        const r = await api<{ presets: Preset[] }>(PLOTTER_PRESETS);
         const text = JSON.stringify(r.presets);
         if (presetsSeen.current === null) {
           presetsSeen.current = text;
@@ -985,6 +994,33 @@ export default function App() {
   const presetChanged = Boolean(
     active && !PRESET_FIELDS.every((k) => !(k in active.settings) || Math.abs(Number(active.settings[k]) - Number(settings[k] ?? active.settings[k])) < 0.05),
   );
+  // The iDraw's pens are set up from scratch: until one of its own tools is chosen, it starts from its
+  // own software's heights rather than the NextDraw numbers left over from the last tool.
+  useEffect(() => {
+    if (onIdraw && active?.plotter !== "idraw") updateSettings(IDRAW_START);
+  }, [onIdraw, active, updateSettings]);
+  // Back on the NextDraw after the iDraw, the page still holds the iDraw's heights, which are the
+  // wrong way up for it. So the usual tool is chosen again, as when the page opens without one. Only
+  // its values are taken: nothing is sent to the plotter until asked.
+  // The tool list catches up a few seconds after the plotter changes, so the switch is remembered
+  // until the NextDraw's own tools have arrived.
+  const lastPlotter = useRef(status?.plotter);
+  const backFromIdraw = useRef(false);
+  useEffect(() => {
+    if (lastPlotter.current === "idraw" && status?.plotter === "nextdraw") backFromIdraw.current = true;
+    if (status?.plotter) lastPlotter.current = status.plotter;
+    if (!backFromIdraw.current || status?.plotter !== "nextdraw") return;
+    if (active && active.plotter !== "idraw") {
+      backFromIdraw.current = false; // a NextDraw tool is chosen already
+      return;
+    }
+    const usual = presets.find((p) => p.name === DEFAULT_TOOL && p.plotter !== "idraw");
+    if (usual) {
+      backFromIdraw.current = false;
+      setActivePreset(usual.name);
+      updateSettings(usual.settings);
+    }
+  }, [status?.plotter, active, presets, updateSettings]);
 
   /* ---------- A second drawing tool ---------- */
 
@@ -1034,7 +1070,7 @@ export default function App() {
     setPresets((list) => list.map((p) => (p.name === name ? { ...p, settings: merged } : p)));
     window.clearTimeout(inkTimer.current);
     inkTimer.current = window.setTimeout(() => {
-      api(`/api/presets/${encodeURIComponent(name)}`, {
+      api(`/api/presets/${encodeURIComponent(name)}?plotter=connected`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(merged),
@@ -1057,7 +1093,7 @@ export default function App() {
     setPresets((list) => list.map((p) => (p.name === name ? { ...p, settings: merged, tilt, barrel_mm: barrel } : p)));
     window.clearTimeout(toolTimer.current);
     toolTimer.current = window.setTimeout(() => {
-      api(`/api/presets/${encodeURIComponent(name)}`, {
+      api(`/api/presets/${encodeURIComponent(name)}?plotter=connected`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ ...merged, ...(tilt ? { tilt_offset_mm: tilt.offset_mm } : {}), ...(barrel ? { barrel_mm: barrel } : {}) }),
@@ -1173,7 +1209,7 @@ export default function App() {
     if (presets.some((p) => p.name === name) && name !== activePreset && !window.confirm(`Replace the preset “${name}”?`)) return false;
     try {
       const payload = Object.fromEntries(PRESET_FIELDS.map((k) => [k, settings[k]]));
-      const res = await api<{ presets: Preset[] }>(`/api/presets/${encodeURIComponent(name)}`, {
+      const res = await api<{ presets: Preset[] }>(`/api/presets/${encodeURIComponent(name)}?plotter=connected`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
@@ -1288,7 +1324,7 @@ export default function App() {
           },
         }}
       />
-      <Header plotterFound={Boolean(status?.plotter_found)} lostContact={lostContact} />
+      <Header plotterFound={Boolean(status?.plotter_found)} severalPlotters={severalPlotters} plotterName={onIdraw ? "iDraw" : undefined} lostContact={lostContact} />
 
       <main className={styles.layout}>
         <section className={styles.stage} aria-label={paletteOpen ? "Drawing tool colors" : "Drawing preview"}>

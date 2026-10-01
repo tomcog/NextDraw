@@ -284,7 +284,60 @@ carriage = {
 }
 
 
+# The second plotter, an iDraw: a copy of the AxiDraw V3/A3 (library model 2: A3 travel, no automatic
+# homing, a standard servo), geared 1.25 times finer and with its servo the other way up. It's told
+# apart by the name "iDraw" stored on its board, which shows in its USB name ("EiBotBoard,iDraw"); any
+# other board is the NextDraw. Its numbers come from the AxiDraw 2.7.0 software its makers modified.
+# Its board needs firmware patched to skip the USB-power check; a stock update stops it connecting.
+IDRAW = "idraw"
+IDRAW_MODEL = 2
+IDRAW_STEPS_PER_IN = 1270.0  # the library's native_res_factor is 1016
+# On the iDraw a lower number is a higher pen. Its own software keeps the lifted height within 17-30
+# and the drawing height within 20-60; anything set for the NextDraw is pulled into those, so a
+# NextDraw tool's numbers can't drive the pen into the paper.
+IDRAW_PEN_UP = (17, 30)
+IDRAW_PEN_DOWN = (20, 60)
+IDRAW_START = {"pen_pos_up": 20, "pen_pos_down": 45, "pen_setup": 20}  # its own software's defaults
+
+
+def plotter_of(ports):
+    """Which plotter is on the USB, from the port listing: "idraw" for a board named iDraw, else "nextdraw"."""
+    for port in ports or []:
+        if str(port[1])[len("EiBotBoard,"):].strip().lower() == IDRAW:
+            return IDRAW
+    return "nextdraw"
+
+
+def connected_plotter():
+    return plotter_of(ebb_serial.listEBBports())
+
+
+def several_plotters():
+    """A refusal when more than one plotter is on the USB, else None. The NextDraw software drives the
+    first board it finds, which may not be the one whose settings this app chose, so nothing moves."""
+    if len(ebb_serial.listEBBports() or []) > 1:
+        return jsonify(error="Two plotters are plugged in. Unplug one: this app drives one plotter at a time."), 409
+    return None
+
+
+def for_plotter(settings):
+    """Settings as the connected plotter takes them. The NextDraw's are left as they are; the iDraw's
+    use its model, and pen heights inside its own ranges, with its starting heights for any not given."""
+    if connected_plotter() != IDRAW:
+        return settings
+    settings = {**IDRAW_START, **settings, "model": IDRAW_MODEL}
+    for key, (low, high) in (("pen_pos_up", IDRAW_PEN_UP), ("pen_setup", IDRAW_PEN_UP), ("pen_pos_down", IDRAW_PEN_DOWN)):
+        settings[key] = max(low, min(high, settings[key]))
+    return settings
+
+
 def clean_settings(raw):
+    """Settings from the page, checked and limited, as the connected plotter takes them."""
+    return for_plotter(clean_values(raw))
+
+
+def clean_values(raw):
+    """Settings from the page, checked and limited, before any plotter is considered: what a preset stores."""
     settings = {}
     for key, (low, high) in NUMERIC_SETTINGS.items():
         if key in raw:
@@ -1279,6 +1332,16 @@ def make_nextdraw(log):
         if text:
             log.append(re.sub(r"\s*\n+\s*", " ", text))
     nd = NextDraw(default_logging=False, user_message_fun=emit)
+    if connected_plotter() == IDRAW:
+        # Finer steps mean a lower top speed for the same motor step rate, so the speed limits are
+        # scaled down with them. The library only works its speeds out again when the handling mode
+        # changes, so it's told the handling has changed.
+        scale = nd.params.native_res_factor / IDRAW_STEPS_PER_IN
+        nd.params.native_res_factor = IDRAW_STEPS_PER_IN
+        nd.params.speed_lim_xy_hr *= scale
+        nd.params.speed_lim_xy_lr *= scale
+        nd.params.handling_old = -1
+        nd.params.overrides = {**nd.params.overrides, "model_name": "iDraw", "servo_min": 7500, "servo_max": 28000}
     return nd
 
 
@@ -1892,7 +1955,11 @@ def run_manual(command, settings, distance_mm, axis):
             message = "Pen lowered and raised. Adjust the heights if needed."
         elif command == "release":
             nd.options.mode = "align"
-            message = "Motors off. You can move the carriage by hand; it will find home again before the next move."
+            # A plotter that can't find home by itself takes wherever the carriage is as home.
+            if models.plotters[settings.get("model", 8)].auto_home:
+                message = "Motors off. You can move the carriage by hand; it will find home again before the next move."
+            else:
+                message = "Motors off. Push the carriage to the home corner by hand: wherever it is at the next move becomes home."
         else:
             nd.options.mode = "utility"
             if command == "walk":
@@ -1995,7 +2062,7 @@ def save_presets(presets):
 
 def clean_preset_settings(raw):
     """A preset describes a pen: its heights, lift and drop speeds, and drawing speeds."""
-    return {k: v for k, v in clean_settings(raw).items() if k in PRESET_NUMERIC}
+    return {k: v for k, v in clean_values(raw).items() if k in PRESET_NUMERIC}
 
 
 # A marker that comes with more than one tip - two ends of the same pen, or the same ink in a second
@@ -2144,7 +2211,10 @@ def status():
     with job.lock:
         snap = job.snapshot()
         snap["carriage"] = dict(carriage)
-    snap["plotter_found"] = bool(ebb_serial.listEBBports())
+    ports = ebb_serial.listEBBports()
+    snap["plotter_found"] = bool(ports)
+    snap["plotter"] = plotter_of(ports) if ports else None
+    snap["plotters"] = len(ports or [])  # more than one, and nothing is sent to either
     resume = load_resume()
     live = snap["state"] in ("preparing", "plotting", "stopping")
     # Changes when a new plot saves its paths, so the page knows to fetch them again.
@@ -3349,6 +3419,9 @@ def plot():
     if not CURRENT_SVG.exists():
         return jsonify(error="Load an SVG first."), 400
     body = request.json or {}
+    refusal = several_plotters()
+    if refusal:
+        return refusal
     settings = clean_settings(body)
     placement = clean_placement(body)
     with job.lock:
@@ -3365,6 +3438,9 @@ def resume_plot():
     resume = load_resume()
     if not resume:
         return jsonify(error="There's no stopped plot to resume."), 400
+    refusal = several_plotters()
+    if refusal:
+        return refusal
     # The drawing, placement and stopping point are the stopped plot's. The settings are the page's
     # current ones when it sends them, so changes made while stopped (Small paths, speeds, Handling mode,
     # a re-seated pen's heights) apply to the rest of the plot.
@@ -3383,6 +3459,9 @@ def resume_plot():
 @app.delete("/api/resume")
 def discard_resume():
     """Forget the stopped plot and send the carriage home."""
+    refusal = several_plotters()
+    if refusal:
+        return refusal
     resume = load_resume()
     with job.lock:
         if job.busy():
@@ -3451,6 +3530,9 @@ def manual():
     command = body.get("command")
     if command not in MANUAL_COMMANDS:
         return jsonify(error="Unknown command."), 400
+    refusal = several_plotters()
+    if refusal:
+        return refusal
     axis = body.get("axis")
     distance = 0.0
     if command == "walk":
@@ -3473,9 +3555,20 @@ def manual():
     return jsonify(ok=True)
 
 
+# Each tool belongs to one plotter: its heights, barrel and tilt are measured on that machine. A tool
+# with no "plotter" is the NextDraw's; the iDraw's say "idraw". Studio sees every tool; Plot asks for
+# the connected plotter's only (?plotter=connected).
+def plotter_of_preset(preset):
+    return preset.get("plotter") or "nextdraw"
+
+
 @app.get("/api/presets")
 def list_presets():
-    return jsonify(presets=resolve_presets(load_presets()))
+    presets = resolve_presets(load_presets())
+    if request.args.get("plotter") == "connected":
+        plotter = connected_plotter()
+        presets = [p for p in presets if plotter_of_preset(p) == plotter]
+    return jsonify(presets=presets)
 
 
 @app.put("/api/presets/<name>")
@@ -3486,11 +3579,18 @@ def put_preset(name):
     settings = clean_preset_settings(request.json or {})
     existing = load_presets()
     marker, tip = find_preset(existing, name)
+    # Plot only sees the connected plotter's tools, so it mustn't overwrite the other one's by name.
+    plotter = connected_plotter() if request.args.get("plotter") == "connected" else None
+    if plotter and marker is not None and plotter_of_preset(marker) != plotter:
+        other = "iDraw" if plotter_of_preset(marker) == IDRAW else "NextDraw"
+        return jsonify(error=f"The {other} already has a tool called “{name}”. Give this one another name."), 409
     if tip is not None:
         return save_tip(existing, marker, tip, settings, request.json or {})
     previous = marker or {}
     presets = [p for p in existing if p.get("name") != name]
     entry = {"name": name, "settings": settings}
+    if plotter_of_preset(previous) == IDRAW or plotter == IDRAW:
+        entry["plotter"] = IDRAW
     if previous.get("palette"):
         entry["palette"] = previous["palette"]  # the tool's colors, set up by hand in presets.json
     if previous.get("tilt"):

@@ -84,6 +84,8 @@ export interface Status {
   log: string[];
   carriage: Carriage;
   plotter_found: boolean;
+  plotter?: "nextdraw" | "idraw" | null; // which one, told apart by the name on its board
+  plotters?: number; // how many are plugged in; with more than one, nothing is sent to either
   file: string | null;
   file_opened?: string | null; // changes every time a drawing is opened, from any tab or app
   file_path: string | null;
@@ -184,6 +186,7 @@ export interface Preset {
   drag?: Drag; // a soft tip that may only be pulled, never pushed
   hatch?: { angle?: number; spacing_mm?: number }; // measured by hand; what a fill starts from
   barrel_mm?: number; // the barrel's width where the clip holds it; a fat one moves the tip down the page
+  plotter?: "idraw"; // the plotter it was set up on; absent for the NextDraw's
   /**
    * Its pens as they really come out on paper, read off a plotted calibration sheet: for each pen,
    * the colour at each share of the paper its lines cover ("100", "50", "25", "12.5").

@@ -5,13 +5,16 @@ import styles from "../../shared/components/Header.module.css";
 
 interface Props {
   plotterFound: boolean;
+  plotterName?: string; // said when it isn't the usual plotter
+  severalPlotters?: boolean; // more than one plugged in: neither is used
   lostContact: boolean;
 }
 
-export function Header({ plotterFound, lostContact }: Props) {
+export function Header({ plotterFound, plotterName, severalPlotters, lostContact }: Props) {
   const text = lostContact
     ? "Lost contact with NextDraw Plot. Is server.py still running?"
-    : plotterFound ? "Plotter connected" : "No plotter found";
+    : severalPlotters ? "Two plotters plugged in: unplug one"
+    : plotterFound ? `${plotterName ?? "Plotter"} connected` : "No plotter found";
   return (
     <header className={styles.header}>
       {/* The mark replaces the space, so the name needs saying in full for anything reading it. */}
@@ -26,7 +29,7 @@ export function Header({ plotterFound, lostContact }: Props) {
       </h1>
       <span className={styles.tools}>
         <AppSwitch current="plot" />
-        <Tag className={styles.status} data-found={plotterFound && !lostContact}>
+        <Tag className={styles.status} data-found={plotterFound && !severalPlotters && !lostContact}>
           <span className={styles.dot} aria-hidden="true" />
           {text}
         </Tag>

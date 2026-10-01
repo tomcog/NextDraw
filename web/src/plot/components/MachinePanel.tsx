@@ -34,7 +34,7 @@ function carriageText(c: Carriage | undefined, model: PlotterModel | undefined, 
     text = `Carriage at ${fmtLen(c.x, units)} across, ${fmtLen(c.y, units)} down, ${pen}`;
     if (!c.verified && model?.auto_home) text += ". The first move finds home";
   } else if (c && c.motors_on === false) {
-    text = "Carriage released. It will find home before the next move.";
+    text = model?.auto_home ? "Carriage released. It will find home before the next move." : "Carriage released";
   } else if (c && !c.verified && model?.auto_home) {
     text = "Carriage position not read yet. The first move finds home.";
   } else {
