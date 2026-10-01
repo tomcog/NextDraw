@@ -994,10 +994,11 @@ export default function App() {
   const presetChanged = Boolean(
     active && !PRESET_FIELDS.every((k) => !(k in active.settings) || Math.abs(Number(active.settings[k]) - Number(settings[k] ?? active.settings[k])) < 0.05),
   );
-  // The iDraw's pens are set up from scratch: until one of its own tools is chosen, it starts from its
-  // own software's heights rather than the NextDraw numbers left over from the last tool.
+  // The iDraw's pens are set up from scratch: with a NextDraw tool still chosen, it starts from its own
+  // software's heights rather than that tool's numbers. With no tool chosen the page's own heights
+  // stay as they were set, so they aren't put back to the start ones each time the page opens.
   useEffect(() => {
-    if (onIdraw && active?.plotter !== "idraw") updateSettings(IDRAW_START);
+    if (onIdraw && active && active.plotter !== "idraw") updateSettings(IDRAW_START);
   }, [onIdraw, active, updateSettings]);
   // Back on the NextDraw after the iDraw, the page still holds the iDraw's heights, which are the
   // wrong way up for it. So the usual tool is chosen again, as when the page opens without one. Only
@@ -1083,7 +1084,11 @@ export default function App() {
   // sliders above. Every change goes into the tool itself, not just today's plot.
   const toolTimer = useRef<number>();
   const setToolValues = (tool: Preset | undefined, patch: Partial<Settings>, extra: { tiltOffset?: number; barrel?: number } = {}) => {
-    if (!tool) return;
+    // With no tool chosen the HUD shows the page's own settings, so that's where its edits go.
+    if (!tool) {
+      updateSettings(patch);
+      return;
+    }
     const name = tool.name;
     const merged = { ...tool.settings, ...patch };
     const tilt = tool.tilt && extra.tiltOffset !== undefined ? { ...tool.tilt, offset_mm: extra.tiltOffset } : tool.tilt;

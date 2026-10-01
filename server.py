@@ -292,11 +292,14 @@ carriage = {
 IDRAW = "idraw"
 IDRAW_MODEL = 2
 IDRAW_STEPS_PER_IN = 1270.0  # the library's native_res_factor is 1016
-# On the iDraw a lower number is a higher pen. Its own software keeps the lifted height within 17-30
-# and the drawing height within 20-60; anything set for the NextDraw is pulled into those, so a
-# NextDraw tool's numbers can't drive the pen into the paper.
-IDRAW_PEN_UP = (17, 30)
+# On the iDraw a lower number is a higher pen. Its own software kept the lifted height within 17-30
+# and the drawing height within 20-60. Plot lets the lift come lower, to 40: a pen seated at 50 cleared
+# the paper by about 7 mm at 20 and about 5 mm at 30, more than it needs. Anything set for the NextDraw
+# is pulled into these, so a NextDraw tool's numbers can't drive the pen into the paper. A pen without a sizing block
+# is seated at its drawing height, so the setup height may go as low as that.
+IDRAW_PEN_UP = (17, 40)
 IDRAW_PEN_DOWN = (20, 60)
+IDRAW_PEN_SETUP = (17, 60)
 IDRAW_START = {"pen_pos_up": 20, "pen_pos_down": 45, "pen_setup": 20}  # its own software's defaults
 
 
@@ -326,7 +329,7 @@ def for_plotter(settings):
     if connected_plotter() != IDRAW:
         return settings
     settings = {**IDRAW_START, **settings, "model": IDRAW_MODEL}
-    for key, (low, high) in (("pen_pos_up", IDRAW_PEN_UP), ("pen_setup", IDRAW_PEN_UP), ("pen_pos_down", IDRAW_PEN_DOWN)):
+    for key, (low, high) in (("pen_pos_up", IDRAW_PEN_UP), ("pen_setup", IDRAW_PEN_SETUP), ("pen_pos_down", IDRAW_PEN_DOWN)):
         settings[key] = max(low, min(high, settings[key]))
     return settings
 
@@ -1341,6 +1344,11 @@ def make_nextdraw(log):
         nd.params.speed_lim_xy_hr *= scale
         nd.params.speed_lim_xy_lr *= scale
         nd.params.handling_old = -1
+        # Unpowered, its servo lets the clip sink under its own weight, so a minute after the last
+        # move the pen sat lower than it was set and jumped back up at the next. Kept powered (0: never
+        # switched off), the height seen is always the height set.
+        nd.params.servo_timeout = 0
+        # Its own software's servo range; the heights are % of it, as they were there.
         nd.params.overrides = {**nd.params.overrides, "model_name": "iDraw", "servo_min": 7500, "servo_max": 28000}
     return nd
 
