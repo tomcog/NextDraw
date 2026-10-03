@@ -928,15 +928,28 @@ export default function App() {
  }, []);
 
  // Plot's drawing tools, so a drawing is made with the pens it will actually be drawn with: the
- // plugged-in plotter's, as Plot lists them, or every tool while neither plotter is plugged in. Read
- // again when a plotter comes or goes.
+ // plugged-in plotter's, as Plot lists them, or every tool while neither plotter is plugged in. The
+ // presets file is shared - changed in Plot, from the other Mac, or by hand - so, as Plot does, the
+ // list is read again every few seconds and taken only when it has changed. Read at once when a
+ // plotter comes or goes.
+ const presetsSeen = useRef<string | null>(null);
  useEffect(() => {
-  api<{ presets: Preset[] }>("/api/presets?plotter=connected")
+  let cancelled = false;
+  const read = () => api<{ presets: Preset[] }>("/api/presets?plotter=connected")
    .then(({ presets: list }) => {
+    const text = JSON.stringify(list);
+    if (cancelled || text === presetsSeen.current) return;
+    presetsSeen.current = text;
     setPresets(list);
     setToolName((current) => (list.some((t) => t.name === current) ? current : list[0]?.name ?? ""));
    })
-   .catch(() => {}); // no presets is not a reason to stop; the fallbacks below stand
+   .catch(() => {}); // no presets is not a reason to stop; the fallbacks below stand, and the next read tries again
+  read();
+  const timer = window.setInterval(read, 3000);
+  return () => {
+   cancelled = true;
+   window.clearInterval(timer);
+  };
  }, [plotterOnUsb]);
 
  // How the drawing is drawn: its paths as thin lines, or the ink they will make. Only how it's
