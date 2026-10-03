@@ -2483,8 +2483,32 @@ def import_from_illustrator(ai_path):
             if "-1728" in detail or "Can’t get application" in detail or "Can't get application" in detail:
                 raise RuntimeError("Illustrator isn't available on this Mac, so .ai files can't be imported.")
             raise RuntimeError(f"Illustrator couldn't export the drawing. {detail}")
+        tmp_svg.write_bytes(declare_known_prefixes(tmp_svg.read_bytes()))
         os.replace(tmp_svg, svg_path)  # swap in the finished file
     return svg_path
+
+
+KNOWN_PREFIXES = {
+    b"inkscape": b"http://www.inkscape.org/namespaces/inkscape",
+    b"sodipodi": b"http://sodipodi.sourceforge.net/DTD/sodipodi-0.dtd",
+    b"xlink": b"http://www.w3.org/1999/xlink",
+}
+
+
+def declare_known_prefixes(data):
+    """
+    Declare on the <svg> any of Inkscape's prefixes the file uses without declaring. Artwork pasted
+    into Illustrator from an Inkscape file keeps its inkscape:label attributes, but Illustrator's SVG
+    export leaves out the namespace they need, and the file then isn't XML anything can read.
+    """
+    start = re.search(rb"<svg\b[^>]*>", data)
+    if not start:
+        return data
+    missing = b"".join(b' xmlns:%s="%s"' % (prefix, uri) for prefix, uri in KNOWN_PREFIXES.items()
+                       if re.search(rb"[\s<]%s:" % prefix, data) and b"xmlns:%s=" % prefix not in start.group(0))
+    if not missing:
+        return data
+    return data[:start.start() + 4] + missing + data[start.start() + 4:]
 
 
 # ---------- Combining single-colour files ----------
@@ -3564,17 +3588,24 @@ def manual():
 
 
 # Each tool belongs to one plotter: its heights, barrel and tilt are measured on that machine. A tool
-# with no "plotter" is the NextDraw's; the iDraw's say "idraw". Studio sees every tool; Plot asks for
-# the connected plotter's only (?plotter=connected).
+# with no "plotter" is the NextDraw's; the iDraw's say "idraw". Both apps ask for the connected
+# plotter's only (?plotter=connected), and see every tool while neither plotter is plugged in.
 def plotter_of_preset(preset):
     return preset.get("plotter") or "nextdraw"
+
+
+def plotter_on_usb():
+    """The plotter on the USB, or None when there isn't one."""
+    ports = ebb_serial.listEBBports()
+    return plotter_of(ports) if ports else None
 
 
 @app.get("/api/presets")
 def list_presets():
     presets = resolve_presets(load_presets())
-    if request.args.get("plotter") == "connected":
-        plotter = connected_plotter()
+    # With no plotter plugged in there's no telling which one the tools are for, so every tool is listed.
+    plotter = plotter_on_usb() if request.args.get("plotter") == "connected" else None
+    if plotter:
         presets = [p for p in presets if plotter_of_preset(p) == plotter]
     return jsonify(presets=presets)
 
@@ -3587,8 +3618,8 @@ def put_preset(name):
     settings = clean_preset_settings(request.json or {})
     existing = load_presets()
     marker, tip = find_preset(existing, name)
-    # Plot only sees the connected plotter's tools, so it mustn't overwrite the other one's by name.
-    plotter = connected_plotter() if request.args.get("plotter") == "connected" else None
+    # With a plotter plugged in, Plot sees only its tools, so it mustn't overwrite the other one's by name.
+    plotter = plotter_on_usb() if request.args.get("plotter") == "connected" else None
     if plotter and marker is not None and plotter_of_preset(marker) != plotter:
         other = "iDraw" if plotter_of_preset(marker) == IDRAW else "NextDraw"
         return jsonify(error=f"The {other} already has a tool called “{name}”. Give this one another name."), 409

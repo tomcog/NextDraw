@@ -866,15 +866,33 @@ export default function App() {
   };
  }, [openDrawing]);
 
- // Plot's drawing tools, so a drawing is made with the pens it will actually be drawn with.
+ // Whether a plotter is on USB, and which, for the header and the tool list - asked now and then,
+ // since Studio doesn't drive it.
+ const [plotterFound, setPlotterFound] = useState<boolean | null>(null);
+ const [plotterOnUsb, setPlotterOnUsb] = useState<string | null>(null);
  useEffect(() => {
-  api<{ presets: Preset[] }>("/api/presets")
+  const ask = () => api<{ plotter_found: boolean; plotter: string | null }>("/api/status")
+   .then((st) => {
+    setPlotterFound(Boolean(st.plotter_found));
+    setPlotterOnUsb(st.plotter ?? null);
+   })
+   .catch(() => setPlotterFound(false));
+  ask();
+  const timer = window.setInterval(ask, 5000);
+  return () => window.clearInterval(timer);
+ }, []);
+
+ // Plot's drawing tools, so a drawing is made with the pens it will actually be drawn with: the
+ // plugged-in plotter's, as Plot lists them, or every tool while neither plotter is plugged in. Read
+ // again when a plotter comes or goes.
+ useEffect(() => {
+  api<{ presets: Preset[] }>("/api/presets?plotter=connected")
    .then(({ presets: list }) => {
     setPresets(list);
     setToolName((current) => (list.some((t) => t.name === current) ? current : list[0]?.name ?? ""));
    })
    .catch(() => {}); // no presets is not a reason to stop; the fallbacks below stand
- }, []);
+ }, [plotterOnUsb]);
 
  // How the drawing is drawn: its paths as thin lines, or the ink they will make. Only how it's
  // painted - the drawing is the same either way. Not remembered: a drawing always opens in
@@ -924,16 +942,6 @@ export default function App() {
  // A photo of it, plotted, is read back into the tool's preset: each pen as it really came out.
  const [setupOpen, setSetupOpen] = useState(false);
 
- // Whether the plotter is on USB, for the header - asked now and then, since Studio doesn't drive it.
- const [plotterFound, setPlotterFound] = useState<boolean | null>(null);
- useEffect(() => {
-  const ask = () => api<{ plotter_found: boolean }>("/api/status")
-   .then((st) => setPlotterFound(Boolean(st.plotter_found)))
-   .catch(() => setPlotterFound(false));
-  ask();
-  const timer = window.setInterval(ask, 5000);
-  return () => window.clearInterval(timer);
- }, []);
  const sheet = useMemo(() => sheetLayout(shapes), [shapes]);
  // Read into the drawing tool only when the sheet is of its pens: a sheet made for one marker read
  // into another would write the first one's colours over the second's.

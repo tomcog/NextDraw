@@ -60,6 +60,7 @@ export const PRESET_FIELDS = [
 
 // Width × height in mm, portrait. Shown landscape by default to suit the plotter.
 export const PAPER_SIZES: { id: string; name: string; w?: number; h?: number }[] = [
+  { id: "8x10", name: "8 × 10 in", w: 203.2, h: 254 },
   { id: "letter", name: "8.5 × 11 in", w: 215.9, h: 279.4 },
   { id: "11x14", name: "11 × 14 in", w: 279.4, h: 355.6 },
   { id: "11x17", name: "11 × 17 in", w: 279.4, h: 431.8 },

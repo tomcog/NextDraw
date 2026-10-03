@@ -435,6 +435,7 @@ export default function App() {
     // setting up a plot. The tool the page remembers stays chosen until it's changed by hand. Plot
     // still writes `tool` into the file, because Studio reads it to draw in the right ink.
     const patch = { ...(plot?.paper ?? {}) };
+    setCustomPaper(false);
     if (Object.keys(patch).length) {
       refs.current.settings = { ...refs.current.settings, ...patch };
       setSettings((prev) => ({ ...prev, ...patch }));
@@ -949,7 +950,21 @@ export default function App() {
 
   /* ---------- Paper ---------- */
 
+  // A drawing saved on Custom whose width and height are one of the sizes is shown as that size, as
+  // Studio shows it. Custom chosen by hand stays chosen while its width and height are typed, even
+  // through a size that happens to be in the list.
+  const [customPaper, setCustomPaper] = useState(false);
+  const paperSizeId = useMemo(() => {
+    if (settings.paper_size !== "custom" || customPaper) return settings.paper_size;
+    const { paper_w: w, paper_h: h } = settings;
+    const match = PAPER_SIZES.find(
+      (p) => p.w && p.h && ((Math.abs(p.w - w) < 0.01 && Math.abs(p.h - h) < 0.01) || (Math.abs(p.h - w) < 0.01 && Math.abs(p.w - h) < 0.01)),
+    );
+    return match?.id ?? "custom";
+  }, [settings.paper_size, settings.paper_w, settings.paper_h, customPaper]);
+
   const pickPaperSize = (id: string) => {
+    setCustomPaper(id === "custom");
     const size = PAPER_SIZES.find((p) => p.id === id);
     if (size?.w && size.h) {
       const landscape = settings.paper_w >= settings.paper_h;
@@ -1526,7 +1541,7 @@ export default function App() {
                 <PaperSection
                   w={settings.paper_w}
                   h={settings.paper_h}
-                  sizeId={settings.paper_size}
+                  sizeId={paperSizeId}
                   units={settings.units}
                   color={settings.paper_color}
                   collapsibleKey="plot-paper"
