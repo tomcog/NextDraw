@@ -3,7 +3,7 @@ import { DrawingToolSection } from "../shared/components/controls/DrawingToolSec
 import { PaperSection } from "../shared/components/controls/PaperSection";
 import { SettingsSection } from "../shared/components/controls/SettingsSection";
 import { Button, ButtonRound, Card, Checkbox, InputSelect, InputText, InputTextarea, LayerController, Segment, SegmentedControl } from "@tomcoggia/ui";
-import { AlignCenterHorizontal, AlignCenterVertical, AlignEndHorizontal, AlignEndVertical, AlignStartHorizontal, AlignStartVertical, ArrowDownLeft, ArrowDownRight, ArrowDownToLine, ArrowUpLeft, ArrowUpRight, AudioWaveform, Circle, ClipboardCopy, ClipboardPaste, Copy, Ellipsis, EllipsisVertical, FilePlus, FlameKindling, FolderOpen, Image as ImageIcon, ImagePlus, Grid2x2, Layers2, LayersArrowDown, LayersArrowUp, Merge, LineStyle, LoaderPinwheel, Menu, Minus, MousePointer2, Orbit, PaintBucket, PenLine, Pentagon, Plus, Rainbow, RotateCw, Save, Send, Shell, Signal, Spline, Square, SquareDimensions, SquareStack, Star, Target, Trash2, Type, Waves } from "lucide-react";
+import { AlignCenterHorizontal, AlignCenterVertical, AlignEndHorizontal, AlignEndVertical, AlignStartHorizontal, AlignStartVertical, ArrowDownLeft, ArrowDownRight, ArrowDownToLine, ArrowUpLeft, ArrowUpRight, AudioWaveform, Circle, ClipboardCopy, ClipboardPaste, Copy, Ellipsis, EllipsisVertical, FilePlus, FlameKindling, FolderOpen, Image as ImageIcon, ImagePlus, Grid2x2, Layers2, LayersArrowDown, LayersArrowUp, Merge, LineStyle, LoaderPinwheel, Menu, Minus, MousePointer2, Orbit, PaintBucket, PaintRoller, PenLine, Pipette, Pentagon, Plus, Rainbow, RotateCw, Save, Send, Shell, Signal, Spline, Square, SquareDimensions, SquareStack, Star, Target, Trash2, Type, Waves } from "lucide-react";
 import { FileBrowser, LAST_FOLDER_KEY, type CombineResult, type OpenResult } from "../shared/components/FileBrowser";
 import { Section } from "../shared/components/controls/Section";
 import { NumberField } from "../shared/components/controls/NumberField";
@@ -20,6 +20,7 @@ import { PreviewToolbar, SetupToolbar, type View } from "../shared/components/Pr
 import type { Zoom } from "../shared/components/BedCanvas";
 import { useRowDrag } from "./lib/useRowDrag";
 import { Canvas, type Tool } from "./components/Canvas";
+import { ConvertStage, type ConvertView } from "./components/ConvertStage";
 import { mergeLines } from "./lib/mergeLines";
 import { SizePopover } from "./components/SizePopover";
 import { StudioHeader } from "./components/StudioHeader";
@@ -31,7 +32,7 @@ import { flattenPath, flattenRun, mapNode, parsePath, simplifyRun, type Node } f
 import { fitText, textRuns } from "./lib/text";
 import { defaultRepeat, placements, REPEAT_FIELDS, type Repeat, type RepeatKind } from "./lib/repeat";
 import { parseDrawing } from "./lib/parse";
-import { BAND_NAMES, BLACK_SHARE, KEY_FROM, LAYER_SETTINGS, PLATES, PLATE_AIMS, MOST_LAYERS, PHOTO_DEFAULTS, WAVE_DEFAULTS, OUTLINE_DEFAULTS, CENTER_DEFAULTS, SILHOUETTE_DEFAULTS, photoMarks, colourGroups, darkestOf, isColourful, matchPens, placeOnPage, plateNamed, platePens, readTones, stemWithoutPlate, workingCopy, type Photo, type PhotoPart, type Plate } from "./lib/photo";
+import { type PhotoMarks, BAND_NAMES, BLACK_SHARE, KEY_FROM, LAYER_SETTINGS, PLATES, PLATE_AIMS, MOST_LAYERS, PHOTO_DEFAULTS, WAVE_DEFAULTS, OUTLINE_DEFAULTS, CENTER_DEFAULTS, SILHOUETTE_DEFAULTS, photoMarks, colourGroups, darkestOf, isColourful, matchPens, placeOnPage, plateNamed, platePens, readTones, stemWithoutPlate, workingCopy, type Photo, type PhotoPart, type Plate } from "./lib/photo";
 import { usePhotoRead } from "./lib/usePhotoRead";
 import { PaletteMenu } from "../shared/components/controls/PaletteMenu";
 import { Hints } from "../shared/components/controls/Hints";
@@ -152,6 +153,22 @@ function uniqueName(wanted: string, taken: string[]): string {
  */
 /** How a photo is split: by value, into colour groups, into CMYK plates, or already split into separations elsewhere. */
 const photoMode = (p: Photo) => (p.separation ? "separations" : p.plate ? "cmyk" : p.ink ? "colour" : "value");
+
+/**
+ * How far the pen travels drawing a photo's lines, in inches. Worked out once for each set of lines:
+ * the same lines come back as the same object from photoMarks' own cache.
+ */
+const lengths = new WeakMap<PhotoMarks, number>();
+function drawnLength(marks: PhotoMarks) {
+ const known = lengths.get(marks);
+ if (known !== undefined) return known;
+ let length = 0;
+ for (const d of marks.passes) {
+  for (const run of flattenPath(d)) for (let i = 1; i < run.length; i++) length += Math.hypot(run[i].x - run[i - 1].x, run[i].y - run[i - 1].y);
+ }
+ lengths.set(marks, length);
+ return length;
+}
 
 function withPhotoGroups(list: Shape[], changed: Shape[]): Shape[] {
  const leads = new Map(changed.filter((s) => s.photo?.group).map((s) => [s.photo!.group!, s]));
@@ -462,6 +479,10 @@ export default function App() {
  // Copied shapes, kept in the app rather than in the system clipboard: what is on it is a shape
  // with its fills and its own numbers, and nothing outside Studio would know what to do with that.
  const [clipboard, setClipboard] = useState<{ shape: Shape; fills: Fill[] } | null>(null);
+ // A shape's fills, picked up to be put on other shapes: every one of them, so a cross-hatch goes
+ // across whole. Only their numbers matter - spacing is millimetres on the paper and the angle is
+ // degrees - so they fit a shape of any size. Kept apart from the shape clipboard above.
+ const [fillClipboard, setFillClipboard] = useState<Fill[] | null>(null);
 
  const copyShape = (id: string) => {
   const shape = shapes.find((s) => s.id === id);
@@ -537,6 +558,8 @@ export default function App() {
   * and a hundredth with Alt for the last little bit; the limit is the box round the whole selection,
   * so a group slides along the page's edge rather than piling up against it.
   */
+ const nudge = (dx: number, dy: number) => moveShapes(selected, dx, dy);
+
  // Straight lines lying along one another - a halftone's overrunning dashes, a line drawn twice -
  // merged into the strokes they look like, so the pen draws each bit of line once.
  const mergeOverlaps = () => {
@@ -554,8 +577,6 @@ export default function App() {
    ok: true,
   });
  };
-
- const nudge = (dx: number, dy: number) => moveShapes(selected, dx, dy);
 
  /** Move these shapes together, kept on the page; a photo's other layers go with it. */
  const moveShapes = (which: string[], dx: number, dy: number) => {
@@ -585,7 +606,7 @@ export default function App() {
     ArrowLeft: [-step, 0], ArrowRight: [step, 0], ArrowUp: [0, -step], ArrowDown: [0, step],
    };
    const move = by[e.key];
-   if (!move || e.metaKey || e.ctrlKey) return;
+   if (!move || e.metaKey || e.ctrlKey || converting.current) return;
    const el = document.activeElement;
    // In a field the arrows belong to the text, or to the number being stepped.
    if (el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement || (el as HTMLElement)?.isContentEditable) return;
@@ -601,7 +622,7 @@ export default function App() {
  useEffect(() => {
   const onKey = (e: KeyboardEvent) => {
    const picked = TOOL_KEYS[e.key.toLowerCase()];
-   if (!picked) return;
+   if (!picked || converting.current) return;
    if (e.metaKey || e.ctrlKey || e.altKey) return; // paste, and whatever else the system has
    const el = document.activeElement;
    if (el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement || (el as HTMLElement)?.isContentEditable) return;
@@ -615,7 +636,7 @@ export default function App() {
  // browser's own copy and paste belong to the text.
  useEffect(() => {
   const onKey = (e: KeyboardEvent) => {
-   if (!(e.metaKey || e.ctrlKey) || e.altKey) return;
+   if (!(e.metaKey || e.ctrlKey) || e.altKey || converting.current) return;
    const el = document.activeElement;
    if (el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement || (el as HTMLElement)?.isContentEditable) return;
    const key = e.key.toLowerCase();
@@ -638,7 +659,7 @@ export default function App() {
  useEffect(() => {
   const onKey = (e: KeyboardEvent) => {
    if (e.key !== "Delete" && e.key !== "Backspace") return;
-   if (!selected.length || e.metaKey || e.ctrlKey || e.altKey) return;
+   if (!selected.length || e.metaKey || e.ctrlKey || e.altKey || converting.current) return;
    const el = document.activeElement;
    if (el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement || (el as HTMLElement)?.isContentEditable) return;
    e.preventDefault();
@@ -719,8 +740,9 @@ export default function App() {
 
  // Close whatever is open and begin again on a blank page. The page size stays as it is: it's the
  // paper you're working on today, and a new drawing is almost always for the same sheet.
- // Which new drawing is waiting on the question: a blank one, or a calibration sheet.
- const [confirmNew, setConfirmNew] = useState<"blank" | "calibration" | null>(null);
+ // Which new drawing is waiting on the question: a blank one, a calibration sheet, or a picture
+ // opened for image conversion.
+ const [confirmNew, setConfirmNew] = useState<"blank" | "calibration" | "image" | null>(null);
  const newDrawing = useCallback(() => {
   const noShapes: Shape[] = [];
   const noFills: Fill[] = [];
@@ -739,6 +761,7 @@ export default function App() {
   setForeign(0);
   setOpenedAs(null);
   setConfirmNew(null);
+  setConvertId(null);
   remember(LAST_FILE_KEY, null); // don't reopen the old drawing next time Studio starts
   setMessage({ text: "New drawing", ok: true });
   // An empty page is not unsaved work, and the paper it's on came from the drawing before it.
@@ -752,7 +775,28 @@ export default function App() {
   else if (what === "calibration") newCalibration();
   else newDrawing();
  };
- const beginNew = () => (confirmNew === "calibration" ? newCalibration() : newDrawing());
+ const beginNew = () => (confirmNew === "calibration" ? newCalibration() : confirmNew === "image" && imageWaiting.current ? startImage(imageWaiting.current) : newDrawing());
+
+ // A photo opened with the File card's photo button: a new drawing named after it, the photo placed
+ // on the paper and matched to the tool's pens, and then image conversion. Several at once are
+ // separations - one photo already split into plates, a layer each. The photo goes in once the new
+ // drawing is in place, and is converted once it's there.
+ const imageWaiting = useRef<File[] | null>(null);
+ const [pendingImage, setPendingImage] = useState<File[] | null>(null);
+ const [convertNext, setConvertNext] = useState(false);
+ const openPhotos = (files: File[]) => {
+  if (!files.length) return;
+  if (dirty && shapes.length) {
+   imageWaiting.current = files;
+   setConfirmNew("image");
+  } else startImage(files);
+ };
+ const startImage = (files: File[]) => {
+  imageWaiting.current = null;
+  newDrawing();
+  setName(files.length > 1 ? stemWithoutPlate(files[0].name) : files[0].name.replace(/\.[^.]+$/, ""));
+  setPendingImage(files);
+ };
 
  const openDrawing = useCallback((res: OpenResult, note: (n: number) => string) => {
   const drawing = parseDrawing(res.svg ?? "");
@@ -766,6 +810,7 @@ export default function App() {
   setFuture([]);
   setName(res.name.replace(/\.svg$/i, ""));
   setSaved({ path: res.path, folder: res.folder });
+  setConvertId(null);
   setSaveTo(null);
   setForeign(drawing.unsupported);
   setOpenedAs(res.name);
@@ -941,6 +986,12 @@ export default function App() {
  // The drawing open is a calibration sheet when it has the sheet's corner marks and named patches.
  // A photo of it, plotted, is read back into the tool's preset: each pen as it really came out.
  const [setupOpen, setSetupOpen] = useState(false);
+ // Image conversion: the one photo being worked on, on its own - its picture and lines take the
+ // stage, and the rail holds how it's converted. The drawing waits, as it does for Setup; the keys
+ // that would change it are off while it's hidden.
+ const [convertId, setConvertId] = useState<string | null>(null);
+ const [convertView, setConvertView] = useState<ConvertView>("side");
+ const converting = useRef(false);
 
  const sheet = useMemo(() => sheetLayout(shapes), [shapes]);
  // Read into the drawing tool only when the sheet is of its pens: a sheet made for one marker read
@@ -1039,7 +1090,37 @@ export default function App() {
  // One shape at a time in the cards: the last one picked, and only while it is the only one, so
  // nothing is edited behind your back when a whole group is selected.
  const chosen = selected.length === 1 ? shapes.find((s) => s.id === selected[0]) ?? null : null;
- const chosenFills = chosen ? fills.filter((f) => f.shapeId === chosen.id) : [];
+
+ // The photo being converted, while there still is one: undo can take it away.
+ const converted = convertId ? shapes.find((s) => s.id === convertId && s.kind === "photo" && s.photo) ?? null : null;
+ converting.current = Boolean(converted);
+ useEffect(() => {
+  if (convertId && !converted) setConvertId(null);
+ }, [convertId, converted]);
+ const convertBox = converted ? boxOf(converted) : null;
+ // All of the photo's layers, bottom first, each in its pen: the lines it comes out as, together.
+ const convertParts = converted
+  ? layers.flatMap((l) => shapes.filter((sh) => sh.layerId === l.id && sh.kind === "photo" && sh.photo && (sh.id === converted.id || (converted.photo!.group && sh.photo.group === converted.photo!.group))).map((sh) => ({ photo: sh.photo!, color: l.color })))
+  : [];
+ const convertMarks = convertBox ? convertParts.map((part) => photoMarks(part.photo, convertBox.x1 - convertBox.x0, convertBox.y1 - convertBox.y0)) : [];
+ const convertStrokes = convertMarks.reduce((n, m) => n + (m?.strokes ?? 0), 0);
+ const convertRead = convertMarks.length > 0 && convertMarks.every(Boolean);
+ // How far the pen travels drawing it all, in inches: what a plot of it costs, beside how many strokes.
+ const convertLength = convertMarks.reduce((sum, m) => sum + (m ? drawnLength(m) : 0), 0);
+ /** Into image conversion with a photo: it stays chosen, so its card is the one in the rail. */
+ const openConvert = (id: string) => {
+  setSelected([id]);
+  setSetupOpen(false);
+  setConvertId(id);
+ };
+ // The shapes a fill is set on: the one chosen, or every shape of a selection that can be filled, so
+ // several are hatched at once. The first of them is the one whose fill the panel shows; every edit
+ // gives all of them that same fill.
+ const fillTargets = chosen
+  ? (canFill(chosen) ? [chosen] : [])
+  : shapes.filter((s) => selected.includes(s.id) && canFill(s));
+ const fillLead = chosen ?? fillTargets[0] ?? null;
+ const chosenFills = fillLead ? fills.filter((f) => f.shapeId === fillLead.id) : [];
 
  // The layer new shapes land on, and the one the Shapes card lists. Always a real layer.
  const active = layers.find((l) => l.id === activeLayer) ?? layers[0];
@@ -1139,6 +1220,22 @@ export default function App() {
    setMessage({ text: (err as Error).message, ok: false });
   }
  };
+
+ // The picture opened for conversion goes in once its new, empty drawing is in place...
+ useEffect(() => {
+  if (!pendingImage || shapes.length) return;
+  const files = pendingImage;
+  setPendingImage(null);
+  setConvertNext(true);
+  if (files.length > 1) addSeparations(files);
+  else addPhoto(files[0]);
+ }, [pendingImage, shapes.length]); // eslint-disable-line react-hooks/exhaustive-deps
+ // ...and is converted once it's there and chosen.
+ useEffect(() => {
+  if (!convertNext || chosen?.kind !== "photo") return;
+  setConvertNext(false);
+  openConvert(chosen.id);
+ }, [convertNext, chosen]); // eslint-disable-line react-hooks/exhaustive-deps
  /**
   * Separations made elsewhere - a photo already split into greyscale plates, one file each - put in
   * as one photo on the page with a layer per plate, each drawing its own picture: darker where more
@@ -1593,7 +1690,7 @@ export default function App() {
 
  const newFill = (angle: number): Fill => ({
   id: newFillId(),
-  shapeId: chosen!.id,
+  shapeId: fillLead!.id,
   angle,
   spacingMm: defaults.spacingMm,
   scale: 100,
@@ -1608,15 +1705,22 @@ export default function App() {
 
  /** Replace one of the chosen shape's fills, or drop it. Adding uses `at` past the end. */
  const setFillAt = (at: number, next: Fill | null) => {
-  if (!chosen) return;
+  const lead = fillLead;
+  if (!lead) return;
   record();
+  const targets = new Set(fillTargets.map((s) => s.id));
   setFills((list) => {
-   const mine = list.filter((f) => f.shapeId === chosen.id);
-   const others = list.filter((f) => f.shapeId !== chosen.id);
+   const mine = list.filter((f) => f.shapeId === lead.id);
+   const others = list.filter((f) => !targets.has(f.shapeId) && f.shapeId !== lead.id);
    const updated = [...mine];
    if (next) updated[at] = next;
    else updated.splice(at, 1);
-   return [...others, ...updated.filter(Boolean)];
+   const kept = updated.filter(Boolean);
+   // The rest of a selection take the lead's fill whole, each its own copy.
+   const copies = fillTargets
+    .filter((s) => s.id !== lead.id)
+    .flatMap((s) => kept.map((f) => ({ ...f, id: newFillId(), shapeId: s.id })));
+   return [...others, ...kept, ...copies];
   });
  };
 
@@ -1883,18 +1987,20 @@ export default function App() {
  };
 
  const setOutline = (on: boolean) => {
-  if (!chosen) return;
+  if (!fillTargets.length) return;
   record();
-  setShapes((list) => list.map((sh) => (sh.id === chosen.id ? { ...sh, outline: on } : sh)));
+  const ids = new Set(fillTargets.map((s) => s.id));
+  setShapes((list) => list.map((sh) => (ids.has(sh.id) ? { ...sh, outline: on } : sh)));
  };
 
  /** Hatch a shape, or stop hatching it. A shape that isn't hatched is drawn as its own outline:
   * turning the hatch off puts that outline back, so nothing is left invisible. */
  const setHatched = (on: boolean) => {
-  if (!chosen) return;
+  if (!fillLead) return;
   setFillAt(0, on ? newFill(defaults.angle) : null);
-  if (!on && chosen.outline === false) {
-   setShapes((list) => list.map((sh) => (sh.id === chosen.id ? { ...sh, outline: undefined } : sh)));
+  if (!on) {
+   const ids = new Set(fillTargets.filter((s) => s.outline === false).map((s) => s.id));
+   if (ids.size) setShapes((list) => list.map((sh) => (ids.has(sh.id) ? { ...sh, outline: undefined } : sh)));
   }
  };
 
@@ -2225,6 +2331,442 @@ export default function App() {
   </Card>
  );
 
+ // The chosen photo's card: in the drawing's rail, and in image conversion's under its own.
+ const photoCard = chosen?.kind === "photo" && chosen.photo ? (() => {
+      const b = boxOf(chosen);
+      const marks = photoMarks(chosen.photo, b.x1 - b.x0, b.y1 - b.y0);
+      return (
+      <Card variant="flat" className={styles.controls}>
+       <div className={`${styles.cardBody} ${controls.cardSections}`}>
+        <Section
+         title={shapeName(chosen, onActive.indexOf(chosen))}
+         collapsibleKey="photo"
+         action={
+          <>
+           <Button size="sm" variant="secondary" title={chosen.photo.separation ? "Put a different picture in for this plate, keeping its settings" : "Put a different photo in, keeping every setting"} onClick={() => replaceInput.current?.click()}>
+            Replace…
+           </Button>
+           <input
+            ref={replaceInput}
+            type="file"
+            accept="image/*"
+            hidden
+            onChange={(e) => {
+             replacePhoto(e.target.files?.[0]);
+             e.target.value = "";
+            }}
+           />
+          </>
+         }
+        >
+         {/* How many layers the photo is split into by tone. Each band layer has its own settings
+           below; the photo's picture, brightness and contrast are what the bands are cut from. */}
+         {/* By value: read as black and white, split into tone bands. By colour: split into groups
+           of similar colours, each drawn in the tool's nearest pen. Either way, a layer each, with
+           its own lines. */}
+         {chosen.photo.separation ? (
+          // Separations made elsewhere: each layer is its own picture, so there's nothing to split.
+          // Which plate this one is sets its name, its screen angle and its pen.
+          <>
+           <InputSelect
+            size="md"
+            label="Plate"
+            value={PLATES.find((p) => PLATE_AIMS[p].name === chosen.photo!.separation) ?? "other"}
+            onChange={(e) => setSeparationPlate(e.target.value as Plate | "other")}
+           >
+            {PLATES.map((p) => <option key={p} value={p}>{PLATE_AIMS[p].name}</option>)}
+            <option value="other">{PLATES.some((p) => PLATE_AIMS[p].name === chosen.photo!.separation) ? "Another ink" : chosen.photo.separation}</option>
+           </InputSelect>
+           <p className={styles.empty}>A separation: this layer draws its own greyscale picture, more of its pen where it's darker. Replace swaps this plate alone.</p>
+          </>
+         ) : (
+         <>
+         <SegmentedControl size="sm" variant="dark" aria-label="Split by">
+          <Segment selected={photoMode(chosen.photo) === "value"} title="By value: the photo as black and white, split into tone bands" onClick={() => switchPhotoMode("value")}>Value</Segment>
+          <Segment selected={photoMode(chosen.photo) === "colour"} title="By colour: the photo's colours gathered into groups, each drawn in the tool's nearest pen" onClick={() => switchPhotoMode("colour")}>Colour</Segment>
+          <Segment selected={photoMode(chosen.photo) === "cmyk"} title="CMYK: four plates - cyan, magenta, yellow and black - in the tool's nearest pens, blended on paper" onClick={() => switchPhotoMode("cmyk")}>CMYK</Segment>
+         </SegmentedControl>
+         {photoMode(chosen.photo) === "cmyk" ? (
+          // How much of the colours' shared grey the black plate takes over: more, and the darks are
+          // black; less, and they're the three colours laid over each other.
+          <NumberField label="Black" unit="%" min={0} max={100} step={5} value={Math.round((chosen.photo.blackShare ?? BLACK_SHARE) * 100)} onChange={(v) => setPhotoOf({ blackShare: v / 100 })} />
+         ) : chosen.photo.ink ? (
+          <>
+           <NumberField
+            label="Inks"
+            min={1}
+            max={MOST_LAYERS}
+            step={1}
+            value={chosen.photo.group ? shapes.filter((sh) => sh.photo?.group === chosen.photo!.group && !sh.photo?.key).length : 1}
+            onChange={splitPhotoByColor}
+           />
+           {/* A key ink over the colours, darkening shadows the colour layers can't reach alone.
+             Its pen is the layer's: change it with the layer's dot. */}
+           <Checkbox
+            checked={Boolean(chosen.photo.keyInk)}
+            label="Key layer, to darken shadows"
+            onChange={(e) => setKeyLayer(e.target.checked)}
+           />
+           {chosen.photo.keyInk && (
+            // The key's shading over the colours: how dark a part must be before it's shaded, and
+            // how heavy the shading gets at black. The colours under it draw as they would without it.
+            <div className={styles.fillRow}>
+             <NumberField label="Shading starts at" unit="%" min={0} max={95} step={5} value={Math.round((chosen.photo.keyFrom ?? KEY_FROM) * 100)} onChange={(v) => setPhotoOf({ keyFrom: v / 100 })} />
+             <NumberField label="Key strength" unit="%" min={0} max={100} step={5} value={Math.round((chosen.photo.keyStrength ?? 1) * 100)} onChange={(v) => setPhotoOf({ keyStrength: v / 100 })} />
+            </div>
+           )}
+          </>
+         ) : (
+          <NumberField
+           label="Tone layers"
+           min={1}
+           max={MOST_LAYERS}
+           step={1}
+           value={chosen.photo.group ? shapes.filter((sh) => sh.photo?.group === chosen.photo!.group).length : 1}
+           onChange={splitPhoto}
+          />
+         )}
+         </>
+         )}
+         {/* Sized to the page, inside the margin: the whole photo as large as it fits, or the page
+           filled and the photo cropped. Moved or sized by hand, it's neither. */}
+         <div className={styles.fillRow}>
+          <SegmentedControl size="sm" variant="dark" aria-label="Size to the page">
+           <Segment selected={chosen.photo.fit === "fit"} title="Fit to page: all of the photo, as large as it fits inside the margin" onClick={() => placePhoto("fit", chosen.photo!.margin ?? 0.5)}>Fit</Segment>
+           <Segment selected={chosen.photo.fit === "fill"} title="Fill page: the whole page inside the margin, the photo cropped to it" onClick={() => placePhoto("fill", chosen.photo!.margin ?? 0.5)}>Fill</Segment>
+          </SegmentedControl>
+          <NumberField label="Margin" unit="in" min={0} max={4} step={0.25} value={chosen.photo.margin ?? 0.5} onChange={setPhotoMargin} />
+          <NumberField
+           label="Scale"
+           unit="%"
+           min={5}
+           max={1000}
+           step={5}
+           value={(() => { const { b, fitW } = photoScale(chosen); return Math.round(((b.x1 - b.x0) / fitW) * 100); })()}
+           onChange={setPhotoScale}
+          />
+         </div>
+         {/* Which band's lines the rest of the card sets. The bands lie on top of each other, so
+           this is how to reach each one; its layer in the list does the same. */}
+         {chosen.photo.group && (
+          // Where the settings below go: to the layer picked in the switch under this, or to every
+          // layer of the photo at once. The switch still says whose settings are showing.
+          <SegmentedControl size="sm" variant="dark" aria-label="Settings for">
+           <Segment selected={!photoAll} title="The settings below go to the layer picked here" onClick={() => setPhotoAll(false)}>This layer</Segment>
+           <Segment selected={photoAll} title="The settings below go to all the photo's layers at once" onClick={() => setPhotoAll(true)}>All layers</Segment>
+          </SegmentedControl>
+         )}
+         {chosen.photo.group && (() => {
+          // In the order of their layers, bottom first: the same order as the numbers in the
+          // Layers list, lightest ink on the left once the layers are sorted by darkness.
+          const place = (sh: Shape) => layers.findIndex((l) => l.id === sh.layerId);
+          const bands = shapes
+           .filter((sh) => sh.photo?.group === chosen.photo!.group)
+           .sort((a, b) => place(a) - place(b));
+          // Bands by value are named for their tone; by colour, for their ink.
+          // Each band by its layer: the number the Layers list gives it, and a dot in its ink - up
+          // to six of them, too many for words.
+          return (
+           <SegmentedControl size="sm" variant="dark" aria-label="Band to set">
+            {bands.map((band) => {
+             const at = layers.findIndex((l) => l.id === band.layerId);
+             const layer = layers[at];
+             return (
+              <Segment
+               key={band.id}
+               selected={band.id === chosen.id}
+               aria-label={`Layer ${at + 1}, ${layer?.name ?? ""}`}
+               title={`Layer ${at + 1}, ${layer?.name ?? ""}: its lines`}
+               onClick={() => { pick(band.id); setActiveLayer(band.layerId); }}
+              >
+               <span className={styles.bandDot} style={{ background: layer?.color }} aria-hidden="true" />
+               {at + 1}
+              </Segment>
+             );
+            })}
+           </SegmentedControl>
+          );
+         })()}
+         {photoMode(chosen.photo) === "colour" && chosen.photo.group && (
+          // Colour layers overlap where colours blend: a part of the photo is drawn by every
+          // layer whose colour is nearly as close as the nearest, within this.
+          <>
+           <NumberField label="Bleed" unit="%" min={0} max={25} step={1} value={Math.round((chosen.photo.bleed ?? 0) * 100)} onChange={(v) => setPhotoOf({ bleed: v / 100 })} />
+           <p className={styles.empty}>
+            {(chosen.photo.bleed ?? 0) > 0
+             ? "Where the photo's colours blend, the layers either side both draw, and their lines overlap."
+             : "Each part of the photo is drawn by the one layer nearest its colour."}
+           </p>
+          </>
+         )}
+         {chosen.photo.band && (() => {
+          const [lo, hi] = chosen.photo.band;
+          const bleed = chosen.photo.bleed ?? 0;
+          const from = Math.round(Math.max(0, lo - (lo > 0 ? bleed : 0)) * 100);
+          const to = Math.round(Math.min(1, hi + (hi < 1 ? bleed : 0)) * 100);
+          return (
+           <>
+            {/* How far the bands reach into each other, so their lines overlap where they meet. */}
+            <NumberField label="Bleed" unit="%" min={0} max={25} step={1} value={Math.round(bleed * 100)} onChange={(v) => setPhotoOf({ bleed: v / 100 })} />
+            <p className={styles.empty}>{`This layer draws the tones from ${from}% to ${to}% dark.`}</p>
+           </>
+          );
+         })()}
+         <div className={styles.fillRow}>
+          <NumberField label="Brightness" min={-100} max={100} step={5} value={chosen.photo.brightness} onChange={(brightness) => setPhotoOf({ brightness })} />
+          <NumberField label="Contrast" min={-100} max={100} step={5} value={chosen.photo.contrast} onChange={(contrast) => setPhotoOf({ contrast })} />
+         </div>
+         {/* What this band's tone is drawn as, and the numbers that style has. Each band its own. */}
+         <InputSelect
+          size="md"
+          label="Drawn as"
+          value={chosen.photo.style ?? "hatch"}
+          title={({
+           hatch: "Hatching: lines that cross and fill in as the photo darkens",
+           waves: "Tone lines: one line along each row, waving harder and tighter where it's darker",
+           outlines: "Outlines: the photo traced as contour lines, following its edges and shapes",
+           centerlines: "Centerlines: each dark stroke of a line drawing drawn once, down its middle, so a ring is one circle",
+           silhouette: "Silhouette: the line round a shape on white paper - its outline, and each hole in it",
+          } as const)[chosen.photo.style ?? "hatch"]}
+          onChange={(e) => {
+           const style = e.target.value as NonNullable<Photo["style"]>;
+           setPhotoOf({ style: style === "hatch" ? undefined : style });
+          }}
+         >
+          <option value="hatch">Hatching</option>
+          <option value="waves">Tone lines</option>
+          <option value="outlines">Outlines</option>
+          <option value="centerlines">Centerlines</option>
+          <option value="silhouette">Silhouette</option>
+         </InputSelect>
+         {chosen.photo.style === "silhouette" ? (
+          <div className={styles.fillRow}>
+           <NumberField label="Paper lighter than" unit="%" min={1} max={99} step={1} value={Math.round((chosen.photo.silhouetteFrom ?? SILHOUETTE_DEFAULTS.from) * 100)} onChange={(v) => setPhotoOf({ silhouetteFrom: v / 100 })} />
+           <NumberField label="Smoothing" unit="mm" min={0} max={5} step={0.05} value={chosen.photo.silhouetteSmoothMm ?? SILHOUETTE_DEFAULTS.smoothMm} onChange={(silhouetteSmoothMm) => setPhotoOf({ silhouetteSmoothMm })} />
+           <NumberField label="Smallest" unit="mm" min={0} max={50} step={0.5} value={chosen.photo.silhouetteSmallestMm ?? SILHOUETTE_DEFAULTS.smallestMm} onChange={(silhouetteSmallestMm) => setPhotoOf({ silhouetteSmallestMm })} />
+          </div>
+         ) : chosen.photo.style === "centerlines" ? (
+          <div className={styles.fillRow}>
+           <NumberField label="Darker than" unit="%" min={1} max={99} step={5} value={Math.round((chosen.photo.centerFrom ?? CENTER_DEFAULTS.from) * 100)} onChange={(v) => setPhotoOf({ centerFrom: v / 100 })} />
+           <NumberField label="Smoothing" unit="mm" min={0} max={5} step={0.05} value={chosen.photo.centerSmoothMm ?? CENTER_DEFAULTS.smoothMm} onChange={(centerSmoothMm) => setPhotoOf({ centerSmoothMm })} />
+           <NumberField label="Shortest" unit="mm" min={0} max={20} step={0.25} value={chosen.photo.centerShortestMm ?? CENTER_DEFAULTS.shortestMm} onChange={(centerShortestMm) => setPhotoOf({ centerShortestMm })} />
+          </div>
+         ) : chosen.photo.style === "outlines" ? (
+          <div className={styles.fillRow}>
+           <NumberField label="Lines" min={1} max={40} step={1} value={chosen.photo.contours ?? OUTLINE_DEFAULTS.contours} onChange={(contours) => setPhotoOf({ contours })} />
+           <NumberField label="Smoothing" unit="mm" min={0} max={20} step={0.25} value={chosen.photo.smoothMm ?? OUTLINE_DEFAULTS.smoothMm} onChange={(smoothMm) => setPhotoOf({ smoothMm })} />
+          </div>
+         ) : chosen.photo.style === "waves" ? (
+          <div className={styles.fillRow}>
+           <NumberField label="Angle" unit="°" min={-180} max={180} step={5} value={chosen.photo.angle} onChange={(angle) => setPhotoOf({ angle })} />
+           <NumberField label="Row spacing" unit="mm" min={0.2} max={20} step={0.25} value={chosen.photo.rowMm ?? WAVE_DEFAULTS.rowMm} onChange={(rowMm) => setPhotoOf({ rowMm })} />
+           <NumberField label="Wave length" unit="mm" min={0.2} max={20} step={0.1} value={chosen.photo.waveMm ?? WAVE_DEFAULTS.waveMm} onChange={(waveMm) => setPhotoOf({ waveMm })} />
+          </div>
+         ) : (
+          <div className={styles.fillRow}>
+           <NumberField label="Angle" unit="°" min={-180} max={180} step={5} value={chosen.photo.angle} onChange={(angle) => setPhotoOf({ angle })} />
+           <NumberField label="Closest lines" unit="mm" min={0.1} max={5} step={0.05} value={chosen.photo.spacingMm} onChange={(spacingMm) => setPhotoOf({ spacingMm })} />
+           <NumberField label="Passes" min={1} max={4} step={1} value={chosen.photo.levels} onChange={(levels) => setPhotoOf({ levels })} />
+          </div>
+         )}
+         <p className={styles.empty}>
+          {marks
+           ? chosen.photo.style === "silhouette"
+            ? `${marks.strokes.toLocaleString()} ${marks.strokes === 1 ? "loop" : "loops"}: the shape's outline${marks.strokes > 1 ? " and the holes in it" : ""}, where the picture meets white paper. Paper lighter than sets what counts as paper; Smallest drops specks and flecks.`
+            : chosen.photo.style === "centerlines"
+            ? `${marks.strokes.toLocaleString()} ${marks.strokes === 1 ? "line" : "lines"}${marks.circles ? `, ${marks.circles} of them ${marks.circles === 1 ? "a circle" : "circles"}` : ""}, each drawn once down the middle of a stroke in the picture${marks.widthMm ? ` (they're about ${marks.widthMm.toFixed(1)} mm wide there)` : ""}. Darker than sets what counts as a line; Shortest drops specks and whiskers.`
+            : chosen.photo.style === "outlines"
+            ? `${marks.strokes.toLocaleString()} contours, along the photo's edges and shapes. More lines follow finer changes of tone; more smoothing, only the big ones.`
+            : chosen.photo.style === "waves"
+            ? `${marks.strokes.toLocaleString()} strokes. Each row waves harder and tighter where the photo is darker; white is left as paper.`
+            : `${marks.strokes.toLocaleString()} strokes. The closest lines start at the tool’s solid-fill spacing; each pass adds lines where the photo is darker.`
+           : "Reading the photo…"}
+         </p>
+        </Section>
+       </div>
+      </Card>
+      );
+ })() : null;
+
+ // Setup and image conversion both take the drawing's place; going to one leaves the other.
+ const setupToolbar = (
+  <SetupToolbar
+   open={setupOpen}
+   onToggle={() => {
+    setConvertId(null);
+    setSetupOpen((open) => !open);
+   }}
+  />
+ );
+
+ // Image conversion's rail: what it is and how the lines come out, then the photo's own card.
+ const convertLayer = converted ? layers.find((l) => l.id === converted.layerId) : undefined;
+ const convertRail = converted && (
+  <>
+   <Card variant="flat" className={styles.controls}>
+    <div className={`${styles.cardBody} ${controls.cardSections}`}>
+     <Section
+      title="Image conversion"
+      action={<Button size="sm" variant="secondary" title="Leave image conversion: the drawing with its layers and tools, the photo drawn as set here" onClick={() => setConvertId(null)}>Edit as drawing</Button>}
+     >
+      <p className={controls.hint}>
+       Working out how best to draw this picture. Scroll over it to zoom, drag to move, double-click to see all of it.
+      </p>
+      <p className={controls.hint}>
+       {convertRead
+        ? `${convertStrokes.toLocaleString()} ${convertStrokes === 1 ? "stroke" : "strokes"}, ${convertLength * 0.0254 >= 1 ? `${(convertLength * 0.0254).toFixed(1)} m` : `${Math.round(convertLength * 25.4)} mm`} of drawing${convertParts.length > 1 ? ` in ${convertParts.length} pens` : convertLayer ? `, in ${convertLayer.name}` : ""}.`
+        : "Reading the photo…"}
+      </p>
+     </Section>
+    </div>
+   </Card>
+   {photoCard}
+  </>
+ );
+
+ /** The copied fill onto the chosen shape, or every fillable shape selected, in place of their own. */
+ const pasteFill = () => {
+  if (!fillClipboard || !fillTargets.length) return;
+  record();
+  const ids = new Set(fillTargets.map((s) => s.id));
+  setFills((list) => [
+   ...list.filter((f) => !ids.has(f.shapeId)),
+   ...fillTargets.flatMap((s) => fillClipboard.map((f) => ({ ...f, id: newFillId(), shapeId: s.id }))),
+  ]);
+ };
+
+ // The Hatch settings, for the chosen shape or for a whole selection at once.
+ const fillPanel = fillLead && (
+        <>
+         <Checkbox
+          checked={chosenFills.length > 0}
+          label="Fill shape"
+          onChange={(e) => setHatched(e.target.checked)}
+         />
+         {chosenFills.length > 0 && (
+          <div className={styles.tools} role="group" aria-label="What the fill is made of">
+           {(Object.keys(FILL_LABEL) as FillKind[]).map((k) => {
+            const on = (chosenFills[0].kind ?? "hatch") === k;
+            return (
+             <ButtonRound
+              key={k}
+              size="sm"
+              icon={FILL_ICON[k]}
+              className={on ? controls.roundActive : undefined}
+              aria-label={FILL_LABEL[k]}
+              aria-pressed={on}
+              title={FILL_HINT[k]}
+              // Both passes of a cross-hatch are the same kind of thing.
+              onClick={() => chosenFills.forEach((f, at) => setFillAt(at, { ...f, kind: k }))}
+             />
+            );
+           })}
+          </div>
+         )}
+         {chosenFills.map((fill, i) => (
+          <div key={fill.id} className={styles.fillRow}>
+           <NumberField
+            label={i === 0 ? "Angle" : "Cross angle"}
+            unit="°"
+            step={5}
+            value={fill.angle}
+            onChange={(angle) => setFillByHand(i, { ...fill, angle })}
+           />
+           <NumberField
+            label="Spacing"
+            unit="mm"
+            step={0.1}
+            min={0.05}
+            value={fill.spacingMm}
+            onChange={(spacingMm) => setFillByHand(i, { ...fill, spacingMm })}
+           />
+          </div>
+         ))}
+         {/* No sentence saying the spacing was set by hand: the field above says the number,
+           and the way back to the tool's own is the only part of it worth the room. */}
+         {chosenFills.map((fill, i) => (fill.custom ? (
+          <p key={`${fill.id}-note`} className={`${styles.empty} ${styles.fillFollow}`}>
+           <Button size="sm" variant="ghost" onClick={() => followTool(i, fill)}>
+            Use tool spacing
+           </Button>
+          </p>
+         ) : null))}
+         {chosenFills.length > 0 && (chosenFills[0].kind ?? "hatch") === "wavy" && (
+          <div className={styles.fillRow}>
+           <NumberField
+            label="Wave"
+            unit="mm"
+            step={0.5}
+            min={0.2}
+            value={fillNumbers(chosenFills[0]).waveMm}
+            onChange={(waveMm) => chosenFills.forEach((f, at) => setFillByHand(at, { ...f, waveMm }))}
+           />
+           <NumberField
+            label="Swing"
+            unit="mm"
+            step={0.25}
+            min={0}
+            value={fillNumbers(chosenFills[0]).swingMm}
+            onChange={(swingMm) => chosenFills.forEach((f, at) => setFillByHand(at, { ...f, swingMm }))}
+           />
+          </div>
+         )}
+         {chosenFills.length > 0 && (chosenFills[0].kind ?? "hatch") === "dashes" && (
+          <div className={styles.fillRow}>
+           <NumberField
+            label="Dash"
+            unit="mm"
+            step={0.5}
+            min={0.2}
+            value={fillNumbers(chosenFills[0]).dashMm}
+            onChange={(dashMm) => chosenFills.forEach((f, at) => setFillByHand(at, { ...f, dashMm }))}
+           />
+           <NumberField
+            label="Gap"
+            unit="mm"
+            step={0.5}
+            min={0.1}
+            value={fillNumbers(chosenFills[0]).gapMm}
+            onChange={(gapMm) => chosenFills.forEach((f, at) => setFillByHand(at, { ...f, gapMm }))}
+           />
+          </div>
+         )}
+         {chosenFills.length > 0 && (
+          <Checkbox
+           checked={chosenFills.length > 1}
+           label="Cross-hatch"
+           onChange={(e) =>
+            // A second pass square to the first, which is what makes it read as a mesh
+            // rather than as two hatchings that happen to share a shape.
+            setFillAt(1, e.target.checked ? { ...newFill((chosenFills[0].angle + 90) % 180), connected: chosenFills[0].connected } : null)
+           }
+          />
+         )}
+         {chosenFills.length > 0 && canConnect(chosenFills[0]) && (
+          <Checkbox
+           checked={chosenFills[0].connected === true}
+           label="Connect ends"
+           // Each pass becomes one zigzag stroke, joined along the shape's edge. Both passes
+           // of a cross-hatch follow the one switch.
+           onChange={(e) => {
+            const connected = e.target.checked;
+            record();
+            setFills((list) => list.map((f) => (fillTargets.some((t) => t.id === f.shapeId) ? { ...f, connected } : f)));
+           }}
+          />
+         )}
+         {/* Only worth asking about while there is a hatch: a shape with no hatch is its
+           outline, and nothing else. */}
+         {chosenFills.length > 0 && (
+          <Checkbox
+           checked={fillLead.outline !== false}
+           label="Draw the outline too"
+           onChange={(e) => setOutline(e.target.checked)}
+          />
+         )}
+        </>
+ );
+
  return (
   <div className={styles.app}>
    <Hints />
@@ -2380,7 +2922,20 @@ export default function App() {
    />
 
    <main className={styles.layout}>
-    <section className={styles.stage} aria-label="Drawing page">
+    <section className={styles.stage} aria-label={converted ? "Image conversion" : "Drawing page"}>
+     {converted && convertBox ? (
+      <ConvertStage
+       photo={converted.photo!}
+       w={convertBox.x1 - convertBox.x0}
+       h={convertBox.y1 - convertBox.y0}
+       parts={convertParts}
+       view={convertView}
+       onView={setConvertView}
+       history={{ canUndo: past.length > 0, canRedo: future.length > 0, onUndo: undo, onRedo: redo }}
+       toolbar={setupToolbar}
+       disabled={busy}
+      />
+     ) : (
      <Canvas
       loupe={loupe}
       page={page}
@@ -2392,7 +2947,7 @@ export default function App() {
       // One bar over the page for everything true of what is being looked at: what has just
       // been done, how the drawing is drawn, and how close the view sits. It used to be two
       // groups at opposite ends of the width line.
-      toolbar={<SetupToolbar open={setupOpen} onToggle={() => setSetupOpen((open) => !open)} />}
+      toolbar={setupToolbar}
       toolbarLeft={(
        <PreviewToolbar
         note={message.text && (!message.ok || message.progress) ? { text: message.text, error: !message.ok } : undefined}
@@ -2426,6 +2981,7 @@ export default function App() {
       onUpdate={updateShape}
       onEditStart={record}
      />
+     )}
     </section>
 
     <div className={styles.side}>
@@ -2456,6 +3012,26 @@ export default function App() {
            title="Open a drawing to carry on with"
            disabled={busy}
            onClick={() => setBrowserOpen(true)}
+          />
+          {/* A photo is opened rather than drawn: it becomes a new drawing, in image conversion. */}
+          <ButtonRound
+           size="sm"
+           icon={<ImagePlus />}
+           aria-label="Open a photo"
+           title="Open a photo to turn into lines, matched to the tool's pens: a new drawing, in image conversion. Pick several greyscale separations at once (…_C, …_M, …_Y, …_K) for a layer each"
+           disabled={busy}
+           onClick={() => photoInput.current?.click()}
+          />
+          <input
+           ref={photoInput}
+           type="file"
+           accept="image/*"
+           hidden
+           multiple
+           onChange={(e) => {
+            openPhotos([...(e.target.files ?? [])]);
+            e.target.value = ""; // so the same photo can be opened again
+           }}
           />
           <ButtonRound
            size="sm"
@@ -2499,6 +3075,7 @@ export default function App() {
        <SettingsSection collapsibleKey="settings">
         {paperSection}
 
+        {!converted && (
         <Section
          title="Grid"
          collapsibleKey="grid"
@@ -2524,11 +3101,14 @@ export default function App() {
           />
          )}
         </Section>
+        )}
 
         <DrawingToolSection tools={presets} value={toolName} onPick={pickTool} collapsibleKey="pen" disabled={busy} />
        </SettingsSection>
       </div>
      </Card>
+     {/* Image conversion keeps the file and what it is drawn on and with; the rest is the drawing's. */}
+     {converted ? convertRail : (<>
 
      <Card variant="flat" className={styles.controls}>
       <div className={styles.cardBody}>
@@ -2545,29 +3125,6 @@ export default function App() {
           onClick={() => setTool(t.kind)}
          />
         ))}
-        {/* Not a tool to drag with: a photo comes from a file, and is placed on the page to fit. */}
-        <ButtonRound
-         size="sm"
-         icon={<ImagePlus />}
-         aria-label="Add a photo"
-         title="Add a photo, matched to the tool's pens. Pick several greyscale separations at once (…_C, …_M, …_Y, …_K) for a layer each"
-         disabled={busy}
-         onClick={() => photoInput.current?.click()}
-        />
-        <input
-         ref={photoInput}
-         type="file"
-         accept="image/*"
-         hidden
-         multiple
-         onChange={(e) => {
-          // Several at once are separations: one photo already split into plates, a layer each.
-          const files = [...(e.target.files ?? [])];
-          if (files.length > 1) addSeparations(files);
-          else addPhoto(files[0]);
-          e.target.value = ""; // so the same photo can be added again
-         }}
-        />
        </div>
       </div>
      </Card>
@@ -2851,271 +3408,30 @@ export default function App() {
           and turn together from then on.
          </p>
         </Section>
+        {fillTargets.length > 0 && (
+         // Hatch them all at once: set here, every one of them gets the same fill.
+         <Section
+          title={fillTargets.length === selected.length ? "Hatch" : `Hatch ${fillTargets.length} of them`}
+          collapsibleKey="selection-fill"
+          action={fillClipboard ? (
+           <ButtonRound
+            size="sm"
+            icon={<PaintRoller />}
+            aria-label="Paste fill"
+            title="Paste fill: give every one of them the fill you copied, in place of their own"
+            disabled={busy}
+            onClick={pasteFill}
+           />
+          ) : undefined}
+         >
+          {fillPanel}
+         </Section>
+        )}
        </div>
       </Card>
      )}
 
-     {chosen?.kind === "photo" && chosen.photo && (() => {
-      const b = boxOf(chosen);
-      const marks = photoMarks(chosen.photo, b.x1 - b.x0, b.y1 - b.y0);
-      return (
-      <Card variant="flat" className={styles.controls}>
-       <div className={`${styles.cardBody} ${controls.cardSections}`}>
-        <Section
-         title={shapeName(chosen, onActive.indexOf(chosen))}
-         collapsibleKey="photo"
-         action={
-          <>
-           <Button size="sm" variant="secondary" title={chosen.photo.separation ? "Put a different picture in for this plate, keeping its settings" : "Put a different photo in, keeping every setting"} onClick={() => replaceInput.current?.click()}>
-            Replace…
-           </Button>
-           <input
-            ref={replaceInput}
-            type="file"
-            accept="image/*"
-            hidden
-            onChange={(e) => {
-             replacePhoto(e.target.files?.[0]);
-             e.target.value = "";
-            }}
-           />
-          </>
-         }
-        >
-         {/* How many layers the photo is split into by tone. Each band layer has its own settings
-           below; the photo's picture, brightness and contrast are what the bands are cut from. */}
-         {/* By value: read as black and white, split into tone bands. By colour: split into groups
-           of similar colours, each drawn in the tool's nearest pen. Either way, a layer each, with
-           its own lines. */}
-         {chosen.photo.separation ? (
-          // Separations made elsewhere: each layer is its own picture, so there's nothing to split.
-          // Which plate this one is sets its name, its screen angle and its pen.
-          <>
-           <InputSelect
-            size="md"
-            label="Plate"
-            value={PLATES.find((p) => PLATE_AIMS[p].name === chosen.photo!.separation) ?? "other"}
-            onChange={(e) => setSeparationPlate(e.target.value as Plate | "other")}
-           >
-            {PLATES.map((p) => <option key={p} value={p}>{PLATE_AIMS[p].name}</option>)}
-            <option value="other">{PLATES.some((p) => PLATE_AIMS[p].name === chosen.photo!.separation) ? "Another ink" : chosen.photo.separation}</option>
-           </InputSelect>
-           <p className={styles.empty}>A separation: this layer draws its own greyscale picture, more of its pen where it's darker. Replace swaps this plate alone.</p>
-          </>
-         ) : (
-         <>
-         <SegmentedControl size="sm" variant="dark" aria-label="Split by">
-          <Segment selected={photoMode(chosen.photo) === "value"} title="By value: the photo as black and white, split into tone bands" onClick={() => switchPhotoMode("value")}>Value</Segment>
-          <Segment selected={photoMode(chosen.photo) === "colour"} title="By colour: the photo's colours gathered into groups, each drawn in the tool's nearest pen" onClick={() => switchPhotoMode("colour")}>Colour</Segment>
-          <Segment selected={photoMode(chosen.photo) === "cmyk"} title="CMYK: four plates - cyan, magenta, yellow and black - in the tool's nearest pens, blended on paper" onClick={() => switchPhotoMode("cmyk")}>CMYK</Segment>
-         </SegmentedControl>
-         {photoMode(chosen.photo) === "cmyk" ? (
-          // How much of the colours' shared grey the black plate takes over: more, and the darks are
-          // black; less, and they're the three colours laid over each other.
-          <NumberField label="Black" unit="%" min={0} max={100} step={5} value={Math.round((chosen.photo.blackShare ?? BLACK_SHARE) * 100)} onChange={(v) => setPhotoOf({ blackShare: v / 100 })} />
-         ) : chosen.photo.ink ? (
-          <>
-           <NumberField
-            label="Inks"
-            min={1}
-            max={MOST_LAYERS}
-            step={1}
-            value={chosen.photo.group ? shapes.filter((sh) => sh.photo?.group === chosen.photo!.group && !sh.photo?.key).length : 1}
-            onChange={splitPhotoByColor}
-           />
-           {/* A key ink over the colours, darkening shadows the colour layers can't reach alone.
-             Its pen is the layer's: change it with the layer's dot. */}
-           <Checkbox
-            checked={Boolean(chosen.photo.keyInk)}
-            label="Key layer, to darken shadows"
-            onChange={(e) => setKeyLayer(e.target.checked)}
-           />
-           {chosen.photo.keyInk && (
-            // The key's shading over the colours: how dark a part must be before it's shaded, and
-            // how heavy the shading gets at black. The colours under it draw as they would without it.
-            <div className={styles.fillRow}>
-             <NumberField label="Shading starts at" unit="%" min={0} max={95} step={5} value={Math.round((chosen.photo.keyFrom ?? KEY_FROM) * 100)} onChange={(v) => setPhotoOf({ keyFrom: v / 100 })} />
-             <NumberField label="Key strength" unit="%" min={0} max={100} step={5} value={Math.round((chosen.photo.keyStrength ?? 1) * 100)} onChange={(v) => setPhotoOf({ keyStrength: v / 100 })} />
-            </div>
-           )}
-          </>
-         ) : (
-          <NumberField
-           label="Tone layers"
-           min={1}
-           max={MOST_LAYERS}
-           step={1}
-           value={chosen.photo.group ? shapes.filter((sh) => sh.photo?.group === chosen.photo!.group).length : 1}
-           onChange={splitPhoto}
-          />
-         )}
-         </>
-         )}
-         {/* Sized to the page, inside the margin: the whole photo as large as it fits, or the page
-           filled and the photo cropped. Moved or sized by hand, it's neither. */}
-         <div className={styles.fillRow}>
-          <SegmentedControl size="sm" variant="dark" aria-label="Size to the page">
-           <Segment selected={chosen.photo.fit === "fit"} title="Fit to page: all of the photo, as large as it fits inside the margin" onClick={() => placePhoto("fit", chosen.photo!.margin ?? 0.5)}>Fit</Segment>
-           <Segment selected={chosen.photo.fit === "fill"} title="Fill page: the whole page inside the margin, the photo cropped to it" onClick={() => placePhoto("fill", chosen.photo!.margin ?? 0.5)}>Fill</Segment>
-          </SegmentedControl>
-          <NumberField label="Margin" unit="in" min={0} max={4} step={0.25} value={chosen.photo.margin ?? 0.5} onChange={setPhotoMargin} />
-          <NumberField
-           label="Scale"
-           unit="%"
-           min={5}
-           max={1000}
-           step={5}
-           value={(() => { const { b, fitW } = photoScale(chosen); return Math.round(((b.x1 - b.x0) / fitW) * 100); })()}
-           onChange={setPhotoScale}
-          />
-         </div>
-         {/* Which band's lines the rest of the card sets. The bands lie on top of each other, so
-           this is how to reach each one; its layer in the list does the same. */}
-         {chosen.photo.group && (
-          // Where the settings below go: to the layer picked in the switch under this, or to every
-          // layer of the photo at once. The switch still says whose settings are showing.
-          <SegmentedControl size="sm" variant="dark" aria-label="Settings for">
-           <Segment selected={!photoAll} title="The settings below go to the layer picked here" onClick={() => setPhotoAll(false)}>This layer</Segment>
-           <Segment selected={photoAll} title="The settings below go to all the photo's layers at once" onClick={() => setPhotoAll(true)}>All layers</Segment>
-          </SegmentedControl>
-         )}
-         {chosen.photo.group && (() => {
-          // In the order of their layers, bottom first: the same order as the numbers in the
-          // Layers list, lightest ink on the left once the layers are sorted by darkness.
-          const place = (sh: Shape) => layers.findIndex((l) => l.id === sh.layerId);
-          const bands = shapes
-           .filter((sh) => sh.photo?.group === chosen.photo!.group)
-           .sort((a, b) => place(a) - place(b));
-          // Bands by value are named for their tone; by colour, for their ink.
-          // Each band by its layer: the number the Layers list gives it, and a dot in its ink - up
-          // to six of them, too many for words.
-          return (
-           <SegmentedControl size="sm" variant="dark" aria-label="Band to set">
-            {bands.map((band) => {
-             const at = layers.findIndex((l) => l.id === band.layerId);
-             const layer = layers[at];
-             return (
-              <Segment
-               key={band.id}
-               selected={band.id === chosen.id}
-               aria-label={`Layer ${at + 1}, ${layer?.name ?? ""}`}
-               title={`Layer ${at + 1}, ${layer?.name ?? ""}: its lines`}
-               onClick={() => { pick(band.id); setActiveLayer(band.layerId); }}
-              >
-               <span className={styles.bandDot} style={{ background: layer?.color }} aria-hidden="true" />
-               {at + 1}
-              </Segment>
-             );
-            })}
-           </SegmentedControl>
-          );
-         })()}
-         {photoMode(chosen.photo) === "colour" && chosen.photo.group && (
-          // Colour layers overlap where colours blend: a part of the photo is drawn by every
-          // layer whose colour is nearly as close as the nearest, within this.
-          <>
-           <NumberField label="Bleed" unit="%" min={0} max={25} step={1} value={Math.round((chosen.photo.bleed ?? 0) * 100)} onChange={(v) => setPhotoOf({ bleed: v / 100 })} />
-           <p className={styles.empty}>
-            {(chosen.photo.bleed ?? 0) > 0
-             ? "Where the photo's colours blend, the layers either side both draw, and their lines overlap."
-             : "Each part of the photo is drawn by the one layer nearest its colour."}
-           </p>
-          </>
-         )}
-         {chosen.photo.band && (() => {
-          const [lo, hi] = chosen.photo.band;
-          const bleed = chosen.photo.bleed ?? 0;
-          const from = Math.round(Math.max(0, lo - (lo > 0 ? bleed : 0)) * 100);
-          const to = Math.round(Math.min(1, hi + (hi < 1 ? bleed : 0)) * 100);
-          return (
-           <>
-            {/* How far the bands reach into each other, so their lines overlap where they meet. */}
-            <NumberField label="Bleed" unit="%" min={0} max={25} step={1} value={Math.round(bleed * 100)} onChange={(v) => setPhotoOf({ bleed: v / 100 })} />
-            <p className={styles.empty}>{`This layer draws the tones from ${from}% to ${to}% dark.`}</p>
-           </>
-          );
-         })()}
-         <div className={styles.fillRow}>
-          <NumberField label="Brightness" min={-100} max={100} step={5} value={chosen.photo.brightness} onChange={(brightness) => setPhotoOf({ brightness })} />
-          <NumberField label="Contrast" min={-100} max={100} step={5} value={chosen.photo.contrast} onChange={(contrast) => setPhotoOf({ contrast })} />
-         </div>
-         {/* What this band's tone is drawn as, and the numbers that style has. Each band its own. */}
-         <InputSelect
-          size="md"
-          label="Drawn as"
-          value={chosen.photo.style ?? "hatch"}
-          title={({
-           hatch: "Hatching: lines that cross and fill in as the photo darkens",
-           waves: "Tone lines: one line along each row, waving harder and tighter where it's darker",
-           outlines: "Outlines: the photo traced as contour lines, following its edges and shapes",
-           centerlines: "Centerlines: each dark stroke of a line drawing drawn once, down its middle, so a ring is one circle",
-           silhouette: "Silhouette: the line round a shape on white paper - its outline, and each hole in it",
-          } as const)[chosen.photo.style ?? "hatch"]}
-          onChange={(e) => {
-           const style = e.target.value as NonNullable<Photo["style"]>;
-           setPhotoOf({ style: style === "hatch" ? undefined : style });
-          }}
-         >
-          <option value="hatch">Hatching</option>
-          <option value="waves">Tone lines</option>
-          <option value="outlines">Outlines</option>
-          <option value="centerlines">Centerlines</option>
-          <option value="silhouette">Silhouette</option>
-         </InputSelect>
-         {/* This layer's lines shifted from where the photo puts them: into register with the
-           others, or out of it on purpose. Its own; the rest stay put. */}
-         <div className={styles.fillRow}>
-          <NumberField label="Offset X" unit="mm" min={-100} max={100} step={0.1} value={chosen.photo.offsetMm?.[0] ?? 0} onChange={(x) => setPhotoOf({ offsetMm: [x, chosen.photo!.offsetMm?.[1] ?? 0] })} />
-          <NumberField label="Offset Y" unit="mm" min={-100} max={100} step={0.1} value={chosen.photo.offsetMm?.[1] ?? 0} onChange={(y) => setPhotoOf({ offsetMm: [chosen.photo!.offsetMm?.[0] ?? 0, y] })} />
-         </div>
-         {chosen.photo.style === "silhouette" ? (
-          <div className={styles.fillRow}>
-           <NumberField label="Paper lighter than" unit="%" min={1} max={99} step={1} value={Math.round((chosen.photo.silhouetteFrom ?? SILHOUETTE_DEFAULTS.from) * 100)} onChange={(v) => setPhotoOf({ silhouetteFrom: v / 100 })} />
-           <NumberField label="Smoothing" unit="mm" min={0} max={5} step={0.05} value={chosen.photo.silhouetteSmoothMm ?? SILHOUETTE_DEFAULTS.smoothMm} onChange={(silhouetteSmoothMm) => setPhotoOf({ silhouetteSmoothMm })} />
-           <NumberField label="Smallest" unit="mm" min={0} max={50} step={0.5} value={chosen.photo.silhouetteSmallestMm ?? SILHOUETTE_DEFAULTS.smallestMm} onChange={(silhouetteSmallestMm) => setPhotoOf({ silhouetteSmallestMm })} />
-          </div>
-         ) : chosen.photo.style === "centerlines" ? (
-          <div className={styles.fillRow}>
-           <NumberField label="Darker than" unit="%" min={1} max={99} step={5} value={Math.round((chosen.photo.centerFrom ?? CENTER_DEFAULTS.from) * 100)} onChange={(v) => setPhotoOf({ centerFrom: v / 100 })} />
-           <NumberField label="Smoothing" unit="mm" min={0} max={5} step={0.05} value={chosen.photo.centerSmoothMm ?? CENTER_DEFAULTS.smoothMm} onChange={(centerSmoothMm) => setPhotoOf({ centerSmoothMm })} />
-           <NumberField label="Shortest" unit="mm" min={0} max={20} step={0.25} value={chosen.photo.centerShortestMm ?? CENTER_DEFAULTS.shortestMm} onChange={(centerShortestMm) => setPhotoOf({ centerShortestMm })} />
-          </div>
-         ) : chosen.photo.style === "outlines" ? (
-          <div className={styles.fillRow}>
-           <NumberField label="Lines" min={1} max={40} step={1} value={chosen.photo.contours ?? OUTLINE_DEFAULTS.contours} onChange={(contours) => setPhotoOf({ contours })} />
-           <NumberField label="Smoothing" unit="mm" min={0} max={20} step={0.25} value={chosen.photo.smoothMm ?? OUTLINE_DEFAULTS.smoothMm} onChange={(smoothMm) => setPhotoOf({ smoothMm })} />
-          </div>
-         ) : chosen.photo.style === "waves" ? (
-          <div className={styles.fillRow}>
-           <NumberField label="Angle" unit="°" min={-180} max={180} step={5} value={chosen.photo.angle} onChange={(angle) => setPhotoOf({ angle })} />
-           <NumberField label="Row spacing" unit="mm" min={0.2} max={20} step={0.25} value={chosen.photo.rowMm ?? WAVE_DEFAULTS.rowMm} onChange={(rowMm) => setPhotoOf({ rowMm })} />
-           <NumberField label="Wave length" unit="mm" min={0.2} max={20} step={0.1} value={chosen.photo.waveMm ?? WAVE_DEFAULTS.waveMm} onChange={(waveMm) => setPhotoOf({ waveMm })} />
-          </div>
-         ) : (
-          <div className={styles.fillRow}>
-           <NumberField label="Angle" unit="°" min={-180} max={180} step={5} value={chosen.photo.angle} onChange={(angle) => setPhotoOf({ angle })} />
-           <NumberField label="Closest lines" unit="mm" min={0.1} max={5} step={0.05} value={chosen.photo.spacingMm} onChange={(spacingMm) => setPhotoOf({ spacingMm })} />
-           <NumberField label="Passes" min={1} max={4} step={1} value={chosen.photo.levels} onChange={(levels) => setPhotoOf({ levels })} />
-          </div>
-         )}
-         <p className={styles.empty}>
-          {marks
-           ? chosen.photo.style === "silhouette"
-            ? `${marks.strokes.toLocaleString()} ${marks.strokes === 1 ? "loop" : "loops"}: the shape's outline${marks.strokes > 1 ? " and the holes in it" : ""}, where the picture meets white paper. Paper lighter than sets what counts as paper; Smallest drops specks and flecks.`
-            : chosen.photo.style === "centerlines"
-            ? `${marks.strokes.toLocaleString()} ${marks.strokes === 1 ? "line" : "lines"}${marks.circles ? `, ${marks.circles} of them ${marks.circles === 1 ? "a circle" : "circles"}` : ""}, each drawn once down the middle of a stroke in the picture${marks.widthMm ? ` (they're about ${marks.widthMm.toFixed(1)} mm wide there)` : ""}. Darker than sets what counts as a line; Shortest drops specks and whiskers.`
-            : chosen.photo.style === "outlines"
-            ? `${marks.strokes.toLocaleString()} contours, along the photo's edges and shapes. More lines follow finer changes of tone; more smoothing, only the big ones.`
-            : chosen.photo.style === "waves"
-            ? `${marks.strokes.toLocaleString()} strokes. Each row waves harder and tighter where the photo is darker; white is left as paper.`
-            : `${marks.strokes.toLocaleString()} strokes. The closest lines start at the tool’s solid-fill spacing; each pass adds lines where the photo is darker.`
-           : "Reading the photo…"}
-         </p>
-        </Section>
-       </div>
-      </Card>
-      );
-     })()}
+     {photoCard}
 
      {chosen?.kind === "text" && (
       <Card variant="flat" className={styles.controls}>
@@ -3295,6 +3611,27 @@ export default function App() {
            onClick={() => showPanel("fill")}
           />
          )}
+         {/* Copy a shape's fill, then paste it onto another: a fill set up once, used again. */}
+         {fills.some((f) => f.shapeId === chosen.id) && (
+          <ButtonRound
+           size="sm"
+           icon={<Pipette />}
+           aria-label="Copy fill"
+           title="Copy fill: pick up this shape's fill, to paste onto another shape"
+           disabled={busy}
+           onClick={() => setFillClipboard(fills.filter((f) => f.shapeId === chosen.id))}
+          />
+         )}
+         {canFill(chosen) && fillClipboard && (
+          <ButtonRound
+           size="sm"
+           icon={<PaintRoller />}
+           aria-label="Paste fill"
+           title="Paste fill: give this shape the fill you copied, in place of its own"
+           disabled={busy}
+           onClick={pasteFill}
+          />
+         )}
          {/* One button per thing that can be done to a shape as a whole, each opening its
            own settings: how far it is turned, and how many of it there are. */}
          <ButtonRound
@@ -3344,136 +3681,7 @@ export default function App() {
          );
         })()}
 
-        {canFill(chosen) && filling && (
-        <>
-         <Checkbox
-          checked={chosenFills.length > 0}
-          label="Fill shape"
-          onChange={(e) => setHatched(e.target.checked)}
-         />
-         {chosenFills.length > 0 && (
-          <div className={styles.tools} role="group" aria-label="What the fill is made of">
-           {(Object.keys(FILL_LABEL) as FillKind[]).map((k) => {
-            const on = (chosenFills[0].kind ?? "hatch") === k;
-            return (
-             <ButtonRound
-              key={k}
-              size="sm"
-              icon={FILL_ICON[k]}
-              className={on ? controls.roundActive : undefined}
-              aria-label={FILL_LABEL[k]}
-              aria-pressed={on}
-              title={FILL_HINT[k]}
-              // Both passes of a cross-hatch are the same kind of thing.
-              onClick={() => chosenFills.forEach((f, at) => setFillAt(at, { ...f, kind: k }))}
-             />
-            );
-           })}
-          </div>
-         )}
-         {chosenFills.map((fill, i) => (
-          <div key={fill.id} className={styles.fillRow}>
-           <NumberField
-            label={i === 0 ? "Angle" : "Cross angle"}
-            unit="°"
-            step={5}
-            value={fill.angle}
-            onChange={(angle) => setFillByHand(i, { ...fill, angle })}
-           />
-           <NumberField
-            label="Spacing"
-            unit="mm"
-            step={0.1}
-            min={0.05}
-            value={fill.spacingMm}
-            onChange={(spacingMm) => setFillByHand(i, { ...fill, spacingMm })}
-           />
-          </div>
-         ))}
-         {/* No sentence saying the spacing was set by hand: the field above says the number,
-           and the way back to the tool's own is the only part of it worth the room. */}
-         {chosenFills.map((fill, i) => (fill.custom ? (
-          <p key={`${fill.id}-note`} className={`${styles.empty} ${styles.fillFollow}`}>
-           <Button size="sm" variant="ghost" onClick={() => followTool(i, fill)}>
-            Use tool spacing
-           </Button>
-          </p>
-         ) : null))}
-         {chosenFills.length > 0 && (chosenFills[0].kind ?? "hatch") === "wavy" && (
-          <div className={styles.fillRow}>
-           <NumberField
-            label="Wave"
-            unit="mm"
-            step={0.5}
-            min={0.2}
-            value={fillNumbers(chosenFills[0]).waveMm}
-            onChange={(waveMm) => chosenFills.forEach((f, at) => setFillByHand(at, { ...f, waveMm }))}
-           />
-           <NumberField
-            label="Swing"
-            unit="mm"
-            step={0.25}
-            min={0}
-            value={fillNumbers(chosenFills[0]).swingMm}
-            onChange={(swingMm) => chosenFills.forEach((f, at) => setFillByHand(at, { ...f, swingMm }))}
-           />
-          </div>
-         )}
-         {chosenFills.length > 0 && (chosenFills[0].kind ?? "hatch") === "dashes" && (
-          <div className={styles.fillRow}>
-           <NumberField
-            label="Dash"
-            unit="mm"
-            step={0.5}
-            min={0.2}
-            value={fillNumbers(chosenFills[0]).dashMm}
-            onChange={(dashMm) => chosenFills.forEach((f, at) => setFillByHand(at, { ...f, dashMm }))}
-           />
-           <NumberField
-            label="Gap"
-            unit="mm"
-            step={0.5}
-            min={0.1}
-            value={fillNumbers(chosenFills[0]).gapMm}
-            onChange={(gapMm) => chosenFills.forEach((f, at) => setFillByHand(at, { ...f, gapMm }))}
-           />
-          </div>
-         )}
-         {chosenFills.length > 0 && (
-          <Checkbox
-           checked={chosenFills.length > 1}
-           label="Cross-hatch"
-           onChange={(e) =>
-            // A second pass square to the first, which is what makes it read as a mesh
-            // rather than as two hatchings that happen to share a shape.
-            setFillAt(1, e.target.checked ? { ...newFill((chosenFills[0].angle + 90) % 180), connected: chosenFills[0].connected } : null)
-           }
-          />
-         )}
-         {chosenFills.length > 0 && canConnect(chosenFills[0]) && (
-          <Checkbox
-           checked={chosenFills[0].connected === true}
-           label="Connect ends"
-           // Each pass becomes one zigzag stroke, joined along the shape's edge. Both passes
-           // of a cross-hatch follow the one switch.
-           onChange={(e) => {
-            const connected = e.target.checked;
-            record();
-            setFills((list) => list.map((f) => (f.shapeId === chosen.id ? { ...f, connected } : f)));
-           }}
-          />
-         )}
-         {/* Only worth asking about while there is a hatch: a shape with no hatch is its
-           outline, and nothing else. */}
-         {chosenFills.length > 0 && (
-          <Checkbox
-           checked={chosen.outline !== false}
-           label="Draw the outline too"
-           onChange={(e) => setOutline(e.target.checked)}
-          />
-         )}
-        </>
-        )}
+        {canFill(chosen) && filling && fillPanel}
        {rotating && (
         <NumberField
          label="Rotation"
@@ -3552,6 +3760,7 @@ export default function App() {
        </div>
       </Card>
      )}
+     </>)}
      </>)}
 
     </div>

@@ -53,7 +53,8 @@
   color: var(--ui-text-default);
 }
 
-.bedWrap[data-loaded="true"] .dropzone { pointer-events: none; opacity: 0; }
+/* Only while a file is being dragged over the page: otherwise an empty preview is just the grid. */
+.bedWrap:not([data-dragging-file="true"]) .dropzone { pointer-events: none; opacity: 0; }
 
 .bedWrap[data-dragging-file="true"] .dropzone {
   pointer-events: auto;

@@ -716,7 +716,8 @@ export function Canvas({ loupe, page, paperColor, shapes, fills, layers, activeL
             <g className={styles.chrome}>
               {shown.map((sh) => {
                 if (bigLayers.has(sh.layerId)) return null; // picked up with the rest of their layer
-                const guide = sh.outline === false;
+                // Not in Preview, which shows only what the pen will draw: there the hatch is the shape.
+                const guide = sh.outline === false && !inkSim;
                 return (
                   <g key={sh.id} transform={carriedIds?.has(sh.id) ? shift : undefined}>
                     {/* Filled but not outlined: shown thin and dashed, so it reads as a guide rather

@@ -37,7 +37,8 @@ interface Props {
  * of what is being LOOKED AT - what has just been done to it, how it is drawn, and how close the view
  * sits. Figma: the `Toolbar` frame (44:360), which is three groups at a 16 gap inside a 4 inset.
  *
- * Each app brings only what it has: Studio its history, Plot the plot in progress. The groups they
+ * Each app brings only what it has: Studio its history, on a small bar of its own ahead of the rest,
+ * Plot the plot in progress. The groups they
  * share are the same buttons in the same order, so moving between the apps changes nothing about how
  * the page is looked at.
  *
@@ -52,8 +53,10 @@ interface Props {
 export function PreviewToolbar({ view, onView, canProgress, canPhoto, zoom, onZoom, canPaper = true, canDrawing, history, disabled, working, loupe, onLoupe, note }: Props) {
   return (
     <span className={styles.row}>
-      <Toolbar tone="white" aria-label="Drawing view">
-        {history && (
+      {history && (
+        // Undo and redo on a bar of their own: they change the drawing, where the rest only change
+        // how it is looked at.
+        <Toolbar tone="white" aria-label="History">
           <SegmentedControl size="sm" variant="dark" actions aria-label="History">
             <Segment
               icon={<Undo2 />}
@@ -70,8 +73,9 @@ export function PreviewToolbar({ view, onView, canProgress, canPhoto, zoom, onZo
               aria-label="Redo"
             />
           </SegmentedControl>
-        )}
-
+        </Toolbar>
+      )}
+      <Toolbar tone="white" aria-label="Drawing view">
         <SegmentedControl size="sm" variant="dark" aria-label="How the drawing is drawn">
           <Segment
             selected={view === "outline"}

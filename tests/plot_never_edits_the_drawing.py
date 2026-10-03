@@ -33,11 +33,11 @@ BASE = "http://localhost:5055"
 HERE = Path(__file__).resolve().parent
 
 
-def call(route, body=None):
+def call(route, body=None, method=None):
     url = f"{BASE}{route}"
     data = json.dumps(body).encode() if body is not None else None
     req = urllib.request.Request(url, data=data, headers={"Content-Type": "application/json"},
-                                 method="POST" if data else "GET")
+                                 method=method or ("POST" if data else "GET"))
     with urllib.request.urlopen(req, timeout=30) as res:
         return json.loads(res.read() or b"{}")
 
@@ -215,11 +215,15 @@ def main():
             failures.append(f"Plot did not keep placement: {saved.get('placement')!r}")
     finally:
         fixture.unlink(missing_ok=True)
-        if was_open:
-            try:
+        # Leave Plot as it was found: the drawing that was open, or none. Left alone, the fixture -
+        # beige A4, and deleted a line above - would be what Plot shows the next time it's opened.
+        try:
+            if was_open:
                 call("/api/open", {"path": was_open})
-            except Exception:  # noqa: BLE001 - putting the old drawing back is a courtesy
-                print(f"note: couldn't reopen {was_open}")
+            else:
+                call("/api/file", method="DELETE")
+        except Exception:  # noqa: BLE001 - putting Plot back is a courtesy
+            print(f"note: couldn't put back {was_open or 'an empty Plot'}")
 
     if failures:
         print("FAILED - Plot edited the drawing:")

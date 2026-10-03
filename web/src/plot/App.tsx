@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Button, Card } from "@tomcoggia/ui";
 import styles from "./App.module.css";
 import { api, postJSON } from "../shared/lib/api";
-import { barrelOffsetMm, BUSY_STATES, DEFAULT_SETTINGS, DEFAULT_TOOL, IDRAW_MODEL, IDRAW_START, PAPER_SIZES, PLOT_CHANNEL, PLOTTING_STATES, PRESET_FIELDS, STEPS, STORAGE } from "../shared/lib/constants";
+import { barrelOffsetMm, BUSY_STATES, DEFAULT_SETTINGS, IDRAW_MODEL, PAPER_SIZES, PLOT_CHANNEL, PLOTTING_STATES, PRESET_FIELDS, STEPS, STORAGE } from "../shared/lib/constants";
 import { cleanNote, listOf } from "../shared/lib/format";
 import { lightness } from "../shared/lib/color";
 import { fitsOnBed, fitsOnPaper, footprint } from "../shared/lib/geometry";
@@ -509,9 +509,8 @@ export default function App() {
         setPresets(r.presets);
         // Presets are shared (iCloud Drive) and can be edited elsewhere: use the chosen tool's current
         // values rather than the ones remembered from the last time it was picked.
-        // With no tool chosen (or the chosen one gone), start with the usual pen.
-        const chosen = r.presets.find((p) => p.name === refs.current.activePreset)
-          ?? r.presets.find((p) => p.name === DEFAULT_TOOL);
+        // With no tool chosen (or the chosen one gone), start with the first in the list.
+        const chosen = r.presets.find((p) => p.name === refs.current.activePreset) ?? r.presets[0];
         if (chosen) {
           setActivePreset(chosen.name);
           setSettings((prev) => ({ ...prev, ...chosen.settings }));
@@ -1009,34 +1008,15 @@ export default function App() {
   const presetChanged = Boolean(
     active && !PRESET_FIELDS.every((k) => !(k in active.settings) || Math.abs(Number(active.settings[k]) - Number(settings[k] ?? active.settings[k])) < 0.05),
   );
-  // The iDraw's pens are set up from scratch: with a NextDraw tool still chosen, it starts from its own
-  // software's heights rather than that tool's numbers. With no tool chosen the page's own heights
-  // stay as they were set, so they aren't put back to the start ones each time the page opens.
+  // A tool is always chosen. With none - none picked yet, the chosen one deleted, or the plotter
+  // switched (the list holds only the connected plotter's tools) - the page's own heights are whatever
+  // was left over, and on the iDraw they can be the wrong way up, so the buttons do the opposite. So
+  // the first tool in the list is chosen. Only its values are taken: nothing is sent to the plotter.
   useEffect(() => {
-    if (onIdraw && active && active.plotter !== "idraw") updateSettings(IDRAW_START);
-  }, [onIdraw, active, updateSettings]);
-  // Back on the NextDraw after the iDraw, the page still holds the iDraw's heights, which are the
-  // wrong way up for it. So the usual tool is chosen again, as when the page opens without one. Only
-  // its values are taken: nothing is sent to the plotter until asked.
-  // The tool list catches up a few seconds after the plotter changes, so the switch is remembered
-  // until the NextDraw's own tools have arrived.
-  const lastPlotter = useRef(status?.plotter);
-  const backFromIdraw = useRef(false);
-  useEffect(() => {
-    if (lastPlotter.current === "idraw" && status?.plotter === "nextdraw") backFromIdraw.current = true;
-    if (status?.plotter) lastPlotter.current = status.plotter;
-    if (!backFromIdraw.current || status?.plotter !== "nextdraw") return;
-    if (active && active.plotter !== "idraw") {
-      backFromIdraw.current = false; // a NextDraw tool is chosen already
-      return;
-    }
-    const usual = presets.find((p) => p.name === DEFAULT_TOOL && p.plotter !== "idraw");
-    if (usual) {
-      backFromIdraw.current = false;
-      setActivePreset(usual.name);
-      updateSettings(usual.settings);
-    }
-  }, [status?.plotter, active, presets, updateSettings]);
+    if (active || !presets.length) return;
+    setActivePreset(presets[0].name);
+    updateSettings(presets[0].settings);
+  }, [active, presets, updateSettings]);
 
   /* ---------- A second drawing tool ---------- */
 
@@ -1246,7 +1226,7 @@ export default function App() {
 
   const deletePreset = async () => {
     const name = activePreset;
-    if (!name || !window.confirm(`Delete the preset “${name}”? Your current settings stay as they are.`)) return;
+    if (!name || !window.confirm(`Delete the preset “${name}”? The first tool in the list will be chosen instead.`)) return;
     try {
       const res = await api<{ presets: Preset[] }>(`/api/presets/${encodeURIComponent(name)}`, { method: "DELETE" });
       setPresets(res.presets);
@@ -1433,6 +1413,8 @@ export default function App() {
           <div className={styles.lessOften}>
             <div className={`${styles.cardBody} ${controls.cardSections}`}>
               {!paletteOpen && <>
+              {/* Where it goes and how it's plotted only mean something once there's a drawing. */}
+              {fileName && <>
               <Section title="Drawing position" collapsibleKey="plot-position" defaultOpen={false}>
                 <PositionSection
                   placement={placement}
@@ -1448,6 +1430,7 @@ export default function App() {
               <Section title="Plot options" collapsibleKey="plot-options" defaultOpen={false}>
                 <PlotOptionsSection settings={settings} disabled={plotting} onChange={updateSettings} handling={info?.handling ?? []} />
               </Section>
+              </>}
 
               <MachinePanel
                 model={model}
@@ -1503,9 +1486,9 @@ export default function App() {
           {/* The drawing, and what it is plotted on and with: one card, as in Studio. The
             settings fold away together, and each on its own. */}
           <Card variant="flat" className={`${styles.controls} ${styles.fileCard}`}>
-            <DrawingNotes notes={notes} className={styles.fileNotes} />
             <div className={`${styles.cardBody} ${controls.cardSections}`}>
               <FileSection
+                notes={<DrawingNotes notes={notes} className={styles.fileNotes} />}
                 fileName={fileName}
                 busy={busy}
                 preview={preview}
@@ -1523,7 +1506,6 @@ export default function App() {
                 onTrim={trimPage}
                 onRotate={(turn) => setRotation((r) => (((r + turn * 90) % 360) + 360) % 360)}
                 // Only a drawing that lives in a folder: an uploaded copy has nowhere for Studio to read it from.
-                onEditInStudio={status?.file_path ? () => openInStudio(status.file_path!) : undefined}
               />
               {shownMisfits && (
                 <div className={styles.misfits} role="status">
@@ -1537,6 +1519,7 @@ export default function App() {
               )}
               {/* The same Settings, Paper and Drawing tool cards as Studio's. Grid is Studio's alone;
                   the units, and the plotting-only rows of the tool card, are Plot's alone. */}
+              {fileName && (
               <SettingsSection collapsibleKey="plot-settings">
                 <PaperSection
                   w={settings.paper_w}
@@ -1584,6 +1567,7 @@ export default function App() {
                   onDelete={deletePreset}
                 />
               </SettingsSection>
+              )}
             </div>
           </Card>
           {fileName && layerViews.length > 0 && (

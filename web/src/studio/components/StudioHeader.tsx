@@ -12,7 +12,7 @@ interface Props {
 // there - so the same place means the same thing in both apps; Studio's own news goes by the
 // preview's toolbar. The styles are Plot's own file rather than a copy, so the two can't drift apart.
 export function StudioHeader({ plotterFound }: Props) {
-  const text = plotterFound === null ? "Looking for the plotter…" : plotterFound ? "Plotter connected" : "No plotter found";
+  const text = plotterFound === null ? "Looking for the plotter…" : plotterFound ? "Plotter connected" : "No plotter";
   return (
     <header className={styles.header}>
       {/* The mark replaces the space, so the name needs saying in full for anything reading it. */}

@@ -328,7 +328,9 @@ export function Bed(props: Props) {
       loupe={props.loupe}
       zoom={props.zoom}
       model={model}
-      settings={s}
+      // With no drawing open the preview is the plotter's empty grid: no paper until there's a
+      // drawing to put on it.
+      settings={props.hasFile ? s : { ...s, paper_w: 0, paper_h: 0 }}
       drawingBox={drawingBox}
       viewBoxOverride={drag?.viewBox}
       svgRef={svgRef}

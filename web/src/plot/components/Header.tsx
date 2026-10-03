@@ -14,7 +14,7 @@ export function Header({ plotterFound, plotterName, severalPlotters, lostContact
   const text = lostContact
     ? "Lost contact with NextDraw Plot. Is server.py still running?"
     : severalPlotters ? "Two plotters plugged in: unplug one"
-    : plotterFound ? `${plotterName ?? "Plotter"} connected` : "No plotter found";
+    : plotterFound ? `${plotterName ?? "Plotter"} connected` : "No plotter";
   return (
     <header className={styles.header}>
       {/* The mark replaces the space, so the name needs saying in full for anything reading it. */}

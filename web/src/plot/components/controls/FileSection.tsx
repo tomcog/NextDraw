@@ -1,6 +1,6 @@
-import { useEffect, useState } from "react";
-import { Button, ButtonRound, InputText } from "@tomcoggia/ui";
-import { Crop, PenTool, RotateCcw, RotateCcwSquare, RotateCwSquare, ScanSquare, X } from "lucide-react";
+import { useEffect, useState, type ReactNode } from "react";
+import { ButtonRound, InputText } from "@tomcoggia/ui";
+import { Crop, FolderOpen, RotateCcw, RotateCcwSquare, RotateCwSquare, ScanSquare, X } from "lucide-react";
 import styles from "../../../shared/components/controls/controls.module.css";
 import { Section } from "../../../shared/components/controls/Section";
 import { fmtLen, trimNum } from "../../../shared/lib/format";
@@ -24,12 +24,11 @@ interface Props {
   trimming: boolean;
   onTrim: (restore: boolean) => void;
   onRotate: (quarterTurns: 1 | -1) => void;
-  /** Open this drawing in Studio. Left out for a drawing Studio can't read from a folder. */
-  onEditInStudio?: () => void;
+  notes?: ReactNode; // the drawing's caution button, right after the heading
 }
 
 export function FileSection({
-  fileName, busy, preview, previewScale, scale, units, folder, saveState, saveError, onScale, onOpen, onClear, trimmed, trimming, onTrim, onRotate, onEditInStudio,
+  fileName, busy, preview, previewScale, scale, units, folder, saveState, saveError, onScale, onOpen, onClear, trimmed, trimming, onTrim, onRotate, notes,
 }: Props) {
   const [draft, setDraft] = useState(trimNum(scale, 1));
   useEffect(() => setDraft(trimNum(scale, 1)), [scale]);
@@ -55,28 +54,42 @@ export function FileSection({
   const whereText = saveState === "error"
     ? saveError ?? ""
     : !folder
-      ? "Uploaded copy. Use Open… to save changes to a file."
+      ? "Uploaded copy. Open it from a folder to save changes to a file."
       : saveState === "saving" ? `Saving to ${folder}…` : saveState === "saved" ? `Saved to ${folder}` : `In ${folder}`;
 
   return (
-    <Section title="File">
+    <Section
+      title={notes ? <span className={styles.fileTitle}>File{notes}</span> : "File"}
+      // Round buttons at the card's top right, as Studio's File card has: close the drawing, when
+      // one is open, and open another.
+      action={
+        <span className={styles.headerTools}>
+          {fileName && (
+            <ButtonRound
+              size="sm"
+              icon={<X />}
+              className={styles.clearFile}
+              aria-label="Clear the drawing"
+              title="Close this drawing"
+              disabled={busy}
+              onClick={onClear}
+            />
+          )}
+          <ButtonRound
+            size="sm"
+            icon={<FolderOpen />}
+            aria-label="Open a drawing"
+            title="Open a drawing to plot"
+            disabled={busy}
+            onClick={onOpen}
+          />
+        </span>
+      }
+    >
       <div className={styles.fileRow}>
         <span className={styles.fileName} data-has-file={Boolean(fileName)} title={fileName ?? undefined}>
           {fileName ?? "No file loaded"}
         </span>
-        {fileName && (
-          <ButtonRound
-            size="sm"
-            variant="ghost"
-            className={styles.clearFile}
-            icon={<X />}
-            aria-label="Clear the drawing"
-            title="Clear the drawing"
-            disabled={busy}
-            onClick={onClear}
-          />
-        )}
-        <Button size="sm" variant="secondary" disabled={busy} onClick={onOpen}>Open…</Button>
       </div>
       {fileName && (
         <p className={styles.fileWhere} role="status" data-tone={saveState === "error" ? "error" : undefined} title={whereText}>
@@ -145,9 +158,6 @@ export function FileSection({
           <ButtonRound size="sm" icon={<RotateCwSquare />} aria-label="Turn the drawing right" title="Turn the drawing 90° right" disabled={busy} onClick={() => onRotate(1)} />
           {/* The way back to Studio with this drawing, as Studio's Send is the way here: Studio's
               nib, as its name in the header carries. A tab of its own, so no open Studio is touched. */}
-          {onEditInStudio && (
-            <ButtonRound size="sm" icon={<PenTool />} aria-label="Edit in Studio" title="Edit this drawing in Studio, in a tab of its own" onClick={onEditInStudio} />
-          )}
         </div>
       )}
     </Section>

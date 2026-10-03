@@ -392,6 +392,49 @@ function marksKey(photo: Photo, w: number, h: number) {
   return [photo.src.length, photo.src.slice(-32), w.toFixed(4), h.toFixed(4), photo.brightness, photo.contrast, photo.angle, photo.spacingMm, photo.levels, photo.band?.join(",") ?? "", photo.crop?.join(",") ?? "", photo.bleed ?? 0, photo.style ?? "hatch", photo.rowMm ?? "", photo.waveMm ?? "", photo.ink ?? "", photo.regions?.join(",") ?? "", photo.region ?? "", photo.contours ?? "", photo.smoothMm ?? "", photo.key ? "key" : "", photo.keyInk ?? "", photo.regionInks?.join(",") ?? "", photo.keyStrength ?? "", photo.keyFrom ?? "", photo.plate ?? "", photo.plates?.join(",") ?? "", photo.blackShare ?? "", photo.centerFrom ?? "", photo.centerSmoothMm ?? "", photo.centerShortestMm ?? "", photo.silhouetteFrom ?? "", photo.silhouetteSmoothMm ?? "", photo.silhouetteSmallestMm ?? ""].join("|");
 }
 
+/**
+ * What a style sees in the photo before it draws anything, as a grid: 255 where it finds what it
+ * traces, 0 where it finds nothing. For centerlines, the strokes it will run down the middle of;
+ * for a silhouette, the paint; for hatching, tone lines and outlines, how dark it takes each point
+ * to be - or, for a colour layer or a plate, how much of its pen it wants there.
+ */
+export interface PhotoMask {
+  w: number;
+  h: number;
+  seen: Uint8ClampedArray;
+}
+
+const maskCache = new Map<string, PhotoMask>();
+
+/** The longer side of a mask of tone: enough to judge by eye, quick to redo on every change. */
+const MASK_EDGE = 600;
+
+export function photoMask(photo: Photo, w: number, h: number): PhotoMask | null {
+  const tones = tonesOf(photo.src);
+  if (!tones || w <= 0 || h <= 0) return null;
+  const key = marksKey(photo, w, h);
+  const known = maskCache.get(key);
+  if (known) return known;
+  let made: PhotoMask;
+  if (photo.style === "centerlines") {
+    const { gw, gh, on } = centerOn(tones, photo, w, h);
+    made = { w: gw, h: gh, seen: Uint8ClampedArray.from(on, (v) => v * 255) };
+  } else if (photo.style === "silhouette") {
+    const { gw, gh, field } = paintField(tones, photo, w, h);
+    const level = 1 - Math.min(0.99, Math.max(0.01, photo.silhouetteFrom ?? SILHOUETTE_DEFAULTS.from));
+    made = { w: gw, h: gh, seen: Uint8ClampedArray.from(field, (v) => (v > level ? 255 : 0)) };
+  } else {
+    const gw = Math.max(2, Math.round((MASK_EDGE * w) / Math.max(w, h)));
+    const gh = Math.max(2, Math.round((MASK_EDGE * h) / Math.max(w, h)));
+    const { field } = fieldOf(tones, photo, gw, gh, 1);
+    if (photo.style === "outlines") blurGrid(field, gw, gh, Math.max(0, photo.smoothMm ?? OUTLINE_DEFAULTS.smoothMm) / 25.4 / (w / (gw - 1)));
+    made = { w: gw, h: gh, seen: Uint8ClampedArray.from(field, (v) => Math.round(Math.min(1, Math.max(0, v)) * 255)) };
+  }
+  if (maskCache.size > 8) maskCache.delete(maskCache.keys().next().value!);
+  maskCache.set(key, made);
+  return made;
+}
+
 /** How dark the photo is at a point of its box (0 to 1 across and down), after brightness and contrast. */
 function darknessAt(tones: Tones, u: number, v: number, lift: number, gain: number): number {
   const x = Math.min(tones.w - 1, Math.max(0, u * (tones.w - 1)));

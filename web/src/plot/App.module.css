@@ -43,11 +43,10 @@
 
 .fileCard { position: relative; }
 
-/* The caution button sits in the File card's top-right corner. */
+/* The caution button sits right after the File heading, clear of the card's own buttons. */
 .fileNotes {
-  position: absolute;
-  top: 0.25rem;
-  right: 0.5rem;
+  position: relative;
+  display: inline-flex;
 }
 
 .controls {

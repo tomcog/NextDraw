@@ -799,17 +799,21 @@ def hatch_lines(kind, box, angle, step, outline=None, inset=0):
         return (px + dx * lo, py + dy * lo, px + dx * hi, py + dy * hi)
 
     def clip_outline(px, py):
-        """Every span of the line that lies inside the outline, counting crossings the even-odd way."""
+        """Every span of the line that lies inside the outline, counting crossings the even-odd way.
+        Each edge is judged by which side of the line its two ends are on, as clipToOutline does:
+        judged by how far along the edge the crossing fell, a corner sitting exactly on the line
+        could land a hair past one edge and a hair before the next, drop out of both, and lose the
+        whole line from the middle of the fill."""
         hits = []
         for (ax, ay), (bx, by) in zip(outline, outline[1:]):
-            ex, ey = bx - ax, by - ay
-            denom = dx * ey - dy * ex
-            if abs(denom) < 1e-12:
-                continue
-            u = (dx * (ay - py) - dy * (ax - px)) / -denom
-            t = (ex * (ay - py) - ey * (ax - px)) / -denom
-            if 0 <= u < 1:  # half-open, so a crossing on a corner counts once
-                hits.append(t)
+            # How far off the line each end sits; a point exactly on it counts as the far side, so a
+            # corner the outline passes through counts once and one it only touches counts twice.
+            sa = (ax - px) * nx + (ay - py) * ny
+            sb = (bx - px) * nx + (by - py) * ny
+            if (sa < 0) == (sb < 0):
+                continue  # both ends the same side, edges along the line included
+            u = sa / (sa - sb)
+            hits.append((ax + (bx - ax) * u - px) * dx + (ay + (by - ay) * u - py) * dy)
         hits.sort()
         return [(px + dx * a, py + dy * a, px + dx * b, py + dy * b)
                 for a, b in zip(hits[0::2], hits[1::2])]
@@ -1344,10 +1348,8 @@ def make_nextdraw(log):
         nd.params.speed_lim_xy_hr *= scale
         nd.params.speed_lim_xy_lr *= scale
         nd.params.handling_old = -1
-        # Unpowered, its servo lets the clip sink under its own weight, so a minute after the last
-        # move the pen sat lower than it was set and jumped back up at the next. Kept powered (0: never
-        # switched off), the height seen is always the height set.
-        nd.params.servo_timeout = 0
+        # The servo keeps the library's own timeout: it lets go a minute after the last move, so the
+        # clip can be lifted by hand once a pen is seated (kept powered, it couldn't be, 2026-10-01).
         # Its own software's servo range; the heights are % of it, as they were there.
         nd.params.overrides = {**nd.params.overrides, "model_name": "iDraw", "servo_min": 7500, "servo_max": 28000}
     return nd

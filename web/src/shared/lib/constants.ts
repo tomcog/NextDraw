@@ -3,13 +3,11 @@ import type { Settings } from "./types";
 export const UNITS = 100; // preview drawing units per inch
 export const MM = UNITS / 25.4; // preview drawing units per mm
 
-export const DEFAULT_TOOL = "EnerGel"; // drawing tool preset used when none is chosen
 
 // The second plotter, an iDraw (server.py has the details): the AxiDraw V3/A3 model's travel and no
 // automatic homing. Its tools are its own, and until one is chosen it starts from its own software's
 // heights - on the iDraw a lower number is a higher pen.
 export const IDRAW_MODEL = 2;
-export const IDRAW_START = { pen_pos_up: 20, pen_pos_down: 45, pen_setup: 20 };
 
 // Matched against the NextDraw Inkscape extension plotting the same drawing on the same machine:
 // its output was consistently cleaner, and copying its values across closed the gap. Acceleration is
