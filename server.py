@@ -1139,6 +1139,9 @@ def flatten_path_data(d, step=0.01):
             if take == 0:
                 break
         state["numbers"] = []
+        # A move's later pairs arrive one at a time; they are lines from here on, not new moves.
+        if upper == "M":
+            state["command"] = "l" if rel else "L"
 
     for token in tokens:
         if PATH_ARITY.get(token.upper()) is not None and len(token) == 1 and token.isalpha():
@@ -1147,6 +1150,7 @@ def flatten_path_data(d, step=0.01):
             state["command"] = token
             if token.upper() == "Z":
                 apply()
+                state["command"] = ""  # done once; applied again it leaves a zero-length run
             continue
         state["numbers"].append(float(token))
         if state["command"] and len(state["numbers"]) >= PATH_ARITY.get(state["command"].upper(), 0):

@@ -199,13 +199,21 @@ export function parsePath(d: string, step = 0.01): Node[][] {
       if (take === 0) break;
     }
     numbers = [];
+    // Numbers are applied a command's worth at a time as they arrive, so a move's later pairs come
+    // through here one by one: they are lines from here on, not moves that each start a new run.
+    if (upper === "M") command = rel ? "l" : "L";
   };
 
   for (const token of tokens) {
     if (COMMANDS.test(token)) {
       if (command) apply();
       command = token;
-      if (command.toUpperCase() === "Z") apply();
+      // Z takes no numbers, so it's done at once - and only once: left as the command, it would be
+      // applied again by whatever came next, leaving a zero-length run at the shape's start.
+      if (command.toUpperCase() === "Z") {
+        apply();
+        command = "";
+      }
       continue;
     }
     numbers.push(Number(token));
