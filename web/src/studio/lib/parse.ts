@@ -266,8 +266,13 @@ export function parseDrawing(text: string): Opened {
       if (layer) s.layerId = layer;
     });
 
+  // Shapes inside these are never drawn where they stand: a clip or mask outline, a symbol or a
+  // pattern tile is only used through something else, placed by that element's transforms. Read as
+  // marks, an Inkscape-converted file's tens of thousands of clip rectangles pile up at the corner.
+  const UNDRAWN = "defs, clipPath, mask, symbol, pattern, marker";
+
   for (const el of Array.from(svg.querySelectorAll("*"))) {
-    if (generated(el) || isCopy(el.getAttribute("id") || "")) continue;
+    if (generated(el) || isCopy(el.getAttribute("id") || "") || el.closest(UNDRAWN)) continue;
     switch (el.nodeName.toLowerCase()) {
       case "rect": {
         const x = attr(el, "x");
