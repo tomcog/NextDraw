@@ -129,6 +129,12 @@
   align-items: center;
 }
 
+/* The round buttons at the end of an offset row, side by side. */
+.offsetButtons {
+  display: flex;
+  gap: 0.25rem;
+}
+
 .row3 {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto;

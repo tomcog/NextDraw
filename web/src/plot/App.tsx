@@ -406,6 +406,18 @@ export default function App() {
     setPlacementState(next);
   }, []);
 
+  // Centre the drawing's lines on the paper along one axis; its empty margin goes where it falls.
+  const centreOnPaper = fp && settings.paper_w > 0 && settings.paper_h > 0
+    ? (axis: "x" | "y") => {
+      const into = axis === "x" ? fp.ink.x0 - fp.x : fp.ink.y0 - fp.y; // lines' offset in the page, in
+      const size = axis === "x" ? fp.ink.x1 - fp.ink.x0 : fp.ink.y1 - fp.ink.y0;
+      const paperAt = axis === "x" ? settings.paper_x : settings.paper_y;
+      const paperSize = axis === "x" ? settings.paper_w : settings.paper_h;
+      const at = Math.round((paperAt + (paperSize - size * 25.4) / 2 - into * 25.4) * 10) / 10;
+      setPlacement({ ...placement, [axis]: at });
+    }
+    : null;
+
   const setScale = useCallback((percent: number) => {
     const next = Math.min(1000, Math.max(1, percent));
     setScaleState(next);
@@ -1430,6 +1442,7 @@ export default function App() {
                   paperX={settings.paper_x}
                   paperY={settings.paper_y}
                   onPaperChange={updateSettings}
+                  onCentre={centreOnPaper}
                 />
               </Section>
 
