@@ -6,6 +6,7 @@ import type { Placement, Settings, Units } from "../../../shared/lib/types";
 
 interface Props {
   placement: Placement;
+  minPlacement: Placement; // below 0 by the empty margin above and left of the lines
   units: Units;
   disabled: boolean;
   onChange: (p: Placement) => void;
@@ -21,7 +22,7 @@ interface PairProps {
   units: Units;
   disabled: boolean;
   resetLabel: string;
-  min?: number; // leave out to allow negative values
+  min?: { x: number; y: number }; // leave out to allow any value
   onChange: (x: number, y: number) => void;
 }
 
@@ -31,8 +32,8 @@ function OffsetPair({ heading, x, y, units, disabled, resetLabel, min, onChange 
     <div className={styles.offsetGroup}>
       <h3 className={styles.subheading}>{heading}</h3>
       <div className={styles.offsetRow}>
-        <LengthField label="Across" suffix="across" mm={x} units={units} min={min} disabled={disabled} onChange={(v) => onChange(v, y)} />
-        <LengthField label="Down" suffix="down" mm={y} units={units} min={min} disabled={disabled} onChange={(v) => onChange(x, v)} />
+        <LengthField label="Across" suffix="across" mm={x} units={units} min={min?.x} disabled={disabled} onChange={(v) => onChange(v, y)} />
+        <LengthField label="Down" suffix="down" mm={y} units={units} min={min?.y} disabled={disabled} onChange={(v) => onChange(x, v)} />
         <ButtonRound
           size="sm"
           icon={<RotateCcw />}
@@ -48,7 +49,7 @@ function OffsetPair({ heading, x, y, units, disabled, resetLabel, min, onChange 
 
 // Where the drawing and the paper sit, measured from home. Shown in the collapsed
 // "Drawing position" section under the preview.
-export function PositionSection({ placement, units, disabled, onChange, paperX, paperY, onPaperChange }: Props) {
+export function PositionSection({ placement, minPlacement, units, disabled, onChange, paperX, paperY, onPaperChange }: Props) {
   return (
     <div className={styles.position}>
       <OffsetPair
@@ -58,7 +59,7 @@ export function PositionSection({ placement, units, disabled, onChange, paperX, 
         units={units}
         disabled={disabled}
         resetLabel="Reset drawing start to home"
-        min={0}
+        min={minPlacement}
         onChange={(x, y) => onChange({ x, y })}
       />
       <OffsetPair

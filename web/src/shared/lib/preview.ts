@@ -7,6 +7,9 @@ export interface Preview {
   heightIn: number;
   layers: number; // artwork layers tagged .pv-layer (same rule as the server); colored by their id
   artworkOnly: boolean; // just the drawing, before the plot simulation adds pen paths
+  // Where the lines sit in the page, as fractions of its width and height (0-1); null when there
+  // are none to measure. The empty margin around them may run past home, the lines may not.
+  ink: { x0: number; y0: number; x1: number; y1: number } | null;
 }
 
 function lengthToInches(value: string | null) {
@@ -66,5 +69,46 @@ export function parsePreview(svgText: string | null): Preview | null {
   const node = document.importNode(root, true) as unknown as SVGSVGElement;
   node.removeAttribute("width");
   node.removeAttribute("height");
-  return { node, widthIn, heightIn, layers: layerGroups.length, artworkOnly };
+  return { node, widthIn, heightIn, layers: layerGroups.length, artworkOnly, ink: measureInk(node, artworkOnly) };
+}
+
+// The box around what will be drawn - the simulated pen-down paths when there are any, otherwise the
+// artwork - as fractions of the page. Laid out off screen at the page's own size so the browser does
+// the transforms; strokes aren't counted, so it's the lines' centres.
+function measureInk(node: SVGSVGElement, artworkOnly: boolean): Preview["ink"] {
+  const vb = (node.getAttribute("viewBox") || "").trim().split(/[\s,]+/).map(Number);
+  if (vb.length !== 4 || !(vb[2] > 0 && vb[3] > 0)) return null;
+  const host = document.createElement("div");
+  host.style.cssText = "position:fixed;left:-100000px;top:0;visibility:hidden;pointer-events:none";
+  const svg = node.cloneNode(true) as SVGSVGElement;
+  svg.setAttribute("width", String(vb[2]));
+  svg.setAttribute("height", String(vb[3]));
+  svg.setAttribute("preserveAspectRatio", "none");
+  host.appendChild(svg);
+  document.body.appendChild(host);
+  try {
+    const page = svg.getBoundingClientRect();
+    if (!(page.width > 0 && page.height > 0)) return null;
+    const parts = artworkOnly
+      ? [...svg.querySelectorAll(".pv-layer")]
+      : [...svg.querySelectorAll(".pv-down")];
+    let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+    for (const el of parts.length ? parts : [...svg.children]) {
+      if (["defs", "metadata", "title", "desc", "style"].includes(el.localName)) continue;
+      const r = el.getBoundingClientRect();
+      if (!(r.width > 0 || r.height > 0)) continue;
+      x0 = Math.min(x0, r.left); y0 = Math.min(y0, r.top);
+      x1 = Math.max(x1, r.right); y1 = Math.max(y1, r.bottom);
+    }
+    if (!(x1 >= x0)) return null;
+    const clamp = (v: number) => Math.min(1, Math.max(0, v));
+    return {
+      x0: clamp((x0 - page.left) / page.width),
+      y0: clamp((y0 - page.top) / page.height),
+      x1: clamp((x1 - page.left) / page.width),
+      y1: clamp((y1 - page.top) / page.height),
+    };
+  } finally {
+    host.remove();
+  }
 }

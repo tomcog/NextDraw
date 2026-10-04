@@ -5,7 +5,7 @@ import { api, postJSON } from "../shared/lib/api";
 import { barrelOffsetMm, BUSY_STATES, DEFAULT_SETTINGS, IDRAW_MODEL, PAPER_SIZES, PLOT_CHANNEL, PLOTTING_STATES, PRESET_FIELDS, STEPS, STORAGE } from "../shared/lib/constants";
 import { cleanNote, listOf } from "../shared/lib/format";
 import { lightness } from "../shared/lib/color";
-import { fitsOnBed, fitsOnPaper, footprint } from "../shared/lib/geometry";
+import { fitsOnBed, fitsOnPaper, footprint, minPlacement } from "../shared/lib/geometry";
 import { parsePlotPaths, type PlotPaths } from "../shared/lib/progressPaths";
 import { parsePreview, type Preview } from "../shared/lib/preview";
 import { load, save } from "../shared/lib/storage";
@@ -396,8 +396,13 @@ export default function App() {
   useEffect(() => save(STORAGE.settings, settings), [settings]);
   useEffect(() => save(STORAGE.preset, activePreset), [activePreset]);
 
+  // The drawing's page may start before home by its empty margin, never so far that its lines would.
+  const minPlace = minPlacement(fp);
+  const minPlaceRef = useRef(minPlace);
+  minPlaceRef.current = minPlace;
   const setPlacement = useCallback((p: Placement, _persist = true) => {
-    const next = { x: Math.max(0, p.x), y: Math.max(0, p.y) };
+    const min = minPlaceRef.current;
+    const next = { x: Math.max(min.x, p.x), y: Math.max(min.y, p.y) };
     setPlacementState(next);
   }, []);
 
@@ -1418,6 +1423,7 @@ export default function App() {
               <Section title="Drawing position" collapsibleKey="plot-position" defaultOpen={false}>
                 <PositionSection
                   placement={placement}
+                  minPlacement={minPlace}
                   units={settings.units}
                   disabled={plotting}
                   onChange={(p) => setPlacement(p)}

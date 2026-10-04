@@ -4,7 +4,7 @@ import styles from "./Bed.module.css";
 import { inkLayer } from "../lib/ink";
 import { BedCanvas, type Box, type Zoom } from "./BedCanvas";
 import { MM, UNITS } from "../lib/constants";
-import { maxPlacement, type Footprint } from "../lib/geometry";
+import { maxPlacement, minPlacement, type Footprint } from "../lib/geometry";
 import type { Preview } from "../lib/preview";
 import { showProgress, type PlotPaths } from "../lib/progressPaths";
 import type { Carriage, Placement, PlotterModel, Settings } from "../lib/types";
@@ -306,9 +306,10 @@ export function Bed(props: Props) {
     if (!drag || e.pointerId !== drag.pointerId) return;
     const pt = new DOMPoint(e.clientX, e.clientY).matrixTransform(drag.ctm);
     const max = maxPlacement(fp, model);
+    const min = minPlacement(fp);
     props.onPlacementChange({
-      x: Math.min(max.x, snap(drag.startPlacement.x + (pt.x - drag.start.x) / MM)),
-      y: Math.min(max.y, snap(drag.startPlacement.y + (pt.y - drag.start.y) / MM)),
+      x: Math.max(min.x, Math.min(max.x, snap(drag.startPlacement.x + (pt.x - drag.start.x) / MM))),
+      y: Math.max(min.y, Math.min(max.y, snap(drag.startPlacement.y + (pt.y - drag.start.y) / MM))),
     }, false);
   };
 

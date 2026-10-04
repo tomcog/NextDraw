@@ -1263,7 +1263,7 @@ def clean_hatch(raw):
     return out
 
 
-def svg_input(scale, layers=None, rotation=0, hatch=None, raise_mm=0.0):
+def svg_input(scale, layers=None, rotation=0, hatch=None, shift_mm=(0.0, 0.0)):
     """
     The loaded SVG for the NextDraw software: sized (see normalize_size) and scaled if needed. The
     software plots a document at its width/height, so scaling multiplies those while a viewBox keeps
@@ -1277,7 +1277,7 @@ def svg_input(scale, layers=None, rotation=0, hatch=None, raise_mm=0.0):
         only_layers(root, [layers] if isinstance(layers, str) else layers)
     rotate_document(root, rotation)
     if abs(scale - 100) < 1e-9:
-        raise_lines(root, raise_mm)
+        shift_lines(root, shift_mm)
         return etree.tostring(root, encoding="unicode")
     factor = scale / 100
 
@@ -1298,7 +1298,7 @@ def svg_input(scale, layers=None, rotation=0, hatch=None, raise_mm=0.0):
         root.set("height", f"{vb[3] * factor:g}px")
     else:
         raise RuntimeError("This SVG has no size the drawing can be scaled from.")
-    raise_lines(root, raise_mm)
+    shift_lines(root, shift_mm)
     return etree.tostring(root, encoding="unicode")
 
 
@@ -1326,7 +1326,8 @@ def clean_placement(raw):
     placement["hatch"] = clean_hatch(raw)
     for key, name in (("x", "start_x"), ("y", "start_y")):
         try:
-            placement[key] = max(0.0, min(2000.0, float(raw.get(name, 0))))
+            # Below 0 only by the page's empty margin, which the page keeps it to; lines past home are lost.
+            placement[key] = max(-2000.0, min(2000.0, float(raw.get(name, 0))))
         except (TypeError, ValueError):
             pass
     return placement
@@ -1456,9 +1457,9 @@ def limit_drag(svg_text, settings):
     return etree.tostring(root, encoding="unicode")
 
 
-def prepared_svg(settings, scale, layers=None, rotation=0, hatch=None, raise_mm=0.0):
+def prepared_svg(settings, scale, layers=None, rotation=0, hatch=None, shift_mm=(0.0, 0.0)):
     """The loaded drawing ready to plot: placed and scaled, and drag-limited for a one-way tool."""
-    svg = svg_input(scale, layers, rotation, hatch, raise_mm)
+    svg = svg_input(scale, layers, rotation, hatch, shift_mm)
     return limit_drag(svg, settings) if settings.get("drag_only") else svg
 
 
@@ -1470,31 +1471,46 @@ def plot_layers(placement):
 def carriage_start(placement):
     """Where the carriage starts the plot, in mm from home: the drawing's place plus the tilt offset
     along the width, less the barrel offset down the page (a thin barrel's is negative, so the carriage
-    starts lower). The carriage can't start above home, so a drawing placed closer to the top than a
-    fat barrel's offset starts at home and its lines move up instead (lines_raised_mm)."""
-    return (placement["x"] + placement.get("tip_offset_x", 0.0),
+    starts lower). The carriage can't start before home, so a drawing placed closer to the top or left
+    than that - its empty margin may run past home - starts at home on that axis and its lines move
+    up or left instead (lines_shifted_mm)."""
+    return (max(0.0, placement["x"] + placement.get("tip_offset_x", 0.0)),
             max(0.0, placement["y"] - placement.get("tip_offset_y", 0.0)))
 
 
-def lines_raised_mm(placement):
-    """How far the drawing's lines are moved up the page because the carriage couldn't start high
-    enough to take the whole fat-barrel offset. Only lines within this of the page's top are lost,
-    and the tip couldn't reach them anyway."""
-    return max(0.0, placement.get("tip_offset_y", 0.0) - placement["y"])
+def lines_shifted_mm(placement):
+    """How far the drawing's lines are moved left and up the page because the carriage couldn't start
+    where the placement and the pen's offsets put it. Only what lies within this of the page's left or
+    top edge is lost: the page's empty margin, or lines the tip couldn't reach anyway."""
+    return (max(0.0, -(placement["x"] + placement.get("tip_offset_x", 0.0))),
+            max(0.0, placement.get("tip_offset_y", 0.0) - placement["y"]))
 
 
-def raise_lines(root, mm):
-    """Move every drawing element up the page by `mm`, in the document's own units, the same way
-    rotate_document turns them: a transform prepended to each top-level element."""
-    if mm <= 0:
-        return
-    m = re.match(r"^\s*([0-9]*\.?[0-9]+(?:e[-+]?\d+)?)\s*([a-z]*)\s*$", root.get("height") or "", re.I)
+def page_mm_and_units(root, attr, index):
+    """The page's width or height in mm and in the document's own units."""
+    m = re.match(r"^\s*([0-9]*\.?[0-9]+(?:e[-+]?\d+)?)\s*([a-z]*)\s*$", root.get(attr) or "", re.I)
     if not m or m.group(2).lower() not in PX_PER_UNIT:
-        raise RuntimeError("This SVG has no size the pen's offset can be measured against.")
-    height_mm = float(m.group(1)) * PX_PER_UNIT[m.group(2).lower()] / PX_PER_UNIT["mm"]
+        raise RuntimeError("This SVG has no size the drawing's position can be measured against.")
+    size_mm = float(m.group(1)) * PX_PER_UNIT[m.group(2).lower()] / PX_PER_UNIT["mm"]
     vb = root.get("viewBox")
-    units_high = float(re.split(r"[\s,]+", vb.strip())[3]) if vb else float(m.group(1)) * PX_PER_UNIT[m.group(2).lower()]
-    shift = f"translate(0 {-mm * units_high / height_mm:g})"
+    units = float(re.split(r"[\s,]+", vb.strip())[index]) if vb else float(m.group(1)) * PX_PER_UNIT[m.group(2).lower()]
+    return size_mm, units
+
+
+def shift_lines(root, mm):
+    """Move every drawing element left and up the page by `mm` (left, up), in the document's own units,
+    the same way rotate_document turns them: a transform prepended to each top-level element."""
+    left, up = mm
+    if left <= 0 and up <= 0:
+        return
+    dx = dy = 0.0
+    if left > 0:
+        width_mm, units_wide = page_mm_and_units(root, "width", 2)
+        dx = -left * units_wide / width_mm
+    if up > 0:
+        height_mm, units_high = page_mm_and_units(root, "height", 3)
+        dy = -up * units_high / height_mm
+    shift = f"translate({dx:g} {dy:g})"
     for child in root:
         if not isinstance(child.tag, str) or child.tag in NON_DRAWING_TAGS:
             continue
@@ -1513,6 +1529,9 @@ def placement_problem(settings, placement, estimate):
         width, height = height, width
     tol = 0.003
     start_x, start_y = carriage_start(placement)
+    # Lines moved left or up to start at home end that much sooner.
+    left, up = lines_shifted_mm(placement)
+    start_x, start_y = start_x - left, start_y - up
     if start_x / 25.4 + width > model.travel_x + tol or start_y / 25.4 + height > model.travel_y + tol:
         return ("At this position the drawing would go past the plotter's reach. "
                 "Move it closer to home or use a smaller drawing.")
@@ -1681,8 +1700,9 @@ def save_plot_paths(preview_svg, placement):
         for group in list(child):
             if group.get(label) != "Pen-down movement":
                 child.remove(group)
-    root.set("data-x-mm", str(placement["x"]))
-    root.set("data-y-mm", str(placement["y"] + lines_raised_mm(placement)))
+    left, up = lines_shifted_mm(placement)
+    root.set("data-x-mm", str(placement["x"] + left))
+    root.set("data-y-mm", str(placement["y"] + up))
     PLOT_PATHS.write_bytes(etree.tostring(root))
 
 
@@ -1695,7 +1715,7 @@ def run_plot(settings, placement, resume=None):
         else:
             clear_resume()  # a new plot replaces any stopped one
             source = prepared_svg(settings, placement["scale"], plot_layers(placement), placement.get("rotation", 0),
-                                  placement.get("hatch"), lines_raised_mm(placement))
+                                  placement.get("hatch"), lines_shifted_mm(placement))
             mode = "plot"
 
         # A new plot's simulation also draws its paths; a resumed plot keeps the ones saved when it began.
@@ -2941,7 +2961,7 @@ def clean_plot(raw):
     placement = raw.get("placement")
     if isinstance(placement, dict):
         try:
-            out["placement"] = {k: round(max(0.0, min(2000.0, float(placement[k]))), 3) for k in ("x", "y")}
+            out["placement"] = {k: round(max(-2000.0, min(2000.0, float(placement[k]))), 3) for k in ("x", "y")}
         except (KeyError, TypeError, ValueError):
             pass
     if "scale" in raw:
