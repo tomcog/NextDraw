@@ -119,41 +119,6 @@ export function isPalettePen(name: string, color: string | null, palette: PenCol
   });
 }
 
-/**
- * What a layer is called once it's being plotted in another pen: the pen its name starts with swapped
- * for the one chosen, keeping the number in front and whatever comes after - "8-sky blue print" in
- * Turquoise is "8-turquoise print", in the name's own capitals. A name that doesn't start with one of
- * the pens given ("CMYK Key", "13-date") becomes the pen's name, keeping the number in front, so the
- * row says which pen to load and its dot is no longer struck through. Plot gives it every tool's
- * pens, since a name can come from a tool other than the one in the holder.
- * For showing only: the drawing's name is Studio's, and this is worked out afresh from it each time,
- * so choosing the drawing's own ink again brings the name back.
- */
-export function nameInPen(name: string, pen: string, pens: PenColor[]): string {
-  // Longest first, so a name is matched to the whole of the pen it names.
-  const names = pens.map((p) => p.name.trim().toLowerCase().replace(/\s+/g, " ")).sort((a, b) => b.length - a.length);
-  const penIn = (text: string) => names.find((p) => text === p || text.startsWith(`${p} `));
-  // The whole name first, number and all: a pen can have a number in its name ("324 Black"), and
-  // that number is the pen's, not the layer's place in the order.
-  const whole = name.trim().replace(/\s+/g, " ");
-  let lead = "";
-  let rest = whole;
-  let was = penIn(whole.toLowerCase());
-  if (!was) {
-    lead = name.match(/^\s*\d+\s*[-.:)]?\s*(?=\S)/)?.[0] ?? "";
-    rest = name.slice(lead.length).trim().replace(/\s+/g, " ");
-    was = penIn(rest.toLowerCase());
-  }
-  // A number in front that is the new pen's own number is the pen's, said twice ("324 324 Black",
-  // from before pens could have numbers): it goes, rather than staying on as the layer's place.
-  const number = lead.match(/\d+/)?.[0];
-  if (number && new RegExp(`^${number}\\b`).test(pen.trim())) lead = "";
-  if (!was) return lead + pen;
-  const own = rest.slice(0, was.length);
-  const shown = own === own.toLowerCase() ? pen.toLowerCase() : own === own.toUpperCase() ? pen.toUpperCase() : pen;
-  return lead + shown + rest.slice(was.length);
-}
-
 /** The pen of this palette that draws this colour, by name. Null when no pen of it does. */
 export const penNameAt = (color: string | null, palette: PenColor[]) =>
   (color ? palette.find((p) => p.color.toLowerCase() === color.toLowerCase())?.name ?? null : null);

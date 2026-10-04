@@ -10,9 +10,9 @@ export async function api<T = any>(path: string, options: RequestInit = {}): Pro
   return body as T;
 }
 
-export const postJSON = <T = any>(path: string, data?: unknown) =>
+export const postJSON = <T = any>(path: string, data?: unknown, method = "POST") =>
   api<T>(path, {
-    method: "POST",
+    method,
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(data ?? {}),
   });

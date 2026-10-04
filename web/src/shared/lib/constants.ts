@@ -57,7 +57,7 @@ export const PRESET_FIELDS = [
 ] as const satisfies readonly (keyof Settings)[];
 
 // Width × height in mm, portrait. Shown landscape by default to suit the plotter.
-export const PAPER_SIZES: { id: string; name: string; w?: number; h?: number }[] = [
+export const PAPER_SIZES: { id: string; name: string; w: number; h: number }[] = [
   { id: "8x10", name: "8 × 10 in", w: 203.2, h: 254 },
   { id: "letter", name: "8.5 × 11 in", w: 215.9, h: 279.4 },
   { id: "11x14", name: "11 × 14 in", w: 279.4, h: 355.6 },
@@ -66,7 +66,6 @@ export const PAPER_SIZES: { id: string; name: string; w?: number; h?: number }[]
   { id: "14x17", name: "14 × 17 in", w: 355.6, h: 431.8 },
   { id: "18x24", name: "18 × 24 in", w: 457.2, h: 609.6 },
   { id: "24x36", name: "24 × 36 in", w: 609.6, h: 914.4 },
-  { id: "custom", name: "Custom size" }, // shown when the width and height don't match a size above
 ];
 
 // Carriage step sizes per unit, in that unit.

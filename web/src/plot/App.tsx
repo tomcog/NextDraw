@@ -10,7 +10,7 @@ import { parsePlotPaths, type PlotPaths } from "../shared/lib/progressPaths";
 import { parsePreview, type Preview } from "../shared/lib/preview";
 import { load, save } from "../shared/lib/storage";
 import type { Confirmation, Estimate, Info, Ink, Layer, PenColor, LayerView, Message, Placement, Preset, Settings, Status, Plot } from "../shared/lib/types";
-import { inkHex, isPalettePen, nameInPen, penNameAt, penNameOf } from "../shared/lib/ink";
+import { inkHex, isPalettePen, penNameAt, penNameOf } from "../shared/lib/ink";
 import { Hints } from "../shared/components/controls/Hints";
 import { Header } from "./components/Header";
 import { Bed, type Zoom } from "../shared/components/Bed";
@@ -55,6 +55,15 @@ const isBusy = (s: Status | null) => Boolean(s && BUSY_STATES.includes(s.state))
 
 // The tools are shared by both plotters, but each is set up on one: Plot lists the connected one's only.
 const PLOTTER_PRESETS = "/api/presets?plotter=connected";
+
+// The settings and tool every open Plot page shows, as the server keeps them.
+type SharedSettings = { settings: Partial<Settings> | null; preset: string | null; version: string | null };
+
+// JSON with its keys in order, so the same settings always read the same however they were put together.
+const sortedJSON = (value: unknown): string =>
+  JSON.stringify(value, (_key, v) => (v && typeof v === "object" && !Array.isArray(v)
+    ? Object.fromEntries(Object.keys(v).sort().map((k) => [k, v[k]]))
+    : v));
 
 function loadActivePreset(): string | null {
   const parsed = load<string>(STORAGE.preset);
@@ -137,23 +146,20 @@ export default function App() {
       && new Set(plotOrder).size === fileLayers.length
       && plotOrder.every((id) => fileLayers.some((l) => l.id === id));
     const ordered = fits ? plotOrder!.map((id) => fileLayers.find((l) => l.id === id)!) : fileLayers;
-    return ordered.map((layer) => {
+    const views = ordered.map((layer) => {
       const palette = paletteOfTool(toolOfLayer(layer.id));
       // The colour this layer is going down in: an ink chosen for today, else the pen its name calls
       // for, else the colour the drawing was made in.
       const color = inkHex(inkColors[layer.id], palette, paletteOfTool) || penColors[layer.id] || layer.color;
       // The pen that draws that colour - which is the pen to put in the holder. The drawing's name
       // is Studio's to set and the file keeps it; a layer given another pen here is shown under
-      // that pen's name instead, with its number and the rest kept ("8-sky blue print" in
-      // Turquoise reads "8-turquoise print"), worked out from the ink chosen rather than stored.
-      // "Lime register" is still a layer Plot has to be able to tell from "Lime".
+      // that pen's name alone, as Studio renames a layer given a pen: "13-date" in Turquoise reads
+      // "Turquoise". Worked out from the ink chosen rather than stored.
       const pen = penNameAt(color, palette);
       const skipped = layer.name.startsWith("%");
       const tool = toolOfLayer(layer.id);
       const inkPen = penNameOf(inkColors[layer.id], palette);
-      // The colour a name starts with is looked for among every tool's pens, not just this one's: a
-      // layer named for an EnerGel "Forest Green" is still that when plotting with a Flair.
-      const name = inkPen ? nameInPen(layer.name, inkPen, presets.flatMap((p) => p.palette ?? [])) : layer.name;
+      const name = inkPen ?? layer.name;
       return {
         ...layer,
         name,
@@ -169,7 +175,18 @@ export default function App() {
         skipped,
       };
     });
-  }, [fileLayers, hiddenLayers, penColors, inkColors, plotOrder, paletteOfTool, toolOfLayer, presets]);
+    // Two layers given the same pen would read alike: the later ones are numbered on, "Black 2", the
+    // way Studio names a second layer in a pen - which still reads as that pen.
+    const taken = new Set(views.filter((v) => !v.inkPen).map((v) => v.name));
+    for (const v of views) {
+      if (!v.inkPen) continue;
+      let name = v.name;
+      for (let n = 2; taken.has(name); n++) name = `${v.name} ${n}`;
+      taken.add(name);
+      v.name = name;
+    }
+    return views;
+  }, [fileLayers, hiddenLayers, penColors, inkColors, plotOrder, paletteOfTool, toolOfLayer]);
   // Lightest at the bottom: layer 1 is plotted first and everything darker goes over it, which is how
   // the inks build on paper. Layers whose color can't be read stay at the bottom, under the ones that
   // can; ties keep the order they already had.
@@ -361,7 +378,11 @@ export default function App() {
   useEffect(() => save(STORAGE.zoom, zoomChoice), [zoomChoice]);
 
   // Refs let the polling loop see current values without restarting.
-  const refs = useRef({ fileName, status, lastAction, settings, scale, presets, plotLayerIds, rotation, hatchSpacing, readRequested: false, plotSettings: settings, activePreset, opened: undefined as string | null | undefined });
+  const refs = useRef({ fileName, status, lastAction, settings, scale, presets, plotLayerIds, rotation, hatchSpacing, readRequested: false, plotSettings: settings, activePreset, opened: undefined as string | null | undefined,
+    // Following the other open pages: the last shared-settings version and drawing save this page has
+    // taken up, and whether it has changes of its own not yet sent.
+    settingsVersion: undefined as string | null | undefined, settingsUnsent: false,
+    drawingSaved: undefined as string | null | undefined, unsaved: false });
   refs.current.rotation = rotation;
   refs.current.hatchSpacing = hatchSpacing;
   refs.current.plotLayerIds = plotLayerIds;
@@ -396,6 +417,38 @@ export default function App() {
   useEffect(() => save(STORAGE.settings, settings), [settings]);
   useEffect(() => save(STORAGE.preset, activePreset), [activePreset]);
 
+  // The settings and the tool are kept on the server, so every open Plot page - odin's own screen and
+  // any other device's - shows the same ones: a change on one is sent there, and the others take it up
+  // on their next status poll. This browser's own copy above is only what the page starts from when the
+  // server has none yet.
+  const [sharedReady, setSharedReady] = useState(false);
+  const sharedKey = sortedJSON({ settings, preset: activePreset });
+  const syncedKey = useRef<string | null>(null); // what the server holds, as far as this page knows
+  refs.current.settingsUnsent = sharedReady && sharedKey !== syncedKey.current;
+  const takeShared = useCallback((shared: SharedSettings) => {
+    const next = { ...DEFAULT_SETTINGS, ...shared.settings };
+    syncedKey.current = sortedJSON({ settings: next, preset: shared.preset });
+    refs.current.settingsVersion = shared.version;
+    refs.current.settings = next;
+    refs.current.activePreset = shared.preset;
+    setSettings(next);
+    setActivePreset(shared.preset);
+  }, []);
+  useEffect(() => {
+    if (!sharedReady || sharedKey === syncedKey.current) return;
+    const body = { settings, preset: activePreset };
+    const timer = window.setTimeout(() => {
+      postJSON<{ version: string }>("/api/plot-settings", body, "PUT")
+        .then((r) => {
+          syncedKey.current = sharedKey;
+          refs.current.settingsVersion = r.version;
+        })
+        .catch(() => { /* the next change sends them again */ });
+    }, 300);
+    return () => window.clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sharedKey, sharedReady]);
+
   // The drawing's page may start before home by its empty margin, never so far that its lines would.
   const minPlace = minPlacement(fp);
   const minPlaceRef = useRef(minPlace);
@@ -423,11 +476,13 @@ export default function App() {
     setScaleState(next);
   }, []);
 
-  // A drawing was loaded: use the choices saved in it (or start at home, full size), then let auto-save
-  // watch for changes from there. Returns the scale to estimate at.
   const [loadedFile, setLoadedFile] = useState<string | null>(null);
   const savedKey = useRef<string | null>(null);
-  const applyPlot = useCallback((name: string, plot: Plot | null) => {
+  // Bumped whenever choices are taken from the file, so auto-save takes them as its starting point.
+  const [choicesTick, setChoicesTick] = useState(0);
+  // The choices saved in a drawing: where it goes, how big, its layers, its paper. Used when a drawing
+  // is opened, and when another open page (odin's own screen, the laptop) saves its choices.
+  const applyChoices = useCallback((plot: Plot | null) => {
     setPlacementState(plot?.placement ?? { x: 0, y: 0 });
     const nextScale = plot?.scale ?? 100;
     refs.current.scale = nextScale;
@@ -440,9 +495,6 @@ export default function App() {
     setPlotOrder(plot?.layer_order ?? null);
     setLayerLinks(plot?.layer_links ?? []);
     setHatchSpacing(plot?.hatch_spacing ?? {});
-    setPenColors({});
-    setPrintLayer(null);
-    setLayerMode("preview");
     setSmallPaths(plot?.small_paths ?? null);
     setSecondTool(plot?.second_tool ?? null);
     setSecondToolLayers(plot?.second_tool_layers ?? []);
@@ -452,16 +504,25 @@ export default function App() {
     // setting up a plot. The tool the page remembers stays chosen until it's changed by hand. Plot
     // still writes `tool` into the file, because Studio reads it to draw in the right ink.
     const patch = { ...(plot?.paper ?? {}) };
-    setCustomPaper(false);
     if (Object.keys(patch).length) {
       refs.current.settings = { ...refs.current.settings, ...patch };
       setSettings((prev) => ({ ...prev, ...patch }));
     }
     savedKey.current = null; // the next state seen is what the file holds
+    setChoicesTick((t) => t + 1);
+    return nextScale;
+  }, []);
+  // A drawing was loaded: use the choices saved in it (or start at home, full size), then let auto-save
+  // watch for changes from there. Returns the scale to estimate at.
+  const applyPlot = useCallback((name: string, plot: Plot | null) => {
+    const nextScale = applyChoices(plot);
+    setPenColors({});
+    setPrintLayer(null);
+    setLayerMode("preview");
     setSaveState(null);
     setLoadedFile(name);
     return nextScale;
-  }, []);
+  }, [applyChoices]);
   const [saveState, setSaveState] = useState<"saving" | "saved" | "error" | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
 
@@ -486,6 +547,7 @@ export default function App() {
     paper: { paper_size: settings.paper_size, paper_w: settings.paper_w, paper_h: settings.paper_h, paper_x: settings.paper_x, paper_y: settings.paper_y, paper_color: settings.paper_color },
   };
   const saveKey = JSON.stringify(drawingNow);
+  refs.current.unsaved = savedKey.current !== null && saveKey !== savedKey.current;
   const saveChain = useRef(Promise.resolve());
   useEffect(() => {
     if (!fileName || loadedFile !== fileName) return;
@@ -501,7 +563,8 @@ export default function App() {
         if (refs.current.fileName !== fileName) return;
         setSaveState("saving");
         try {
-          await postJSON("/api/drawing", body);
+          const res = await postJSON<{ saved?: string }>("/api/drawing", body);
+          if (res.saved) refs.current.drawingSaved = res.saved; // our own save: nothing to follow
           savedKey.current = key;
           setSaveState("saved");
         } catch (err) {
@@ -513,7 +576,7 @@ export default function App() {
     }, 700);
     return () => window.clearTimeout(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [fileName, loadedFile, saveKey, busy]);
+  }, [fileName, loadedFile, saveKey, busy, choicesTick]);
 
   /* ---------- Loading ---------- */
 
@@ -521,20 +584,27 @@ export default function App() {
     api<Info>("/api/info")
       .then(setInfo)
       .catch(() => setLocalMessage({ text: "Couldn’t reach NextDraw Plot. Start it with server.py and reload this page.", tone: "error" }));
-    api<{ presets: Preset[] }>(PLOTTER_PRESETS)
-      .then((r) => {
+    (async () => {
+      // The settings the other open pages are showing come first: opening a page mustn't change them.
+      const shared = await api<SharedSettings>("/api/plot-settings").catch(() => null);
+      if (shared?.settings) takeShared(shared);
+      try {
+        const r = await api<{ presets: Preset[] }>(PLOTTER_PRESETS);
         setPresets(r.presets);
         // Presets are shared (iCloud Drive) and can be edited elsewhere: use the chosen tool's current
         // values rather than the ones remembered from the last time it was picked.
         // With no tool chosen (or the chosen one gone), start with the first in the list.
         const chosen = r.presets.find((p) => p.name === refs.current.activePreset) ?? r.presets[0];
-        if (chosen) {
+        if (chosen && !(shared?.settings && chosen.name === shared.preset)) {
           setActivePreset(chosen.name);
           setSettings((prev) => ({ ...prev, ...chosen.settings }));
         }
-      })
-      .catch(() => setPresets([]));
-  }, []);
+      } catch {
+        setPresets([]);
+      }
+      setSharedReady(true);
+    })();
+  }, [takeShared]);
 
   // The presets file is shared - edited from the other Mac, from Studio, or by hand - so a change to it
   // reaches this page without a reload: the list is read again every few seconds, and when it has
@@ -658,6 +728,28 @@ export default function App() {
             /* it will still be stale on the next poll, which tries again */
           } finally {
             reloading.current = false;
+          }
+        }
+
+        // Another open page changed the settings or the tool: show them here too, unless this page
+        // has a change of its own on the way, which the others will take up instead.
+        if (next.settings_version && next.settings_version !== refs.current.settingsVersion && !refs.current.settingsUnsent) {
+          const shared = await api<SharedSettings>("/api/plot-settings").catch(() => null);
+          if (cancelled) return;
+          if (shared?.settings && !refs.current.settingsUnsent) takeShared(shared);
+        }
+        // Another open page saved its choices for this drawing - moved it, scaled it, hid a layer,
+        // chose an ink: take them up here too. Not over changes of this page's own not yet saved.
+        if (refs.current.drawingSaved === undefined) {
+          refs.current.drawingSaved = next.drawing_saved ?? null;
+        } else if (next.file && next.file === refs.current.fileName && next.drawing_saved
+          && next.drawing_saved !== refs.current.drawingSaved && !reloading.current && !refs.current.unsaved) {
+          const saved = next.drawing_saved;
+          const drawing = await api<{ plot: Plot | null }>("/api/drawing").catch(() => null);
+          if (cancelled) return;
+          if (drawing && !refs.current.unsaved) {
+            refs.current.drawingSaved = saved;
+            applyChoices(drawing.plot);
           }
         }
 
@@ -967,20 +1059,17 @@ export default function App() {
   /* ---------- Paper ---------- */
 
   // A drawing saved on Custom whose width and height are one of the sizes is shown as that size, as
-  // Studio shows it. Custom chosen by hand stays chosen while its width and height are typed, even
-  // through a size that happens to be in the list.
-  const [customPaper, setCustomPaper] = useState(false);
+  // Studio shows it.
   const paperSizeId = useMemo(() => {
-    if (settings.paper_size !== "custom" || customPaper) return settings.paper_size;
+    if (settings.paper_size !== "custom") return settings.paper_size;
     const { paper_w: w, paper_h: h } = settings;
     const match = PAPER_SIZES.find(
       (p) => p.w && p.h && ((Math.abs(p.w - w) < 0.01 && Math.abs(p.h - h) < 0.01) || (Math.abs(p.h - w) < 0.01 && Math.abs(p.w - h) < 0.01)),
     );
     return match?.id ?? "custom";
-  }, [settings.paper_size, settings.paper_w, settings.paper_h, customPaper]);
+  }, [settings.paper_size, settings.paper_w, settings.paper_h]);
 
   const pickPaperSize = (id: string) => {
-    setCustomPaper(id === "custom");
     const size = PAPER_SIZES.find((p) => p.id === id);
     if (size?.w && size.h) {
       const landscape = settings.paper_w >= settings.paper_h;

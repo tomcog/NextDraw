@@ -2,8 +2,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { DrawingToolSection } from "../shared/components/controls/DrawingToolSection";
 import { PaperSection } from "../shared/components/controls/PaperSection";
 import { SettingsSection } from "../shared/components/controls/SettingsSection";
-import { Button, ButtonRound, Card, Checkbox, InputSelect, InputText, InputTextarea, LayerController, Segment, SegmentedControl } from "@tomcoggia/ui";
-import { AlignCenterHorizontal, AlignCenterVertical, AlignEndHorizontal, AlignEndVertical, AlignStartHorizontal, AlignStartVertical, ArrowDownLeft, ArrowDownRight, ArrowDownToLine, ArrowUpLeft, ArrowUpRight, AudioWaveform, Circle, ClipboardCopy, ClipboardPaste, Copy, Ellipsis, EllipsisVertical, FilePlus, FlameKindling, FolderOpen, Image as ImageIcon, ImagePlus, Grid2x2, Layers2, LayersArrowDown, LayersArrowUp, Merge, LineStyle, LoaderPinwheel, Menu, Minus, MousePointer2, Orbit, PaintBucket, PaintRoller, PenLine, Pipette, Pentagon, Plus, Rainbow, RotateCw, Save, Send, Shell, Signal, Spline, Square, SquareDimensions, SquareStack, Star, Target, Trash2, Type, Waves } from "lucide-react";
+import { Button, ButtonRound, Card, Checkbox, InputSelect, InputText, InputTextarea, LayerController, Segment, SegmentedControl, Toolbar, ToolbarExpander } from "@tomcoggia/ui";
+import { AlignCenterHorizontal, AlignCenterVertical, AlignEndHorizontal, AlignEndVertical, AlignStartHorizontal, AlignStartVertical, ArrowDownLeft, ArrowDownRight, ArrowDownToLine, ArrowUpLeft, ArrowUpRight, AudioWaveform, Circle, ClipboardCopy, ClipboardPaste, Copy, Ellipsis, EllipsisVertical, File as FileIcon, FilePlus, FlameKindling, FolderOpen, Image as ImageIcon, ImagePlus, Grid2x2, Layers2, LayersArrowDown, LayersArrowUp, Merge, LineStyle, LoaderPinwheel, Menu, Minus, MousePointer2, Orbit, PaintBucket, PaintRoller, PenLine, Pipette, Pentagon, Plus, Rainbow, RotateCw, Save, Send, Shell, Signal, Spline, Square, SquareDimensions, SquareStack, Star, Target, Trash2, Type, Waves } from "lucide-react";
 import { FileBrowser, LAST_FOLDER_KEY, type CombineResult, type OpenResult } from "../shared/components/FileBrowser";
 import { Section } from "../shared/components/controls/Section";
 import { NumberField } from "../shared/components/controls/NumberField";
@@ -14,7 +14,7 @@ import { DEFAULT_SETTINGS, PAPER_SIZES, PLOT_CHANNEL } from "../shared/lib/const
 import type { Info, PenColor, PlotterModel, Preset } from "../shared/lib/types";
 import { listOf, trimNum } from "../shared/lib/format";
 import { lightness } from "../shared/lib/color";
-import { isPalettePen, nameInPen } from "../shared/lib/ink";
+import { isPalettePen } from "../shared/lib/ink";
 import { APP_URL } from "../shared/lib/apps";
 import { PreviewToolbar, SetupToolbar, type View } from "../shared/components/PreviewToolbar";
 import type { Zoom } from "../shared/components/BedCanvas";
@@ -347,7 +347,6 @@ export default function App() {
 
  // Custom stays chosen while its width and height are typed, even through a size that happens to be
  // one of the list's on the way.
- const [customPaper, setCustomPaper] = useState(false);
  // The paper's colour: the page is drawn in it and the inks blend with it, as they do in Plot. This
  // browser's choice, like the grid - it's the sheet on the plotter today, not part of the drawing.
  const [paperColor, setPaperColor] = useState(() => load<string>(PAPER_COLOR_KEY) ?? "#ffffff");
@@ -358,8 +357,8 @@ export default function App() {
     (Math.abs(s.w - page.w) < 0.01 && Math.abs(s.h - page.h) < 0.01) ||
     (Math.abs(s.h - page.w) < 0.01 && Math.abs(s.w - page.h) < 0.01),
   );
-  return customPaper || !match ? "custom" : match.id;
- }, [page, customPaper]);
+  return match ? match.id : "custom";
+ }, [page]);
 
  // A photo split by colour draws each layer's area in that layer's pen, and each layer is worked
  // out alongside the rest - the pens of every area, and the key's. Give a layer another pen, and it
@@ -999,6 +998,19 @@ export default function App() {
  // The drawing open is a calibration sheet when it has the sheet's corner marks and named patches.
  // A photo of it, plotted, is read back into the tool's preset: each pen as it really came out.
  const [setupOpen, setSetupOpen] = useState(false);
+
+ // The File card's drawer: its buttons each do one thing and fold it, so a click anywhere else in the
+ // app folds it too, as the row menus do.
+ const [fileDrawerOpen, setFileDrawerOpen] = useState(false);
+ const fileDrawer = useRef<HTMLDivElement>(null);
+ useEffect(() => {
+  if (!fileDrawerOpen) return;
+  const away = (e: PointerEvent) => {
+   if (!(e.target instanceof window.Node && fileDrawer.current?.contains(e.target))) setFileDrawerOpen(false);
+  };
+  document.addEventListener("pointerdown", away, true);
+  return () => document.removeEventListener("pointerdown", away, true);
+ }, [fileDrawerOpen]);
  // Image conversion: the one photo being worked on, on its own - its picture and lines take the
  // stage, and the rail holds how it's converted. The drawing waits, as it does for Setup; the keys
  // that would change it are off while it's hidden.
@@ -1746,6 +1758,80 @@ export default function App() {
   setShapes((list) => list.map((s) => (s.id === chosen.id ? { ...s, rotation: turn || undefined } : s)));
  };
 
+ /**
+  * Turn the whole drawing a quarter turn clockwise, page and all, so a drawing laid out one way round
+  * suits paper the other way round. Paths and lines have their points turned, so an imported drawing
+  * comes out as plain geometry rather than thousands of turned shapes; everything else - a rectangle,
+  * a curve, a word, a photo - keeps what it is, turning about its own middle and moving to where that
+  * middle lands. Copies are placed relative to the page, so a row's direction and a grid's rows and
+  * columns turn with it. A ring always hangs below its shape, which no setting can turn, so a ringed
+  * shape is first handed out as its copies.
+  */
+ const turnDrawing = () => {
+  record();
+  const H = page.h;
+  const to = (p: Point): Point => ({ x: H - p.y, y: p.x });
+  const shift = (s: Shape, dx: number, dy: number): Shape => {
+   const by = (run: Node[]) => run.map((n) => mapNode(n, (p) => ({ x: p.x + dx, y: p.y + dy })));
+   return {
+    ...s,
+    x: s.x + dx, y: s.y + dy, x2: s.x2 + dx, y2: s.y2 + dy,
+    ...(s.runs ? { runs: s.runs.map(by) } : s.points ? { points: by(s.points) } : {}),
+   };
+  };
+  const nextFills = [...fills];
+  const handedOut = shapes.flatMap((s) => {
+   if (s.repeat?.kind !== "ring") return [s];
+   const copies = placements(s).map((place, i) => ({
+    ...shift(s, place.dx, place.dy),
+    id: i ? newShapeId() : s.id,
+    repeat: undefined,
+    rotation: ((s.rotation ?? 0) + place.deg) % 360 || undefined,
+   }));
+   for (const copy of copies.slice(1)) {
+    for (const f of fills.filter((f) => f.shapeId === s.id)) nextFills.push({ ...f, id: newFillId(), shapeId: copy.id });
+   }
+   return copies;
+  });
+  const pointsTurned = new Set<string>();
+  const turned = handedOut.map((s) => {
+   let next: Shape;
+   if (s.kind === "line" || (s.kind === "path" && !s.curve && !s.photo)) {
+    // The points themselves: a line's ends, a path's nodes and their handles.
+    pointsTurned.add(s.id);
+    const b = boxOf(s);
+    const by = (run: Node[]) => run.map((n) => mapNode(n, to));
+    next = s.kind === "line"
+     ? { ...s, ...(([a, z]) => ({ x: a.x, y: a.y, x2: z.x, y2: z.y }))([to({ x: s.x, y: s.y }), to({ x: s.x2, y: s.y2 })]) }
+     : {
+      ...s,
+      x: H - b.y1, y: b.x0, x2: H - b.y0, y2: b.x1,
+      ...(s.runs ? { runs: s.runs.map(by) } : s.points ? { points: by(s.points) } : {}),
+     };
+   } else {
+    const c = centerOf(s);
+    const at = to(c);
+    next = { ...shift(s, at.x - c.x, at.y - c.y), rotation: ((s.rotation ?? 0) + 90) % 360 || undefined };
+   }
+   const r = s.repeat;
+   if (r?.kind === "line") {
+    next.repeat = { ...r, angle: r.angle + 90 > 360 ? r.angle - 270 : r.angle + 90 };
+   } else if (r?.kind === "grid") {
+    // Columns become rows. The grid's last row is now its left-hand column, so the shape moves to
+    // that corner and the steps stay positive, as the fields need them.
+    const down = Math.max(1, Math.round(r.down));
+    next = shift(next, -(down - 1) * r.stepY, 0);
+    next.repeat = { kind: "grid", across: r.down, down: r.across, stepX: r.stepY, stepY: r.stepX };
+   }
+   return next;
+  });
+  // A fill's angle is the artwork's, so it turns by itself with a shape given a turn - but a shape
+  // whose points were turned has no turn of its own, and its fill has to be told.
+  setFills(nextFills.map((f) => (pointsTurned.has(f.shapeId) ? { ...f, angle: (f.angle + 90) % 360 } : f)));
+  setShapes(turned);
+  setPage({ w: page.h, h: page.w });
+ };
+
  /** Set a shape's size from the list, in inches, keeping its top-left corner where it is. */
  const setShapeSize = (id: string, w: number, h: number) => {
   const shape = shapes.find((s) => s.id === id);
@@ -2204,7 +2290,6 @@ export default function App() {
  };
 
  const setSize = (id: string) => {
-  setCustomPaper(id === "custom");
   const size = SIZES.find((s) => s.id === id);
   if (!size) return;
   record();
@@ -2256,6 +2341,7 @@ export default function App() {
     setPage({ w: w / 25.4, h: h / 25.4 });
    }}
    onColor={setPaperColor}
+   onTurnDrawing={turnDrawing}
   />
  );
 
@@ -2803,12 +2889,11 @@ export default function App() {
      palette={palette}
      current={layers.find((l) => l.id === colorMenu.id)?.color ?? null}
      onPick={(pen) => {
-      // The name travels with the colour: Plot colours a layer from the pen its name matches. Named
-      // the way Plot shows a layer given another pen (nameInPen), so both apps call it the same:
-      // the number in front and anything after the colour kept, "8-sky blue print" in Turquoise
-      // becoming "8-turquoise print", and a name with no pen in it ("13-date") becoming "13-Turquoise".
-      const layer = layers.find((l) => l.id === colorMenu.id);
-      const wanted = layer ? nameInPen(layer.name, pen.name, presets.flatMap((p) => p.palette ?? [])) : pen.name;
+      // The name travels with the colour: Plot colours a layer from the pen its name matches. The
+      // layer becomes the pen's name and nothing else - no number in front, which plotting order
+      // doesn't need, and none of the old name: "13-date" in Turquoise is "Turquoise". A second
+      // layer in the same pen is "Turquoise 2", which still matches the pen.
+      const wanted = pen.name;
       patchLayer(colorMenu.id, { name: uniqueName(wanted, layers.filter((l) => l.id !== colorMenu.id).map((l) => l.name)), color: pen.color });
       setColorMenu(null);
      }}
@@ -3005,36 +3090,60 @@ export default function App() {
         title="File"
         action={
          <span className={styles.headerTools}>
-          {/* In the order they come up: the drawing in hand is saved, another is opened,
-            a new one is started, and what is finished goes to Plot. */}
-          {/* A safety-toned round button: the half of "are you sure?" that keeps the
-            work, and the one button here that writes a file. */}
-          <ButtonRound
-           size="sm"
-           tone="safety"
-           icon={<Save />}
-           aria-label="Save"
-           title={`Save this drawing${saved ? ` to ${saved.folder}` : ""}`}
-           disabled={busy || !shapes.length || !dirty}
-           onClick={save}
-          />
-          <ButtonRound
-           size="sm"
-           icon={<FolderOpen />}
-           aria-label="Open a drawing"
-           title="Open a drawing to carry on with"
-           disabled={busy}
-           onClick={() => setBrowserOpen(true)}
-          />
-          {/* A photo is opened rather than drawn: it becomes a new drawing, in image conversion. */}
-          <ButtonRound
-           size="sm"
-           icon={<ImagePlus />}
-           aria-label="Open a photo"
-           title="Open a photo to turn into lines, matched to the tool's pens: a new drawing, in image conversion. Pick several greyscale separations at once (…_C, …_M, …_Y, …_K) for a layer each"
-           disabled={busy}
-           onClick={() => photoInput.current?.click()}
-          />
+          {/* Opening, starting and sending sit in a drawer behind the File button; Save stays out,
+            furthest right, as the one done most. The row is held to the card's right edge, so the
+            drawer opening pushes the File button left and stays to the left of Save. It reads in
+            the order they come up: another drawing opened, a photo, a new one started, and what
+            is finished sent to Plot. */}
+          <Toolbar tone="white" aria-label="File">
+           <ToolbarExpander
+            ref={fileDrawer}
+            size="sm"
+            icon={<FileIcon />}
+            label="File"
+            actions
+            open={fileDrawerOpen}
+            onOpenChange={setFileDrawerOpen}
+           >
+            <Segment
+             icon={<FolderOpen />}
+             hideLabel
+             title="Open a drawing to carry on with"
+             disabled={busy}
+             onClick={() => setBrowserOpen(true)}
+            >
+             Open a drawing
+            </Segment>
+            {/* A photo is opened rather than drawn: it becomes a new drawing, in image conversion. */}
+            <Segment
+             icon={<ImagePlus />}
+             hideLabel
+             title="Open a photo to turn into lines, matched to the tool's pens: a new drawing, in image conversion. Pick several greyscale separations at once (…_C, …_M, …_Y, …_K) for a layer each"
+             disabled={busy}
+             onClick={() => photoInput.current?.click()}
+            >
+             Open a photo
+            </Segment>
+            <Segment
+             icon={<FilePlus />}
+             hideLabel
+             title="Close this drawing and start a new one"
+             disabled={busy}
+             onClick={() => startNew()}
+            >
+             New drawing
+            </Segment>
+            <Segment
+             icon={<Send />}
+             hideLabel
+             title="Save this drawing and open it in Plot, ready to draw"
+             disabled={busy || !shapes.length}
+             onClick={openInPlot}
+            >
+             Send to Plot
+            </Segment>
+           </ToolbarExpander>
+          </Toolbar>
           <input
            ref={photoInput}
            type="file"
@@ -3046,21 +3155,16 @@ export default function App() {
             e.target.value = ""; // so the same photo can be opened again
            }}
           />
+          {/* A safety-toned round button: the half of "are you sure?" that keeps the
+            work, and the one button here that writes a file. */}
           <ButtonRound
            size="sm"
-           icon={<FilePlus />}
-           aria-label="New drawing"
-           title="Close this drawing and start a new one"
-           disabled={busy}
-           onClick={() => startNew()}
-          />
-          <ButtonRound
-           size="sm"
-           icon={<Send />}
-           aria-label="Send to Plot"
-           title="Save this drawing and open it in Plot, ready to draw"
-           disabled={busy || !shapes.length}
-           onClick={openInPlot}
+           tone="safety"
+           icon={<Save />}
+           aria-label="Save"
+           title={`Save this drawing${saved ? ` to ${saved.folder}` : ""}`}
+           disabled={busy || !shapes.length || !dirty}
+           onClick={save}
           />
          </span>
         }

@@ -203,6 +203,28 @@ printed_lock = threading.Lock()
 last_plot_stopped = False
 
 
+# The settings every open Plot page shows - this Mac's screen and any other device's - so whichever
+# screen you look at shows what a plot would use. On disk, so a restart keeps them. `version` changes
+# with each change; the pages watch it through /api/status and fetch the settings when it moves.
+PLOT_SETTINGS = JOBS / "plot-settings.json"
+plot_settings_lock = threading.Lock()
+
+
+def read_plot_settings():
+    try:
+        saved = json.loads(PLOT_SETTINGS.read_text())
+    except (OSError, ValueError):
+        return {"settings": None, "preset": None, "version": None}
+    return {"settings": saved.get("settings"), "preset": saved.get("preset"), "version": saved.get("version")}
+
+
+shared_settings = read_plot_settings()
+
+# Changes each time a page saves its choices for the drawing (placement, scale, layers...), so the
+# other open pages know to take them up. In memory: a restart has every page load the drawing afresh.
+drawing_saved = None
+
+
 def forget_printed():
     with printed_lock:
         printed_layers.clear()
@@ -2261,6 +2283,9 @@ def status():
     name_file = JOBS / "current.name"
     snap["file"] = name_file.read_text() if CURRENT_SVG.exists() and name_file.exists() else None
     snap["file_opened"] = opened_token() if snap["file"] else None
+    snap["drawing_saved"] = drawing_saved if snap["file"] else None
+    with plot_settings_lock:
+        snap["settings_version"] = shared_settings["version"]
     with printed_lock:
         snap["printed_layers"] = sorted(printed_layers)
     snap["file_path"] = None
@@ -3096,7 +3121,36 @@ def save_drawing():
     problem = commit_drawing(tree, disk_path)
     if problem:
         return problem
-    return jsonify(saved_to=display_path(disk_path.parent) if disk_path else None)
+    global drawing_saved
+    drawing_saved = f"{time.time_ns():x}"
+    return jsonify(saved_to=display_path(disk_path.parent) if disk_path else None, saved=drawing_saved)
+
+
+@app.get("/api/plot-settings")
+def get_plot_settings():
+    with plot_settings_lock:
+        return jsonify(shared_settings)
+
+
+@app.put("/api/plot-settings")
+def put_plot_settings():
+    """A page's settings and chosen tool, for every other open page to follow."""
+    global shared_settings
+    body = request.json or {}
+    settings, preset = body.get("settings"), body.get("preset")
+    if not isinstance(settings, dict) or not all(
+            isinstance(k, str) and (v is None or isinstance(v, (str, int, float, bool))) for k, v in settings.items()):
+        return jsonify(error="Settings must be a set of plain values."), 400
+    if preset is not None and not isinstance(preset, str):
+        return jsonify(error="The tool must be named."), 400
+    with plot_settings_lock:
+        if settings == shared_settings["settings"] and preset == shared_settings["preset"]:
+            return jsonify(version=shared_settings["version"])  # nothing new: the other pages are already showing it
+        shared_settings = {"settings": settings, "preset": preset, "version": f"{time.time_ns():x}"}
+        tmp = PLOT_SETTINGS.with_suffix(".tmp")
+        tmp.write_text(json.dumps(shared_settings))
+        os.replace(tmp, PLOT_SETTINGS)
+        return jsonify(version=shared_settings["version"])
 
 
 def saving_problem(body):

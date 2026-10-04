@@ -88,6 +88,8 @@ export interface Status {
   plotters?: number; // how many are plugged in; with more than one, nothing is sent to either
   file: string | null;
   file_opened?: string | null; // changes every time a drawing is opened, from any tab or app
+  drawing_saved?: string | null; // changes every time a page saves its choices for the drawing
+  settings_version?: string | null; // changes every time a page changes the shared settings
   file_path: string | null;
   printed_layers: string[]; // ids of layers that finished plotting since the drawing was opened // where the loaded drawing lives; null for an uploaded copy
   file_folder: string | null; // that folder, for display (e.g. "~/Desktop")
