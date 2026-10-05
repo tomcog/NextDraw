@@ -41,18 +41,20 @@ interface Props {
   outline: boolean;
   /** How many paths the fill goes on: one, or each of several picked together. */
   count?: number;
+  /** Whether it goes on one shape made of several paths, as one area across all of them. */
+  asOne?: boolean;
   actions: FillActions;
 }
 
 /** The Hatch settings, for the chosen shape or for a whole selection at once. */
-export function FillPanel({ fills, outline, count = 1, actions }: Props) {
+export function FillPanel({ fills, outline, count = 1, asOne = false, actions }: Props) {
   const first = fills[0];
   const kind = first?.kind ?? "hatch";
   return (
     <>
       <Checkbox
         checked={fills.length > 0}
-        label={count > 1 ? "Fill each path" : "Fill path"}
+        label={asOne ? "Fill shape" : count > 1 ? "Fill each path" : "Fill path"}
         onChange={(e) => actions.setHatched(e.target.checked)}
       />
       {first && (

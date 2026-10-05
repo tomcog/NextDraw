@@ -1,4 +1,4 @@
-import { fillRuns, type Fill } from "./hatch";
+import { fillRuns, fillTarget, type Fill } from "./hatch";
 import { curveStrokes, pointsAttr, type Point } from "./parametric";
 import { textRuns, type StrokeFont } from "./text";
 import { placementAttr, placements } from "./repeat";
@@ -147,7 +147,8 @@ export const SOURCE_LAYER = "%sources";
 function fillMarkup(shapes: Shape[], fills: Fill[]): string {
   return fills
     .map((fill) => {
-      const shape = shapes.find((s) => s.id === fill.shapeId);
+      // A fill on a shape made of several paths is made from all of them as one.
+      const shape = fillTarget(shapes, fill.shapeId);
       if (!shape) return "";
       const runs = fillRuns(shape, fill);
       if (!runs.length) return "";
@@ -312,7 +313,7 @@ export function buildSvg(
     .map((layer, i) => {
       const mine = shapes.filter((sh) => sh.layerId === layer.id);
       const drawn = mine.filter((sh) => sh.outline !== false);
-      const myFills = fills.filter((f) => mine.some((sh) => sh.id === f.shapeId));
+      const myFills = fills.filter((f) => mine.some((sh) => sh.id === f.shapeId || sh.group === f.shapeId));
       const inner = [
         withGroups(drawn, shapes, (sh) => shapeMarkup(sh, opts.fonts)),
         fillMarkup(shapes, myFills),

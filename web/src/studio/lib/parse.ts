@@ -526,7 +526,8 @@ export function parseDrawing(text: string): Opened {
   }
 
   // Studio's own parameters, if the drawing was made here. A fill whose shape has gone is dropped.
-  const ids = new Set(shapes.map((s) => s.id));
+  // A fill is on a path, or on a shape made of several - by the group's id.
+  const ids = new Set([...shapes.map((s) => s.id), ...shapes.flatMap((s) => (s.group ? [s.group] : []))]);
   let fills: Fill[] = [];
   {
     {

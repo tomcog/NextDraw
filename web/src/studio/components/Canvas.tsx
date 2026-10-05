@@ -4,7 +4,7 @@ import {
   drawnNodes, moveBy, newShapeId, scaleInto, turnAround, turnAttr, turnGrip, CURSOR,
   type Handle, type Page, type Shape, type ShapeKind,
 } from "../lib/shapes";
-import { fillRuns, type Fill } from "../lib/hatch";
+import { fillRuns, shapeAsOne, type Fill } from "../lib/hatch";
 import { photoMarks, photoOrigin } from "../lib/photo";
 import { usePhotoRead } from "../lib/usePhotoRead";
 import { pathData } from "../lib/path";
@@ -170,7 +170,9 @@ function listsByLayer(shapes: Shape[], fills: Fill[], was: LayerLists): LayerLis
   }
   const next: LayerLists = new Map();
   for (const [id, list] of onLayer) {
-    const own = list.flatMap((sh) => fillsOf.get(sh.id) ?? []);
+    // A shape made of several paths has its own fills too, by its group's id.
+    const groupIds = [...new Set(list.flatMap((sh) => (sh.group ? [sh.group] : [])))];
+    const own = [...list.flatMap((sh) => fillsOf.get(sh.id) ?? []), ...groupIds.flatMap((g) => fillsOf.get(g) ?? [])];
     const before = was.get(id);
     next.set(id, {
       shapes: before && sameItems(before.shapes, list) ? before.shapes : list,
@@ -291,6 +293,14 @@ function shapeElement(s: Shape, key: string, props: Record<string, unknown>, fon
  */
 const LayerMarks = memo(function LayerMarks({ shapes, fills, fonts, photos }: { shapes: Shape[]; fills: Fill[]; fonts: Record<string, StrokeFont>; photos: PhotoView }) {
   const byId = new Map(shapes.map((sh) => [sh.id, sh]));
+  // A fill on a shape made of several paths is drawn from all of them as one.
+  const membersOf = new Map<string, Shape[]>();
+  for (const sh of shapes) {
+    if (!sh.group) continue;
+    const list = membersOf.get(sh.group);
+    if (list) list.push(sh);
+    else membersOf.set(sh.group, [sh]);
+  }
   // A repeated shape is drawn once per copy. The copies are marks and nothing else: what you grab,
   // and what the handles belong to, is always the shape itself.
   // A shape that isn't repeated is drawn as itself, with no group round it: in a separation of fifty
@@ -305,7 +315,8 @@ const LayerMarks = memo(function LayerMarks({ shapes, fills, fonts, photos }: { 
     <>
       {shapes.filter((sh) => sh.outline !== false).map((sh) => copies(sh, (key) => shapeElement(sh, key, {}, fonts, photos)))}
       {fills.map((fill) => {
-        const shape = byId.get(fill.shapeId);
+        const members = membersOf.get(fill.shapeId);
+        const shape = byId.get(fill.shapeId) ?? (members && members.length > 1 ? shapeAsOne(members, fill.shapeId) : undefined);
         if (!shape) return null;
         return copies(shape, (key) => (
           // The fill turns with the shape it fills, since it is that shape's own hatching.

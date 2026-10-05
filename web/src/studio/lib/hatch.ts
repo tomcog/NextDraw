@@ -1,5 +1,5 @@
 import { curveStrokes, type Point } from "./parametric";
-import { boxOf, drawnRuns, outlinePoints, pathRuns, type Shape } from "./shapes";
+import { boxOf, centerOf, drawnRuns, groupsOf, outlinePoints, pathRuns, pointsBox, type Shape } from "./shapes";
 
 // Hatch fills, kept as parameters rather than as the lines they make (see docs/studio.md). A fill
 // says which shape it fills, at what angle and how far apart - so changing pen or page size
@@ -98,6 +98,42 @@ const outlinesOf = (s: Shape): Point[][] => {
       return pts[0].x !== last.x || pts[0].y !== last.y ? [...pts, pts[0]] : pts;
     });
 };
+
+/**
+ * A shape made of several paths, as the one path a fill on it is made from: every closed outline of
+ * every path, turned the way each is drawn, counted together - so a path inside another leaves a
+ * hole, and the lines run straight across the gaps between them as one pattern. It has the shape's
+ * own id (the group's), so a fill on it is found the way a fill on a path is. A path that has no
+ * inside - a line, a word - adds nothing to fill.
+ */
+export function shapeAsOne(members: Shape[], id: string): Shape {
+  const runs = members.filter(canFill).flatMap((m) => {
+    const turn = ((m.rotation ?? 0) * Math.PI) / 180;
+    if (!turn) return outlinesOf(m);
+    const c = centerOf(m);
+    const cos = Math.cos(turn);
+    const sin = Math.sin(turn);
+    return outlinesOf(m).map((pts) => pts.map((p) => ({
+      x: c.x + (p.x - c.x) * cos - (p.y - c.y) * sin,
+      y: c.y + (p.x - c.x) * sin + (p.y - c.y) * cos,
+    })));
+  });
+  const b = runs.length ? pointsBox(runs.flat()) : boxOf(members[0]);
+  return {
+    id, kind: "path", layerId: members[0].layerId, runs,
+    x: b.x0, y: b.y0, x2: b.x1, y2: b.y1,
+    // Outlined unless none of its paths is.
+    ...(members.every((m) => m.outline === false) ? { outline: false } : {}),
+  };
+}
+
+/** What a fill is on: the path with its id, or the shape - several paths as one - with that id. */
+export function fillTarget(shapes: Shape[], id: string): Shape | undefined {
+  const own = shapes.find((s) => s.id === id);
+  if (own) return own;
+  const members = groupsOf(shapes).get(id);
+  return members ? shapeAsOne(members, id) : undefined;
+}
 
 /**
  * Where a line crosses a closed outline, as the spans that lie inside it. Crossings are counted the

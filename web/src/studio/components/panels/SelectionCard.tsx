@@ -16,6 +16,8 @@ interface Props {
   canGroup: boolean;
   /** Whether any of what's picked is a shape that can be taken apart again. */
   canUngroup: boolean;
+  /** Whether what's picked is one shape, hatched as one area rather than path by path. */
+  asOne?: boolean;
   /** Whether there is a copied fill to paste. */
   canPaste: boolean;
   onGroup: () => void;
@@ -27,7 +29,7 @@ interface Props {
 }
 
 /** Several paths picked: kept together as one shape, joined into one path, or hatched all at once. */
-export function SelectionCard({ count, fillable, busy, shapeName, canGroup, canUngroup, canPaste, onGroup, onUngroup, onJoin, onPaste, fillPanel }: Props) {
+export function SelectionCard({ count, fillable, busy, shapeName, asOne, canGroup, canUngroup, canPaste, onGroup, onUngroup, onJoin, onPaste, fillPanel }: Props) {
   return (
     <Card variant="flat" className={styles.controls}>
       <div className={styles.cardBody}>
@@ -45,14 +47,15 @@ export function SelectionCard({ count, fillable, busy, shapeName, canGroup, canU
         {fillable > 0 && (
           // Hatch them all at once: set here, every one of them gets the same fill.
           <Section
-            title={fillable === count ? "Hatch" : `Hatch ${fillable} of them`}
+            // A shape is hatched as one area; anything else, path by path.
+            title={asOne || fillable === count ? "Hatch" : `Hatch ${fillable} of them`}
             collapsibleKey="selection-fill"
             action={canPaste ? (
               <ButtonRound
                 size="sm"
                 icon={<PaintRoller />}
                 aria-label="Paste fill"
-                title="Paste fill: give every one of them the fill you copied, in place of their own"
+                title={asOne ? "Paste fill: give this shape the fill you copied, in place of its own" : "Paste fill: give every one of them the fill you copied, in place of their own"}
                 disabled={busy}
                 onClick={onPaste}
               />

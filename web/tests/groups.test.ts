@@ -80,3 +80,27 @@ test("picking one path of a shape picks all of it", () => {
   assert.deepEqual(withWholeGroups(["two"], shapes), ["one", "two", "hidden"]);
   assert.deepEqual(withWholeGroups(["alone", "four"], shapes), ["alone", "three", "four"]);
 });
+
+test("a shape is hatched as one area: a path inside another leaves a hole, and the fill comes back on the shape", async () => {
+  const { fillRuns, fillTarget } = await import("../src/studio/lib/hatch");
+  const ring: Shape[] = [
+    { id: "outer", kind: "rect", x: 1, y: 1, x2: 5, y2: 5, layerId: "a", group: "g9" },
+    { id: "inner", kind: "rect", x: 2, y: 2, x2: 4, y2: 4, layerId: "a", group: "g9" },
+  ];
+  const fill = { id: "f9", shapeId: "g9", angle: 0, spacingMm: 2.54, scale: 100 };
+  const target = fillTarget(ring, "g9")!;
+  assert.equal(target.id, "g9");
+  const runs = fillRuns(target, fill);
+  assert.ok(runs.length > 0);
+  // Across the middle every line stops at the inner square and starts again after it.
+  for (const run of runs) {
+    const y = run[0].y;
+    if (y <= 2 || y >= 4) continue;
+    const xs = run.map((p) => p.x).sort((m, n) => m - n);
+    assert.ok(xs[1] <= 2 + 1e-6 || xs[0] >= 4 - 1e-6, `a line at y=${y} crosses the hole: ${JSON.stringify(run)}`);
+  }
+  const saved = buildSvg(ring, [fill], layers, page, { paperSizeId: "letter", toolName: "" });
+  assert.match(saved, /<g id="studio-fill-f9"/);
+  const back = parseDrawing(saved);
+  assert.deepEqual(back.fills.map((f) => f.shapeId), ["g9"]);
+});

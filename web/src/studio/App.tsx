@@ -21,7 +21,7 @@ import { mergeLines } from "./lib/mergeLines";
 import { SizePopover } from "./components/SizePopover";
 import { StudioHeader } from "./components/StudioHeader";
 import { ThemeToggle } from "../shared/components/ThemeToggle";
-import { canFill, newFillId, type Fill } from "./lib/hatch";
+import { canFill, newFillId, shapeAsOne, type Fill } from "./lib/hatch";
 import { type Curve, type Point } from "./lib/parametric";
 import { fontNames, loadFont, type StrokeFont } from "./lib/font";
 import { flattenPath } from "./lib/path";
@@ -417,6 +417,17 @@ export default function App() {
   setSelected((current) => current.filter((id) => !ids.includes(id)));
  };
 
+ // A fill on a shape made of several paths goes when the shape does: taken apart, joined into one
+ // path, grouped into a bigger shape, or its paths deleted. Undo brings the two back together.
+ useEffect(() => {
+  setFills((list) => {
+   const ids = new Set(shapes.map((s) => s.id));
+   const groups = groupsOf(shapes);
+   const kept = list.filter((f) => ids.has(f.shapeId) || groups.has(f.shapeId));
+   return kept.length === list.length ? list : kept;
+  });
+ }, [shapes]);
+
  // Shapes made of several paths. Grouping keeps the paths as they are - unlike joining, which makes
  // them one path - and puts them side by side in the drawing order, where the first of them was, so
  // the shape is drawn and written out as one thing. One level only: grouping shapes that are already
@@ -455,7 +466,11 @@ export default function App() {
   const again = newGroupId();
   const copies = members.map((s) => ({ ...moveBy(s, 0.25, 0.25, page), id: copyOf.get(s.id)!, group: again }));
   setShapes((list) => [...list, ...copies]);
-  setFills((list) => [...list, ...list.filter((f) => copyOf.has(f.shapeId)).map((f) => ({ ...f, id: newFillId(), shapeId: copyOf.get(f.shapeId)! }))]);
+  setFills((list) => [
+   ...list,
+   ...list.filter((f) => copyOf.has(f.shapeId)).map((f) => ({ ...f, id: newFillId(), shapeId: copyOf.get(f.shapeId)! })),
+   ...list.filter((f) => f.shapeId === group).map((f) => ({ ...f, id: newFillId(), shapeId: again })),
+  ]);
   setSelected(copies.map((s) => s.id));
  };
  const moveGroupToLayer = (group: string, layerId: string) => {
@@ -933,12 +948,24 @@ export default function App() {
   setSetupOpen(false);
   setConvertId(id);
  };
- // The shapes a fill is set on: the one chosen, or every shape of a selection that can be filled, so
- // several are hatched at once. The first of them is the one whose fill the panel shows; every edit
- // gives all of them that same fill.
+ // The group id of the one shape picked, when what's picked is exactly one whole shape of several paths.
+ const pickedGroup = useMemo(() => {
+  const group = shapes.find((s) => s.id === selected[0])?.group;
+  return group && selected.length > 1 && selected.every((id) => shapes.find((s) => s.id === id)?.group === group) ? group : undefined;
+ }, [shapes, selected]);
+ // That shape's paths as the one outline its fill is made from.
+ const pickedWhole = useMemo(
+  () => (pickedGroup ? shapeAsOne(shapes.filter((s) => s.group === pickedGroup), pickedGroup) : undefined),
+  [shapes, pickedGroup],
+ );
+ // The shapes a fill is set on: the one chosen, a shape of several paths filled as one area, or every
+ // path of a selection that can be filled, so several are hatched at once. The first of them is the
+ // one whose fill the panel shows; every edit gives all of them that same fill.
  const fillTargets = chosen
   ? (canFill(chosen) ? [chosen] : [])
-  : shapes.filter((s) => selected.includes(s.id) && canFill(s));
+  : pickedWhole
+   ? (canFill(pickedWhole) ? [pickedWhole] : [])
+   : shapes.filter((s) => selected.includes(s.id) && canFill(s));
  const fillLead = chosen ?? fillTargets[0] ?? null;
  const chosenFills = fillLead ? fills.filter((f) => f.shapeId === fillLead.id) : [];
 
@@ -989,11 +1016,11 @@ export default function App() {
  const pickedIds = useMemo(() => new Set(selected), [selected]);
  // What the one shape picked is called, when what's picked is exactly one whole shape.
  const pickedShape = useMemo(() => {
-  const group = shapes.find((s) => s.id === selected[0])?.group;
-  if (!group || !selected.every((id) => shapes.find((s) => s.id === id)?.group === group)) return undefined;
+  const group = pickedGroup;
+  if (!group) return undefined;
   const ofLayer = [...groupsOf(shapes.filter((s) => s.layerId === shapes.find((m) => m.group === group)?.layerId)).keys()];
   return groupLabel(membersOf(group), ofLayer.indexOf(group));
- }, [shapes, selected]); // eslint-disable-line react-hooks/exhaustive-deps
+ }, [shapes, pickedGroup]); // eslint-disable-line react-hooks/exhaustive-deps
  // The chosen photo's card counts its lines, which can only be made once the photo has been read.
  usePhotoRead(chosen?.photo?.src);
 
@@ -1187,7 +1214,8 @@ export default function App() {
   if (!fillTargets.length) return;
   record();
   const ids = new Set(fillTargets.map((s) => s.id));
-  setShapes((list) => list.map((sh) => (ids.has(sh.id) ? { ...sh, outline: on } : sh)));
+  // A shape filled as one area: its outline is every one of its paths.
+  setShapes((list) => list.map((sh) => (ids.has(sh.id) || (sh.group && ids.has(sh.group)) ? { ...sh, outline: on } : sh)));
  };
 
  /** Hatch a shape, or stop hatching it. A shape that isn't hatched is drawn as its own outline:
@@ -1197,7 +1225,7 @@ export default function App() {
   setFillAt(0, on ? newFill(defaults.angle) : null);
   if (!on) {
    const ids = new Set(fillTargets.filter((s) => s.outline === false).map((s) => s.id));
-   if (ids.size) setShapes((list) => list.map((sh) => (ids.has(sh.id) ? { ...sh, outline: undefined } : sh)));
+   if (ids.size) setShapes((list) => list.map((sh) => (ids.has(sh.id) || (sh.group && ids.has(sh.group)) ? { ...sh, outline: undefined } : sh)));
   }
  };
 
@@ -1251,7 +1279,11 @@ export default function App() {
    return next;
   });
   setShapes((list) => [...list, ...list.filter((sh) => ids.has(sh.id)).map((sh) => ({ ...sh, id: ids.get(sh.id)!, layerId: copy.id, group: sh.group && groupIds.get(sh.group) }))]);
-  setFills((list) => [...list, ...list.filter((f) => ids.has(f.shapeId)).map((f) => ({ ...f, id: newFillId(), shapeId: ids.get(f.shapeId)! }))]);
+  setFills((list) => [
+   ...list,
+   ...list.filter((f) => ids.has(f.shapeId)).map((f) => ({ ...f, id: newFillId(), shapeId: ids.get(f.shapeId)! })),
+   ...list.filter((f) => groupIds.has(f.shapeId)).map((f) => ({ ...f, id: newFillId(), shapeId: groupIds.get(f.shapeId)! })),
+  ]);
   setActiveLayer(copy.id);
  };
 
@@ -1544,6 +1576,7 @@ export default function App() {
    fills={chosenFills}
    outline={fillLead.outline !== false}
    count={fillTargets.length}
+   asOne={Boolean(pickedWhole) && !chosen}
    actions={{
     setHatched,
     setAt: setFillAt,
@@ -1920,6 +1953,7 @@ export default function App() {
        fillable={fillTargets.length}
        busy={busy}
        shapeName={pickedShape}
+       asOne={Boolean(pickedWhole)}
        canGroup={groupable(selected)}
        canUngroup={shapes.some((s) => s.group && pickedIds.has(s.id))}
        canPaste={Boolean(fillClipboard)}
