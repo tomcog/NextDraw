@@ -1675,7 +1675,8 @@ export default function App() {
                   collapsibleKey="plot-paper"
                   disabled={plotting}
                   onSize={pickPaperSize}
-                  onDimensions={(paper_w, paper_h) => updateSettings({ paper_w, paper_h })}
+                  // Turned or typed, the paper is named by its size: Custom, unless it is one of the list's.
+                  onDimensions={(paper_w, paper_h) => updateSettings({ paper_size: "custom", paper_w, paper_h })}
                   onColor={(paper_color) => updateSettings({ paper_color })}
                   onUnits={(units) => updateSettings({ units })}
                   onFit={fitToPaper}

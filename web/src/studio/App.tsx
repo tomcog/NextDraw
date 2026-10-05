@@ -222,8 +222,6 @@ export default function App() {
   ok: true,
  });
 
- // Custom stays chosen while its width and height are typed, even through a size that happens to be
- // one of the list's on the way.
  // The paper's colour: the page is drawn in it and the inks blend with it, as they do in Plot. This
  // browser's choice, like the grid - it's the sheet on the plotter today, not part of the drawing.
  const [paperColor, setPaperColor] = useState(() => load<string>(PAPER_COLOR_KEY) ?? "#ffffff");

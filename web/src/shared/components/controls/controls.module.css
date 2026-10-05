@@ -236,6 +236,13 @@
 
 .paperRow > :first-child { flex: 1; min-width: 0; }
 
+/* A custom paper's width and height, side by side. */
+.paperCustom {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.5rem;
+}
+
 /* Scaling the drawing: the percent, with its label above, then the button that scales by it. */
 .scaleRow {
   display: flex;

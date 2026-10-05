@@ -14,7 +14,7 @@ interface Props {
   /** The paper in mm, as it lies: its width across, its height down. */
   w: number;
   h: number;
-  /** One of PAPER_SIZES, or "custom" for a drawing whose paper matches none of them. */
+  /** One of PAPER_SIZES, or "custom" for a width and height of this drawing's own. */
   sizeId: string;
   /** What the sizes are named in. */
   units: Units;
@@ -24,7 +24,7 @@ interface Props {
   disabled?: boolean;
   /** A size from the menu. The app keeps the way the paper lies. */
   onSize: (id: string) => void;
-  /** A new width and height, in mm: the paper turned. */
+  /** A new width and height, in mm: the paper turned, or a custom size typed in. */
   onDimensions: (w: number, h: number) => void;
   onColor: (color: string) => void;
   /** Plot: measure in inches or millimetres. Studio works in inches alone, so it doesn't pass this. */
@@ -58,6 +58,11 @@ const PAPER_COLORS = [
  */
 export function PaperSection({ w, h, sizeId, units, color, collapsibleKey, disabled, onSize, onDimensions, onColor, onUnits, onTurnDrawing, drawingScale = 100, onScaleDrawing, onFit }: Props) {
   const landscape = w >= h;
+  // Custom chosen by hand stays chosen while its width and height are typed, even through a size
+  // that happens to be one of the list's on the way. The size belongs to this drawing alone: it is
+  // never added to the list.
+  const [typing, setTyping] = useState(false);
+  const custom = typing || sizeId === "custom";
   // Paper colour rarely changes, so its swatches stay tucked behind the Palette button.
   const [colorsOpen, setColorsOpen] = useState(false);
   // Kept between visits, so the margin a sheet is usually given is the one the button fits to.
@@ -102,11 +107,21 @@ export function PaperSection({ w, h, sizeId, units, color, collapsibleKey, disab
       }
     >
       <div className={styles.paperRow}>
-        <InputSelect size="md" label="Paper size" hideLabel value={sizeId} disabled={disabled} onChange={(e) => onSize(e.target.value)}>
+        <InputSelect
+          size="md"
+          label="Paper size"
+          hideLabel
+          value={custom ? "custom" : sizeId}
+          disabled={disabled}
+          onChange={(e) => {
+            const id = e.target.value;
+            setTyping(id === "custom");
+            if (id !== "custom") onSize(id); // Custom starts from the paper as it is
+          }}
+        >
           {PAPER_SIZES.map((p) => <option key={p.id} value={p.id}>{listed(p)}</option>)}
-          {/* Only the sizes are choices. A drawing whose paper is none of them shows its own size,
-              which can't be picked - or typed: the paper is one of the sizes or what the file says. */}
-          {sizeId === "custom" && <option value="custom" disabled>{sizeName(w, h)}</option>}
+          {/* Its width and height are in the fields below, so the menu needn't repeat them. */}
+          <option value="custom">{custom ? "Custom" : "Custom size…"}</option>
         </InputSelect>
         {onUnits && <UnitSwitch units={units} disabled={disabled} onChange={onUnits} />}
         {/* The paper lies one way or the other, never both: a choice of two, like the toolbar's.
@@ -144,6 +159,13 @@ export function PaperSection({ w, h, sizeId, units, color, collapsibleKey, disab
           />
         )}
       </div>
+
+      {custom && (
+        <div className={styles.paperCustom}>
+          <LengthField label="Width" mm={w} units={units} min={1} disabled={disabled} onChange={(mm) => onDimensions(mm, h)} />
+          <LengthField label="Height" mm={h} units={units} min={1} disabled={disabled} onChange={(mm) => onDimensions(w, mm)} />
+        </div>
+      )}
 
       {/* The paper stays the size it is; the drawing grows or shrinks on it, about its own middle,
           as the scale changes. */}

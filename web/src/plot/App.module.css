@@ -57,6 +57,11 @@
 /* Under the preview: the same sections, on the page itself rather than on a card. */
 .lessOften { min-width: 0; }
 
+/* Lined up under the plotter rather than the preview's edge: BedCanvas leaves 0.7 of a pad (7.5% of
+   the bed's width) for the side dimension line, out of 1.1 pads of margin across - 4.85% of the width
+   the preview and these sections share. The chevrons hang 1.125rem outside, so they're what lines up. */
+.lessOften > .cardBody { padding-left: calc(4.85% + 1.125rem); }
+
 .cardBody,
 .controlsForm {
   display: flex;
