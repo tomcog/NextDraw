@@ -13,6 +13,7 @@ import { DEFAULT_SETTINGS, PAPER_SIZES } from "../shared/lib/constants";
 import type { Info, PenColor, PlotterModel, Preset } from "../shared/lib/types";
 import { listOf } from "../shared/lib/format";
 import { lightness } from "../shared/lib/color";
+import { joinLayerName, labelAfter, splitLayerName } from "../shared/lib/ink";
 import { PreviewToolbar, SetupToolbar, type View } from "../shared/components/PreviewToolbar";
 import type { Zoom } from "../shared/components/BedCanvas";
 import { Canvas, type Tool } from "./components/Canvas";
@@ -1303,12 +1304,22 @@ export default function App() {
  // Renaming in place. One undo step for the whole edit, taken as the field is entered, and the name is
  // settled when it's left: never empty, never a name another layer already has.
  const nameBeforeEdit = useRef<string>("");
- const typeLayerName = (id: string, name: string) =>
+ // The pen of the layer being renamed, if it has one: then only the label after it is typed.
+ const penBeforeEdit = useRef<string | null>(null);
+ const typeLayerName = (id: string, typed: string) => {
+  const pen = penBeforeEdit.current;
+  const name = pen ? joinLayerName(pen, typed) : typed;
   setLayers((list) => list.map((l) => (l.id === id ? { ...l, name } : l)));
+ };
+ /** Escape: the name it had, whole. */
+ const restoreLayerName = (id: string) =>
+  setLayers((list) => list.map((l) => (l.id === id ? { ...l, name: nameBeforeEdit.current } : l)));
  const settleLayerName = (id: string) =>
   setLayers((list) => list.map((l) => {
    if (l.id !== id) return l;
-   const wanted = l.name.trim() || nameBeforeEdit.current;
+   const pen = penBeforeEdit.current;
+   const typed = pen ? joinLayerName(pen, labelAfter(l.name, pen).trim()) : l.name.trim();
+   const wanted = typed || nameBeforeEdit.current;
    return { ...l, name: uniqueName(wanted, list.filter((o) => o.id !== id).map((o) => o.name)) };
   }));
 
@@ -1620,10 +1631,12 @@ export default function App() {
      current={layers.find((l) => l.id === colorMenu.id)?.color ?? null}
      onPick={(pen) => {
       // The name travels with the colour: Plot colours a layer from the pen its name matches. The
-      // layer becomes the pen's name and nothing else - no number in front, which plotting order
-      // doesn't need, and none of the old name: "13-date" in Turquoise is "Turquoise". A second
-      // layer in the same pen is "Turquoise 2", which still matches the pen.
-      const wanted = pen.name;
+      // layer becomes the pen's name, with the label it had kept after it - "Black - Crop marks" in
+      // Red is "Red - Crop marks" - and nothing else: no number in front, which plotting order doesn't
+      // need, and no old name that wasn't a pen and a label: "13-date" in Turquoise is "Turquoise". A
+      // second layer in the same pen and label is "Turquoise 2", which still matches the pen.
+      const was = splitLayerName(layers.find((l) => l.id === colorMenu.id)?.name ?? "", palette);
+      const wanted = joinLayerName(pen.name, was.pen ? was.label.trim() : "");
       patchLayer(colorMenu.id, { name: uniqueName(wanted, layers.filter((l) => l.id !== colorMenu.id).map((l) => l.name)), color: pen.color });
       setColorMenu(null);
      }}
@@ -1682,6 +1695,8 @@ export default function App() {
         icon: <PenLine />,
         onSelect: () => {
          nameBeforeEdit.current = layers.find((l) => l.id === rowMenu.id)?.name ?? "";
+         // A layer drawn in one of the tool's pens keeps the pen: what is typed is the label after it.
+         penBeforeEdit.current = splitLayerName(nameBeforeEdit.current, palette).pen;
          record();
          setRenamingLayer(rowMenu.id);
         },
@@ -1899,7 +1914,8 @@ export default function App() {
         onColorMenu={(id, anchor) => setColorMenu((open) => (open?.id === id ? null : { id, anchor }))}
         onRowMenu={(id, anchor) => setRowMenu((open) => (open?.id === id ? null : { kind: "layer", id, anchor }))}
         onRenameType={typeLayerName}
-        onRenameCancel={(id) => typeLayerName(id, nameBeforeEdit.current)}
+        onRenameCancel={restoreLayerName}
+        renamePen={penBeforeEdit.current}
         onRenameDone={(id) => {
          settleLayerName(id);
          setRenamingLayer(null);

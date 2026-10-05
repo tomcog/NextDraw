@@ -10,7 +10,7 @@ import { parsePlotPaths, type PlotPaths } from "../shared/lib/progressPaths";
 import { parsePreview, type Preview } from "../shared/lib/preview";
 import { load, save } from "../shared/lib/storage";
 import type { Confirmation, Estimate, Info, Ink, Layer, PenColor, LayerView, Message, Placement, Preset, Settings, Status, Plot } from "../shared/lib/types";
-import { inkHex, isPalettePen, penNameAt, penNameOf } from "../shared/lib/ink";
+import { inkHex, isPalettePen, joinLayerName, penNameAt, penNameOf, splitLayerName } from "../shared/lib/ink";
 import { Hints } from "../shared/components/controls/Hints";
 import { Header } from "./components/Header";
 import { Bed, type Zoom } from "../shared/components/Bed";
@@ -153,13 +153,15 @@ export default function App() {
       const color = inkHex(inkColors[layer.id], palette, paletteOfTool) || penColors[layer.id] || layer.color;
       // The pen that draws that colour - which is the pen to put in the holder. The drawing's name
       // is Studio's to set and the file keeps it; a layer given another pen here is shown under
-      // that pen's name alone, as Studio renames a layer given a pen: "13-date" in Turquoise reads
+      // that pen's name, with the label Studio gave it kept after it, as Studio renames a layer given
+      // a pen: "Black - Crop marks" in Red reads "Red - Crop marks", and "13-date" in Turquoise reads
       // "Turquoise". Worked out from the ink chosen rather than stored.
       const pen = penNameAt(color, palette);
       const skipped = layer.name.startsWith("%");
       const tool = toolOfLayer(layer.id);
       const inkPen = penNameOf(inkColors[layer.id], palette);
-      const name = inkPen ?? layer.name;
+      const own = splitLayerName(layer.name, palette);
+      const name = inkPen ? joinLayerName(inkPen, own.pen ? own.label.trim() : "") : layer.name;
       return {
         ...layer,
         name,

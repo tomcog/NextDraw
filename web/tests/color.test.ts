@@ -22,3 +22,16 @@ test("a step of one lightness changes the colour", () => {
   const [h, s, l] = hexToHsl("#2457b5")!;
   assert.notEqual(hslToHex(h, s, l + 1), hslToHex(h, s, l));
 });
+
+test("a layer's name is its pen and, after it, a label of its own", async () => {
+  const { joinLayerName, splitLayerName } = await import("../src/shared/lib/ink");
+  const palette = [{ name: "Black", color: "#000000" }, { name: "Sky Blue", color: "#6cc2ea" }, { name: "Blue", color: "#2457b5" }];
+  assert.deepEqual(splitLayerName("Black - Crop marks", palette), { pen: "Black", label: "Crop marks" });
+  assert.deepEqual(splitLayerName("Black", palette), { pen: "Black", label: "" });
+  assert.deepEqual(splitLayerName("Black 2", palette), { pen: "Black", label: "" });
+  assert.deepEqual(splitLayerName("Sky Blue - Water", palette), { pen: "Sky Blue", label: "Water" });
+  assert.deepEqual(splitLayerName("Lime - register", palette), { pen: "Lime", label: "register" });
+  assert.deepEqual(splitLayerName("Signature", palette), { pen: null, label: "Signature" });
+  assert.equal(joinLayerName("Black", "Crop marks"), "Black - Crop marks");
+  assert.equal(joinLayerName("Black", "  "), "Black");
+});

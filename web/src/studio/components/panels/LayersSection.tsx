@@ -3,7 +3,7 @@ import { Button, ButtonRound, InputSelect, LayerController, Segment, SegmentedCo
 import { AlignCenterHorizontal, AlignCenterVertical, AlignEndHorizontal, AlignEndVertical, AlignStartHorizontal, AlignStartVertical, EllipsisVertical, LayersArrowUp, Merge, Plus, RotateCcwSquare, RotateCwSquare } from "lucide-react";
 import { Section } from "../../../shared/components/controls/Section";
 import { NumberField } from "../../../shared/components/controls/NumberField";
-import { isPalettePen } from "../../../shared/lib/ink";
+import { isPalettePen, labelAfter, LABEL_SEPARATOR } from "../../../shared/lib/ink";
 import type { Preset } from "../../../shared/lib/types";
 import { useRowDrag } from "../../lib/useRowDrag";
 import type { Layer } from "../../lib/shapes";
@@ -28,6 +28,9 @@ interface Props {
   rowMenuId: string | undefined;
   /** The layer whose name is open for typing into, if any. */
   renaming: string | null;
+  /** The pen of the layer being renamed, which stays: only the label after it is typed. Null when
+   *  the layer names no pen, and the whole name is typed. */
+  renamePen?: string | null;
   onSort: () => void;
   onMerge: () => void;
   onAdd: () => void;
@@ -134,11 +137,16 @@ export function LayersSection(props: Props) {
                 onChange={() => props.onSwitch(layer.id)}
                 aria-label={`Draw on layer ${at + 1}, ${layer.name}`}
                 label={renaming === layer.id ? (
+                  <span className={styles.shapeLabel}>
+                  {/* The pen stays as it is, in front of the field: it's what says which pen to
+                    load, and the label after it is what tells this layer from others in that pen. */}
+                  {props.renamePen && <span className={styles.shapeName}>{`${props.renamePen}${LABEL_SEPARATOR}`}</span>}
                   <input
                     className={`${styles.shapeName} ${styles.shapeNameEdit}`}
                     data-renaming
-                    value={layer.name}
-                    aria-label={`Name of layer ${at + 1}`}
+                    value={props.renamePen ? labelAfter(layer.name, props.renamePen) : layer.name}
+                    placeholder={props.renamePen ? "Label" : undefined}
+                    aria-label={props.renamePen ? `Label of layer ${at + 1}, after ${props.renamePen}` : `Name of layer ${at + 1}`}
                     autoFocus
                     disabled={busy}
                     onFocus={(e) => e.currentTarget.select()}
@@ -149,6 +157,7 @@ export function LayersSection(props: Props) {
                       if (e.key === "Enter" || e.key === "Escape") e.currentTarget.blur();
                     }}
                   />
+                  </span>
                 ) : (
                   // Text, not a field: clicking it draws on that layer. Renaming is asked
                   // for from the kebab, so nothing typed can land in a name by accident.

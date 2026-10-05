@@ -116,3 +116,43 @@ export function isPalettePen(name: string, color: string | null, palette: PenCol
 /** The pen of this palette that draws this colour, by name. Null when no pen of it does. */
 export const penNameAt = (color: string | null, palette: PenColor[]) =>
   (color ? palette.find((p) => p.color.toLowerCase() === color.toLowerCase())?.name ?? null : null);
+
+/**
+ * A layer's name does two jobs: it says which pen to load, by the pen's name in the tool's palette,
+ * and it can carry a label of its own after it - "Black - Crop marks", "Black - Signature" - so three
+ * layers all drawn in Black can still be told apart. Plot matches the pen from the start of the name
+ * (see isPalettePen), so the label never gets in the way of that.
+ */
+export const LABEL_SEPARATOR = " - ";
+
+/**
+ * The pen and the label in a layer's name. The pen is the longest of the palette's pens the name
+ * starts with, spelt as the name spells it; a number after it alone ("Black 2", a second layer in
+ * the pen) is no label. With no pen of this palette at its start, the pen is whatever comes before
+ * the separator, if there is one, and otherwise there's no pen at all and the whole name is the
+ * label. The label is as typed, spaces included, so a name being typed doesn't lose them.
+ */
+export function splitLayerName(name: string, palette: PenColor[]): { pen: string | null; label: string } {
+  const lower = name.toLowerCase();
+  const pens = palette
+    .map((p) => p.name.trim())
+    .filter((p) => p && (lower === p.toLowerCase() || lower.startsWith(`${p.toLowerCase()} `)))
+    .sort((a, b) => b.length - a.length);
+  if (pens.length) {
+    const pen = name.slice(0, pens[0].length);
+    const rest = name.slice(pens[0].length);
+    if (rest.startsWith(LABEL_SEPARATOR)) return { pen, label: rest.slice(LABEL_SEPARATOR.length) };
+    if (/^\s*\d*\s*$/.test(rest)) return { pen, label: "" };
+    return { pen, label: rest.replace(/^\s+/, "") };
+  }
+  const at = name.indexOf(LABEL_SEPARATOR);
+  if (at > 0) return { pen: name.slice(0, at), label: name.slice(at + LABEL_SEPARATOR.length) };
+  return { pen: null, label: name };
+}
+
+/** A pen and a label as a layer's name: the pen alone when there's no label. */
+export const joinLayerName = (pen: string, label: string) => (label.trim() ? `${pen}${LABEL_SEPARATOR}${label}` : pen);
+
+/** The label after this pen in a layer's name, as typed: empty when the name is the pen alone. */
+export const labelAfter = (name: string, pen: string) =>
+  name.startsWith(`${pen}${LABEL_SEPARATOR}`) ? name.slice(pen.length + LABEL_SEPARATOR.length) : "";
