@@ -5,8 +5,9 @@
 // Run by `npm run build`, so a crossing cannot ship. `npm run check` runs it on its own.
 import { readdirSync, statSync, readFileSync } from "node:fs";
 import { dirname, relative, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 
-const SRC = new URL("../src/", import.meta.url).pathname;
+const SRC = fileURLToPath(new URL("../src/", import.meta.url));
 const walk = (d) => readdirSync(d).flatMap((n) => {
   const p = d + n;
   return statSync(p).isDirectory() ? walk(p + "/") : [p];
