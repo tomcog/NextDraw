@@ -31,7 +31,9 @@ interface Props {
   onUnits?: (units: Units) => void;
   /** Studio: turn the whole drawing a quarter turn anticlockwise with the paper. Plot turns a drawing elsewhere. */
   onTurnDrawing?: () => void;
-  /** Studio: scale the whole drawing about its middle, by a percent. Plot scales a drawing elsewhere. */
+  /** Studio: the drawing's scale, a percent of its size when opened, and setting it - which rescales
+   *  the drawing about its middle straight away. Plot scales a drawing elsewhere. */
+  drawingScale?: number;
   onScaleDrawing?: (percent: number) => void;
   /** Both apps: scale the drawing to fill the paper less a margin all round (in mm), and centre it.
    *  Left out while there is no drawing to fit. */
@@ -54,11 +56,10 @@ const PAPER_COLORS = [
  * Shared: the paper, the same card in both apps - its size, the way it lies, and its colour. What
  * only one app has is passed in by that app, and is simply not there in the other.
  */
-export function PaperSection({ w, h, sizeId, units, color, collapsibleKey, disabled, onSize, onDimensions, onColor, onUnits, onTurnDrawing, onScaleDrawing, onFit }: Props) {
+export function PaperSection({ w, h, sizeId, units, color, collapsibleKey, disabled, onSize, onDimensions, onColor, onUnits, onTurnDrawing, drawingScale = 100, onScaleDrawing, onFit }: Props) {
   const landscape = w >= h;
   // Paper colour rarely changes, so its swatches stay tucked behind the Palette button.
   const [colorsOpen, setColorsOpen] = useState(false);
-  const [scaleBy, setScaleBy] = useState(100);
   // Kept between visits, so the margin a sheet is usually given is the one the button fits to.
   const [margin, setMargin] = useState(() => {
     try {
@@ -144,22 +145,11 @@ export function PaperSection({ w, h, sizeId, units, color, collapsibleKey, disab
         )}
       </div>
 
-      {/* The paper stays the size it is; the drawing grows or shrinks on it, about its own middle. */}
+      {/* The paper stays the size it is; the drawing grows or shrinks on it, about its own middle,
+          as the scale changes. */}
       {onScaleDrawing && (
         <div className={styles.scaleRow}>
-          <NumberField label="Scale drawing" unit="%" min={1} max={1000} step={5} value={scaleBy} disabled={disabled} onChange={setScaleBy} />
-          <Button
-            size="md"
-            variant="secondary"
-            title={`Scale the whole drawing to ${scaleBy}% about its middle, leaving the paper as it is`}
-            disabled={disabled || scaleBy === 100}
-            onClick={() => {
-              onScaleDrawing(scaleBy);
-              setScaleBy(100); // done: the drawing is now 100% of itself
-            }}
-          >
-            Scale
-          </Button>
+          <NumberField label="Scale drawing" unit="%" min={1} max={1000} step={5} value={drawingScale} disabled={disabled} onChange={onScaleDrawing} />
         </div>
       )}
 

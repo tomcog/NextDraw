@@ -122,6 +122,8 @@ interface Snapshot {
  shapes: Shape[];
  fills: Fill[];
  layers: Layer[];
+ /** The Paper card's scale, so undoing a scale puts the field back with the drawing. */
+ drawingScale: number;
  page: Page;
 }
 const HISTORY_LIMIT = 60;
@@ -221,6 +223,9 @@ const canFlatten = (s: Shape) => !(s.kind === "path" && !s.smooth);
 
 export default function App() {
  const [page, setPage] = useState<Page>({ w: 11, h: 8.5 });
+ // How big the drawing is now, as a percent of its size when it was opened or started: the Paper
+ // card's scale, which rescales the drawing as it changes. Back to 100 with each drawing.
+ const [drawingScale, setDrawingScale] = useState(100);
  const [shapes, setShapes] = useState<Shape[]>([]);
  const [fills, setFills] = useState<Fill[]>([]);
  const [layers, setLayers] = useState<Layer[]>(() => [{ id: newLayerId(), name: "Black", color: "#262626" }]);
@@ -411,25 +416,26 @@ export default function App() {
 
  // Called just before a change, never during one: a drag records once, when it starts.
  const record = useCallback(() => {
-  setPast((p) => [...p.slice(-(HISTORY_LIMIT - 1)), { shapes, fills, layers, page }]);
+  setPast((p) => [...p.slice(-(HISTORY_LIMIT - 1)), { shapes, fills, layers, page, drawingScale }]);
   setFuture([]);
- }, [shapes, fills, layers, page]);
+ }, [shapes, fills, layers, page, drawingScale]);
 
  const step = useCallback(
   (from: Snapshot[], to: Snapshot[], setFrom: typeof setPast, setTo: typeof setFuture, take: "last" | "first") => {
    if (!from.length) return;
    const next = take === "last" ? from[from.length - 1] : from[0];
    setFrom(take === "last" ? from.slice(0, -1) : from.slice(1));
-   setTo([{ shapes, fills, layers, page }, ...to].slice(0, HISTORY_LIMIT));
+   setTo([{ shapes, fills, layers, page, drawingScale }, ...to].slice(0, HISTORY_LIMIT));
    setShapes(next.shapes);
    setFills(next.fills);
    setLayers(next.layers);
    setPage(next.page);
+   setDrawingScale(next.drawingScale);
    // A shape that isn't there any more can't stay selected, or its handles would hang in the air.
    const still = new Set(next.shapes.map((s) => s.id));
    setSelected((ids) => ids.filter((id) => still.has(id)));
   },
-  [shapes, fills, layers, page],
+  [shapes, fills, layers, page, drawingScale],
  );
 
  const undo = useCallback(() => step(past, future, setPast, setFuture, "last"), [step, past, future]);
@@ -749,6 +755,7 @@ export default function App() {
   const first = { id: newLayerId(), name: "Black", color: "#262626" };
   const onlyLayer = [first];
   setShapes(noShapes);
+  setDrawingScale(100);
   setFills(noFills);
   setLayers(onlyLayer);
   setActiveLayer(first.id);
@@ -802,6 +809,7 @@ export default function App() {
   const drawing = parseDrawing(res.svg ?? "");
   setPage(drawing.page);
   setShapes(drawing.shapes);
+  setDrawingScale(100);
   setFills(drawing.fills);
   setLayers(drawing.layers);
   setActiveLayer(drawing.layers[0]?.id ?? "");
@@ -861,6 +869,7 @@ export default function App() {
   }
   setPage(drawing.page);
   setShapes(drawing.shapes);
+  setDrawingScale(100);
   setFills(drawing.fills);
   setLayers(drawing.layers);
   setActiveLayer(drawing.layers[drawing.layers.length - 1]?.id ?? "");
@@ -1946,16 +1955,20 @@ export default function App() {
   });
   record();
   setShapes(next);
+  setDrawingScale((now) => Number((now * k).toFixed(1)));
   const d = drawnBox(next);
   const off = d.x0 < -1e-6 || d.y0 < -1e-6 || d.x1 > page.w + 1e-6 || d.y1 > page.h + 1e-6;
   setMessage(off ? { text: "The drawing now runs off the paper", ok: false } : { text: "", ok: true });
  };
 
- /** Scale the whole drawing about the middle of what it draws, by a percent. */
+ /**
+  * Set the drawing's scale, as a percent of its size when it was opened or started: the drawing is
+  * scaled from the scale it is at now to the new one, about the middle of what it draws.
+  */
  const scaleDrawing = (percent: number) => {
-  if (!shapes.length || percent <= 0 || percent === 100) return;
+  if (!shapes.length || percent <= 0 || percent === drawingScale) return;
   const d = drawnBox(shapes);
-  reshapeDrawing(percent / 100, { x: (d.x0 + d.x1) / 2, y: (d.y0 + d.y1) / 2 }, { x: 0, y: 0 });
+  reshapeDrawing(percent / drawingScale, { x: (d.x0 + d.x1) / 2, y: (d.y0 + d.y1) / 2 }, { x: 0, y: 0 });
  };
 
  /** Scale the drawing as big as the paper allows inside a margin all round, and centre it there. */
@@ -2483,6 +2496,7 @@ export default function App() {
    }}
    onColor={setPaperColor}
    onTurnDrawing={turnDrawing}
+   drawingScale={drawingScale}
    onScaleDrawing={scaleDrawing}
    onFit={shapes.length ? fitDrawing : undefined}
   />
