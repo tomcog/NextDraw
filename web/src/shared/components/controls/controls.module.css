@@ -236,6 +236,16 @@
 
 .paperRow > :first-child { flex: 1; min-width: 0; }
 
+/* Scaling the drawing: the percent, with its label above, then the button that scales by it. */
+.scaleRow {
+  display: flex;
+  align-items: flex-end;
+  gap: 0.5rem;
+  margin-top: 0.5rem;
+}
+
+.scaleRow > :first-child { flex: 0 1 7rem; min-width: 5rem; }
+
 /* Paper color: round swatches, the chosen one ringed. The last opens the system color picker. */
 .paperColors {
   display: flex;

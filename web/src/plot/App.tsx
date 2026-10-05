@@ -476,6 +476,33 @@ export default function App() {
     setScaleState(next);
   }, []);
 
+  // Fit the drawing's lines to the paper inside a margin all round (mm), centred: the scale that
+  // fills the room on its tighter side, and the start that centres the lines at that scale. The
+  // drawing's page scales about its corner, so its lines keep their share of it at any scale.
+  const fitToPaper = preview && settings.paper_w > 0 && settings.paper_h > 0
+    ? (marginMm: number) => {
+      const f = preview.ink ?? { x0: 0, y0: 0, x1: 1, y1: 1 };
+      const pageMm = { w: (preview.widthIn * 25.4 * 100) / previewScale, h: (preview.heightIn * 25.4 * 100) / previewScale }; // at 100%
+      const ink = { w: (f.x1 - f.x0) * pageMm.w, h: (f.y1 - f.y0) * pageMm.h };
+      const room = { w: settings.paper_w - 2 * marginMm, h: settings.paper_h - 2 * marginMm };
+      if (room.w <= 0 || room.h <= 0) return;
+      const fits = Math.min(ink.w > 1e-6 ? room.w / ink.w : Infinity, ink.h > 1e-6 ? room.h / ink.h : Infinity);
+      if (!Number.isFinite(fits)) return;
+      // Down to a tenth of a percent, so the lines come out inside the margin rather than a hair over.
+      const next = Math.min(1000, Math.max(1, Math.floor(fits * 1000) / 10));
+      const k = next / 100;
+      const at = (paperAt: number, paperSize: number, inkSize: number, inkFrom: number, pageSize: number) =>
+        Math.round((paperAt + (paperSize - inkSize * k) / 2 - inkFrom * pageSize * k) * 10) / 10;
+      setScale(next);
+      // Straight to the state: setPlacement's floor is worked out at the old scale. Its lines never
+      // start before home, as setPlacement's floor would have them.
+      setPlacementState({
+        x: Math.max(-f.x0 * pageMm.w * k, at(settings.paper_x, settings.paper_w, ink.w, f.x0, pageMm.w)),
+        y: Math.max(-f.y0 * pageMm.h * k, at(settings.paper_y, settings.paper_h, ink.h, f.y0, pageMm.h)),
+      });
+    }
+    : undefined;
+
   const [loadedFile, setLoadedFile] = useState<string | null>(null);
   const savedKey = useRef<string | null>(null);
   // Bumped whenever choices are taken from the file, so auto-save takes them as its starting point.
@@ -1642,6 +1669,7 @@ export default function App() {
                   onDimensions={(paper_w, paper_h) => updateSettings({ paper_w, paper_h })}
                   onColor={(paper_color) => updateSettings({ paper_color })}
                   onUnits={(units) => updateSettings({ units })}
+                  onFit={fitToPaper}
                 />
                 <PresetSection
                   label={toolLabel}
