@@ -1,0 +1,17 @@
+/* A band across the top of the page, in the flow, so it pushes the page down rather than covering it. */
+.banner {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.5rem 1rem 0.5rem 1.5rem;
+  background: var(--ui-surface-inverse);
+  color: var(--ui-text-on-inverse);
+  font-size: 13px;
+}
+
+.banner[data-tone="error"] {
+  background: var(--ui-danger);
+  color: var(--ui-text-on-danger);
+}
+
+.text { flex: 1; min-width: 0; }

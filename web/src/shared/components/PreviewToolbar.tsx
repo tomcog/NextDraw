@@ -26,8 +26,6 @@ interface Props {
   /** The loupe: a lens that follows the pointer over the drawing, magnified. */
   loupe?: boolean;
   onLoupe?: (on: boolean) => void;
-  /** Studio: what the app last has to say - saved, added, or what went wrong - beside the bar. */
-  note?: { text: string; error?: boolean };
   /** Something still being worked out about the view, said beside the bar with a spinner: Plot's plot time. */
   working?: string;
 }
@@ -50,7 +48,7 @@ interface Props {
  * choice one of which holds, so the track is a group of plain buttons rather than a radiogroup.
  * Nothing about it looks different.
  */
-export function PreviewToolbar({ view, onView, canProgress, canPhoto, zoom, onZoom, canPaper = true, canDrawing, history, disabled, working, loupe, onLoupe, note }: Props) {
+export function PreviewToolbar({ view, onView, canProgress, canPhoto, zoom, onZoom, canPaper = true, canDrawing, history, disabled, working, loupe, onLoupe }: Props) {
   return (
     <span className={styles.row}>
       {history && (
@@ -158,10 +156,6 @@ export function PreviewToolbar({ view, onView, canProgress, canPhoto, zoom, onZo
         <span className={styles.status} role="status">
           <Spinner size={14} label={working} />
           {working}
-        </span>
-      ) : note?.text ? (
-        <span className={styles.status} role="status" data-tone={note.error ? "error" : undefined}>
-          {note.text}
         </span>
       ) : null}
     </span>

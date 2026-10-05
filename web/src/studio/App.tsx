@@ -15,6 +15,7 @@ import { listOf } from "../shared/lib/format";
 import { lightness } from "../shared/lib/color";
 import { joinLayerName, labelAfter, splitLayerName } from "../shared/lib/ink";
 import { PreviewToolbar, SetupToolbar, type View } from "../shared/components/PreviewToolbar";
+import { StatusBanner } from "../shared/components/StatusBanner";
 import type { Zoom } from "../shared/components/BedCanvas";
 import { Canvas, type Tool } from "./components/Canvas";
 import { ConvertStage, type ConvertView } from "./components/ConvertStage";
@@ -1604,8 +1605,15 @@ export default function App() {
   />
  );
 
+ const banner = useMemo(
+  () => (message.text && (!message.ok || message.progress) ? { text: message.text, error: !message.ok, working: message.progress } : null),
+  [message],
+ );
+
  return (
   <div className={styles.app}>
+   {/* Problems, and what's under way, across the top of the page - never on the preview's rulers. */}
+   <StatusBanner message={banner} />
    <Hints />
    <FileBrowser
     open={browserOpen}
@@ -1813,7 +1821,6 @@ export default function App() {
       toolbar={setupToolbar}
       toolbarLeft={(
        <PreviewToolbar
-        note={message.text && (!message.ok || message.progress) ? { text: message.text, error: !message.ok } : undefined}
         view={view}
         onView={setView}
         zoom={zoom}
