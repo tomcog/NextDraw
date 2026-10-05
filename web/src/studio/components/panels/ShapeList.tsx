@@ -19,8 +19,9 @@ interface Props {
   renaming: string | null;
   /** The path or shape whose row menu is open, if any. */
   rowMenuId: string | undefined;
-  /** Pick a path from its row: alone, or added to (or taken out of) the selection with Shift. A
-   *  shape's row picks the first of its paths, which picks the whole shape. */
+  /** Pick a path from its row: alone, or (`add`) put into or taken out of the selection - which the
+   *  row's box always does, and its name with Shift. A shape's row picks the first of its paths,
+   *  which picks the whole shape. */
   onPick: (id: string, add: boolean) => void;
   onDeleteAll: () => void;
   onRenameType: (id: string, name: string) => void;
@@ -116,14 +117,14 @@ export function ShapeList({ layer, shapes, picked, busy, renaming, rowMenuId, on
                 icon={group ? <Shapes /> : sh.kind === "photo" ? <ImageIcon /> : undefined}
                 checked={on}
                 aria-label={group ? `Shape ${row.index + 1}, ${name}, ${row.members.length} paths` : `Path ${row.index + 1}, ${name}`}
-                // The click decides, not the box: several shapes can be picked, which
-                // a radio would otherwise undo for us. Shift adds one to the selection
-                // or takes it out; a plain click picks that shape alone.
+                // The box is a checkbox in all but looks: each click puts this path (or
+                // shape) into the selection or takes it out, so any number can be picked
+                // from the list without Shift. The click decides, not the radio, which
+                // would otherwise let only one be on. The name, below, picks it alone. No
+                // preventDefault: undoing the browser's click after React has set the box
+                // would leave it showing the click before.
                 onChange={() => {}}
-                onClick={(e) => {
-                  e.preventDefault();
-                  onPick(sh.id, e.shiftKey);
-                }}
+                onClick={() => onPick(sh.id, true)}
                 label={
                   <span className={styles.shapeLabel}>
                     {/* The name is text: clicking the row picks the shape, and a field

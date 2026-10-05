@@ -1290,8 +1290,8 @@ export default function App() {
   if (first?.layerId && first.layerId !== activeLayer) setActiveLayer(first.layerId);
  };
 
- // Picking from the list: a plain click takes that shape alone, shift adds one or takes it out.
- // The row's box and its name both do this, which is why it is a function rather than a handler.
+ // Picking from the list: the row's box puts a path in or takes it out, as a checkbox would; its
+ // name takes that path alone, or with Shift does what the box does.
  // A shape's row takes all of its paths out together, as it puts them all in.
  const pickFromRow = (id: string, add: boolean) =>
   setSelected((current) => {
