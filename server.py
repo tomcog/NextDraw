@@ -3251,16 +3251,26 @@ def get_plot_settings():
 
 @app.put("/api/plot-settings")
 def put_plot_settings():
-    """A page's settings and chosen tool, for every other open page to follow."""
+    """What a page changed in the settings or the chosen tool, for every other open page to follow.
+    Only the changes are taken: `changes` holds the settings changed on that page, and `preset` is
+    there only when the tool was. A whole set of settings from a page that had fallen behind would
+    put its old values back over the others' - which is how Path order kept going back to joining
+    paths - so the old form, `settings`, is taken only when the server has none yet."""
     global shared_settings
     body = request.json or {}
-    settings, preset = body.get("settings"), body.get("preset")
-    if not isinstance(settings, dict) or not all(
-            isinstance(k, str) and (v is None or isinstance(v, (str, int, float, bool))) for k, v in settings.items()):
+    changes = body.get("changes")
+    if changes is None and isinstance(body.get("settings"), dict):
+        if shared_settings["settings"] is not None:
+            return jsonify(version=shared_settings["version"])  # a page from before this change: ignored
+        changes = body["settings"]
+    if not isinstance(changes, dict) or not all(
+            isinstance(k, str) and (v is None or isinstance(v, (str, int, float, bool))) for k, v in changes.items()):
         return jsonify(error="Settings must be a set of plain values."), 400
-    if preset is not None and not isinstance(preset, str):
+    if "preset" in body and body["preset"] is not None and not isinstance(body["preset"], str):
         return jsonify(error="The tool must be named."), 400
     with plot_settings_lock:
+        settings = {**(shared_settings["settings"] or {}), **changes}
+        preset = body["preset"] if "preset" in body else shared_settings["preset"]
         if settings == shared_settings["settings"] and preset == shared_settings["preset"]:
             return jsonify(version=shared_settings["version"])  # nothing new: the other pages are already showing it
         shared_settings = {"settings": settings, "preset": preset, "version": f"{time.time_ns():x}"}

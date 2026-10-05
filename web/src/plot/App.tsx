@@ -429,14 +429,18 @@ export default function App() {
   // The settings and the tool are kept on the server, so every open Plot page - odin's own screen and
   // any other device's - shows the same ones: a change on one is sent there, and the others take it up
   // on their next status poll. This browser's own copy above is only what the page starts from when the
-  // server has none yet.
+  // server has none yet. A page sends only what was changed on it, never everything it holds: a page
+  // that has fallen behind (an iPad tab that slept, a tab left open on the other Mac) would otherwise
+  // put its old values back over everyone's the moment anything at all changed on it.
   const [sharedReady, setSharedReady] = useState(false);
   const sharedKey = sortedJSON({ settings, preset: activePreset });
   const syncedKey = useRef<string | null>(null); // what the server holds, as far as this page knows
+  const synced = useRef<{ settings: Settings; preset: string | null } | null>(null); // the same, as values
   refs.current.settingsUnsent = sharedReady && sharedKey !== syncedKey.current;
   const takeShared = useCallback((shared: SharedSettings) => {
     const next = { ...DEFAULT_SETTINGS, ...shared.settings };
     syncedKey.current = sortedJSON({ settings: next, preset: shared.preset });
+    synced.current = { settings: next, preset: shared.preset };
     refs.current.settingsVersion = shared.version;
     refs.current.settings = next;
     refs.current.activePreset = shared.preset;
@@ -445,12 +449,17 @@ export default function App() {
   }, []);
   useEffect(() => {
     if (!sharedReady || sharedKey === syncedKey.current) return;
-    const body = { settings, preset: activePreset };
+    const before = synced.current;
+    const changes = Object.fromEntries(Object.entries(settings).filter(([k, v]) => !before || sortedJSON(before.settings[k as keyof Settings]) !== sortedJSON(v)));
+    const body = { changes, ...(!before || before.preset !== activePreset ? { preset: activePreset } : {}) };
+    const sent = { settings, preset: activePreset };
     const timer = window.setTimeout(() => {
       postJSON<{ version: string }>("/api/plot-settings", body, "PUT")
-        .then((r) => {
+        .then(() => {
           syncedKey.current = sharedKey;
-          refs.current.settingsVersion = r.version;
+          synced.current = sent;
+          // Not taken as this page's version: the server's settings are now these changes over what
+          // the other pages sent, so the next status poll reads them back and the page shows the whole.
         })
         .catch(() => { /* the next change sends them again */ });
     }, 300);
