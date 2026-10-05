@@ -3,7 +3,7 @@ import { DrawingToolSection } from "../shared/components/controls/DrawingToolSec
 import { PaperSection } from "../shared/components/controls/PaperSection";
 import { SettingsSection } from "../shared/components/controls/SettingsSection";
 import { Button, ButtonRound, Card, Checkbox, InputText, Segment, Toolbar, ToolbarExpander } from "@tomcoggia/ui";
-import { ArrowDownToLine, AudioWaveform, Circle, ClipboardCopy, ClipboardPaste, Copy, File as FileIcon, FileInput, FilePlus, FolderOpen, ImagePlus, Layers2, LayersArrowDown, LineStyle, LoaderPinwheel, Menu, Minus, MousePointer2, PenLine, Pentagon, Rainbow, Save, Send, Shell, Signal, Spline, Square, SquareDimensions, Star, Target, Trash2, Type, Waves } from "lucide-react";
+import { ArrowDownToLine, AudioWaveform, Circle, ClipboardCopy, ClipboardPaste, Copy, File as FileIcon, FileInput, FilePlus, FolderOpen, ImagePlus, Layers2, LayersArrowDown, LoaderPinwheel, Minus, MousePointer2, PenLine, Pentagon, Rainbow, Save, Send, Shell, Signal, Spline, Square, SquareDimensions, Star, Trash2, Type } from "lucide-react";
 import { FileBrowser, LAST_FOLDER_KEY, type CombineResult, type OpenResult } from "../shared/components/FileBrowser";
 import { Section } from "../shared/components/controls/Section";
 import { NumberField } from "../shared/components/controls/NumberField";
@@ -23,7 +23,7 @@ import { mergeLines } from "./lib/mergeLines";
 import { SizePopover } from "./components/SizePopover";
 import { StudioHeader } from "./components/StudioHeader";
 import { ThemeToggle } from "../shared/components/ThemeToggle";
-import { canConnect, canFill, fillNumbers, fillRuns, newFillId, FILL_LABEL, type Fill, type FillKind } from "./lib/hatch";
+import { canFill, fillRuns, newFillId, type Fill } from "./lib/hatch";
 import { curveStrokes, type Curve, type Point } from "./lib/parametric";
 import { fontNames, loadFont, type StrokeFont } from "./lib/font";
 import { flattenPath, flattenRun, mapNode, parsePath, simplifyRun, type Node } from "./lib/path";
@@ -40,11 +40,13 @@ import { PhotoCard } from "./components/panels/PhotoCard";
 import { canFlatten, hasShapeCard, ShapeCard, type ShapePanel } from "./components/panels/ShapeCard";
 import { TextCard } from "./components/panels/TextCard";
 import { SelectionCard } from "./components/panels/SelectionCard";
+import { FillPanel } from "./components/panels/FillPanel";
+import { CalibrationSection } from "./components/panels/CalibrationSection";
 import { LayersSection, type AlignEdge } from "./components/panels/LayersSection";
 import { boxAround, boxOf, centerOf, clampToPage, drawnNodes, drawnRuns, moveBy, newLayerId, newShapeId, outlinePoints, pathRuns, pointsBox, resizeTo, shapeName, turnAround, turnPoint, type Layer, type Page, type Shape } from "./lib/shapes";
 import { buildSvg, svgForMarks, cleanFileName } from "./lib/svg";
 import { drawnMiddle, fitToPage, reshapeDrawing, runsOffPage, turnDrawingLeft } from "./lib/drawing";
-import { CALIBRATION_COVERS, calibrationSheet } from "./lib/calibration";
+import { calibrationSheet } from "./lib/calibration";
 import { readCalibration, readingProblems, sheetLayout } from "./lib/calibrationRead";
 import styles from "./App.module.css";
 
@@ -91,20 +93,6 @@ const TOOL_KEYS: Record<string, Tool> = {
  p: "polygon",
  s: "star",
  a: "arc",
-};
-
-const FILL_ICON: Record<FillKind, JSX.Element> = {
- hatch: <Menu />,
- concentric: <Target />,
- wavy: <Waves />,
- dashes: <LineStyle />,
-};
-
-const FILL_HINT: Record<FillKind, string> = {
- hatch: "Straight lines, the spacing apart",
- concentric: "The shape's own outline stepped inward",
- wavy: "The same lines drawn as waves",
- dashes: "The same lines broken into strokes: lighter, and a pen lift each",
 };
 
 // The drawing being worked on, remembered so that handing one to Plot - which navigates away - isn't
@@ -1014,7 +1002,6 @@ export default function App() {
  const sheetPens = useMemo(() => [...new Set(sheet?.patches.map((p) => p.pen) ?? [])], [sheet]);
  const strangers = sheetPens.filter((pen) => !(tool2?.palette ?? []).some((p) => p.name === pen));
  const sheetIsTool = Boolean(sheet && tool2 && sheetPens.length && !strangers.length);
- const calibrationInput = useRef<HTMLInputElement>(null);
  const readSheetPhoto = async (file: File | undefined) => {
   if (!file || !sheet || !tool2 || !sheetIsTool) return;
   setBusy(true);
@@ -2335,7 +2322,6 @@ export default function App() {
 
  // Setup: getting the drawing tools ready, away from the drawing. For now that is calibration -
  // a sheet of every pen plotted and photographed, read back as each pen really comes out.
- const calibrated = tool2?.calibration;
  const setupRail = (
   <Card variant="flat" className={styles.controls}>
    <div className={`${styles.cardBody} ${controls.cardSections}`}>
@@ -2344,73 +2330,17 @@ export default function App() {
     </Section>
     {paperSection}
     <DrawingToolSection tools={presets} value={toolName} onPick={pickTool} collapsibleKey="setup-pen" disabled={busy} />
-    <Section
-     title="Calibration"
-     collapsibleKey="calibration"
-     action={<span className={controls.toolInTitle}>{calibrated ? `Measured ${calibrated.measured}` : "Not measured"}</span>}
-    >
-     <p className={controls.hint}>
-      1. Make the sheet: every {tool2?.name ?? "drawing tool"} pen at four strengths, on this paper. Save it and plot it on the paper you’ll use.
-     </p>
-     <Button
-      size="sm"
-      variant="secondary"
-      disabled={busy || !tool2?.palette?.length}
-      title={tool2?.palette?.length ? undefined : "This drawing tool has no colours yet"}
-      onClick={() => startNew("calibration")}
-     >
-      New calibration sheet
-     </Button>
-     <p className={controls.hint}>
-      2. Photograph the plotted sheet flat and evenly lit, with the whole sheet in view, and read it in with the sheet open here.
-     </p>
-     <Button
-      size="sm"
-      variant="secondary"
-      disabled={busy || !sheetIsTool}
-      title={!sheet ? "Open the calibration sheet first" : !sheetIsTool ? `This sheet isn’t of ${toolName || "the drawing tool"}’s pens: choose the tool it was made for` : undefined}
-      onClick={() => calibrationInput.current?.click()}
-     >
-      Read a photo of the sheet
-     </Button>
-     <input
-      ref={calibrationInput}
-      type="file"
-      accept="image/*"
-      hidden
-      onChange={(e) => {
-       readSheetPhoto(e.target.files?.[0]);
-       e.target.value = ""; // so the same photo can be read again
-      }}
-     />
-     {sheet && !sheetIsTool && tool2 && (
-      <p className={controls.hint}>The open sheet is of other pens than {tool2.name}’s ({strangers.length > 3 ? `${strangers.slice(0, 3).join(", ")} and ${strangers.length - 3} more` : listOf(strangers)}).</p>
-     )}
-     {confirmNewBlock}
-     {calibrated && tool2 && (
-      <ul className={styles.calibration} aria-label={`${tool2.name} as measured`}>
-       <li className={styles.calibrationRow}>
-        <span className={styles.calibrationHead}>Pen</span>
-        <span className={styles.calibrationHead} title="The palette's colour">Pal.</span>
-        {CALIBRATION_COVERS.map((c) => <span key={c} className={styles.calibrationHead}>{Math.round(c * 1000) / 10}</span>)}
-       </li>
-       {(tool2.palette ?? []).map((pen) => {
-        const covers = calibrated.pens[pen.name];
-        return (
-         <li key={pen.name} className={styles.calibrationRow}>
-          <span title={pen.name}>{pen.name}</span>
-          <span className={styles.swatch} data-palette="true" style={{ background: pen.color }} title={`${pen.name}: palette ${pen.color}`} />
-          {CALIBRATION_COVERS.map((c) => {
-           const key = `${Math.round(c * 1000) / 10}`;
-           const hex = covers?.[key];
-           return <span key={key} className={styles.swatch} style={{ background: hex ?? "transparent" }} title={hex ? `${pen.name} at ${key}%: ${hex}` : "Not measured"} />;
-          })}
-         </li>
-        );
-       })}
-      </ul>
-     )}
-    </Section>
+    <CalibrationSection
+     tool={tool2}
+     toolName={toolName}
+     busy={busy}
+     sheetOpen={Boolean(sheet)}
+     sheetIsTool={sheetIsTool}
+     strangers={strangers}
+     onNewSheet={() => startNew("calibration")}
+     onReadPhoto={readSheetPhoto}
+     confirm={confirmNewBlock}
+    />
     <Section title="Appearance" action={<ThemeToggle />}>
      <p className={controls.hint}>Light or dark. Plot follows the same choice.</p>
     </Section>
@@ -2495,134 +2425,24 @@ export default function App() {
 
  // The Hatch settings, for the chosen shape or for a whole selection at once.
  const fillPanel = fillLead && (
-        <>
-         <Checkbox
-          checked={chosenFills.length > 0}
-          label="Fill shape"
-          onChange={(e) => setHatched(e.target.checked)}
-         />
-         {chosenFills.length > 0 && (
-          <div className={styles.tools} role="group" aria-label="What the fill is made of">
-           {(Object.keys(FILL_LABEL) as FillKind[]).map((k) => {
-            const on = (chosenFills[0].kind ?? "hatch") === k;
-            return (
-             <ButtonRound
-              key={k}
-              size="sm"
-              icon={FILL_ICON[k]}
-              className={on ? controls.roundActive : undefined}
-              aria-label={FILL_LABEL[k]}
-              aria-pressed={on}
-              title={FILL_HINT[k]}
-              // Both passes of a cross-hatch are the same kind of thing.
-              onClick={() => chosenFills.forEach((f, at) => setFillAt(at, { ...f, kind: k }))}
-             />
-            );
-           })}
-          </div>
-         )}
-         {chosenFills.map((fill, i) => (
-          <div key={fill.id} className={styles.fillRow}>
-           <NumberField
-            label={i === 0 ? "Angle" : "Cross angle"}
-            unit="°"
-            step={5}
-            value={fill.angle}
-            onChange={(angle) => setFillByHand(i, { ...fill, angle })}
-           />
-           <NumberField
-            label="Spacing"
-            unit="mm"
-            step={0.1}
-            min={0.05}
-            value={fill.spacingMm}
-            onChange={(spacingMm) => setFillByHand(i, { ...fill, spacingMm })}
-           />
-          </div>
-         ))}
-         {/* No sentence saying the spacing was set by hand: the field above says the number,
-           and the way back to the tool's own is the only part of it worth the room. */}
-         {chosenFills.map((fill, i) => (fill.custom ? (
-          <p key={`${fill.id}-note`} className={`${styles.empty} ${styles.fillFollow}`}>
-           <Button size="sm" variant="ghost" onClick={() => followTool(i, fill)}>
-            Use tool spacing
-           </Button>
-          </p>
-         ) : null))}
-         {chosenFills.length > 0 && (chosenFills[0].kind ?? "hatch") === "wavy" && (
-          <div className={styles.fillRow}>
-           <NumberField
-            label="Wave"
-            unit="mm"
-            step={0.5}
-            min={0.2}
-            value={fillNumbers(chosenFills[0]).waveMm}
-            onChange={(waveMm) => chosenFills.forEach((f, at) => setFillByHand(at, { ...f, waveMm }))}
-           />
-           <NumberField
-            label="Swing"
-            unit="mm"
-            step={0.25}
-            min={0}
-            value={fillNumbers(chosenFills[0]).swingMm}
-            onChange={(swingMm) => chosenFills.forEach((f, at) => setFillByHand(at, { ...f, swingMm }))}
-           />
-          </div>
-         )}
-         {chosenFills.length > 0 && (chosenFills[0].kind ?? "hatch") === "dashes" && (
-          <div className={styles.fillRow}>
-           <NumberField
-            label="Dash"
-            unit="mm"
-            step={0.5}
-            min={0.2}
-            value={fillNumbers(chosenFills[0]).dashMm}
-            onChange={(dashMm) => chosenFills.forEach((f, at) => setFillByHand(at, { ...f, dashMm }))}
-           />
-           <NumberField
-            label="Gap"
-            unit="mm"
-            step={0.5}
-            min={0.1}
-            value={fillNumbers(chosenFills[0]).gapMm}
-            onChange={(gapMm) => chosenFills.forEach((f, at) => setFillByHand(at, { ...f, gapMm }))}
-           />
-          </div>
-         )}
-         {chosenFills.length > 0 && (
-          <Checkbox
-           checked={chosenFills.length > 1}
-           label="Cross-hatch"
-           onChange={(e) =>
-            // A second pass square to the first, which is what makes it read as a mesh
-            // rather than as two hatchings that happen to share a shape.
-            setFillAt(1, e.target.checked ? { ...newFill((chosenFills[0].angle + 90) % 180), connected: chosenFills[0].connected } : null)
-           }
-          />
-         )}
-         {chosenFills.length > 0 && canConnect(chosenFills[0]) && (
-          <Checkbox
-           checked={chosenFills[0].connected === true}
-           label="Connect ends"
-           // Each pass becomes one zigzag stroke, joined along the shape's edge. Both passes
-           // of a cross-hatch follow the one switch.
-           onChange={(e) => {
-            const connected = e.target.checked;
-            record();
-            setFills((list) => list.map((f) => (fillTargets.some((t) => t.id === f.shapeId) ? { ...f, connected } : f)));
-           }}
-          />
-         )}
-         {/* Only worth asking about while there is a hatch: a shape with no hatch is its
-           outline, and nothing else. */}
-         {chosenFills.length > 0 && (
-          <Checkbox
-           checked={fillLead.outline !== false}
-           label="Draw the outline too"
-           onChange={(e) => setOutline(e.target.checked)}
-          />
-         )}
-        </>
+  <FillPanel
+   fills={chosenFills}
+   outline={fillLead.outline !== false}
+   actions={{
+    setHatched,
+    setAt: setFillAt,
+    setByHand: setFillByHand,
+    followTool,
+    // A second pass square to the first, which is what makes it read as a mesh rather than as two
+    // hatchings that happen to share a shape.
+    setCross: (on) => setFillAt(1, on ? { ...newFill((chosenFills[0].angle + 90) % 180), connected: chosenFills[0].connected } : null),
+    setConnected: (connected) => {
+     record();
+     setFills((list) => list.map((f) => (fillTargets.some((t) => t.id === f.shapeId) ? { ...f, connected } : f)));
+    },
+    setOutline,
+   }}
+  />
  );
 
  return (
