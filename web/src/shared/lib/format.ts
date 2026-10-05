@@ -11,7 +11,6 @@ export function fmtLen(mmValue: number, units: Units, withUnit = true) {
 }
 
 export const fmtIn = (inches: number) => `${inches.toFixed(2).replace(/\.?0+$/, "")} in`;
-export const fmtMM = (inches: number) => `${Math.round(inches * 25.4)} mm`;
 
 export function fmtDuration(seconds: number) {
   const s = Math.max(0, Math.round(seconds || 0));

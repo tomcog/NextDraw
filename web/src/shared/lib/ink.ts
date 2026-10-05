@@ -73,12 +73,6 @@ export function inkHex(
   return named(palette) ?? named(paletteOf(ink.tool)) ?? ink.hex ?? null;
 }
 
-/** Whether an ink is this pen of this tool, for showing which one is ticked in the palette menu. */
-export const isPen = (ink: Ink | undefined, tool: string, pen: string) =>
-  typeof ink === "object" && ink !== null
-  && ink.tool === tool
-  && ink.pen.trim().toLowerCase() === pen.trim().toLowerCase();
-
 /**
  * The name of the pen a layer is being plotted in, for saying so beside the layer's own name.
  *

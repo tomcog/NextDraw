@@ -25,8 +25,6 @@ export const apply = (m: Matrix, p: Point): Point => ({
   y: m[1] * p.x + m[3] * p.y + m[5],
 });
 
-export const isIdentity = (m: Matrix) => m.every((v, i) => Math.abs(v - IDENTITY[i]) < 1e-12);
-
 /** Whether the map keeps axes as axes: only scaling and moving, so a box stays a box. */
 export const axisAligned = (m: Matrix) => Math.abs(m[1]) < 1e-12 && Math.abs(m[2]) < 1e-12;
 

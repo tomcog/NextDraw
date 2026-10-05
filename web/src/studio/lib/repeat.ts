@@ -36,8 +36,6 @@ export interface RingRepeat {
 
 export type Repeat = LineRepeat | GridRepeat | RingRepeat;
 
-export const REPEAT_LABEL: Record<RepeatKind, string> = { line: "Row", grid: "Grid", ring: "Ring" };
-
 /** One copy's place: how far it is moved, and how far it is turned about its own middle. */
 export interface Placement {
   dx: number;

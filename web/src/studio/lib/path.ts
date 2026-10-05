@@ -306,11 +306,6 @@ export function catmullNodes(points: Point[]): Node[] {
   return out;
 }
 
-/** The smoothed run walked out in pieces about `step` long. */
-export function smoothRun(points: Point[], step = 0.01): Point[] {
-  return flattenRun(catmullNodes(points), step);
-}
-
 /**
  * A run with the points it doesn't need taken out: Douglas-Peucker, which keeps every point that is
  * further than `tolerance` from the line its neighbours make and drops the rest. The ends are always
