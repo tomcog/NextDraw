@@ -83,7 +83,9 @@ export function parseDrawing(text: string): Opened {
     if (known) return known;
     const parent = el.parentElement;
     const above = parent && parent !== svg ? ctmOf(parent) : IDENTITY;
-    const m = multiply(above, parseTransform(el.getAttribute("transform")));
+    // The turn Studio wraps round a shape it turned is left out: the shape is read as its square box,
+    // and the angle comes back from the design block. Baking it in as well would turn it twice.
+    const m = studioTurn(el) ? above : multiply(above, parseTransform(el.getAttribute("transform")));
     ctms.set(el, m);
     return m;
   };
@@ -118,6 +120,16 @@ export function parseDrawing(text: string): Opened {
   } catch {
     design = {}; // unreadable parameters: the drawing still opens, just without them
   }
+  // Whether a group is the turn Studio wrapped round a shape it turned: rotate() by the very angle the
+  // design block gives a shape inside it. The copies of a repeated shape sit inside the same turn.
+  const turnedIds = Object.entries(design.turned ?? {}).filter(([, deg]) => Number.isFinite(Number(deg)) && Number(deg));
+  const studioTurn = (el: Element) => {
+    if (!turnedIds.length || el.nodeName.toLowerCase() !== "g") return false;
+    const turn = /^\s*rotate\(\s*(-?[\d.e+-]+)/.exec(el.getAttribute("transform") ?? "");
+    if (!turn) return false;
+    const inside = new Set(Array.from(el.querySelectorAll("*"), (c) => c.getAttribute("id")));
+    return turnedIds.some(([id, deg]) => inside.has(id) && Math.abs(Number(turn[1]) - Number(deg)) < 1e-3);
+  };
   const savedCurves = (Array.isArray(design.curves) ? design.curves : []) as Record<string, unknown>[];
   const curveIds = new Set(savedCurves.map((c) => String(c.shape)));
   const fromCurve = (id: string) => curveIds.has(id) || [...curveIds].some((c) => id.startsWith(`${c}-`));
