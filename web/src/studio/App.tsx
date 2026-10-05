@@ -2,8 +2,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { DrawingToolSection } from "../shared/components/controls/DrawingToolSection";
 import { PaperSection } from "../shared/components/controls/PaperSection";
 import { SettingsSection } from "../shared/components/controls/SettingsSection";
-import { Button, ButtonRound, Card, Checkbox, InputSelect, InputText, InputTextarea, LayerController, Segment, SegmentedControl, Toolbar, ToolbarExpander } from "@tomcoggia/ui";
-import { AlignCenterHorizontal, AlignCenterVertical, AlignEndHorizontal, AlignEndVertical, AlignStartHorizontal, AlignStartVertical, ArrowDownLeft, ArrowDownRight, ArrowDownToLine, ArrowUpLeft, ArrowUpRight, AudioWaveform, Circle, ClipboardCopy, ClipboardPaste, Copy, Ellipsis, EllipsisVertical, File as FileIcon, FileInput, FilePlus, FlameKindling, FolderOpen, Image as ImageIcon, ImagePlus, Grid2x2, Layers2, LayersArrowDown, LayersArrowUp, Merge, LineStyle, LoaderPinwheel, Menu, Minus, MousePointer2, Orbit, PaintBucket, PaintRoller, PenLine, Pipette, Pentagon, Plus, Rainbow, RotateCcwSquare, RotateCw, RotateCwSquare, Save, Send, Shell, Signal, Spline, Square, SquareDimensions, SquareStack, Star, Target, Trash2, Type, Waves } from "lucide-react";
+import { Button, ButtonRound, Card, Checkbox, InputSelect, InputText, InputTextarea, Segment, SegmentedControl, Toolbar, ToolbarExpander } from "@tomcoggia/ui";
+import { ArrowDownLeft, ArrowDownRight, ArrowDownToLine, ArrowUpLeft, ArrowUpRight, AudioWaveform, Circle, ClipboardCopy, ClipboardPaste, Copy, Ellipsis, File as FileIcon, FileInput, FilePlus, FlameKindling, FolderOpen, ImagePlus, Grid2x2, Layers2, LayersArrowDown, LineStyle, LoaderPinwheel, Menu, Minus, MousePointer2, Orbit, PaintBucket, PaintRoller, PenLine, Pipette, Pentagon, Rainbow, RotateCcwSquare, RotateCw, RotateCwSquare, Save, Send, Shell, Signal, Spline, Square, SquareDimensions, SquareStack, Star, Target, Trash2, Type, Waves } from "lucide-react";
 import { FileBrowser, LAST_FOLDER_KEY, type CombineResult, type OpenResult } from "../shared/components/FileBrowser";
 import { Section } from "../shared/components/controls/Section";
 import { NumberField } from "../shared/components/controls/NumberField";
@@ -12,13 +12,11 @@ import { api, postJSON } from "../shared/lib/api";
 import { load, save as remember } from "../shared/lib/storage";
 import { DEFAULT_SETTINGS, PAPER_SIZES, PLOT_CHANNEL } from "../shared/lib/constants";
 import type { Info, PenColor, PlotterModel, Preset } from "../shared/lib/types";
-import { listOf, trimNum } from "../shared/lib/format";
+import { listOf } from "../shared/lib/format";
 import { lightness } from "../shared/lib/color";
-import { isPalettePen } from "../shared/lib/ink";
 import { APP_URL } from "../shared/lib/apps";
 import { PreviewToolbar, SetupToolbar, type View } from "../shared/components/PreviewToolbar";
 import type { Zoom } from "../shared/components/BedCanvas";
-import { useRowDrag } from "./lib/useRowDrag";
 import { Canvas, type Tool } from "./components/Canvas";
 import { ConvertStage, type ConvertView } from "./components/ConvertStage";
 import { mergeLines } from "./lib/mergeLines";
@@ -37,6 +35,8 @@ import { usePhotoRead } from "./lib/usePhotoRead";
 import { PaletteMenu } from "../shared/components/controls/PaletteMenu";
 import { Hints } from "../shared/components/controls/Hints";
 import { RowMenu } from "./components/controls/RowMenu";
+import { ShapeList } from "./components/panels/ShapeList";
+import { LayersSection, type AlignEdge } from "./components/panels/LayersSection";
 import { boxAround, boxOf, centerOf, clampToPage, drawnNodes, drawnRuns, moveBy, newLayerId, newShapeId, outlinePoints, pathRuns, pointsBox, resizeTo, shapeName, turnAround, turnPoint, POINT_HANDLE_LIMIT, type Layer, type Page, type Shape } from "./lib/shapes";
 import { buildSvg, svgForMarks, cleanFileName } from "./lib/svg";
 import { drawnMiddle, fitToPage, reshapeDrawing, runsOffPage, turnDrawingLeft } from "./lib/drawing";
@@ -114,8 +114,6 @@ const REPEATS: { kind: RepeatKind; label: string; hint: string; icon: JSX.Elemen
 // the same as losing it. Its own key: Plot's keys share this origin and still carry the old name.
 const LAST_FILE_KEY = "studio-last-file";
 const PAPER_COLOR_KEY = "studio-paper-color";
-/** The most shapes the Shapes card lists a row for. */
-const SHAPE_LIST_LIMIT = 200;
 
 // Undo keeps whole copies of the drawing rather than a list of changes: a drawing is a handful of
 // shapes, so a copy costs nothing, and there's no way for a replayed change to go wrong.
@@ -1175,7 +1173,7 @@ export default function App() {
   return on.length > 0 && !on.every((sh) => sh.photo?.group && activePhotos.has(sh.photo.group));
  });
  const alignTarget = alignTo === "paper" || alignable.some((l) => l.id === alignTo) ? alignTo : alignable[0]?.id ?? "paper";
- const alignLayer = (edge: "left" | "centre" | "right" | "top" | "middle" | "bottom") => {
+ const alignLayer = (edge: AlignEdge) => {
   if (!onActive.length) return;
   const to = alignTarget === "paper" ? { x0: 0, y0: 0, x1: page.w, y1: page.h } : boxAround(shapes.filter((sh) => sh.layerId === alignTarget));
   const from = boxAround(onActive);
@@ -1187,7 +1185,6 @@ export default function App() {
  // Turning the active layer as one, about the middle of the box round it: what dragging the turn grip
  // does to the layer picked whole, by an exact angle. Photos stay as they are - they stand square to
  // the page, and their layers are in register with each other - and turn from their own card.
- const [layerTurnBy, setLayerTurnBy] = useState(15);
  const turnLayer = (deg: number) => {
   const turning = onActive.filter((sh) => !sh.photo);
   if (!deg) return;
@@ -2132,28 +2129,6 @@ export default function App() {
    if (ids.size) setShapes((list) => list.map((sh) => (ids.has(sh.id) ? { ...sh, outline: undefined } : sh)));
   }
  };
-
- // Restacking. The list is shown top-down but `layers` is bottom-first, like Plot's, so a row moved
- // n places down the list moves n places up the stack.
- const layerList = useRef<HTMLUListElement>(null);
- const layerRows = useRef(new Map<string, HTMLElement>());
- // Layers are shown top-first, the way they stack on the paper; the array holds them bottom-first,
- // the order they're drawn in. So a drop at display position `to` is a move to the mirrored index.
- const { dragging: layerDrag, start: startLayerDrag } = useRowDrag({
-  rows: [...layers].reverse().map((l) => l.id),
-  rowRefs: layerRows,
-  listRef: layerList,
-  disabled: busy,
-  onStart: record,
-  onMove: (id, to) =>
-   setLayers((list) => {
-    const from = list.length - 1 - list.findIndex((l) => l.id === id);
-    if (to === from) return list;
-    const next = [...list];
-    next.splice(next.length - 1 - to, 0, next.splice(next.length - 1 - from, 1)[0]);
-    return next;
-   }),
- });
 
  const patchLayer = (id: string, patch: Partial<Layer>) => {
   record();
@@ -3305,279 +3280,68 @@ export default function App() {
      <Card variant="flat" className={styles.controls}>
       <div className={`${styles.cardBody} ${controls.cardSections}`}>
        <Section title="Artwork" collapsibleKey="artwork">
-       <Section
-        title="Layers"
-        collapsibleKey="layers"
-        action={
-         <span className={styles.headerTools}>
-          {layers.length > 1 && (
-           <ButtonRound size="sm" icon={<LayersArrowUp />} aria-label="Sort layers by darkness"
-            title="Sort by darkness: the lightest ink is layer 1 and drawn first, with darker inks over it"
-            disabled={busy} onClick={sortLayersByLightness} />
-          )}
-          {shapes.length > 1 && (
-           <ButtonRound size="sm" icon={<Merge />} aria-label="Merge overlapping lines"
-            title="Merge overlapping lines: straight lines that run over one another along the same line - a halftone's dashes, a line drawn twice - joined into single strokes, so each bit is drawn once. Looks the same; draws faster"
-            disabled={busy} onClick={mergeOverlaps} />
-          )}
-          <ButtonRound size="sm" icon={<Plus />} aria-label="Add a layer"
-           title="Add a layer: one more pen to draw with" disabled={busy} onClick={addLayer} />
-         </span>
-        }
-       >
-        <ul className={styles.layerList} ref={layerList}>
-         {[...layers].reverse().map((layer) => {
-          const at = layers.indexOf(layer); // 0 is the bottom layer, as in Plot
-          return (
-           <li
-            key={layer.id}
-            className={styles.layerRow}
-            data-dragging={layerDrag === layer.id}
-            ref={(el) => {
-             if (el) layerRows.current.set(layer.id, el);
-             else layerRows.current.delete(layer.id);
-            }}
-           >
-            <LayerController
-             name="studio-layer"
-             purpose="draw"
-             number={at + 1}
-             color={layer.color}
-             // Struck through when the layer isn't one of this tool's pens by name and colour - the
-             // same rule as Plot's Layers card. Only a tool with a palette of its own is asked.
-             swatchCut={isPalettePen(layer.name, layer.color, tool2?.palette ?? []) === false}
-             swatchProps={{
-              "aria-label": isPalettePen(layer.name, layer.color, tool2?.palette ?? []) === false
-               ? `Pen color for ${layer.name} - no ${tool2?.name ?? ""} pen is called that, in that colour`
-               : `Pen color for ${layer.name}`,
-              "aria-haspopup": "menu",
-              "aria-expanded": colorMenu?.id === layer.id,
-              title: "Choose the pen this layer draws with",
-              disabled: busy,
-              onClick: (e) => {
-               const anchor = e.currentTarget;
-               setColorMenu((open) => (open?.id === layer.id ? null : { id: layer.id, anchor }));
-              },
-             }}
-             checked={active?.id === layer.id}
-             visible={!layer.hidden}
-             onVisibleChange={(visible) => patchLayer(layer.id, { hidden: !visible })}
-             disabled={busy}
-             onChange={() => switchLayer(layer.id)}
-             aria-label={`Draw on layer ${at + 1}, ${layer.name}`}
-             label={renamingLayer === layer.id ? (
-              <input
-               className={`${styles.shapeName} ${styles.shapeNameEdit}`}
-               data-renaming
-               value={layer.name}
-               aria-label={`Name of layer ${at + 1}`}
-               autoFocus
-               disabled={busy}
-               onFocus={(e) => e.currentTarget.select()}
-               onChange={(e) => typeLayerName(layer.id, e.target.value)}
-               onBlur={() => {
-                settleLayerName(layer.id);
-                setRenamingLayer(null);
-               }}
-               onKeyDown={(e) => {
-                if (e.key === "Escape") typeLayerName(layer.id, nameBeforeEdit.current);
-                if (e.key === "Enter" || e.key === "Escape") e.currentTarget.blur();
-               }}
-              />
-             ) : (
-              // Text, not a field: clicking it draws on that layer. Renaming is asked
-              // for from the kebab, so nothing typed can land in a name by accident.
-              // Green while it is the one being drawn on, like the nib beside it.
-              <span
-               className={layer.id === activeLayer
-                ? `${styles.shapeName} ${styles.shapeNameOn}`
-                : styles.shapeName}
-               title="Click to draw on this layer"
-               onClick={() => switchLayer(layer.id)}
-              >
-               {layer.name}
-              </span>
-             )}
-             handleProps={{
-              "aria-label": `Move ${layer.name}`,
-              title: "Drag to restack",
-              disabled: busy || layers.length < 2,
-              onPointerDown: (e) => startLayerDrag(e, layer.id),
-             }}
-            />
-            <ButtonRound size="sm" variant="tertiary" icon={<EllipsisVertical />}
-             aria-label={`More for layer ${layer.name}`}
-             aria-haspopup="menu"
-             aria-expanded={rowMenu?.id === layer.id}
-             title="Duplicate, merge or delete this layer"
-             disabled={busy}
-             onClick={(e) => {
-              const anchor = e.currentTarget;
-              setRowMenu((open) => (open?.id === layer.id ? null : { kind: "layer", id: layer.id, anchor }));
-             }} />
-           </li>
-          );
-         })}
-        </ul>
-        {/* The active layer lined up with another, by the boxes round what's on them. */}
-        {active && onActive.length > 0 && (
-         <div className={styles.alignRow}>
-          <InputSelect size="md" label={`Align ${active.name} to`} value={alignTarget} disabled={busy} onChange={(e) => setAlignTo(e.target.value)}>
-           {alignable.map((l) => <option key={l.id} value={l.id}>{l.name}</option>)}
-           <option value="paper">The paper</option>
-          </InputSelect>
-          <SegmentedControl size="sm" variant="dark" actions aria-label={`Align ${active.name}`}>
-           <Segment icon={<AlignStartVertical />} aria-label="Left edges" title="Left edges: move this layer so its left edge meets the other's" disabled={busy} onClick={() => alignLayer("left")} />
-           <Segment icon={<AlignCenterVertical />} aria-label="Centres" title="Centres: move this layer across so the two are centred on each other" disabled={busy} onClick={() => alignLayer("centre")} />
-           <Segment icon={<AlignEndVertical />} aria-label="Right edges" title="Right edges: move this layer so its right edge meets the other's" disabled={busy} onClick={() => alignLayer("right")} />
-           <Segment icon={<AlignStartHorizontal />} aria-label="Top edges" title="Top edges: move this layer so its top meets the other's" disabled={busy} onClick={() => alignLayer("top")} />
-           <Segment icon={<AlignCenterHorizontal />} aria-label="Middles" title="Middles: move this layer up or down so the two are centred on each other" disabled={busy} onClick={() => alignLayer("middle")} />
-           <Segment icon={<AlignEndHorizontal />} aria-label="Bottom edges" title="Bottom edges: move this layer so its bottom meets the other's" disabled={busy} onClick={() => alignLayer("bottom")} />
-          </SegmentedControl>
-          {/* Turned as one, about its middle: a quarter either way, or by an angle typed in,
-            clockwise and negative for the other way. */}
-          <div className={styles.turnRow}>
-           <ButtonRound size="sm" icon={<RotateCcwSquare />} aria-label={`Turn ${active.name} left`} title={`Turn ${active.name} 90° left, about its middle`} disabled={busy} onClick={() => turnLayer(-90)} />
-           <ButtonRound size="sm" icon={<RotateCwSquare />} aria-label={`Turn ${active.name} right`} title={`Turn ${active.name} 90° right, about its middle`} disabled={busy} onClick={() => turnLayer(90)} />
-           <NumberField label="Turn by" unit="°" min={-359} max={359} step={1} value={layerTurnBy} disabled={busy} onChange={setLayerTurnBy} />
-           <Button size="md" variant="secondary" title={`Turn ${active.name} by ${layerTurnBy}°, clockwise - a negative angle turns it the other way`} disabled={busy || !layerTurnBy} onClick={() => turnLayer(layerTurnBy)}>Turn</Button>
-          </div>
-         </div>
-        )}
-       </Section>
+       <LayersSection
+        layers={layers}
+        active={active}
+        activeHasShapes={onActive.length > 0}
+        canMerge={shapes.length > 1}
+        tool={tool2}
+        busy={busy}
+        colorMenuId={colorMenu?.id}
+        rowMenuId={rowMenu?.id}
+        renaming={renamingLayer}
+        onSort={sortLayersByLightness}
+        onMerge={mergeOverlaps}
+        onAdd={addLayer}
+        onSwitch={switchLayer}
+        onVisible={(id, visible) => patchLayer(id, { hidden: !visible })}
+        onColorMenu={(id, anchor) => setColorMenu((open) => (open?.id === id ? null : { id, anchor }))}
+        onRowMenu={(id, anchor) => setRowMenu((open) => (open?.id === id ? null : { kind: "layer", id, anchor }))}
+        onRenameType={typeLayerName}
+        onRenameCancel={(id) => typeLayerName(id, nameBeforeEdit.current)}
+        onRenameDone={(id) => {
+         settleLayerName(id);
+         setRenamingLayer(null);
+        }}
+        onRestackStart={record}
+        onRestack={(id, to) => setLayers((list) => {
+         const from = list.findIndex((l) => l.id === id);
+         if (from < 0 || from === to) return list;
+         const next = [...list];
+         next.splice(to, 0, next.splice(from, 1)[0]);
+         return next;
+        })}
+        alignTarget={alignTarget}
+        alignable={alignable}
+        onAlignTarget={setAlignTo}
+        onAlign={alignLayer}
+        onTurn={turnLayer}
+       />
 
-       {/* Only while there is something on the layer: a heading over a line saying there is
-         nothing under it is two lines to say one thing. */}
-       {active && onActive.length > 0 && (
-        <Section
-         // The layer's ink in front of its name - after the "On", so the dot reads as part
-         // of the name rather than as a bullet before the whole heading. A mark to read,
-         // not a control: picking the colour is the swatch in the row above.
-         title={(
-          <>
-           On
-           <span className={controls.legendDot} style={{ background: active.color }} aria-hidden />
-           {active.name}
-          </>
-         )}
-         collapsibleKey="shapes-on-layer"
-         // Folded each time a layer is picked, and opened only by a click: a layer of hundreds of
-         // paths would otherwise unroll them all down the panel just for being chosen.
-         key={active.id}
-         defaultOpen={false}
-         forget
-         action={
-          onActive.length ? (
-           <ButtonRound size="sm" icon={<Trash2 />} aria-label="Delete everything on this layer"
-            title="Delete every shape on this layer" disabled={busy}
-            onClick={() => {
-             record();
-             const gone = onActive.map((sh) => sh.id);
-             setShapes((list) => list.filter((sh) => !gone.includes(sh.id)));
-             setFills((list) => list.filter((f) => !gone.includes(f.shapeId)));
-             setSelected([]);
-            }} />
-          ) : undefined
-         }
-        >
-         <ul className={styles.shapeList}>
-           {onActive.slice(0, SHAPE_LIST_LIMIT).map((sh, i) => {
-            const b = boxOf(sh);
-            const name = shapeName(sh, i);
-            return (
-             // The same row a layer has: its number, its name, and the same kebab
-             // after it - with the size where a layer keeps its eye.
-             <li key={sh.id} className={styles.layerRow}>
-              <LayerController
-               // A group of its own per row: several shapes can be picked at once,
-               // and a browser only ever lets one radio of a group be on.
-               name={`studio-shape-${sh.id}`}
-               purpose="draw"
-               // No numeral: a layer is numbered because it is plotted in that
-               // order, and a shape on it isn't. The row still says which it is to a
-               // screen reader, below.
-               number={null}
-               // No swatch: everything on a layer draws in that layer's one ink, and
-               // the row right above says which it is.
-               hideVisibility
-               hideHandle
-               // A photo isn't drawn like the other shapes, so its row says so in the box.
-               icon={sh.kind === "photo" ? <ImageIcon /> : undefined}
-               checked={pickedIds.has(sh.id)}
-               aria-label={`Shape ${i + 1}, ${name}`}
-               // The click decides, not the box: several shapes can be picked, which
-               // a radio would otherwise undo for us. Shift adds one to the selection
-               // or takes it out; a plain click picks that shape alone.
-               onChange={() => {}}
-               onClick={(e) => {
-                e.preventDefault();
-                pickFromRow(sh.id, e.shiftKey);
-               }}
-               label={
-                <span className={styles.shapeLabel}>
-                 {/* The name is text: clicking the row picks the shape, and a field
-                   sitting here would take the caret and quietly eat whatever was
-                   typed next. Renaming is asked for from the kebab. */}
-                 {renaming === sh.id ? (
-                  <input
-                   className={`${styles.shapeName} ${styles.shapeNameEdit}`}
-                   data-renaming
-                   value={name}
-                   aria-label={`Name of ${name}`}
-                   autoFocus
-                   disabled={busy}
-                   onFocus={(e) => e.currentTarget.select()}
-                   onChange={(e) => typeShapeName(sh.id, e.target.value)}
-                   onBlur={() => {
-                    settleShapeName(sh.id);
-                    setRenaming(null);
-                   }}
-                   onKeyDown={(e) => {
-                    if (e.key === "Escape") typeShapeName(sh.id, nameBeforeEdit.current);
-                    if (e.key === "Enter" || e.key === "Escape") e.currentTarget.blur();
-                   }}
-                  />
-                 ) : (
-                  <span
-                   className={pickedIds.has(sh.id)
-                    ? `${styles.shapeName} ${styles.shapeNameOn}`
-                    : styles.shapeName}
-                   title="Click to pick this shape"
-                   onClick={(e) => pickFromRow(sh.id, e.shiftKey)}
-                  >
-                   {name}
-                  </span>
-                 )}
-                 {/* How big it is, at the end of the row. Numbers alone: the page is
-                   inches throughout, and setting them is the kebab's job. */}
-                 <span className={styles.shapeSize}>
-                  {`${trimNum(b.x1 - b.x0, 2)} × ${trimNum(b.y1 - b.y0, 2)}`}
-                 </span>
-                </span>
-               }
-              />
-              <ButtonRound size="sm" variant="tertiary" icon={<EllipsisVertical />}
-               aria-label={`More for ${name}`}
-               aria-haspopup="menu"
-               aria-expanded={rowMenu?.id === sh.id}
-               title="Duplicate, move or delete this shape"
-               disabled={busy}
-               onClick={(e) => {
-                const anchor = e.currentTarget;
-                setRowMenu((open) => (open?.id === sh.id ? null : { kind: "shape", id: sh.id, anchor }));
-               }} />
-             </li>
-            );
-           })}
-           {onActive.length > SHAPE_LIST_LIMIT && (
-            // A separation's layer is tens of thousands of marks: a row each would be a list nobody
-            // reads, and the slowest thing on the page. They're picked up together instead.
-            <li className={styles.empty}>
-             {`And ${(onActive.length - SHAPE_LIST_LIMIT).toLocaleString()} more - too many to list. Select all on layer, from the layer’s menu, picks them all.`}
-            </li>
-           )}
-         </ul>
-        </Section>
+       {active && (
+        <ShapeList
+         layer={active}
+         shapes={onActive}
+         picked={pickedIds}
+         busy={busy}
+         renaming={renaming}
+         rowMenuId={rowMenu?.id}
+         onPick={pickFromRow}
+         onDeleteAll={() => {
+          record();
+          const gone = onActive.map((sh) => sh.id);
+          setShapes((list) => list.filter((sh) => !gone.includes(sh.id)));
+          setFills((list) => list.filter((f) => !gone.includes(f.shapeId)));
+          setSelected([]);
+         }}
+         onRenameType={typeShapeName}
+         onRenameCancel={(id) => typeShapeName(id, nameBeforeEdit.current)}
+         onRenameDone={(id) => {
+          settleShapeName(id);
+          setRenaming(null);
+         }}
+         onRowMenu={(id, anchor) => setRowMenu((open) => (open?.id === id ? null : { kind: "shape", id, anchor }))}
+        />
        )}
        </Section>
       </div>
