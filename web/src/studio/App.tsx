@@ -32,6 +32,7 @@ import { parseDrawing } from "./lib/parse";
 import { type PhotoMarks, PLATES, photoMarks, placeOnPage, stemWithoutPlate, type Photo } from "./lib/photo";
 import { usePhotoRead } from "./lib/usePhotoRead";
 import { photoActions } from "./lib/photoActions";
+import { useHistory } from "./lib/useHistory";
 import { bakedCopies, flattened, handOutFills, joined, markRuns, simplified, splitApart } from "./lib/shapeEdits";
 import { PaletteMenu } from "../shared/components/controls/PaletteMenu";
 import { Hints } from "../shared/components/controls/Hints";
@@ -87,17 +88,14 @@ const TOOL_KEYS: Record<string, Tool> = {
 const LAST_FILE_KEY = "studio-last-file";
 const PAPER_COLOR_KEY = "studio-paper-color";
 
-// Undo keeps whole copies of the drawing rather than a list of changes: a drawing is a handful of
-// shapes, so a copy costs nothing, and there's no way for a replayed change to go wrong.
+/** What undo puts back: the drawing, and the Paper card's scale, so undoing a scale puts the field back with it. */
 interface Snapshot {
  shapes: Shape[];
  fills: Fill[];
  layers: Layer[];
- /** The Paper card's scale, so undoing a scale puts the field back with the drawing. */
  drawingScale: number;
  page: Page;
 }
-const HISTORY_LIMIT = 60;
 
 type Saved = { path: string; folder: string } | null;
 
@@ -243,8 +241,6 @@ export default function App() {
  const [browserAdds, setBrowserAdds] = useState(false); // opened to add a file as a layer, not to open one
  // Marks in the drawing on disk that Studio can't redraw, and the name it was opened under. Saving
  // rewrites a file from the shapes Studio holds, so overwriting that file would delete them.
- const [past, setPast] = useState<Snapshot[]>([]);
- const [future, setFuture] = useState<Snapshot[]>([]);
  const [foreign, setForeign] = useState(0);
  const [openedAs, setOpenedAs] = useState<string | null>(null);
  // Where a drawing that has never been saved will be: files stacked into one are saved next to the
@@ -369,45 +365,18 @@ export default function App() {
   });
  }, [page]);
 
- // Called just before a change, never during one: a drag records once, when it starts.
- const record = useCallback(() => {
-  setPast((p) => [...p.slice(-(HISTORY_LIMIT - 1)), { shapes, fills, layers, page, drawingScale }]);
-  setFuture([]);
- }, [shapes, fills, layers, page, drawingScale]);
-
- const step = useCallback(
-  (from: Snapshot[], to: Snapshot[], setFrom: typeof setPast, setTo: typeof setFuture, take: "last" | "first") => {
-   if (!from.length) return;
-   const next = take === "last" ? from[from.length - 1] : from[0];
-   setFrom(take === "last" ? from.slice(0, -1) : from.slice(1));
-   setTo([{ shapes, fills, layers, page, drawingScale }, ...to].slice(0, HISTORY_LIMIT));
-   setShapes(next.shapes);
-   setFills(next.fills);
-   setLayers(next.layers);
-   setPage(next.page);
-   setDrawingScale(next.drawingScale);
-   // A shape that isn't there any more can't stay selected, or its handles would hang in the air.
-   const still = new Set(next.shapes.map((s) => s.id));
-   setSelected((ids) => ids.filter((id) => still.has(id)));
-  },
-  [shapes, fills, layers, page, drawingScale],
- );
-
- const undo = useCallback(() => step(past, future, setPast, setFuture, "last"), [step, past, future]);
- const redo = useCallback(() => step(future, past, setFuture, setPast, "first"), [step, future, past]);
-
- // The usual keys, except while typing: in the name field they belong to the text.
- useEffect(() => {
-  const onKey = (e: KeyboardEvent) => {
-   if (!(e.metaKey || e.ctrlKey) || e.key.toLowerCase() !== "z") return;
-   const el = document.activeElement;
-   if (el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement) return;
-   e.preventDefault();
-   (e.shiftKey ? redo : undo)();
-  };
-  window.addEventListener("keydown", onKey);
-  return () => window.removeEventListener("keydown", onKey);
- }, [undo, redo]);
+ const snapshot = useMemo<Snapshot>(() => ({ shapes, fills, layers, page, drawingScale }), [shapes, fills, layers, page, drawingScale]);
+ const restore = useCallback((next: Snapshot) => {
+  setShapes(next.shapes);
+  setFills(next.fills);
+  setLayers(next.layers);
+  setPage(next.page);
+  setDrawingScale(next.drawingScale);
+  // A shape that isn't there any more can't stay selected, or its handles would hang in the air.
+  const still = new Set(next.shapes.map((s) => s.id));
+  setSelected((ids) => ids.filter((id) => still.has(id)));
+ }, []);
+ const { record, undo, redo, clear: clearHistory, canUndo, canRedo } = useHistory(snapshot, restore);
 
  const addShape = useCallback((shape: Shape) => {
   record();
@@ -715,8 +684,7 @@ export default function App() {
   setLayers(onlyLayer);
   setActiveLayer(first.id);
   setSelected([]);
-  setPast([]);
-  setFuture([]);
+  clearHistory();
   setName("Untitled");
   setSaved(null);
   setSaveTo(null);
@@ -769,8 +737,7 @@ export default function App() {
   setLayers(drawing.layers);
   setActiveLayer(drawing.layers[0]?.id ?? "");
   setSelected([]);
-  setPast([]);
-  setFuture([]);
+  clearHistory();
   setName(res.name.replace(/\.svg$/i, ""));
   setSaved({ path: res.path, folder: res.folder });
   setConvertId(null);
@@ -813,8 +780,7 @@ export default function App() {
   if (res.added) {
    record();
   } else {
-   setPast([]);
-   setFuture([]);
+   clearHistory();
    setName(res.name.replace(/\.svg$/i, ""));
    setSaved(null);
    setSaveTo(res.folder_path ?? null);
@@ -947,8 +913,7 @@ export default function App() {
   setLayers(sheet.layers);
   setActiveLayer(sheet.layers[0].id);
   setSelected([]);
-  setPast([]);
-  setFuture([]);
+  clearHistory();
   setName(sheetName);
   setSaved(null);
   setSaveTo(null);
@@ -1863,7 +1828,7 @@ export default function App() {
        parts={convertParts}
        view={convertView}
        onView={setConvertView}
-       history={{ canUndo: past.length > 0, canRedo: future.length > 0, onUndo: undo, onRedo: redo }}
+       history={{ canUndo, canRedo, onUndo: undo, onRedo: redo }}
        toolbar={setupToolbar}
        disabled={busy}
       />
@@ -1889,7 +1854,7 @@ export default function App() {
         onZoom={setZoom}
         canDrawing={shapes.length > 0}
         canPhoto={shapes.some((sh) => sh.kind === "photo")}
-        history={{ canUndo: past.length > 0, canRedo: future.length > 0, onUndo: undo, onRedo: redo }}
+        history={{ canUndo, canRedo, onUndo: undo, onRedo: redo }}
         disabled={busy}
         loupe={loupe}
         onLoupe={setLoupe}
