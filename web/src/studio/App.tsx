@@ -4,16 +4,15 @@ import { PaperSection } from "../shared/components/controls/PaperSection";
 import { SettingsSection } from "../shared/components/controls/SettingsSection";
 import { Button, Card } from "@tomcoggia/ui";
 import { ArrowDownToLine, ClipboardCopy, ClipboardPaste, Copy, Layers2, LayersArrowDown, MousePointer2, PenLine, Spline, SquareDimensions, Trash2 } from "lucide-react";
-import { FileBrowser, LAST_FOLDER_KEY, type CombineResult, type OpenResult } from "../shared/components/FileBrowser";
+import { FileBrowser, type CombineResult, type OpenResult } from "../shared/components/FileBrowser";
 import { Section } from "../shared/components/controls/Section";
 import controls from "../shared/components/controls/controls.module.css";
-import { api, postJSON } from "../shared/lib/api";
+import { api } from "../shared/lib/api";
 import { load, save as remember } from "../shared/lib/storage";
-import { DEFAULT_SETTINGS, PAPER_SIZES, PLOT_CHANNEL } from "../shared/lib/constants";
+import { DEFAULT_SETTINGS, PAPER_SIZES } from "../shared/lib/constants";
 import type { Info, PenColor, PlotterModel, Preset } from "../shared/lib/types";
 import { listOf } from "../shared/lib/format";
 import { lightness } from "../shared/lib/color";
-import { APP_URL } from "../shared/lib/apps";
 import { PreviewToolbar, SetupToolbar, type View } from "../shared/components/PreviewToolbar";
 import type { Zoom } from "../shared/components/BedCanvas";
 import { Canvas, type Tool } from "./components/Canvas";
@@ -33,6 +32,7 @@ import { type PhotoMarks, PLATES, photoMarks, placeOnPage, stemWithoutPlate, typ
 import { usePhotoRead } from "./lib/usePhotoRead";
 import { photoActions } from "./lib/photoActions";
 import { useHistory } from "./lib/useHistory";
+import { LAST_FILE_KEY, useDrawingFile } from "./lib/useDrawingFile";
 import { bakedCopies, flattened, handOutFills, joined, markRuns, simplified, splitApart } from "./lib/shapeEdits";
 import { PaletteMenu } from "../shared/components/controls/PaletteMenu";
 import { Hints } from "../shared/components/controls/Hints";
@@ -49,7 +49,7 @@ import { GridSection } from "./components/panels/GridSection";
 import { ToolPicker } from "./components/panels/ToolPicker";
 import { LayersSection, type AlignEdge } from "./components/panels/LayersSection";
 import { boxAround, boxOf, clampToPage, moveBy, newLayerId, newShapeId, resizeTo, shapeName, turnAround, type Layer, type Page, type Shape } from "./lib/shapes";
-import { buildSvg, svgForMarks, cleanFileName } from "./lib/svg";
+import { buildSvg, svgForMarks } from "./lib/svg";
 import { drawnMiddle, fitToPage, reshapeDrawing, runsOffPage, turnDrawingLeft } from "./lib/drawing";
 import { calibrationSheet } from "./lib/calibration";
 import { readCalibration, readingProblems, sheetLayout } from "./lib/calibrationRead";
@@ -83,9 +83,6 @@ const TOOL_KEYS: Record<string, Tool> = {
  a: "arc",
 };
 
-// The drawing being worked on, remembered so that handing one to Plot - which navigates away - isn't
-// the same as losing it. Its own key: Plot's keys share this origin and still carry the old name.
-const LAST_FILE_KEY = "studio-last-file";
 const PAPER_COLOR_KEY = "studio-paper-color";
 
 /** What undo puts back: the drawing, and the Paper card's scale, so undoing a scale puts the field back with it. */
@@ -96,11 +93,6 @@ interface Snapshot {
  drawingScale: number;
  page: Page;
 }
-
-type Saved = { path: string; folder: string } | null;
-
-/** The drawing as it was last read from or written to a file: what "no changes to save" means. */
-type OnDisk = { shapes: Shape[]; fills: Fill[]; layers: Layer[]; page: Page; name: string };
 
 /**
  * A layer name nothing else in the drawing has. Studio finds a filled shape's layer by name when the
@@ -160,24 +152,6 @@ function unfitIfMoved(before: Shape | undefined, after: Shape): Shape {
  return same ? after : { ...after, photo: { ...after.photo, fit: undefined } };
 }
 
-/** Whether a Plot page is open in another tab of this browser: it answers when asked (see Plot's poll). */
-function plotPageAnswers(): Promise<boolean> {
- if (!("BroadcastChannel" in window)) return Promise.resolve(false);
- return new Promise((resolve) => {
-  const channel = new BroadcastChannel(PLOT_CHANNEL);
-  const done = (answer: boolean) => {
-   window.clearTimeout(timer);
-   channel.close();
-   resolve(answer);
-  };
-  const timer = window.setTimeout(() => done(false), 600);
-  channel.onmessage = (e) => {
-   if (e.data?.type === "plot-here") done(true);
-  };
-  channel.postMessage({ type: "open-in-plot" });
- });
-}
-
 export default function App() {
  const [page, setPage] = useState<Page>({ w: 11, h: 8.5 });
  // How big the drawing is now, as a percent of its size when it was opened or started: the Paper
@@ -234,73 +208,15 @@ export default function App() {
   setActiveLayer(id);
   setSelected([]);
  };
- const [name, setName] = useState("Untitled");
- const [saved, setSaved] = useState<Saved>(null);
  const [busy, setBusy] = useState(false);
  const [browserOpen, setBrowserOpen] = useState(false);
  const [browserAdds, setBrowserAdds] = useState(false); // opened to add a file as a layer, not to open one
- // Marks in the drawing on disk that Studio can't redraw, and the name it was opened under. Saving
- // rewrites a file from the shapes Studio holds, so overwriting that file would delete them.
- const [foreign, setForeign] = useState(0);
- const [openedAs, setOpenedAs] = useState<string | null>(null);
- // Where a drawing that has never been saved will be: files stacked into one are saved next to the
- // first of them, not in the shared folder a new drawing goes to. Null means the server's default.
- const [saveTo, setSaveTo] = useState<string | null>(null);
  // What the toolbar says. Only problems, and work still under way (`progress`), are shown: a note
  // that something went as asked is left unsaid, since the result is there to see.
  const [message, setMessage] = useState<{ text: string; ok: boolean; progress?: boolean }>({
   text: "",
   ok: true,
  });
- // Anything drawn since the last save has to be written again before Plot can print it. State
- // rather than a ref, because the Save button is disabled while it's false and so has to re-render
- // when it changes.
- const [dirty, setDirty] = useState(false);
-
- // What the file on disk was written from. Every edit replaces one of these arrays and leaves the
- // rest alone, so comparing them by identity answers "is there anything to save" in five pointer
- // comparisons - no deep compare of every path on every drag.
- const onDisk = useRef<OnDisk | null>(null);
-
- // Asking the question here, rather than raising a flag on a change and lowering it after a save,
- // is what makes the answer reliable: a save can rename the drawing and an open lands in its own
- // good time, and this doesn't care which order any of that happens in. A value missing from the
- // list is a change that would leave Save greyed out with the work still only on screen.
- useEffect(() => {
-  const was = onDisk.current;
-  setDirty(
-   !was ||
-    was.shapes !== shapes ||
-    was.fills !== fills ||
-    was.layers !== layers ||
-    was.page !== page ||
-    was.name !== name,
-  );
- }, [shapes, fills, layers, page, name]);
-
- // Leaving with work that's only on screen - a reload, a closed tab, going to Plot where the browser
- // won't open a tab of its own - asks first, in the browser's own words.
- useEffect(() => {
-  if (!dirty || !shapes.length) return;
-  const hold = (e: BeforeUnloadEvent) => e.preventDefault();
-  window.addEventListener("beforeunload", hold);
-  return () => window.removeEventListener("beforeunload", hold);
- }, [dirty, shapes.length]);
-
- // Called by whoever just read or wrote the file, with the very values that went to disk.
- const markClean = useCallback((written: OnDisk) => {
-  onDisk.current = written;
-  setDirty(false);
- }, []);
-
- // The drawing tool is written into the file too, so picking one is a change - but only when it's
- // picked here. On startup the stored tool is reconciled against Plot's presets, and that
- // correction arrives after the drawing has been read: counting it would leave a drawing that was
- // only just opened looking unsaved.
- const pickTool = useCallback((pen: string) => {
-  setToolName(pen);
-  setDirty(true);
- }, []);
 
  // Custom stays chosen while its width and height are typed, even through a size that happens to be
  // one of the list's on the way.
@@ -316,6 +232,19 @@ export default function App() {
   );
   return match ? match.id : "custom";
  }, [page]);
+
+ const { name, setName, saved, dirty, touch, opened, combined, started, save, sendToPlot } = useDrawingFile({
+  shapes, fills, layers, page, sizeId, toolName, fonts, setBusy, setMessage,
+ });
+
+ // The drawing tool is written into the file too, so picking one is a change - but only when it's
+ // picked here. On startup the stored tool is reconciled against Plot's presets, and that
+ // correction arrives after the drawing has been read: counting it would leave a drawing that was
+ // only just opened looking unsaved.
+ const pickTool = useCallback((pen: string) => {
+  setToolName(pen);
+  touch();
+ }, [touch]);
 
  // A photo split by colour draws each layer's area in that layer's pen, and each layer is worked
  // out alongside the rest - the pens of every area, and the key's. Give a layer another pen, and it
@@ -599,75 +528,6 @@ export default function App() {
   return () => window.removeEventListener("keydown", onKey);
  }, [selected]);
 
- // Write the drawing into the folder Plot opens from. Returns where it landed, or null on failure.
- const save = async (): Promise<Saved> => {
-  if (!shapes.length) {
-   setMessage({ text: "Draw something first", ok: false });
-   return null;
-  }
-  // A drawing Studio only partly understands is written back from the shapes it holds, which would
-  // drop the rest. Saving a copy is allowed; overwriting the original is not.
-  if (foreign > 0 && cleanFileName(name) === openedAs) {
-   setMessage({
-    text: `${openedAs} has ${foreign} ${foreign === 1 ? "mark" : "marks"} Studio can’t redraw. Give it another name to save a copy.`,
-    ok: false,
-   });
-   return null;
-  }
-  setBusy(true);
-  try {
-   const svg = buildSvg(shapes, fills, layers, page, { paperSizeId: sizeId, toolName, fonts });
-   // Next to the file that was opened, so a drawing opened from the Desktop is saved back to the
-   // Desktop - its card says "In ~/Desktop", and that is where it gets looked for. A drawing never
-   // saved goes to the server's default, the shared iCloud folder.
-   const res = await postJSON<{ name: string; path: string; folder: string }>("/api/studio/save", {
-    name: cleanFileName(name),
-    svg,
-    ...(saved ? { folder: saved.path.slice(0, saved.path.lastIndexOf("/")) } : saveTo ? { folder: saveTo } : {}),
-   });
-   const where = { path: res.path, folder: res.folder };
-   const savedName = res.name.replace(/\.svg$/i, "");
-   setName(savedName);
-   setSaved(where);
-   setSaveTo(null);
-   // What's on disk now is exactly what Studio holds, whatever the file used to contain.
-   setForeign(0);
-   setOpenedAs(res.name);
-   remember(LAST_FILE_KEY, res.path);
-   remember(LAST_FOLDER_KEY, res.path.slice(0, res.path.lastIndexOf("/")));
-   markClean({ shapes, fills, layers, page, name: savedName });
-   setMessage({ text: `Saved to ${res.folder}`, ok: true });
-   return where;
-  } catch (err) {
-   setMessage({ text: (err as Error).message, ok: false });
-   return null;
-  } finally {
-   setBusy(false);
-  }
- };
-
- // Save if there's anything new, then hand the drawing to Plot. A Plot page already open in another
- // tab takes it from there - it shows whatever drawing was opened last - and Studio stays put. With no
- // Plot page open, one opens in a new tab; only if the browser won't allow that does this tab go.
- const openInPlot = async () => {
-  const where = dirty || !saved ? await save() : saved;
-  if (!where) return;
-  setBusy(true);
-  try {
-   await postJSON("/api/open", { path: where.path });
-   if (await plotPageAnswers()) {
-    setMessage({ text: "Opened in Plot, in its own tab", ok: true });
-    setBusy(false);
-    return;
-   }
-   if (!window.open(APP_URL.plot, PLOT_CHANNEL)) window.location.href = APP_URL.plot;
-   setBusy(false);
-  } catch (err) {
-   setMessage({ text: (err as Error).message, ok: false });
-   setBusy(false);
-  }
- };
-
  // Close whatever is open and begin again on a blank page. The page size stays as it is: it's the
  // paper you're working on today, and a new drawing is almost always for the same sheet.
  // Which new drawing is waiting on the question: a blank one, a calibration sheet, or a picture
@@ -685,18 +545,12 @@ export default function App() {
   setActiveLayer(first.id);
   setSelected([]);
   clearHistory();
-  setName("Untitled");
-  setSaved(null);
-  setSaveTo(null);
-  setForeign(0);
-  setOpenedAs(null);
   setConfirmNew(null);
   setConvertId(null);
-  remember(LAST_FILE_KEY, null); // don't reopen the old drawing next time Studio starts
   setMessage({ text: "New drawing", ok: true });
   // An empty page is not unsaved work, and the paper it's on came from the drawing before it.
-  markClean({ shapes: noShapes, fills: noFills, layers: onlyLayer, page, name: "Untitled" });
- }, [markClean, page]);
+  started("Untitled", { shapes: noShapes, fills: noFills, layers: onlyLayer, page });
+ }, [started, page, clearHistory]);
 
  // Undo can't bring back which file was open - a snapshot is the drawing, not the drawing's name -
  // so unsaved work gets a question rather than a silent discard.
@@ -738,13 +592,8 @@ export default function App() {
   setActiveLayer(drawing.layers[0]?.id ?? "");
   setSelected([]);
   clearHistory();
-  setName(res.name.replace(/\.svg$/i, ""));
-  setSaved({ path: res.path, folder: res.folder });
   setConvertId(null);
-  setSaveTo(null);
-  setForeign(drawing.unsupported);
-  setOpenedAs(res.name);
-  remember(LAST_FILE_KEY, res.path);
+  opened(res, drawing);
   // The drawing comes up in the tool it was saved for, in either app - unless that tool is gone
   // from the presets, when the one already chosen stays. Not a change to the drawing: it's the
   // file's own. (Presets not loaded yet, at startup: taken as it is, and checked when they come.)
@@ -761,15 +610,7 @@ export default function App() {
     // Opened cleanly, nothing to say: the drawing's name is already in the File card.
     : { text: "", ok: true },
   );
-  // What's on screen is what's in the file, so there's nothing new to write yet.
-  markClean({
-   shapes: drawing.shapes,
-   fills: drawing.fills,
-   layers: drawing.layers,
-   page: drawing.page,
-   name: res.name.replace(/\.svg$/i, ""),
-  });
- }, [markClean]);
+ }, [opened, clearHistory]);
 
  // Files stacked into one drawing, a layer each (the file browser's "Open as layers" and "Add as
  // layers"). Opened, they are a new drawing not yet saved, which saves next to the first of them.
@@ -777,17 +618,9 @@ export default function App() {
  const openCombined = (res: CombineResult) => {
   const drawing = parseDrawing(res.svg ?? "");
   const count = drawing.layers.length;
-  if (res.added) {
-   record();
-  } else {
-   clearHistory();
-   setName(res.name.replace(/\.svg$/i, ""));
-   setSaved(null);
-   setSaveTo(res.folder_path ?? null);
-   setOpenedAs(null);
-   remember(LAST_FILE_KEY, null); // nothing on disk to pick up again yet
-   onDisk.current = null; // on screen and nowhere else: there is something to save
-  }
+  if (res.added) record();
+  else clearHistory();
+  combined(res, drawing.unsupported);
   setPage(drawing.page);
   setShapes(drawing.shapes);
   setDrawingScale(100);
@@ -795,7 +628,6 @@ export default function App() {
   setLayers(drawing.layers);
   setActiveLayer(drawing.layers[drawing.layers.length - 1]?.id ?? "");
   setSelected([]);
-  setForeign((was) => (res.added ? was : 0) + drawing.unsupported);
   // What most needs saying goes first: files that may not line up, then marks Studio can't redraw.
   const said = res.added ? `Added as layers - ${count} ${count === 1 ? "layer" : "layers"} now` : `Opened as ${count} layers - not saved yet`;
   const misfit = res.mismatched.length
@@ -914,14 +746,8 @@ export default function App() {
   setActiveLayer(sheet.layers[0].id);
   setSelected([]);
   clearHistory();
-  setName(sheetName);
-  setSaved(null);
-  setSaveTo(null);
-  setForeign(0);
-  setOpenedAs(null);
   setConfirmNew(null);
-  remember(LAST_FILE_KEY, null);
-  setDirty(true);
+  started(sheetName); // a new sheet to be saved and plotted
   setMessage({ text: `${sheetName}: ${sheet.layers.length} pens`, ok: true });
  };
 
@@ -1903,7 +1729,7 @@ export default function App() {
         }}
         onOpenPhotos={openPhotos}
         onNew={() => startNew()}
-        onSendToPlot={openInPlot}
+        onSendToPlot={sendToPlot}
         onSave={save}
        />
 
