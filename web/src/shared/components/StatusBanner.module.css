@@ -14,4 +14,16 @@
   color: var(--ui-text-on-danger);
 }
 
+/* The app's caution yellow (index.css), as the old caution button by the File heading wore it. */
+.banner[data-tone="caution"] {
+  background: var(--nd-caution);
+  color: var(--ui-text-default);
+}
+
 .text { flex: 1; min-width: 0; }
+
+.items {
+  margin: 0.25rem 0 0;
+  padding-left: 1rem;
+  line-height: 1.45;
+}

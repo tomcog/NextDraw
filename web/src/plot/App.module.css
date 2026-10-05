@@ -43,11 +43,6 @@
 
 .fileCard { position: relative; }
 
-/* The caution button sits right after the File heading, clear of the card's own buttons. */
-.fileNotes {
-  position: relative;
-  display: inline-flex;
-}
 
 .controls {
   background: var(--ui-surface-raised);

@@ -14,7 +14,7 @@ interface Props {
 // The "Show pen-up moves" toggle and line key are hidden for now; pen-up moves stay visible.
 const SHOW_LEGEND = false;
 
-// Legend and plot facts. Notes about the drawing are in DrawingNotes.
+// Legend and plot facts. Notes about the drawing are in the banner across the top (StatusBanner).
 export function PlotSummary({ estimate, preview, units, rotated }: Props) {
   return (
     <>

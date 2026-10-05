@@ -43,7 +43,7 @@ function SpeedControl({ pct, disabled, onSpeed }: { pct: number; disabled: boole
 }
 
 // Above the controls panel: Plot / Stop, or Resume after a stopped plot. The plotter's own messages
-// are in the caution callout in the File card (DrawingNotes).
+// are in the banner across the top of the page (StatusBanner).
 export function ActionBar({ message, plotting, stopping, preparing, canPlot, plotLabel, resume, confirmation, onCancelConfirmation, onPlot, onResume, onDiscard, onStop, speedPct, onSpeed }: Props) {
   const resumePct = resume && resume.total_mm ? Math.floor((resume.done_mm / resume.total_mm) * 100) : 0;
   return (

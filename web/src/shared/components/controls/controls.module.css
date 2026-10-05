@@ -568,10 +568,3 @@
   font-size: 12px;
   font-weight: 500;
 }
-
-/* Plot's File heading, with the drawing's caution button right after it. */
-.fileTitle {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.25rem;
-}

@@ -21,7 +21,7 @@ import { FileBrowser, type OpenResult } from "../shared/components/FileBrowser";
 import { MachinePanel } from "./components/MachinePanel";
 import { Section } from "../shared/components/controls/Section";
 import controls from "../shared/components/controls/controls.module.css";
-import { DrawingNotes } from "./components/DrawingNotes";
+import { StatusBanner } from "../shared/components/StatusBanner";
 import { SettingsHud } from "./components/SettingsHud";
 import { PlotSummary } from "./components/PlotSummary";
 import { PlotProgress } from "./components/PlotProgress";
@@ -1404,6 +1404,22 @@ export default function App() {
     return [...new Set(list)];
   }, [estimate, artWarnings, fp, onBed, onPaper, plotterLog]);
 
+  // The notes in the banner across the top. Closed, they stay closed for this drawing until what they
+  // say changes; a note that only appears or goes as the plot time is worked out brings them back.
+  const notesKey = notes.join("\n");
+  const notesBanner = useMemo(
+    () => (notes.length
+      ? {
+        text: notes.length === 1 ? "A note about this drawing:" : `${notes.length} notes about this drawing:`,
+        items: notes,
+        caution: true,
+        id: `${fileName}\n${notesKey}`,
+      }
+      : null),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [fileName, notesKey],
+  );
+
   let actionMessage: Message | null = localMessage;
   if (!actionMessage && status) {
     if (status.state === "testing") actionMessage = { text: "Lowering and raising the pen…" };
@@ -1458,6 +1474,7 @@ export default function App() {
   }, []);
   return (
     <div className={styles.app}>
+      <StatusBanner message={notesBanner} />
       <Hints />
       <FileBrowser
         open={browserOpen}
@@ -1651,7 +1668,6 @@ export default function App() {
           <Card variant="flat" className={`${styles.controls} ${styles.fileCard}`}>
             <div className={`${styles.cardBody} ${controls.cardSections}`}>
               <FileSection
-                notes={<DrawingNotes notes={notes} className={styles.fileNotes} />}
                 fileName={fileName}
                 busy={busy}
                 preview={preview}

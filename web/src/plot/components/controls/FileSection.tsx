@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useState } from "react";
 import { ButtonRound, InputText } from "@tomcoggia/ui";
 import { Crop, FolderOpen, PenTool, RotateCcw, RotateCcwSquare, RotateCwSquare, ScanSquare, X } from "lucide-react";
 import styles from "../../../shared/components/controls/controls.module.css";
@@ -24,13 +24,12 @@ interface Props {
   trimming: boolean;
   onTrim: (restore: boolean) => void;
   onRotate: (quarterTurns: 1 | -1) => void;
-  notes?: ReactNode; // the drawing's caution button, right after the heading
   /** Open this drawing in Studio. Left out for a drawing Studio can't read from a folder. */
   onEditInStudio?: () => void;
 }
 
 export function FileSection({
-  fileName, busy, preview, previewScale, scale, units, folder, saveState, saveError, onScale, onOpen, onClear, trimmed, trimming, onTrim, onRotate, notes, onEditInStudio,
+  fileName, busy, preview, previewScale, scale, units, folder, saveState, saveError, onScale, onOpen, onClear, trimmed, trimming, onTrim, onRotate, onEditInStudio,
 }: Props) {
   const [draft, setDraft] = useState(trimNum(scale, 1));
   useEffect(() => setDraft(trimNum(scale, 1)), [scale]);
@@ -61,7 +60,7 @@ export function FileSection({
 
   return (
     <Section
-      title={notes ? <span className={styles.fileTitle}>File{notes}</span> : "File"}
+      title="File"
       // Round buttons at the card's top right, as Studio's File card has: close the drawing, when
       // one is open, and open another.
       action={
