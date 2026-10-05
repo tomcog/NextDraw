@@ -1,5 +1,6 @@
 import { Checkbox, InputSelect, InputText } from "@tomcoggia/ui";
 import { Slider } from "./Slider";
+import { LengthField } from "../../../shared/components/controls/LengthField";
 import styles from "../../../shared/components/controls/controls.module.css";
 import type { Settings } from "../../../shared/lib/types";
 
@@ -8,12 +9,20 @@ interface Props {
   disabled: boolean;
   onChange: (patch: Partial<Settings>) => void;
   handling: { id: number; name: string }[]; // the NextDraw software's handling modes
+  /** Skip tiny paths, for this drawing: the size in mm below which a path is left out, or null (off). */
+  skipTiny: number | null;
+  onSkipTiny: (mm: number | null) => void;
+  /** How many paths the latest preview left out, or null before it's worked out. */
+  skipped: number | null;
 }
+
+// A path no bigger than the line the pen draws only ever comes out as a dot, so that's where the size starts.
+const FALLBACK_PEN_MM = 0.3;
 
 const clampInt = (text: string, min: number, max: number) => Math.min(max, Math.max(min, Math.round(Number(text) || min)));
 
 // Plot options, shown in the collapsed "Plot options" section under the preview.
-export function PlotOptionsSection({ settings: s, disabled, onChange, handling }: Props) {
+export function PlotOptionsSection({ settings: s, disabled, onChange, handling, skipTiny, onSkipTiny, skipped }: Props) {
   return (
     <div className={styles.plotOptions}>
       <div className={styles.row2}>
@@ -65,6 +74,26 @@ export function PlotOptionsSection({ settings: s, disabled, onChange, handling }
         disabled={disabled || s.reordering === 4}
         onChange={(join_gap) => onChange({ join_gap })}
       />
+      {/* For this drawing only, and off until asked for: paths so small the pen would only dab a dot are
+          left out of the plot. The drawing itself keeps them. */}
+      <Checkbox
+        size="md"
+        label="Skip tiny paths"
+        checked={skipTiny !== null}
+        disabled={disabled}
+        title="Leave out paths so small the pen would only make a dot. For this drawing; the file keeps them."
+        onChange={(e) => onSkipTiny(e.target.checked ? (s.pen_width ?? FALLBACK_PEN_MM) : null)}
+      />
+      {skipTiny !== null && (
+        <>
+          <LengthField label="Smaller than" mm={skipTiny} units={s.units} min={0.05} disabled={disabled} onChange={onSkipTiny} />
+          {skipped !== null && (
+            <p className={styles.hint}>
+              {skipped === 0 ? "No paths are that small." : `${skipped} ${skipped === 1 ? "path" : "paths"} left out of the plot.`}
+            </p>
+          )}
+        </>
+      )}
       <Checkbox size="md" label="Return home when finished" checked={s.return_home} disabled={disabled} onChange={(e) => onChange({ return_home: e.target.checked })} />
       <Checkbox size="md" label="Remove hidden lines" checked={s.hiding} disabled={disabled} onChange={(e) => onChange({ hiding: e.target.checked })} />
       <Checkbox size="md" label="Randomize where closed shapes start" checked={s.random_start} disabled={disabled} onChange={(e) => onChange({ random_start: e.target.checked })} />

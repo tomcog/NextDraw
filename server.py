@@ -1352,7 +1352,8 @@ def svg_input(scale, layers=None, rotation=0, hatch=None, shift_mm=(0.0, 0.0)):
 
 def clean_placement(raw):
     """Where the drawing starts, in mm from home, its scale, and whether to go home afterward."""
-    placement = {"x": 0.0, "y": 0.0, "scale": clean_scale(raw), "return_home": bool(raw.get("return_home", True))}
+    placement = {"x": 0.0, "y": 0.0, "scale": clean_scale(raw), "return_home": bool(raw.get("return_home", True)),
+                 "skip_tiny": clean_skip_tiny(raw)}
     # Angle compensation: a tilted tool's tip lands this far toward home from the carriage along the
     # width, so the carriage starts that much further out. x/y stay where the tip draws.
     try:
@@ -1415,11 +1416,56 @@ def apply_settings(nd, settings):
         nd.params.min_gap = settings["join_gap"] / 25.4
 
 
-def dry_run(settings, render, scale=100.0, source=None, mode="plot", layers=None, rotation=0, hatch=None):
+def clean_skip_tiny(raw):
+    """Skip tiny paths: the size in mm on paper below which a path is left out of the plot, or None (off)."""
+    try:
+        value = raw.get("skip_tiny")
+        return None if value is None else round(max(0.05, min(20.0, float(value))), 3)
+    except (TypeError, ValueError):
+        return None
+
+
+def skip_tiny_paths(nd, mm, tally):
+    """
+    Leave out of this plot every pen stroke whose longest side is under mm on paper: marks so small
+    the pen only dabs a dot. The NextDraw software has by now split the drawing into strokes (a hatch's
+    lines, a compound shape's pieces) and joined the ends that touch, but not yet put them in order,
+    so each stroke is judged on its own and Path order still applies to what's left. Only the plot's
+    copy loses them; the drawing doesn't. A plot resumed from its saved digest is left as it was:
+    its stopping point is a distance along the strokes it started with. Adds the count to tally["skipped"].
+    """
+    limit_in = mm / 25.4  # the digest is in inches on paper
+    optimize = nd.randomize_optimize
+
+    def without_tiny(first_copy=False):
+        if first_copy and nd.digest is not None and nd.plot_status.resume.new.plob_version == "n/a":
+            skipped = 0
+            for layer in nd.digest.layers:
+                kept = []
+                for path in layer.paths:
+                    points = [p for sub in (path.subpaths or []) for p in sub]
+                    xs, ys = [p[0] for p in points], [p[1] for p in points]
+                    if points and max(max(xs) - min(xs), max(ys) - min(ys)) < limit_in:
+                        skipped += 1
+                    else:
+                        kept.append(path)
+                layer.paths = kept
+            tally["skipped"] = tally.get("skipped", 0) + skipped
+        return optimize(first_copy)
+
+    nd.randomize_optimize = without_tiny
+
+
+def dry_run(settings, render, scale=100.0, source=None, mode="plot", layers=None, rotation=0, hatch=None, skip_tiny=None):
     """Simulate the plot without the machine. Returns stats and (optionally) the path preview SVG."""
     log = []
+    tally = {}
+    if source is None:
+        source = prepared_svg(settings, scale, layers, rotation, hatch, skip_tiny=skip_tiny, tally=tally)
     nd = make_nextdraw(log)
-    nd.plot_setup(source if source is not None else prepared_svg(settings, scale, layers, rotation, hatch))
+    if skip_tiny and mode == "plot":
+        skip_tiny_paths(nd, skip_tiny, tally)
+    nd.plot_setup(source)
     size_note = None
     if source is None and CURRENT_SVG.exists():
         from lxml import etree
@@ -1438,6 +1484,7 @@ def dry_run(settings, render, scale=100.0, source=None, mode="plot", layers=None
         "rotated": bool(nd.rotate_page),
         "warnings": ([size_note] if size_note else []) + log,
         "preview_svg": output if render else None,
+        "skipped_tiny": tally.get("skipped", 0),
     }
 
 
@@ -1475,7 +1522,7 @@ def drag_pieces(points):
     return [list(reversed(run)) if way < 0 else run for way, run in merged]
 
 
-def limit_drag(svg_text, settings):
+def limit_drag(svg_text, settings, skip_tiny=None, tally=None):
     """
     Rewrite the drawing so the tool is always pulled, never pushed. The NextDraw software flattens it
     to polylines for us (its digest), which it can also plot back as it stands, skipping the
@@ -1483,6 +1530,8 @@ def limit_drag(svg_text, settings):
     """
     from lxml import etree
     nd = make_nextdraw([])
+    if skip_tiny:  # here, as its digest is plotted as it stands
+        skip_tiny_paths(nd, skip_tiny, tally if tally is not None else {})
     nd.plot_setup(svg_text)
     apply_settings(nd, settings)
     nd.options.digest = 2  # flatten the drawing instead of plotting it
@@ -1505,10 +1554,11 @@ def limit_drag(svg_text, settings):
     return etree.tostring(root, encoding="unicode")
 
 
-def prepared_svg(settings, scale, layers=None, rotation=0, hatch=None, shift_mm=(0.0, 0.0)):
-    """The loaded drawing ready to plot: placed and scaled, and drag-limited for a one-way tool."""
+def prepared_svg(settings, scale, layers=None, rotation=0, hatch=None, shift_mm=(0.0, 0.0), skip_tiny=None, tally=None):
+    """The loaded drawing ready to plot: placed and scaled, and drag-limited for a one-way tool. A
+    one-way tool's tiny paths are left out here; anything else's as it plots (see skip_tiny_paths)."""
     svg = svg_input(scale, layers, rotation, hatch, shift_mm)
-    return limit_drag(svg, settings) if settings.get("drag_only") else svg
+    return limit_drag(svg, settings, skip_tiny, tally) if settings.get("drag_only") else svg
 
 
 def plot_layers(placement):
@@ -1763,11 +1813,12 @@ def run_plot(settings, placement, resume=None):
         else:
             clear_resume()  # a new plot replaces any stopped one
             source = prepared_svg(settings, placement["scale"], plot_layers(placement), placement.get("rotation", 0),
-                                  placement.get("hatch"), lines_shifted_mm(placement))
+                                  placement.get("hatch"), lines_shifted_mm(placement), placement.get("skip_tiny"))
             mode = "plot"
 
         # A new plot's simulation also draws its paths; a resumed plot keeps the ones saved when it began.
-        estimate = dry_run(scaled_speeds(settings, job.speed_pct), render=not resume, source=source, mode=mode)
+        skip_tiny = None if resume else placement.get("skip_tiny")
+        estimate = dry_run(scaled_speeds(settings, job.speed_pct), render=not resume, source=source, mode=mode, skip_tiny=skip_tiny)
         if not resume and estimate["preview_svg"]:
             try:
                 save_plot_paths(estimate["preview_svg"], placement)
@@ -1796,6 +1847,8 @@ def run_plot(settings, placement, resume=None):
             job.message = ""
 
         nd = make_nextdraw(log)
+        if skip_tiny:
+            skip_tiny_paths(nd, skip_tiny, {})
         nd.plot_setup(source)
         apply_settings(nd, settings)
         nd.options.mode = mode
@@ -3027,6 +3080,10 @@ def clean_plot(raw):
             out["small_paths"] = int(max(10, min(90, float(raw["small_paths"]))))
     except (TypeError, ValueError):
         pass
+    # Skip tiny paths: the size in mm below which paths are left out of the plot, or absent (off).
+    skip_tiny = clean_skip_tiny(raw)
+    if skip_tiny is not None:
+        out["skip_tiny"] = skip_tiny
     # The order to plot the layers in, bottom first, by layer id. Which ink goes down before which is
     # a decision about the plot - lighter first, so the darks overprint them - not a change to the
     # drawing, so the file's own layer order is left alone and this says what to do with it instead.
@@ -3522,7 +3579,7 @@ def estimate():
             return jsonify(superseded=True)
         try:
             body = request.json or {}
-            result = dry_run(clean_settings(body), render=True, scale=clean_scale(body), layers=clean_layers(body), rotation=clean_rotation(body), hatch=clean_hatch(body))
+            result = dry_run(clean_settings(body), render=True, scale=clean_scale(body), layers=clean_layers(body), rotation=clean_rotation(body), hatch=clean_hatch(body), skip_tiny=clean_skip_tiny(body))
             from lxml import etree
             result["layers"] = read_layers(etree.parse(str(CURRENT_SVG), etree.XMLParser(huge_tree=True)).getroot())
             return jsonify(result)

@@ -118,6 +118,9 @@ export default function App() {
   // fills closer together or further apart than the drawing has them. Plot regenerates the fills at
   // this spacing for the preview and the plot; the drawing's own fills are left as Studio made them.
   const [hatchSpacing, setHatchSpacing] = useState<Record<string, number>>({});
+  // Skip tiny paths: leave out of the plot every path whose longest side is under this (mm on paper),
+  // marks so small the pen would only dab a dot. Chosen per drawing and saved in it; null when off.
+  const [skipTiny, setSkipTiny] = useState<number | null>(null);
   // A second drawing tool (mixed media): null normally; "" once added but not yet chosen.
   const [secondTool, setSecondTool] = useState<string | null>(null);
   const [secondToolLayers, setSecondToolLayers] = useState<string[]>([]);
@@ -380,13 +383,14 @@ export default function App() {
   useEffect(() => save(STORAGE.zoom, zoomChoice), [zoomChoice]);
 
   // Refs let the polling loop see current values without restarting.
-  const refs = useRef({ fileName, status, lastAction, settings, scale, presets, plotLayerIds, rotation, hatchSpacing, readRequested: false, plotSettings: settings, activePreset, opened: undefined as string | null | undefined,
+  const refs = useRef({ fileName, status, lastAction, settings, scale, presets, plotLayerIds, rotation, hatchSpacing, readRequested: false, plotSettings: settings, skipTiny: null as number | null, activePreset, opened: undefined as string | null | undefined,
     // Following the other open pages: the last shared-settings version and drawing save this page has
     // taken up, and whether it has changes of its own not yet sent.
     settingsVersion: undefined as string | null | undefined, settingsUnsent: false,
     drawingSaved: undefined as string | null | undefined, unsaved: false });
   refs.current.rotation = rotation;
   refs.current.hatchSpacing = hatchSpacing;
+  refs.current.skipTiny = skipTiny;
   refs.current.plotLayerIds = plotLayerIds;
   refs.current.presets = presets;
   refs.current.activePreset = activePreset;
@@ -526,6 +530,7 @@ export default function App() {
     setPlotOrder(plot?.layer_order ?? null);
     setLayerLinks(plot?.layer_links ?? []);
     setHatchSpacing(plot?.hatch_spacing ?? {});
+    setSkipTiny(plot?.skip_tiny ?? null);
     setSmallPaths(plot?.small_paths ?? null);
     setSecondTool(plot?.second_tool ?? null);
     setSecondToolLayers(plot?.second_tool_layers ?? []);
@@ -575,6 +580,7 @@ export default function App() {
     ...(plotOrder?.length ? { layer_order: plotOrder } : {}),
     ...(layerLinks.length ? { layer_links: layerLinks } : {}),
     ...(Object.keys(hatchSpacing).length ? { hatch_spacing: hatchSpacing } : {}),
+    ...(skipTiny ? { skip_tiny: skipTiny } : {}),
     paper: { paper_size: settings.paper_size, paper_w: settings.paper_w, paper_h: settings.paper_h, paper_x: settings.paper_x, paper_y: settings.paper_y, paper_color: settings.paper_color },
   };
   const saveKey = JSON.stringify(drawingNow);
@@ -872,6 +878,7 @@ export default function App() {
       try {
         const result = await postJSON<Estimate>("/api/estimate", {
           ...refs.current.plotSettings, scale: sentScale, layers: refs.current.plotLayerIds, rotation: sentRotation, hatch_spacing: sentHatch,
+          skip_tiny: refs.current.skipTiny,
         });
         if (seq !== estimateSeq.current || result.superseded) return; // a newer estimate is on its way
         estimatedSeq.current = seq;
@@ -889,7 +896,7 @@ export default function App() {
     }, 450);
     return () => window.clearTimeout(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [fileName, drawingVersion, simulate ? estimateKey : "", scale, simulate ? plotLayerIds?.join("|") : "", rotation, simulate, JSON.stringify(hatchSpacing)]);
+  }, [fileName, drawingVersion, simulate ? estimateKey : "", scale, simulate ? plotLayerIds?.join("|") : "", rotation, simulate, JSON.stringify(hatchSpacing), skipTiny]);
 
   /* ---------- Actions ---------- */
 
@@ -998,7 +1005,7 @@ export default function App() {
     setLastAction("plot");
     setLocalMessage(null);
     try {
-      await postJSON("/api/plot", { ...settingsFor(plotLayerId), start_x: placement.x, start_y: placement.y, tip_offset_x: tipOffsetFor(plotLayerId), tip_offset_y: tipOffsetYFor(plotLayerId), scale, layers: plotLayerIds, rotation, hatch_spacing: hatchSpacing });
+      await postJSON("/api/plot", { ...settingsFor(plotLayerId), start_x: placement.x, start_y: placement.y, tip_offset_x: tipOffsetFor(plotLayerId), tip_offset_y: tipOffsetYFor(plotLayerId), scale, layers: plotLayerIds, rotation, hatch_spacing: hatchSpacing, skip_tiny: skipTiny });
       setStatus((s) => (s ? { ...s, state: "preparing", message: "", started: false } : s));
     } catch (err) {
       setLocalMessage({ text: (err as Error).message, tone: "error" });
@@ -1576,7 +1583,15 @@ export default function App() {
               </Section>
 
               <Section title="Plot options" collapsibleKey="plot-options" defaultOpen={false}>
-                <PlotOptionsSection settings={settings} disabled={plotting} onChange={updateSettings} handling={info?.handling ?? []} />
+                <PlotOptionsSection
+                  settings={settings}
+                  disabled={plotting}
+                  onChange={updateSettings}
+                  handling={info?.handling ?? []}
+                  skipTiny={skipTiny}
+                  onSkipTiny={setSkipTiny}
+                  skipped={estimate?.skipped_tiny ?? null}
+                />
               </Section>
               </>}
 

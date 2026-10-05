@@ -157,7 +157,7 @@
       "pen_rate_raise": 100,
       "pen_width": 0.18,
       "ink_opacity": 0.95,
-      "join_gap": 0.152,
+      "join_gap": 0.25,
       "ink_builds": false
     },
     "palette": [

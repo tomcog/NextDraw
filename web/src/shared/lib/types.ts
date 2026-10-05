@@ -109,6 +109,7 @@ export interface Estimate {
   preview_svg: string | null;
   layers: Layer[];
   superseded?: boolean; // a newer estimate was asked for before this one ran
+  skipped_tiny?: number; // paths left out by Skip tiny paths
 }
 
 // A layer as found in the drawing file, in file order.
@@ -165,6 +166,7 @@ export interface Plot {
   layer_order?: string[]; // layer ids bottom-first: the order to plot them in, not the file's order
   layer_links?: string[][]; // groups of layer ids in the same pen, plotted together in one pass
   hatch_spacing?: Record<string, number>; // layer ids to the hatch spacing (mm) Plot fills them at, when not Studio's
+  skip_tiny?: number; // paths whose longest side is under this (mm on paper) are left out of the plot; absent when off
   paper?: Partial<Pick<Settings, "paper_size" | "paper_w" | "paper_h" | "paper_x" | "paper_y" | "paper_color">>;
 }
 
