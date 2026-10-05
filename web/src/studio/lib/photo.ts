@@ -130,6 +130,9 @@ export interface Photo {
   margin?: number;
 }
 
+/** How a photo is split: by value, into colour groups, into CMYK plates, or already split into separations elsewhere. */
+export const photoMode = (p: Photo) => (p.separation ? "separations" : p.plate ? "cmyk" : p.ink ? "colour" : "value");
+
 /**
  * Where a photo goes to fit or fill a page, inside a margin: its box, and the part of it that shows.
  * `aspect` is the picture's width over its height.
