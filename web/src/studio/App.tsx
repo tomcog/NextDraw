@@ -2,8 +2,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { DrawingToolSection } from "../shared/components/controls/DrawingToolSection";
 import { PaperSection } from "../shared/components/controls/PaperSection";
 import { SettingsSection } from "../shared/components/controls/SettingsSection";
-import { Button, ButtonRound, Card, Checkbox, InputSelect, InputText, InputTextarea, Segment, Toolbar, ToolbarExpander } from "@tomcoggia/ui";
-import { ArrowDownLeft, ArrowDownRight, ArrowDownToLine, ArrowUpLeft, ArrowUpRight, AudioWaveform, Circle, ClipboardCopy, ClipboardPaste, Copy, Ellipsis, File as FileIcon, FileInput, FilePlus, FlameKindling, FolderOpen, ImagePlus, Grid2x2, Layers2, LayersArrowDown, LineStyle, LoaderPinwheel, Menu, Minus, MousePointer2, Orbit, PaintBucket, PaintRoller, PenLine, Pipette, Pentagon, Rainbow, RotateCw, Save, Send, Shell, Signal, Spline, Square, SquareDimensions, SquareStack, Star, Target, Trash2, Type, Waves } from "lucide-react";
+import { Button, ButtonRound, Card, Checkbox, InputText, Segment, Toolbar, ToolbarExpander } from "@tomcoggia/ui";
+import { ArrowDownToLine, AudioWaveform, Circle, ClipboardCopy, ClipboardPaste, Copy, File as FileIcon, FileInput, FilePlus, FolderOpen, ImagePlus, Layers2, LayersArrowDown, LineStyle, LoaderPinwheel, Menu, Minus, MousePointer2, PenLine, Pentagon, Rainbow, Save, Send, Shell, Signal, Spline, Square, SquareDimensions, Star, Target, Trash2, Type, Waves } from "lucide-react";
 import { FileBrowser, LAST_FOLDER_KEY, type CombineResult, type OpenResult } from "../shared/components/FileBrowser";
 import { Section } from "../shared/components/controls/Section";
 import { NumberField } from "../shared/components/controls/NumberField";
@@ -24,11 +24,11 @@ import { SizePopover } from "./components/SizePopover";
 import { StudioHeader } from "./components/StudioHeader";
 import { ThemeToggle } from "../shared/components/ThemeToggle";
 import { canConnect, canFill, fillNumbers, fillRuns, newFillId, FILL_LABEL, type Fill, type FillKind } from "./lib/hatch";
-import { closingTurns, curveStrokes, CURVE_FIELDS, type Corner, type Curve, type Point } from "./lib/parametric";
+import { curveStrokes, type Curve, type Point } from "./lib/parametric";
 import { fontNames, loadFont, type StrokeFont } from "./lib/font";
 import { flattenPath, flattenRun, mapNode, parsePath, simplifyRun, type Node } from "./lib/path";
 import { fitText, textRuns } from "./lib/text";
-import { defaultRepeat, placements, REPEAT_FIELDS, type Repeat, type RepeatKind } from "./lib/repeat";
+import { placements, type Repeat } from "./lib/repeat";
 import { parseDrawing } from "./lib/parse";
 import { type PhotoMarks, photoMode, BAND_NAMES, LAYER_SETTINGS, PLATES, PLATE_AIMS, MOST_LAYERS, PHOTO_DEFAULTS, photoMarks, colourGroups, darkestOf, isColourful, matchPens, placeOnPage, plateNamed, platePens, readTones, stemWithoutPlate, turnedCopy, turnedCrop, workingCopy, type Photo, type PhotoPart, type Plate } from "./lib/photo";
 import { usePhotoRead } from "./lib/usePhotoRead";
@@ -37,8 +37,11 @@ import { Hints } from "../shared/components/controls/Hints";
 import { RowMenu } from "./components/controls/RowMenu";
 import { ShapeList } from "./components/panels/ShapeList";
 import { PhotoCard } from "./components/panels/PhotoCard";
+import { canFlatten, hasShapeCard, ShapeCard, type ShapePanel } from "./components/panels/ShapeCard";
+import { TextCard } from "./components/panels/TextCard";
+import { SelectionCard } from "./components/panels/SelectionCard";
 import { LayersSection, type AlignEdge } from "./components/panels/LayersSection";
-import { boxAround, boxOf, centerOf, clampToPage, drawnNodes, drawnRuns, moveBy, newLayerId, newShapeId, outlinePoints, pathRuns, pointsBox, resizeTo, shapeName, turnAround, turnPoint, POINT_HANDLE_LIMIT, type Layer, type Page, type Shape } from "./lib/shapes";
+import { boxAround, boxOf, centerOf, clampToPage, drawnNodes, drawnRuns, moveBy, newLayerId, newShapeId, outlinePoints, pathRuns, pointsBox, resizeTo, shapeName, turnAround, turnPoint, type Layer, type Page, type Shape } from "./lib/shapes";
 import { buildSvg, svgForMarks, cleanFileName } from "./lib/svg";
 import { drawnMiddle, fitToPage, reshapeDrawing, runsOffPage, turnDrawingLeft } from "./lib/drawing";
 import { CALIBRATION_COVERS, calibrationSheet } from "./lib/calibration";
@@ -104,13 +107,6 @@ const FILL_HINT: Record<FillKind, string> = {
  dashes: "The same lines broken into strokes: lighter, and a pen lift each",
 };
 
-// How a shape repeats, as the row of round buttons in the Repeat card: one of them is always on.
-const REPEATS: { kind: RepeatKind; label: string; hint: string; icon: JSX.Element }[] = [
- { kind: "line", label: "Row", hint: "Repeat it in a row, in whatever direction you point it", icon: <Ellipsis /> },
- { kind: "grid", label: "Grid", hint: "Repeat it in rows and columns", icon: <Grid2x2 /> },
- { kind: "ring", label: "Ring", hint: "Repeat it round a circle, with this shape at the top", icon: <Orbit /> },
-];
-
 // The drawing being worked on, remembered so that handing one to Plot - which navigates away - isn't
 // the same as losing it. Its own key: Plot's keys share this origin and still carry the old name.
 const LAST_FILE_KEY = "studio-last-file";
@@ -129,9 +125,6 @@ interface Snapshot {
 const HISTORY_LIMIT = 60;
 
 type Saved = { path: string; folder: string } | null;
-
-/** The one set of a shape's settings on show, or none at all. */
-type ShapePanel = "simplify" | "fill" | "rotate" | "repeat" | null;
 
 /** The drawing as it was last read from or written to a file: what "no changes to save" means. */
 type OnDisk = { shapes: Shape[]; fills: Fill[]; layers: Layer[]; page: Page; name: string };
@@ -212,12 +205,6 @@ function plotPageAnswers(): Promise<boolean> {
  });
 }
 
-/**
- * Whether a shape still has numbers to give up. Points drawn as the lines between them are already
- * what flattening would leave; a turn and a set of copies are not given up by it, so neither counts.
- */
-const canFlatten = (s: Shape) => !(s.kind === "path" && !s.smooth);
-
 export default function App() {
  const [page, setPage] = useState<Page>({ w: 11, h: 8.5 });
  // How big the drawing is now, as a percent of its size when it was opened or started: the Paper
@@ -255,10 +242,6 @@ export default function App() {
  const [panel, setPanel] = useState<ShapePanel>(null);
  const showPanel = (which: Exclude<ShapePanel, null>) =>
   setPanel((open) => (open === which ? null : which));
- const simplifying = panel === "simplify";
- const filling = panel === "fill";
- const repeating = panel === "repeat";
- const rotating = panel === "rotate";
  const [model, setModel] = useState<PlotterModel | undefined>();
  // Paper to begin with: the page is what's being drawn on, and the bed is context around it.
  const [zoom, setZoom] = useState<Zoom>("paper");
@@ -3112,366 +3095,45 @@ export default function App() {
      </Card>
 
      {selected.length > 1 && (
-      <Card variant="flat" className={styles.controls}>
-       <div className={styles.cardBody}>
-        <Section title={`${selected.length} shapes`} collapsibleKey="selection">
-         <Button size="md" variant="secondary" onClick={joinShapes}>Join into one shape</Button>
-         <p className={styles.empty}>
-          They become one path, drawn in as many strokes as they had marks, and move, scale
-          and turn together from then on.
-         </p>
-        </Section>
-        {fillTargets.length > 0 && (
-         // Hatch them all at once: set here, every one of them gets the same fill.
-         <Section
-          title={fillTargets.length === selected.length ? "Hatch" : `Hatch ${fillTargets.length} of them`}
-          collapsibleKey="selection-fill"
-          action={fillClipboard ? (
-           <ButtonRound
-            size="sm"
-            icon={<PaintRoller />}
-            aria-label="Paste fill"
-            title="Paste fill: give every one of them the fill you copied, in place of their own"
-            disabled={busy}
-            onClick={pasteFill}
-           />
-          ) : undefined}
-         >
-          {fillPanel}
-         </Section>
-        )}
-       </div>
-      </Card>
+      <SelectionCard
+       count={selected.length}
+       fillable={fillTargets.length}
+       busy={busy}
+       canPaste={Boolean(fillClipboard)}
+       onJoin={joinShapes}
+       onPaste={pasteFill}
+       fillPanel={fillPanel}
+      />
      )}
 
      {photoCard}
 
-     {chosen?.kind === "text" && (
-      <Card variant="flat" className={styles.controls}>
-       <div className={styles.cardBody}>
-        <Section title="Text" collapsibleKey="text">
-         <InputTextarea
-          size="md"
-          label="Words"
-          rows={2}
-          autoResize
-          value={chosen.text ?? ""}
-          maxLength={500}
-          // Enter starts a new line here rather than doing anything to the drawing.
-          onKeyDown={(e) => e.stopPropagation()}
-          onChange={(e) => setTextOf({ text: e.target.value })}
-         />
-         <InputSelect
-          size="md"
-          label="Font"
-          value={chosen.font ?? ""}
-          disabled={!fontList.length}
-          onChange={(e) => setTextOf({ font: e.target.value })}
-         >
-          {!fontList.length && <option value="">No fonts on this Mac</option>}
-          {fontList.map((f) => <option key={f} value={f}>{f}</option>)}
-         </InputSelect>
-         <div className={styles.fillRow}>
-          <NumberField
-           label="Letter spacing"
-           unit="%"
-           step={1}
-           min={-20}
-           max={200}
-           value={chosen.tracking ?? 0}
-           onChange={(tracking) => setTextOf({ tracking })}
-          />
-          <NumberField
-           label="Line spacing"
-           unit="×"
-           step={0.1}
-           min={0.2}
-           max={10}
-           value={chosen.leading ?? 1}
-           onChange={(leading) => setTextOf({ leading })}
-          />
-         </div>
-         <p className={styles.empty}>
-          Drag a corner to set how tall the letters are. Letter spacing is a share of that
-          height, so it stays put as the text is resized.
-         </p>
-        </Section>
-       </div>
-      </Card>
-     )}
+     {chosen?.kind === "text" && <TextCard shape={chosen} fonts={fontList} onChange={setTextOf} />}
 
-     {/* What the shape itself is made of: the numbers that draw it, and how it is filled in. */}
-     {chosen && (chosen.curve || canFill(chosen) || chosen.kind === "path") && (
-      <Card variant="flat" className={styles.controls}>
-       <div className={`${styles.cardBody} ${controls.cardSections}`}>
-        {/* Named after the shape it is about, which is what the card is: the chosen shape,
-          and what can be done to it. The fold is remembered under one key all the same. */}
-        <Section
-         title={shapeName(chosen, onActive.indexOf(chosen))}
-         collapsibleKey="shape"
-         // Beside the shape's name rather than in the row below it: every button in that
-         // row opens something to adjust, and this one is done the moment it is pressed.
-         // Anything still made of numbers can be flattened, so the button stands here for
-         // every kind of shape rather than being repeated inside each one's settings.
-         action={canFlatten(chosen) ? (
-          <ButtonRound
-           size="sm"
-           icon={<ArrowDownToLine />}
-           aria-label="Flatten shape"
-           title="Flatten: the numbers behind this shape are given up and it becomes points to drag. Its turn and its copies are left as they are."
-           onClick={() => flattenShape(chosen.id)}
-          />
-         ) : undefined}
-        >
-        {/* No flatten of its own: giving up these numbers is what Flatten does, and the
-          card says that once, beside the shape's name, for every kind of shape. */}
-        {chosen.curve && (
-        <Section title="Curve" collapsibleKey="curve">
-         <div className={styles.fillRow}>
-          {CURVE_FIELDS[chosen.curve.kind].map((f) => (
-           <NumberField
-            key={f.key}
-            label={f.label}
-            min={f.min}
-            max={f.max}
-            step={f.step}
-            unit={f.unit}
-            value={Number((chosen.curve as unknown as Record<string, number>)[f.key])}
-            onChange={(v) => setCurve({ ...(chosen.curve as Curve), [f.key]: v } as Curve)}
-           />
-          ))}
-         </div>
-         {chosen.curve.kind === "parabolic" && (() => {
-          // Which corners the strings are drawn from: any of the four, set out as they sit on the
-          // box. Each toggles on its own; the last one on can't be turned off, or there'd be nothing.
-          const curve = chosen.curve;
-          const corner = (k: Corner, icon: JSX.Element, name: string) => {
-           const on = curve.corners.includes(k);
-           return (
-            <ButtonRound
-             size="sm"
-             icon={icon}
-             className={on ? controls.roundActive : undefined}
-             aria-label={name}
-             aria-pressed={on}
-             title={on ? `${name}: drawn from this corner` : `${name}: draw from this corner too`}
-             disabled={busy || (on && curve.corners.length === 1)}
-             onClick={() => setCurve({ ...curve, corners: on ? curve.corners.filter((c) => c !== k) : [...curve.corners, k] })}
-            />
-           );
-          };
-          return (
-           <div className={styles.cornerPick}>
-            <span className={styles.cornerLabel}>Corners</span>
-            <div className={styles.cornerGrid} role="group" aria-label="Corners to draw from">
-             {corner("tl", <ArrowUpLeft />, "Top left")}
-             {corner("tr", <ArrowUpRight />, "Top right")}
-             {corner("bl", <ArrowDownLeft />, "Bottom left")}
-             {corner("br", <ArrowDownRight />, "Bottom right")}
-            </div>
-           </div>
-          );
-         })()}
-         {chosen.curve.kind === "hypotrochoid" && (() => {
-          // Past this it retraces itself, and a retraced line is a line the pen draws twice. With the
-          // offset changing, each pass lands apart from the last, so it's how long one pass takes.
-          const closes = closingTurns(chosen.curve);
-          const drifting = Boolean(chosen.curve.drift);
-          return (
-           <p className={styles.empty}>
-            {closes == null
-             ? "Doesn’t close within 1,000 turns"
-             : drifting
-              ? `One pass every ${closes} ${closes === 1 ? "turn" : "turns"} - the changing offset keeps them apart`
-              : `Closes after ${closes} ${closes === 1 ? "turn" : "turns"}`}
-           </p>
-          );
-         })()}
-        </Section>
-        )}
-
-        {(chosen.runs?.length ?? 0) > 1 && (
-         <Button size="md" variant="secondary" onClick={() => splitShape(chosen.id)}>
-          {`Split into ${chosen.runs?.length} shapes`}
-         </Button>
-        )}
-        <div className={styles.tools} role="group" aria-label="What is done to this shape">
-         {/* Simplify keeps its button here rather than in the row's menu: it opens a
-           tolerance to type, and you come back to it until the points are where you
-           want them. */}
-         {chosen.kind === "path" && (
-          <ButtonRound
-           size="sm"
-           icon={<LineStyle />}
-           className={simplifying ? controls.roundActive : undefined}
-           aria-label="Simplify"
-           aria-expanded={simplifying}
-           aria-pressed={simplifying}
-           title="Simplify: take out the points the path can do without"
-           onClick={() => showPanel("simplify")}
-          />
-         )}
-         {/* Only a shape with an inside can be hatched. */}
-         {canFill(chosen) && (
-          <ButtonRound
-           size="sm"
-           icon={<PaintBucket />}
-           className={filling ? controls.roundActive : undefined}
-           aria-label="Hatch"
-           aria-expanded={filling}
-           aria-pressed={filling}
-           title="Hatch: fill this shape with lines, and set how they run"
-           onClick={() => showPanel("fill")}
-          />
-         )}
-         {/* Copy a shape's fill, then paste it onto another: a fill set up once, used again. */}
-         {fills.some((f) => f.shapeId === chosen.id) && (
-          <ButtonRound
-           size="sm"
-           icon={<Pipette />}
-           aria-label="Copy fill"
-           title="Copy fill: pick up this shape's fill, to paste onto another shape"
-           disabled={busy}
-           onClick={() => setFillClipboard(fills.filter((f) => f.shapeId === chosen.id))}
-          />
-         )}
-         {canFill(chosen) && fillClipboard && (
-          <ButtonRound
-           size="sm"
-           icon={<PaintRoller />}
-           aria-label="Paste fill"
-           title="Paste fill: give this shape the fill you copied, in place of its own"
-           disabled={busy}
-           onClick={pasteFill}
-          />
-         )}
-         {/* One button per thing that can be done to a shape as a whole, each opening its
-           own settings: how far it is turned, and how many of it there are. */}
-         <ButtonRound
-          size="sm"
-          icon={<RotateCw />}
-          className={rotating ? controls.roundActive : undefined}
-          aria-label="Rotate"
-          aria-expanded={rotating}
-          aria-pressed={rotating}
-          title="Rotate: turn this shape about the middle of its box"
-          onClick={() => showPanel("rotate")}
-         />
-         <ButtonRound
-          size="sm"
-          icon={<SquareStack />}
-          className={repeating ? controls.roundActive : undefined}
-          aria-label="Repeat"
-          aria-expanded={repeating}
-          aria-pressed={repeating}
-          title="Repeat: draw this shape more than once, in a row, a grid or a ring"
-          onClick={() => showPanel("repeat")}
-         />
-        </div>
-
-        {chosen.kind === "path" && simplifying && (() => {
-         const points = pathRuns(chosen).reduce((n, r) => n + r.length, 0);
-         return (
-          <>
-           <div className={styles.fillRow}>
-            <Button size="md" variant="secondary" onClick={() => simplifyShape(chosen.id)}>
-             Simplify
-            </Button>
-            <NumberField
-             label="Within"
-             unit="mm"
-             min={0.01}
-             max={10}
-             step={0.05}
-             value={simplifyMm}
-             onChange={setSimplifyMm}
-            />
-           </div>
-           <p className={styles.empty}>
-            {`${points} point${points === 1 ? "" : "s"}${points > POINT_HANDLE_LIMIT ? " - too many to drag one by one" : ""}`}
-           </p>
-          </>
-         );
-        })()}
-
-        {canFill(chosen) && filling && fillPanel}
-       {rotating && (
-        <NumberField
-         label="Rotation"
-         unit="°"
-         step={5}
-         value={chosen.rotation ?? 0}
-         onChange={setRotation}
-        />
-       )}
-
-       {repeating && (
-       <>
-        {/* Whether there is more than one of it, then how they are laid out - the same two
-          questions in the same order as a fill, which asks whether the shape is filled
-          before it asks what the filling is made of. A row is the plainest of the three,
-          so that is what ticking the box gives you to adjust. */}
-        <Checkbox
-         checked={!!chosen.repeat}
-         label="Duplicate"
-         onChange={(e) => setRepeat(e.target.checked ? defaultRepeat("line", chosen) : undefined)}
-        />
-        {chosen.repeat && (
-        <div className={styles.tools} role="group" aria-label="How this shape repeats">
-         {REPEATS.map((r) => {
-          const on = chosen.repeat?.kind === r.kind;
-          return (
-           <ButtonRound
-            key={r.label}
-            size="sm"
-            icon={r.icon}
-            className={on ? controls.roundActive : undefined}
-            aria-label={r.label}
-            aria-pressed={on}
-            title={r.hint}
-            onClick={() => setRepeat(defaultRepeat(r.kind, chosen))}
-           />
-          );
-         })}
-         {/* At the end of the row that made the copies: the one thing that gives them up
-           and leaves each as a shape of its own. */}
-         <ButtonRound
-          size="sm"
-          icon={<FlameKindling />}
-          aria-label="Bake the copies"
-          title={`Bake: all ${placements(chosen).length} copies become shapes of their own, each still made of its own numbers`}
-          onClick={() => bakeRepeat(chosen.id)}
-         />
-        </div>
-        )}
-        {chosen.repeat && (
-         <div className={styles.fillRow}>
-          {REPEAT_FIELDS[chosen.repeat.kind].map((f) => (
-           <NumberField
-            key={f.key}
-            label={f.label}
-            min={f.min}
-            max={f.max}
-            step={f.step}
-            unit={f.unit}
-            value={Number((chosen.repeat as unknown as Record<string, number>)[f.key])}
-            onChange={(v) => setRepeat({ ...(chosen.repeat as Repeat), [f.key]: v } as Repeat)}
-           />
-          ))}
-         </div>
-        )}
-        {chosen.repeat?.kind === "ring" && (
-         <Checkbox
-          checked={chosen.repeat.facing}
-          label="Turn each copy to face out"
-          onChange={(e) => setRepeat({ ...(chosen.repeat as Repeat), facing: e.target.checked } as Repeat)}
-         />
-        )}
-       </>
-       )}
-        </Section>
-       </div>
-      </Card>
+     {chosen && hasShapeCard(chosen) && (
+      <ShapeCard
+       shape={chosen}
+       title={shapeName(chosen, onActive.indexOf(chosen))}
+       busy={busy}
+       hasFill={fills.some((f) => f.shapeId === chosen.id)}
+       canPaste={Boolean(fillClipboard)}
+       panel={panel}
+       onPanel={showPanel}
+       fillPanel={fillPanel}
+       simplifyMm={simplifyMm}
+       onSimplifyMm={setSimplifyMm}
+       actions={{
+        flatten: flattenShape,
+        setCurve,
+        split: splitShape,
+        simplify: simplifyShape,
+        copyFill: () => setFillClipboard(fills.filter((f) => f.shapeId === chosen.id)),
+        pasteFill,
+        setRotation,
+        setRepeat,
+        bake: bakeRepeat,
+       }}
+      />
      )}
      </>)}
      </>)}
