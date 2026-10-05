@@ -55,6 +55,12 @@ export const PRESET_FIELDS = [
   "pen_pos_down", "pen_pos_up", "pen_setup", "pen_width", "pen_rate_lower", "pen_rate_raise", "join_gap",
   "speed_pendown", "speed_penup", "accel", "handling",
 ] as const satisfies readonly (keyof Settings)[];
+// What each is called where it's shown, as on the Drawing tool card.
+export const PRESET_FIELD_NAMES: Record<(typeof PRESET_FIELDS)[number], string> = {
+  pen_pos_down: "pen down", pen_pos_up: "pen up", pen_setup: "setup height", pen_width: "line width",
+  pen_rate_lower: "lowering", pen_rate_raise: "raising", join_gap: "join gap", speed_pendown: "drawing speed",
+  speed_penup: "travel speed", accel: "acceleration", handling: "motion",
+};
 
 // Width × height in mm, portrait. Shown landscape by default to suit the plotter.
 export const PAPER_SIZES: { id: string; name: string; w: number; h: number }[] = [

@@ -35,6 +35,8 @@
   font-variant-numeric: tabular-nums;
 }
 
+.pen { margin-left: auto; }
+
 .progress[data-state="empty"] .pct { color: var(--ui-text-faint); }
 
 .pct {

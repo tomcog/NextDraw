@@ -83,6 +83,7 @@ export interface Status {
   elapsed_s: number;
   started: boolean;
   log: string[];
+  pen?: { tool: string | null; down: number; up: number; rate_lower: number } | null; // what the plotter was given for this plot
   carriage: Carriage;
   plotter_found: boolean;
   plotter?: "nextdraw" | "idraw" | null; // which one, told apart by the name on its board

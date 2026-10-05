@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { ButtonRound, Spinner } from "@tomcoggia/ui";
+import { Button, ButtonRound, Spinner } from "@tomcoggia/ui";
 import { X } from "lucide-react";
 import styles from "./StatusBanner.module.css";
 
@@ -15,6 +15,8 @@ export interface BannerMessage {
   id?: string;
   /** Something under way: shown with a spinner. */
   working?: boolean;
+  /** One thing to do about it, as a button beside the text. */
+  action?: { label: string; onClick: () => void };
 }
 
 /**
@@ -35,6 +37,9 @@ export function StatusBanner({ message }: { message: BannerMessage | null }) {
           <ul className={styles.items}>{message.items.map((item) => <li key={item}>{item}</li>)}</ul>
         )}
       </div>
+      {message.action && (
+        <Button size="sm" variant="primary" onClick={message.action.onClick}>{message.action.label}</Button>
+      )}
       <ButtonRound
         size="sm"
         variant={tone === "caution" ? "ghost" : "outline-light"}

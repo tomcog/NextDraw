@@ -36,6 +36,9 @@ export function PlotProgress({ status: s }: { status: Status | null }) {
       <p className={styles.line}>
         <span className={styles.pct}>{pct > 0 && shown < 1 ? "<1%" : `${shown}%`}</span>
         <span>{detail}</span>
+        {/* The heights the plotter was actually given, so a plot that draws differently from the
+            last one can be checked against it. */}
+        {hasData && s?.pen && <span className={styles.pen}>Pen down {s.pen.down}, up {s.pen.up}</span>}
       </p>
       <div className={styles.rail} role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={shown}>
         <div className={styles.fill} style={{ width: `${shown === 100 ? 100 : pct}%` }} />

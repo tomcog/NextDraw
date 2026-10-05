@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Button, Card } from "@tomcoggia/ui";
 import styles from "./App.module.css";
 import { api, postJSON } from "../shared/lib/api";
-import { barrelOffsetMm, BUSY_STATES, DEFAULT_SETTINGS, IDRAW_MODEL, PAPER_SIZES, PLOT_CHANNEL, PLOTTING_STATES, PRESET_FIELDS, STEPS, STORAGE } from "../shared/lib/constants";
+import { barrelOffsetMm, BUSY_STATES, DEFAULT_SETTINGS, IDRAW_MODEL, PAPER_SIZES, PLOT_CHANNEL, PLOTTING_STATES, PRESET_FIELD_NAMES, PRESET_FIELDS, STEPS, STORAGE } from "../shared/lib/constants";
 import { cleanNote, listOf } from "../shared/lib/format";
 import { lightness } from "../shared/lib/color";
 import { fitsOnBed, fitsOnPaper, footprint, minPlacement } from "../shared/lib/geometry";
@@ -387,13 +387,16 @@ export default function App() {
     // Following the other open pages: the last shared-settings version and drawing save this page has
     // taken up, and whether it has changes of its own not yet sent.
     settingsVersion: undefined as string | null | undefined, settingsUnsent: false,
-    drawingSaved: undefined as string | null | undefined, unsaved: false });
+    drawingSaved: undefined as string | null | undefined, unsaved: false,
+    // A tool's edited values are on their way to the presets file (see setToolValues).
+    toolSavePending: false, secondTool: null as string | null });
   refs.current.rotation = rotation;
   refs.current.hatchSpacing = hatchSpacing;
   refs.current.skipTiny = skipTiny;
   refs.current.plotLayerIds = plotLayerIds;
   refs.current.presets = presets;
   refs.current.activePreset = activePreset;
+  refs.current.secondTool = secondTool;
   refs.current.fileName = fileName;
   refs.current.status = status;
   refs.current.lastAction = lastAction;
@@ -643,11 +646,15 @@ export default function App() {
     })();
   }, [takeShared]);
 
-  // The presets file is shared - edited from the other Mac, from Studio, or by hand - so a change to it
-  // reaches this page without a reload: the list is read again every few seconds, and when it has
-  // changed, the chosen tool's settings are taken from it, as they are when the page opens. The page's
-  // own saves come back the same way and change nothing.
+  // The presets file is shared - edited from the other Mac, from Studio, or by hand - so it is read
+  // again every few seconds for new tools, palettes and the like. But the tools in use are left as they
+  // are: a pen is seated and set up for the values the page is showing, and a height that changed under
+  // it mid-drawing (from a page on the other Mac, or iCloud bringing back an older copy) would lift it
+  // off the paper - or drive it in - between one layer and the next, with nothing touched here. So a
+  // change to a tool in use is held, and the banner says what changed until it's taken up by hand.
+  // The page's own saves come back the same way and change nothing.
   const presetsSeen = useRef<string | null>(null);
+  const [heldPresets, setHeldPresets] = useState<{ presets: Preset[]; changes: string[] } | null>(null);
   useEffect(() => {
     const timer = window.setInterval(async () => {
       try {
@@ -657,17 +664,49 @@ export default function App() {
           presetsSeen.current = text;
           return;
         }
-        if (text === presetsSeen.current) return;
+        if (text === presetsSeen.current || refs.current.toolSavePending) return; // ours still on its way: look again after
         presetsSeen.current = text;
-        setPresets(r.presets);
-        const chosen = r.presets.find((p) => p.name === refs.current.activePreset);
-        if (chosen) setSettings((prev) => ({ ...prev, ...chosen.settings }));
+        const changes: string[] = [];
+        const kept = r.presets.map((p) => {
+          if (p.name !== refs.current.activePreset && p.name !== refs.current.secondTool) return p;
+          // The first tool plots with the page's settings, the second with its preset as the page has it.
+          const mine: Partial<Settings> | undefined = p.name === refs.current.activePreset
+            ? refs.current.settings
+            : refs.current.presets.find((q) => q.name === p.name)?.settings;
+          if (!mine) return p;
+          const differ = PRESET_FIELDS.filter((k) => p.settings[k] !== undefined && mine[k] !== undefined && Math.abs(Number(p.settings[k]) - Number(mine[k])) > 0.0005);
+          if (!differ.length) return p;
+          changes.push(`${p.name}: ${differ.map((k) => `${PRESET_FIELD_NAMES[k]} ${mine[k]} → ${p.settings[k]}`).join(", ")}`);
+          return { ...p, settings: { ...p.settings, ...Object.fromEntries(differ.map((k) => [k, mine[k]])) } };
+        });
+        setPresets(kept);
+        setHeldPresets(changes.length ? { presets: r.presets, changes } : null);
       } catch {
         /* the next read tries again */
       }
     }, 3000);
     return () => window.clearInterval(timer);
   }, []);
+  const takeHeldPresets = () => {
+    if (!heldPresets) return;
+    setPresets(heldPresets.presets);
+    const chosen = heldPresets.presets.find((p) => p.name === refs.current.activePreset);
+    if (chosen) updateSettings(chosen.settings);
+    setHeldPresets(null);
+  };
+  const heldBanner = useMemo(
+    () => (heldPresets
+      ? {
+        text: "A tool in use was changed somewhere else. Plot is still using the values it had:",
+        items: heldPresets.changes,
+        caution: true,
+        id: heldPresets.changes.join("\n"),
+        action: { label: "Use the new values", onClick: takeHeldPresets },
+      }
+      : null),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [heldPresets],
+  );
 
   const clearDrawing = useCallback(() => {
     estimateSeq.current++; // ignore any estimate still on its way
@@ -1005,7 +1044,7 @@ export default function App() {
     setLastAction("plot");
     setLocalMessage(null);
     try {
-      await postJSON("/api/plot", { ...settingsFor(plotLayerId), start_x: placement.x, start_y: placement.y, tip_offset_x: tipOffsetFor(plotLayerId), tip_offset_y: tipOffsetYFor(plotLayerId), scale, layers: plotLayerIds, rotation, hatch_spacing: hatchSpacing, skip_tiny: skipTiny });
+      await postJSON("/api/plot", { ...settingsFor(plotLayerId), tool: (usesSecond(plotLayerId) ? secondPreset : active)?.name, start_x: placement.x, start_y: placement.y, tip_offset_x: tipOffsetFor(plotLayerId), tip_offset_y: tipOffsetYFor(plotLayerId), scale, layers: plotLayerIds, rotation, hatch_spacing: hatchSpacing, skip_tiny: skipTiny });
       setStatus((s) => (s ? { ...s, state: "preparing", message: "", started: false } : s));
     } catch (err) {
       setLocalMessage({ text: (err as Error).message, tone: "error" });
@@ -1211,12 +1250,14 @@ export default function App() {
     const merged = { ...active.settings, ...patch };
     setPresets((list) => list.map((p) => (p.name === name ? { ...p, settings: merged } : p)));
     window.clearTimeout(inkTimer.current);
+    refs.current.toolSavePending = true;
     inkTimer.current = window.setTimeout(() => {
       api(`/api/presets/${encodeURIComponent(name)}?plotter=connected`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(merged),
-      }).catch(() => setLocalMessage({ text: "Couldn't save the ink settings.", tone: "error" }));
+      }).catch(() => setLocalMessage({ text: "Couldn't save the ink settings.", tone: "error" }))
+        .finally(() => { refs.current.toolSavePending = false; });
     }, 500);
   };
 
@@ -1238,12 +1279,14 @@ export default function App() {
     if (tool === active) updateSettings(patch);
     setPresets((list) => list.map((p) => (p.name === name ? { ...p, settings: merged, tilt, barrel_mm: barrel } : p)));
     window.clearTimeout(toolTimer.current);
+    refs.current.toolSavePending = true;
     toolTimer.current = window.setTimeout(() => {
       api(`/api/presets/${encodeURIComponent(name)}?plotter=connected`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ ...merged, ...(tilt ? { tilt_offset_mm: tilt.offset_mm } : {}), ...(barrel ? { barrel_mm: barrel } : {}) }),
-      }).catch(() => setLocalMessage({ text: `Couldn't save the ${name} settings.`, tone: "error" }));
+      }).catch(() => setLocalMessage({ text: `Couldn't save the ${name} settings.`, tone: "error" }))
+        .finally(() => { refs.current.toolSavePending = false; });
     }, 500);
   };
 
@@ -1474,6 +1517,7 @@ export default function App() {
   }, []);
   return (
     <div className={styles.app}>
+      <StatusBanner message={heldBanner} />
       <StatusBanner message={notesBanner} />
       <Hints />
       <FileBrowser

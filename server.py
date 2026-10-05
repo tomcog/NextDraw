@@ -146,6 +146,10 @@ RESUME_SVG = JOBS / "resume.svg"
 RESUME_META = JOBS / "resume.json"
 # The pen-down paths of the plot in progress, in the order they're drawn, for showing what's left.
 PLOT_PATHS = JOBS / "plot-paths.svg"
+# A line for every plot started and how it ended: the drawing, the layers, the tool and the pen heights
+# the plotter was actually given. Plot's heights come from a preset shared between Macs, so this is
+# the record of what each plot really used when one draws differently from the one before it.
+PLOT_HISTORY = JOBS / "plot-history.log"
 
 # Settings the GUI may change, with (min, max) limits from the NextDraw docs.
 NUMERIC_SETTINGS = {
@@ -281,6 +285,7 @@ class Job:
         self.estimate_s = 0.0
         self.speed_pct = 100        # live speed adjustment for this plot (see set_speed)
         self.plot_settings = {}     # the running plot's settings at 100%
+        self.pen = None             # the tool and pen heights the plotter was given for this plot
         self.started = None
         self.ended = None
         self.log = []
@@ -310,6 +315,7 @@ class Job:
             "elapsed_s": round(end - self.started) if self.started else 0,
             "started": self.started is not None,
             "log": self.log[-20:],
+            "pen": self.pen,
         }
 
 
@@ -1373,6 +1379,8 @@ def clean_placement(raw):
     placement["layers"] = clean_layers(raw)
     placement["layer"] = placement["layers"][0] if placement["layers"] else None
     placement["hatch"] = clean_hatch(raw)
+    # The tool in the holder, by name: only recorded with the plot, never used to choose settings.
+    placement["tool"] = str(raw.get("tool") or "").strip()[:60] or None
     for key, name in (("x", "start_x"), ("y", "start_y")):
         try:
             # Below 0 only by the page's empty margin, which the page keeps it to; lines past home are lost.
@@ -1804,6 +1812,30 @@ def save_plot_paths(preview_svg, placement):
     PLOT_PATHS.write_bytes(etree.tostring(root))
 
 
+def record_plot(event, placement, pen, done_mm=None):
+    """One line in the plot history: when, what happened, the drawing, its layers, the tool and the
+    pen heights it was given. Never stops a plot: a history that can't be written is only lost."""
+    try:
+        name_file = JOBS / "current.name"
+        drawing = name_file.read_text().strip() if name_file.exists() else "?"
+        ids = plot_layers(placement)
+        layers = "all layers"
+        if ids:
+            from lxml import etree
+            root = etree.parse(str(CURRENT_SVG), etree.XMLParser(huge_tree=True)).getroot()
+            names = {l["id"]: l["name"] for l in read_layers(root)}
+            layers = ", ".join(f"“{names.get(i, i)}”" for i in ids)
+        line = (f"{time.strftime('%Y-%m-%d %H:%M:%S')}  {event}: {drawing}, {layers}. "
+                f"Tool {pen.get('tool') or 'not named'}: pen down {pen['down']}, up {pen['up']}, "
+                f"lowering rate {pen['rate_lower']}")
+        if done_mm is not None:
+            line += f". {done_mm:.0f} mm drawn"
+        with PLOT_HISTORY.open("a") as f:
+            f.write(line + ".\n")
+    except Exception:  # noqa: BLE001
+        pass
+
+
 def run_plot(settings, placement, resume=None):
     """Plot the loaded drawing, or resume a stopped plot (resume = its saved metadata)."""
     log = job.log
@@ -1852,8 +1884,12 @@ def run_plot(settings, placement, resume=None):
         nd.plot_setup(source)
         apply_settings(nd, settings)
         nd.options.mode = mode
+        pen = {"tool": placement.get("tool"), "down": nd.options.pen_pos_down, "up": nd.options.pen_pos_up,
+               "rate_lower": nd.options.pen_rate_lower}
+        record_plot(("Resumed" if resume else "Started"), placement, pen)
         go_to_plot_start(nd, placement)
         with job.lock:
+            job.pen = pen
             apply_live_speed(nd, settings, job.speed_pct)
             job.plot_settings = settings
             job.nd = nd
@@ -1893,6 +1929,8 @@ def run_plot(settings, placement, resume=None):
                 job.state = "error"
                 job.message = ERRORS.get(code, f"The plot ended with error code {code}.")
 
+        record_plot("Finished" if code == 0 else "Stopped" if code in (102, 103) else f"Error {code}", placement,
+                    pen, job.done_mm)
         if code == 0:
             if placement["return_home"]:
                 # Clear the plot-start offset BEFORE walking home. set_plot_start wrote the drawing's
