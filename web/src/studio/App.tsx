@@ -2,11 +2,10 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { DrawingToolSection } from "../shared/components/controls/DrawingToolSection";
 import { PaperSection } from "../shared/components/controls/PaperSection";
 import { SettingsSection } from "../shared/components/controls/SettingsSection";
-import { Button, ButtonRound, Card, Checkbox, InputText, Segment, Toolbar, ToolbarExpander } from "@tomcoggia/ui";
-import { ArrowDownToLine, AudioWaveform, Circle, ClipboardCopy, ClipboardPaste, Copy, File as FileIcon, FileInput, FilePlus, FolderOpen, ImagePlus, Layers2, LayersArrowDown, LoaderPinwheel, Minus, MousePointer2, PenLine, Pentagon, Rainbow, Save, Send, Shell, Signal, Spline, Square, SquareDimensions, Star, Trash2, Type } from "lucide-react";
+import { Button, Card } from "@tomcoggia/ui";
+import { ArrowDownToLine, ClipboardCopy, ClipboardPaste, Copy, Layers2, LayersArrowDown, MousePointer2, PenLine, Spline, SquareDimensions, Trash2 } from "lucide-react";
 import { FileBrowser, LAST_FOLDER_KEY, type CombineResult, type OpenResult } from "../shared/components/FileBrowser";
 import { Section } from "../shared/components/controls/Section";
-import { NumberField } from "../shared/components/controls/NumberField";
 import controls from "../shared/components/controls/controls.module.css";
 import { api, postJSON } from "../shared/lib/api";
 import { load, save as remember } from "../shared/lib/storage";
@@ -42,6 +41,9 @@ import { TextCard } from "./components/panels/TextCard";
 import { SelectionCard } from "./components/panels/SelectionCard";
 import { FillPanel } from "./components/panels/FillPanel";
 import { CalibrationSection } from "./components/panels/CalibrationSection";
+import { FileSection } from "./components/panels/FileSection";
+import { GridSection } from "./components/panels/GridSection";
+import { ToolPicker } from "./components/panels/ToolPicker";
 import { LayersSection, type AlignEdge } from "./components/panels/LayersSection";
 import { boxAround, boxOf, centerOf, clampToPage, drawnNodes, drawnRuns, moveBy, newLayerId, newShapeId, outlinePoints, pathRuns, pointsBox, resizeTo, shapeName, turnAround, turnPoint, type Layer, type Page, type Shape } from "./lib/shapes";
 import { buildSvg, svgForMarks, cleanFileName } from "./lib/svg";
@@ -59,22 +61,6 @@ const SIZES = PAPER_SIZES.filter((p) => p.w && p.h).map((p) => ({
  h: p.h! / 25.4,
 }));
 
-const TOOLS: { kind: Tool; label: string; hint: string; icon: JSX.Element }[] = [
- { kind: "select", label: "Select", hint: "Select (V): drag a shape to move it, its corners to resize", icon: <MousePointer2 /> },
- { kind: "rect", label: "Rectangle", hint: "Rectangle (R): drag on the page", icon: <Square /> },
- { kind: "ellipse", label: "Ellipse", hint: "Oval (O): drag on the page", icon: <Circle /> },
- { kind: "line", label: "Line", hint: "Line (L): drag on the page", icon: <Minus /> },
- // Parametric shapes: drawn as a box like the rest, then tuned by their numbers in the Curve card.
- { kind: "hypotrochoid", label: "Spirograph", hint: "Draw a spirograph: drag on the page, then set its circles", icon: <LoaderPinwheel /> },
- { kind: "parabolic", label: "Parabolic curve", hint: "Draw curve stitching: drag on the page, then set its strings", icon: <Signal /> },
- { kind: "polygon", label: "Polygon", hint: "Polygon (P): drag on the page, then set how many sides", icon: <Pentagon /> },
- { kind: "star", label: "Star", hint: "Star (S): drag on the page, then set its points", icon: <Star /> },
- { kind: "spiral", label: "Spiral", hint: "Draw a spiral: drag on the page, then set its turns", icon: <Shell /> },
- { kind: "arc", label: "Arc", hint: "Arc (A): drag on the page, then set where it starts and how far it goes", icon: <Rainbow /> },
- { kind: "wave", label: "Wave", hint: "Draw a wave: drag on the page, then set how many", icon: <AudioWaveform /> },
- { kind: "text", label: "Text", hint: "Text (T): drag to say how tall, then type the words", icon: <Type /> },
-];
-
 // Used when a tool has no palette of its own, so there is always a pen to draw with.
 const PLAIN_PEN: PenColor = { name: "Black", color: "#262626" };
 const TOOL_KEY = "studio-tool";
@@ -82,7 +68,6 @@ const FONT_KEY = "studio-font";
 const SNAP_KEY = "studio-snap";
 const SIMPLIFY_KEY = "studio-simplify";
 
-// What each kind of fill is, at a glance, and what it costs the pen.
 /** The letter that picks each tool. Lower case: the key is read that way, so Shift makes no odds. */
 const TOOL_KEYS: Record<string, Tool> = {
  v: "select",
@@ -977,18 +962,6 @@ export default function App() {
  // A photo of it, plotted, is read back into the tool's preset: each pen as it really came out.
  const [setupOpen, setSetupOpen] = useState(false);
 
- // The File card's drawer: its buttons each do one thing and fold it, so a click anywhere else in the
- // app folds it too, as the row menus do.
- const [fileDrawerOpen, setFileDrawerOpen] = useState(false);
- const fileDrawer = useRef<HTMLDivElement>(null);
- useEffect(() => {
-  if (!fileDrawerOpen) return;
-  const away = (e: PointerEvent) => {
-   if (!(e.target instanceof window.Node && fileDrawer.current?.contains(e.target))) setFileDrawerOpen(false);
-  };
-  document.addEventListener("pointerdown", away, true);
-  return () => document.removeEventListener("pointerdown", away, true);
- }, [fileDrawerOpen]);
  // Image conversion: the one photo being worked on, on its own - its picture and lines take the
  // stage, and the rail holds how it's converted. The drawing waits, as it does for Setup; the keys
  // that would change it are off while it's hidden.
@@ -1174,7 +1147,6 @@ export default function App() {
 
  // A photo, from a file on this Mac: made into a working copy, fitted to the page inside a half-inch
  // margin at its own proportions, and put on the layer being drawn on - whose ink it is hatched in.
- const photoInput = useRef<HTMLInputElement>(null);
  const addPhoto = async (file: File | undefined) => {
   if (!file || !active) return;
   try {
@@ -2666,156 +2638,34 @@ export default function App() {
      {setupOpen ? setupRail : (<>
      <Card variant="flat" className={styles.controls}>
       <div className={`${styles.cardBody} ${controls.cardSections}`}>
-       <Section
-        title="File"
-        action={
-         <span className={styles.headerTools}>
-          {/* Opening, starting and sending sit in a drawer behind the File button; Save stays out,
-            furthest right, as the one done most. The row is held to the card's right edge, so the
-            drawer opening pushes the File button left and stays to the left of Save. It reads in
-            the order they come up: another drawing opened, a photo, a new one started, and what
-            is finished sent to Plot. */}
-          <Toolbar tone="white" aria-label="File">
-           <ToolbarExpander
-            ref={fileDrawer}
-            size="sm"
-            icon={<FileIcon />}
-            label="File"
-            actions
-            open={fileDrawerOpen}
-            onOpenChange={setFileDrawerOpen}
-           >
-            <Segment
-             icon={<FolderOpen />}
-             hideLabel
-             title="Open a drawing to carry on with"
-             disabled={busy}
-             onClick={() => {
-              setBrowserAdds(false);
-              setBrowserOpen(true);
-             }}
-            >
-             Open a drawing
-            </Segment>
-            {/* Another file onto this drawing, a layer of its own: the browser's "Add as layer",
-              without the ticking. */}
-            <Segment
-             icon={<FileInput />}
-             hideLabel
-             title="Add an SVG or Illustrator file to this drawing, as a new layer"
-             disabled={busy || !shapes.length}
-             onClick={() => {
-              setBrowserAdds(true);
-              setBrowserOpen(true);
-             }}
-            >
-             Add as a layer
-            </Segment>
-            {/* A photo is opened rather than drawn: it becomes a new drawing, in image conversion. */}
-            <Segment
-             icon={<ImagePlus />}
-             hideLabel
-             title="Open a photo to turn into lines, matched to the tool's pens: a new drawing, in image conversion. Pick several greyscale separations at once (…_C, …_M, …_Y, …_K) for a layer each"
-             disabled={busy}
-             onClick={() => photoInput.current?.click()}
-            >
-             Open a photo
-            </Segment>
-            <Segment
-             icon={<FilePlus />}
-             hideLabel
-             title="Close this drawing and start a new one"
-             disabled={busy}
-             onClick={() => startNew()}
-            >
-             New drawing
-            </Segment>
-            <Segment
-             icon={<Send />}
-             hideLabel
-             title="Save this drawing and open it in Plot, ready to draw"
-             disabled={busy || !shapes.length}
-             onClick={openInPlot}
-            >
-             Send to Plot
-            </Segment>
-           </ToolbarExpander>
-          </Toolbar>
-          <input
-           ref={photoInput}
-           type="file"
-           accept="image/*"
-           hidden
-           multiple
-           onChange={(e) => {
-            openPhotos([...(e.target.files ?? [])]);
-            e.target.value = ""; // so the same photo can be opened again
-           }}
-          />
-          {/* A safety-toned round button: the half of "are you sure?" that keeps the
-            work, and the one button here that writes a file. */}
-          <ButtonRound
-           size="sm"
-           tone="safety"
-           icon={<Save />}
-           aria-label="Save"
-           title={`Save this drawing${saved ? ` to ${saved.folder}` : ""}`}
-           disabled={busy || !shapes.length || !dirty}
-           onClick={save}
-          />
-         </span>
-        }
-       >
-        <InputText
-         size="md"
-         label="Name"
-         // The card is called File and the field holds the drawing's name: saying so twice under
-         // the words themselves helps nobody who can see them.
-         hideLabel
-         value={name}
-         disabled={busy}
-         onChange={(e) => setName(e.target.value)}
-        />
-        <p className={controls.fileWhere} title={saved?.path ?? undefined}>
-         {saved ? saved.folder : "Not saved yet"}
-        </p>
-
-        {confirmNewBlock}
-
-       </Section>
+       <FileSection
+        name={name}
+        onName={setName}
+        saved={saved}
+        dirty={dirty}
+        hasShapes={shapes.length > 0}
+        busy={busy}
+        confirm={confirmNewBlock}
+        onOpen={() => {
+         setBrowserAdds(false);
+         setBrowserOpen(true);
+        }}
+        onAddLayer={() => {
+         setBrowserAdds(true);
+         setBrowserOpen(true);
+        }}
+        onOpenPhotos={openPhotos}
+        onNew={() => startNew()}
+        onSendToPlot={openInPlot}
+        onSave={save}
+       />
 
        {/* What the drawing is made on and with, in the same card as the drawing itself: the same
          Settings, Paper and Drawing tool cards as Plot's, with the grid, which is Studio's alone. */}
        <SettingsSection collapsibleKey="settings">
         {paperSection}
 
-        {!converted && (
-        <Section
-         title="Grid"
-         collapsibleKey="grid"
-         actionWhenOpen
-         // Folded, the row says whether shapes are snapping, as Paper and Drawing tool say theirs.
-         closedAction={snapping ? <span className={controls.toolInTitle}>On</span> : undefined}
-        >
-         <Checkbox
-          checked={snapping}
-          label="Snap to the grid"
-          title="Round what is drawn, moved and resized to the grid"
-          onChange={(e) => setSnapping(e.target.checked)}
-         />
-         {snapping && (
-          <NumberField
-           label="Every"
-           unit="in"
-           min={0.01}
-           max={12}
-           step={0.125}
-           value={snapStep}
-           onChange={setSnapStep}
-          />
-         )}
-        </Section>
-        )}
+        {!converted && <GridSection snapping={snapping} onSnapping={setSnapping} step={snapStep} onStep={setSnapStep} />}
 
         <DrawingToolSection tools={presets} value={toolName} onPick={pickTool} collapsibleKey="pen" disabled={busy} />
        </SettingsSection>
@@ -2824,24 +2674,7 @@ export default function App() {
      {/* Image conversion keeps the file and what it is drawn on and with; the rest is the drawing's. */}
      {converted ? convertRail : (<>
 
-     <Card variant="flat" className={styles.controls}>
-      <div className={styles.cardBody}>
-       <div className={styles.tools} role="group" aria-label="Shape to draw">
-        {TOOLS.map((t) => (
-         <ButtonRound
-          key={t.kind}
-          size="sm"
-          icon={t.icon}
-          className={tool === t.kind ? controls.roundActive : undefined}
-          aria-label={t.label}
-          aria-pressed={tool === t.kind}
-          title={t.hint}
-          onClick={() => setTool(t.kind)}
-         />
-        ))}
-       </div>
-      </div>
-     </Card>
+     <ToolPicker tool={tool} onTool={setTool} />
 
      {/* The layers, and what is on the one being worked on: two sections of one card. */}
      <Card variant="flat" className={styles.controls}>
