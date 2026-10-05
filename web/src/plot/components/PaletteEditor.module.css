@@ -142,3 +142,15 @@
   margin: 0;
   max-width: 34rem;
 }
+
+/* Hue, saturation and lightness side by side, under the hex value: whole numbers the arrows step. */
+.hslRow {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.375rem;
+}
+
+.hslField {
+  min-width: 0;
+  font-variant-numeric: tabular-nums;
+}

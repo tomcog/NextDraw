@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { Button, ButtonRound, Card, InputText } from "@tomcoggia/ui";
 import { Plus, Trash2 } from "lucide-react";
 import styles from "./PaletteEditor.module.css";
-import { lightness, onPaper } from "../../shared/lib/color";
+import { hexToHsl, hslToHex, lightness, onPaper } from "../../shared/lib/color";
 import type { PenColor, Preset } from "../../shared/lib/types";
 
 interface Props {
@@ -17,6 +17,63 @@ interface Props {
 const NEW_COLOR = "#7a7a7a";
 
 // Darkest first, so the lightest ends up at the bottom, as everywhere else colors are listed.
+const HSL_FIELDS = [
+  { label: "Hue", min: undefined, max: undefined }, // wraps round: up from 359 is 0
+  { label: "Sat", min: 0, max: 100 },
+  { label: "Light", min: 0, max: 100 },
+] as const;
+
+/**
+ * A colour as hue, saturation and lightness, each a whole number the up and down arrows step by one -
+ * the browser's own picker can't be told to open on HSL, or to step like that. What's typed is kept
+ * as typed: read back from the hex it makes, a hue stepped on a near-grey would round back to where
+ * it was and never move. It is read afresh only when the colour changes some other way.
+ */
+function HslFields({ color, name, disabled, onChange }: { color: string; name: string; disabled: boolean; onChange: (hex: string) => void }) {
+  const fromHex = (hex: string) => (hexToHsl(hex) ?? [0, 0, 0]).map(String);
+  const [text, setText] = useState<string[]>(() => fromHex(color));
+  const typed = text.map(Number);
+  const shown = text.every((t) => t.trim() !== "" && Number.isFinite(Number(t))) ? hslToHex(typed[0], typed[1], typed[2]) : null;
+  useEffect(() => {
+    if (shown !== color.toLowerCase()) setText(fromHex(color));
+  }, [color]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const type = (at: number, raw: string) => {
+    const next = [...text];
+    next[at] = raw;
+    const n = Math.round(Number(raw));
+    if (raw.trim() !== "" && Number.isFinite(n)) {
+      next[at] = String(at === 0 ? ((n % 360) + 360) % 360 : Math.min(100, Math.max(0, n)));
+    }
+    setText(next);
+    if (next.every((t) => t.trim() !== "" && Number.isFinite(Number(t)))) {
+      onChange(hslToHex(Number(next[0]), Number(next[1]), Number(next[2])));
+    }
+  };
+
+  return (
+    <div className={styles.hslRow}>
+      {HSL_FIELDS.map((f, at) => (
+        <InputText
+          key={f.label}
+          size="md"
+          type="number"
+          inputMode="numeric"
+          step={1}
+          min={f.min}
+          max={f.max}
+          label={f.label}
+          aria-label={`${f.label === "Sat" ? "Saturation" : f.label === "Light" ? "Lightness" : "Hue"} of ${name}`}
+          className={styles.hslField}
+          value={text[at]}
+          disabled={disabled}
+          onChange={(e) => type(at, e.target.value)}
+        />
+      ))}
+    </div>
+  );
+}
+
 const byDarkness = (pens: PenColor[]) =>
   [...pens].sort((a, b) => (lightness(a.color) ?? Infinity) - (lightness(b.color) ?? Infinity));
 
@@ -115,6 +172,7 @@ export function PaletteEditor({ tool, paper, disabled, saving, error, onChange }
                     onClick={() => edit(colors.filter((_, at) => at !== i))}
                   />
                 </div>
+                <HslFields color={pen.color} name={pen.name} disabled={disabled} onChange={(hex) => change(i, { color: hex })} />
               </div>
             </Card>
           ))}
