@@ -22,16 +22,17 @@ import { mergeLines } from "./lib/mergeLines";
 import { SizePopover } from "./components/SizePopover";
 import { StudioHeader } from "./components/StudioHeader";
 import { ThemeToggle } from "../shared/components/ThemeToggle";
-import { canFill, fillRuns, newFillId, type Fill } from "./lib/hatch";
-import { curveStrokes, type Curve, type Point } from "./lib/parametric";
+import { canFill, newFillId, type Fill } from "./lib/hatch";
+import { type Curve, type Point } from "./lib/parametric";
 import { fontNames, loadFont, type StrokeFont } from "./lib/font";
-import { flattenPath, flattenRun, mapNode, parsePath, simplifyRun, type Node } from "./lib/path";
-import { fitText, textRuns } from "./lib/text";
-import { placements, type Repeat } from "./lib/repeat";
+import { flattenPath } from "./lib/path";
+import { fitText } from "./lib/text";
+import { type Repeat } from "./lib/repeat";
 import { parseDrawing } from "./lib/parse";
 import { type PhotoMarks, PLATES, photoMarks, placeOnPage, stemWithoutPlate, type Photo } from "./lib/photo";
 import { usePhotoRead } from "./lib/usePhotoRead";
 import { photoActions } from "./lib/photoActions";
+import { bakedCopies, flattened, handOutFills, joined, markRuns, simplified, splitApart } from "./lib/shapeEdits";
 import { PaletteMenu } from "../shared/components/controls/PaletteMenu";
 import { Hints } from "../shared/components/controls/Hints";
 import { RowMenu } from "./components/controls/RowMenu";
@@ -46,7 +47,7 @@ import { FileSection } from "./components/panels/FileSection";
 import { GridSection } from "./components/panels/GridSection";
 import { ToolPicker } from "./components/panels/ToolPicker";
 import { LayersSection, type AlignEdge } from "./components/panels/LayersSection";
-import { boxAround, boxOf, centerOf, clampToPage, drawnNodes, drawnRuns, moveBy, newLayerId, newShapeId, outlinePoints, pathRuns, pointsBox, resizeTo, shapeName, turnAround, turnPoint, type Layer, type Page, type Shape } from "./lib/shapes";
+import { boxAround, boxOf, clampToPage, moveBy, newLayerId, newShapeId, resizeTo, shapeName, turnAround, type Layer, type Page, type Shape } from "./lib/shapes";
 import { buildSvg, svgForMarks, cleanFileName } from "./lib/svg";
 import { drawnMiddle, fitToPage, reshapeDrawing, runsOffPage, turnDrawingLeft } from "./lib/drawing";
 import { calibrationSheet } from "./lib/calibration";
@@ -451,7 +452,7 @@ export default function App() {
   // And on the system clipboard as a file another program can open: the lines, at the size they
   // were drawn, with the hatch if there is one. Written as an SVG file and as the same text,
   // because a browser may refuse the first and every drawing program takes pasted SVG source.
-  const file = svgForMarks(runsOf(shape, true), penWidthMm / 25.4);
+  const file = svgForMarks(markRuns(shape, fonts[shape.font ?? ""], fills), penWidthMm / 25.4);
   if (!file || !navigator.clipboard) return;
   const write = navigator.clipboard.write?.bind(navigator.clipboard);
   const asText = () => navigator.clipboard.writeText?.(file).catch(() => {});
@@ -1256,227 +1257,58 @@ export default function App() {
   setShapes((list) => list.map((s) => (s.id === id ? clampToPage(resizeTo(s, w, h), page) : s)));
  };
 
- /**
-  * Flatten a shape: give up the numbers behind what it is, and keep what they drew. A curve becomes
-  * a path with every point draggable, a word becomes the strokes of its font, a rectangle becomes
-  * its four corners. What the shape IS becomes points; where its marks LAND is left alone, so the
-  * turn and the copies stay settings and the copies go on following the points that can now be
-  * dragged. Nothing is flattened for the sake of another app - the file always carries the marks
-  * themselves - so this is only ever about being able to edit a thing by hand.
-  */
+ /** Flatten a shape to points it can be edited by (see flattened): its fills go to all it becomes. */
  const flattenShape = (id: string) => {
   const shape = shapes.find((s) => s.id === id);
-  if (!shape) return;
-  record();
-  const made: Shape[] = [];
-  if (shape.kind === "text") {
-   // Every stroke of every letter becomes its own path: the words are given up, the marks stay.
-   for (const glyph of textRuns(shape, fonts[shape.font ?? ""])) {
-    // The letter's own curves, kept as curves: a flattened word is the strokes of its font, not
-    // the font walked out into segments.
-    for (const points of parsePath(glyph.d)) {
-     if (points.length < 2) continue;
-     const b = pointsBox(flattenRun(points));
-     made.push({
-      ...shape, id: made.length ? newShapeId() : shape.id,
-      kind: "path", points, text: undefined, font: undefined, tracking: undefined,
-      leading: undefined,
-      x: b.x0, y: b.y0, x2: b.x1, y2: b.y1,
-     });
-    }
-   }
-  } else if (shape.curve) {
-   for (const points of curveStrokes(shape)) {
-    if (points.length < 2) continue;
-    const b = pointsBox(points);
-    made.push({
-     ...shape, id: made.length ? newShapeId() : shape.id,
-     // The curve's numbers are given up, but not its shape: the points are kept as a curve
-     // through them, so simplifying down to a handful still draws what was drawn.
-     kind: "path", points, curve: undefined, smooth: true,
-     x: b.x0, y: b.y0, x2: b.x1, y2: b.y1,
-    });
-   }
-  } else {
-   // A rectangle, an ellipse, a line or a path: left as its own points, so each one can be
-   // pulled about point by point afterwards. A smoothed path gives up the curve here - what is
-   // left is the points the pen was going to be walked through anyway.
-   const runs = (shape.kind === "path" ? drawnRuns(shape) : [outlinePoints(shape)])
-    .filter((run) => run.length > 1);
-   if (!runs.length) return;
-   const b = pointsBox(runs.flat());
-   made.push({
-    ...shape, id: shape.id,
-    kind: "path", smooth: undefined,
-    ...(runs.length > 1 ? { runs, points: undefined } : { runs: undefined, points: runs[0] }),
-    x: b.x0, y: b.y0, x2: b.x1, y2: b.y1,
-   });
-  }
+  const made = shape ? flattened(shape, fonts[shape.font ?? ""]) : [];
   if (!made.length) return;
+  record();
   setShapes((list) => list.flatMap((s) => (s.id === id ? made : [s])));
-  // Each new shape gets the fills the original had, so the drawing looks the same afterwards.
-  setFills((list) => list.flatMap((f) => (f.shapeId === id
-   ? made.map((s) => ({ ...f, id: s.id === id ? f.id : newFillId(), shapeId: s.id }))
-   : [f])));
+  setFills((list) => handOutFills(list, id, made));
   pick(made[0].id);
  };
 
- /**
-  * Bake a shape's copies: each one becomes a shape of its own, keeping the numbers behind it. A
-  * ring of eight spirographs becomes eight spirographs, each still a spirograph to edit, rather
-  * than eight paths - baking says where the marks land, not what they are made of. The turn a ring
-  * gave a copy becomes that copy's own turn, and the shape's own turn stays the setting it was, so
-  * all this changes is how many shapes there are and where they sit.
-  */
+ /** Bake a shape's copies into shapes of their own (see bakedCopies), each with the fills it had. */
  const bakeRepeat = (id: string) => {
   const shape = shapes.find((s) => s.id === id);
-  if (!shape?.repeat) return;
-  record();
-  // Turning about the middle and then moving is the same as moving and then turning about the
-  // middle where it landed, which is why each copy can be its own shape at its own angle.
-  const shift = (run: Node[], dx: number, dy: number) =>
-   run.map((n) => mapNode(n, (p) => ({ x: p.x + dx, y: p.y + dy })));
-  const made: Shape[] = placements(shape).map((place, i) => {
-   const turn = (shape.rotation ?? 0) + place.deg;
-   return {
-    ...shape,
-    id: i ? newShapeId() : shape.id,
-    repeat: undefined,
-    rotation: turn || undefined,
-    x: shape.x + place.dx, y: shape.y + place.dy,
-    x2: shape.x2 + place.dx, y2: shape.y2 + place.dy,
-    ...(shape.runs
-     ? { runs: shape.runs.map((run) => shift(run, place.dx, place.dy)) }
-     : shape.points
-      ? { points: shift(shape.points, place.dx, place.dy) }
-      : {}),
-   };
-  });
+  const made = shape ? bakedCopies(shape) : [];
   if (made.length < 2) return; // one copy is the shape itself: nothing to hand out
+  record();
   setShapes((list) => list.flatMap((s) => (s.id === id ? made : [s])));
-  setFills((list) => list.flatMap((f) => (f.shapeId === id
-   ? made.map((s) => ({ ...f, id: s.id === id ? f.id : newFillId(), shapeId: s.id }))
-   : [f])));
+  setFills((list) => handOutFills(list, id, made));
   pick(made[0].id);
  };
 
- /** Every run of marks a shape makes, in inches on the page: its copies, its turn and all. */
- const runsOf = (shape: Shape, withFills = false): Point[][] => {
-  const centre = centerOf(shape);
-  const runs: Point[][] = [];
-  for (const place of placements(shape)) {
-   const put = (p: Point) => {
-    const turned = turnPoint(turnPoint(p, centre, shape.rotation ?? 0), centre, place.deg);
-    return { x: turned.x + place.dx, y: turned.y + place.dy };
-   };
-   const own = shape.kind === "text"
-    ? textRuns(shape, fonts[shape.font ?? ""]).flatMap((g) => flattenPath(g.d))
-    : shape.curve ? curveStrokes(shape)
-    : shape.kind === "path" ? drawnRuns(shape)
-    : [outlinePoints(shape)];
-   // Its own outline, unless the shape is only there to be filled - and then its fill, for the
-   // callers that want everything the pen draws rather than the shape's own line.
-   if (!withFills || shape.outline !== false) {
-    for (const run of own) {
-     if (run.length > 1) runs.push(run.map(put));
-    }
-   }
-   if (withFills) {
-    for (const fill of fills.filter((f) => f.shapeId === shape.id)) {
-     for (const run of fillRuns(shape, fill)) {
-      if (run.length > 1) runs.push(run.map(put));
-     }
-    }
-   }
-  }
-  return runs;
- };
-
- /** Every run a shape makes, as nodes: like runsOf, but a curve stays a curve rather than being
-  * walked out - what joining wants, so a joined shape is no less exact than its parts. */
- const nodesOf = (shape: Shape): Node[][] => {
-  const centre = centerOf(shape);
-  const out: Node[][] = [];
-  for (const place of placements(shape)) {
-   const put = (p: Point): Point => {
-    const turned = turnPoint(turnPoint(p, centre, shape.rotation ?? 0), centre, place.deg);
-    return { x: turned.x + place.dx, y: turned.y + place.dy };
-   };
-   const own: Node[][] = shape.kind === "text"
-    ? textRuns(shape, fonts[shape.font ?? ""]).flatMap((g) => parsePath(g.d))
-    : shape.curve ? curveStrokes(shape)
-    : shape.kind === "path" ? drawnNodes(shape)
-    : [outlinePoints(shape)];
-   // A loop, not push(...runs): a path of many thousands of subpaths is too many arguments for a call.
-   if (shape.outline !== false) for (const run of own) out.push(run.map((n) => mapNode(n, put)));
-  }
-  return out;
- };
-
- /**
-  * Join what's picked into one shape: every mark of every one of them becomes a run of a single
-  * path, which then moves, scales and turns as one thing. A fill on the first of them is kept, and
-  * with several runs to count against, a ring inside a ring leaves a hole.
-  */
+ /** Join what's picked into one shape (see joined). A fill on the first of them is kept. */
  const joinShapes = () => {
   const ids = new Set(selected);
-  // A photo is its lines made from a picture, not an outline to join.
+  // A photo is its lines made from a picture, not an outline to join: it stays as it is.
   const picked = shapes.filter((s) => ids.has(s.id) && s.kind !== "photo");
-  if (picked.length < 2) return;
-  const runs = picked.flatMap((s) => nodesOf(s));
-  if (!runs.length) return;
+  const one = joined(picked, fonts);
+  if (!one) return;
   record();
-  const first = picked[0];
-  const b = pointsBox(runs.flatMap((run) => flattenRun(run)));
-  const joined: Shape = {
-   ...first, kind: "path", runs, points: undefined,
-   curve: undefined, repeat: undefined, rotation: undefined,
-   text: undefined, font: undefined, tracking: undefined, leading: undefined,
-   x: b.x0, y: b.y0, x2: b.x1, y2: b.y1,
-  };
-  const gone = picked.slice(1).map((s) => s.id);
-  setShapes((list) => list.flatMap((s) => (s.id === first.id ? [joined] : gone.includes(s.id) ? [] : [s])));
+  const gone = picked.filter((s) => s.id !== one.id).map((s) => s.id);
+  setShapes((list) => list.flatMap((s) => (s.id === one.id ? [one] : gone.includes(s.id) ? [] : [s])));
   setFills((list) => list.filter((f) => !gone.includes(f.shapeId)));
-  setSelected([first.id]);
+  setSelected([one.id]);
  };
 
- /**
-  * Drop the points a path doesn't need. A drawing that has been through another program arrives
-  * with its curves walked into thousands of points; this leaves the ones that carry the shape, so
-  * they can be dragged - and the plotter has less to read.
-  */
+ /** Drop the points a path doesn't need, to within the Simplify tolerance (see simplified). */
  const simplifyShape = (id: string) => {
   const shape = shapes.find((s) => s.id === id);
-  const runs = shape ? pathRuns(shape) : [];
-  if (!shape || !runs.length) return;
-  const tolerance = simplifyMm / 25.4;
-  // Simplified from the points the path draws - its curves walked out - so a curved path is
-  // thinned by what is on the page, not by its handles.
-  const simpler = runs.map((run) => simplifyRun(flattenRun(run), tolerance)).filter((run) => run.length > 1);
-  if (!simpler.length || simpler.reduce((n, r) => n + r.length, 0) >= runs.reduce((n, r) => n + r.length, 0)) return;
+  const simpler = shape && simplified(shape, simplifyMm / 25.4);
+  if (!simpler) return;
   record();
-  // Simplifying is for keeping the shape while dropping the points, so what comes out is drawn as
-  // a curve through them: straight lines between a tenth as many points would be a different
-  // drawing. The Smooth button turns that off again for a path that really is straight.
-  setShapes((list) => list.map((s) => (s.id === id
-   ? { ...s, smooth: true, ...(s.runs ? { runs: simpler } : { points: simpler[0] }) }
-   : s)));
+  setShapes((list) => list.map((s) => (s.id === id ? simpler : s)));
   setPanel(null); // asked for, done, and out of the way again
  };
 
  /** Take a joined shape apart again: each run becomes a shape of its own. */
  const splitShape = (id: string) => {
   const shape = shapes.find((s) => s.id === id);
-  const runs = shape ? pathRuns(shape) : [];
-  if (!shape || runs.length < 2) return;
+  const made = shape ? splitApart(shape) : [];
+  if (made.length < 2) return;
   record();
-  const made = runs.map((run, i) => {
-   const b = pointsBox(run);
-   return {
-    ...shape, id: i ? newShapeId() : shape.id, kind: "path" as const,
-    runs: undefined, points: run, x: b.x0, y: b.y0, x2: b.x1, y2: b.y1,
-   };
-  });
   setShapes((list) => list.flatMap((s) => (s.id === id ? made : [s])));
   setSelected(made.map((s) => s.id));
  };
