@@ -37,6 +37,8 @@ interface Props {
   layerInkOpacity?: Record<string, number | undefined>; // layers drawn with the second tool
   inkBuilds?: boolean; // more of the same ink darkens (a brush); gel ink saturates and adds nothing
   layerInkBuilds?: Record<string, boolean | undefined>;
+  inkOpaque?: boolean; // the ink covers what's under it, paper and other inks alike, rather than blending
+  layerInkOpaque?: Record<string, boolean | undefined>; // layers drawn with the second tool
   inkBuild?: number; // 0-1: how much darker the ink gets where it crosses its own strokes
   layerInkBuild?: Record<string, number | undefined>; // layers drawn with the second tool
   inkSim?: boolean; // off: flat color, no blending - much cheaper on a drawing of many thousands of paths
@@ -190,7 +192,7 @@ export function Bed(props: Props) {
   // How solid the ink is, and how it darkens where strokes cross. The two kinds of ink and the
   // arithmetic behind them are in lib/ink.ts, which Studio uses too; this mounts it onto the preview
   // the server sent, cloning the build pass into each layer that needs one.
-  const { inkOpacity, layerInkOpacity, inkBuilds, layerInkBuilds, inkBuild, layerInkBuild, inkSim, layerLooks } = props;
+  const { inkOpacity, layerInkOpacity, inkBuilds, layerInkBuilds, inkOpaque, layerInkOpaque, inkBuild, layerInkBuild, inkSim, layerLooks } = props;
   useLayoutEffect(() => {
     if (!preview) return;
     const node = preview.node;
@@ -199,6 +201,7 @@ export function Bed(props: Props) {
     node.style.setProperty("--ink-build-alpha", String(build));
     node.style.setProperty("--ink-opacity", String(inkOpacity && inkOpacity > 0 ? inkOpacity : 1));
     node.dataset.builds = String(inkBuilds !== false);
+    node.dataset.opaque = String(inkOpaque === true);
 
     node.querySelectorAll<SVGGElement>(".pv-layer").forEach((g) => {
       const o = layerInkOpacity?.[g.id];
@@ -207,6 +210,8 @@ export function Bed(props: Props) {
       const builds = layerInkBuilds?.[g.id];
       const buildsHere = builds === undefined ? inkBuilds !== false : builds;
       g.dataset.builds = String(buildsHere);
+      const opaque = layerInkOpaque?.[g.id];
+      g.dataset.opaque = String(opaque === undefined ? inkOpaque === true : opaque);
       // How much darker this layer gets where it crosses itself. Separate from whether it builds:
       // that decides how the layer blends with the OTHER colours (see index.css), this only what
       // happens inside it - an outline over its own hatch, say. A building ink with no amount set
@@ -244,7 +249,7 @@ export function Bed(props: Props) {
         if (buildPass) g.querySelector<SVGGElement>(":scope > .pv-build")?.style.setProperty("--layer-color", buildPass);
       }
     });
-  }, [preview, inkOpacity, layerInkOpacity, inkBuilds, layerInkBuilds, inkBuild, layerInkBuild, inkSim, layerLooks]);
+  }, [preview, inkOpacity, layerInkOpacity, inkBuilds, layerInkBuilds, inkOpaque, layerInkOpaque, inkBuild, layerInkBuild, inkSim, layerLooks]);
 
   // Stack the artwork layers the way they'll be plotted: the first layer at the bottom, later ones
   // over it. Reordering the Layers card moves them here too, so the preview shows what opaque ink

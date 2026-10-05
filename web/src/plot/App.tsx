@@ -1299,6 +1299,11 @@ export default function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [layerViews, secondTool, secondToolLayers, secondPreset, active],
   );
+  const layerInkOpaque = useMemo(
+    () => Object.fromEntries(layerViews.map((l) => [l.id, (usesSecond(l.id) ? secondPreset : active)?.settings.ink_opaque])),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [layerViews, secondTool, secondToolLayers, secondPreset, active],
+  );
   const layerInkOpacity = useMemo(
     () => Object.fromEntries(layerViews.map((l) => [l.id, (usesSecond(l.id) ? secondPreset : active)?.settings.ink_opacity])),
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -1496,12 +1501,14 @@ export default function App() {
               inkOpacity={active?.settings.ink_opacity ?? settings.ink_opacity}
               layerInkOpacity={secondTool ? layerInkOpacity : undefined}
               inkBuilds={active?.settings.ink_builds ?? settings.ink_builds}
+              inkOpaque={active?.settings.ink_opaque ?? settings.ink_opaque}
               // The tool's own, never one left in the page's settings by the tool chosen before it: a
               // tool without a build-up value has none.
               inkBuild={active ? active.settings.ink_build : settings.ink_build}
               layerInkBuild={secondTool ? layerInkBuild : undefined}
               inkSim={view === "preview"}
               layerInkBuilds={secondTool ? layerInkBuilds : undefined}
+              layerInkOpaque={secondTool ? layerInkOpaque : undefined}
               layerPenWidths={secondTool ? layerPenWidths : undefined}
               plotPaths={shownPlotPaths}
               hairlines={view === "outline" || layerMode === "work"}

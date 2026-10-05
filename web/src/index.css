@@ -114,6 +114,23 @@
     stroke-opacity: var(--ink-build-alpha, 0) !important;
     mix-blend-mode: multiply;
   }
+  /* Opaque ink (a paint pen, or Pentel's MATTEHOP gel): each stroke covers whatever is under it, the
+     paper included, so it shows the same on black paper as on white, and colours laid over each other
+     don't mix - the one drawn last is the one seen. Placed after the two kinds above so it wins. */
+  .pv-colored .pv-layer[data-opaque="true"] {
+    isolation: isolate;
+    opacity: var(--ink-opacity, 1) !important;
+    mix-blend-mode: normal;
+  }
+  .pv-colored .pv-layer[data-opaque="true"] :is(path, rect, circle, ellipse, line, polyline, polygon) {
+    stroke-opacity: 1 !important;
+    mix-blend-mode: normal;
+  }
+  .pv-colored .pv-layer[data-opaque="true"] .pv-build { display: none; }
+  .pv-artwork[data-opaque="true"]:not(.pv-colored) :is(path, rect, circle, ellipse, line, polyline, polygon) {
+    stroke-opacity: 1 !important;
+    mix-blend-mode: normal;
+  }
   /* Ink simulation off: flat color, nothing to blend.
      The [data-builds] in the first selector is only there to outrank the density rules above, which
      are themselves !important and would otherwise keep a layer at the tool's ink opacity with the

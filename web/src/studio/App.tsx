@@ -865,6 +865,7 @@ export default function App() {
  // The same three numbers Plot reads off the same preset, so the ink looks the same in both.
  const inkOpacity = tool2?.settings.ink_opacity ?? 1;
  const inkBuilds = tool2?.settings.ink_builds !== false;
+ const inkOpaque = tool2?.settings.ink_opaque === true;
  const inkBuild = tool2?.settings.ink_build ?? 1;
 
  // A fill starts from the chosen tool's own measured numbers when it has them - and follows that
@@ -1817,6 +1818,7 @@ export default function App() {
       penWidthMm={penWidthMm}
       inkOpacity={inkOpacity}
       inkBuilds={inkBuilds}
+      inkOpaque={inkOpaque}
       inkBuild={inkBuild}
       view={view}
       tool={tool}

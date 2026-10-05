@@ -67,6 +67,8 @@ interface Props {
    *  cross. The same three numbers Plot's Drawing tool card holds, read from the same preset. */
   inkOpacity: number;
   inkBuilds: boolean;
+  /** The ink covers what's under it, paper and other inks alike, rather than blending with them. */
+  inkOpaque?: boolean;
   inkBuild: number;
   /** Simulate the ink, or draw each layer flat. Off is also much cheaper on a heavy hatch. */
   /** Outline: every path a thin line in its layer's colour. Preview: the ink, at the pen's width. */
@@ -334,7 +336,7 @@ const LayerMarks = memo(function LayerMarks({ shapes, fills, fonts, photos }: { 
 // The page at true proportions, with a one-inch grid. It keeps the page's own proportions and is
 // sized to them (--canvas-aspect), so the drawing gets as large as the space allows - the same way
 // Plot's preview fills its column.
-export function Canvas({ loupe, page, paperColor, shapes, fills, layers, activeLayer, model, zoom, toolbar, toolbarLeft, fonts, font, snap, penWidthMm, inkOpacity, inkBuilds, inkBuild, view, tool, selected, onSelect, onAdd, onUpdate, onUpdateMany, onEditStart }: Props) {
+export function Canvas({ loupe, page, paperColor, shapes, fills, layers, activeLayer, model, zoom, toolbar, toolbarLeft, fonts, font, snap, penWidthMm, inkOpacity, inkBuilds, inkOpaque = false, inkBuild, view, tool, selected, onSelect, onAdd, onUpdate, onUpdateMany, onEditStart }: Props) {
   const bed = useRef<BedCanvasHandle>(null);
   const [drag, setDrag] = useState<Drag | null>(null);
   const pointer = useRef<number | null>(null);
@@ -687,7 +689,7 @@ export function Canvas({ loupe, page, paperColor, shapes, fills, layers, activeL
               style={{ "--pen-art": String(penIn), "--ink-build-alpha": String(inkBuild) } as CSSProperties}
             >
               {layers.map((layer) => {
-                const { base, buildPass } = inkLayer(layer.color, inkBuild, inkBuilds, inkSim);
+                const { base, buildPass } = inkLayer(layer.color, inkBuild, inkBuilds && !inkOpaque, inkSim);
                 const here = still.get(layer.id);
                 const moving = carried?.get(layer.id);
                 const marks = (
@@ -710,6 +712,7 @@ export function Canvas({ loupe, page, paperColor, shapes, fills, layers, activeL
                     id={layer.id}
                     className="pv-layer"
                     data-builds={String(inkBuilds && inkSim)}
+                    data-opaque={String(inkOpaque && inkSim)}
                     data-hidden={layer.hidden ? "true" : undefined}
                     data-skipped={layer.name.startsWith("%") ? "true" : undefined}
                     style={{ "--layer-color": base, "--ink-opacity": String(inkOpacity) } as CSSProperties}

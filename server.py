@@ -142,7 +142,7 @@ NUMERIC_SETTINGS = {
     "page_delay": (0, 3600),
     "reordering": (0, 4),
 }
-BOOL_SETTINGS = {"auto_rotate", "random_start", "hiding", "drag_only", "ink_builds"}
+BOOL_SETTINGS = {"auto_rotate", "random_start", "hiding", "drag_only", "ink_builds", "ink_opaque"}
 # App-only settings with fractional values: the pen's line width in mm, for drawing the preview.
 # join_gap is the NextDraw software's own path joining: two path ends closer than this are drawn as
 # one stroke instead of two, saving the lift between them. It is kept in mm like every other length
@@ -151,16 +151,17 @@ BOOL_SETTINGS = {"auto_rotate", "random_start", "hiding", "drag_only", "ink_buil
 FLOAT_SETTINGS = {"pen_width": (0.05, 10.0), "ink_opacity": (0.05, 1.0), "ink_build": (0.0, 1.0),
                   "join_gap": (0.0, 5.0)}
 # Not NextDraw options: either the app's own, or set somewhere other than nd.options (join_gap).
-APP_ONLY_SETTINGS = {"pen_setup", "pen_width", "ink_opacity", "ink_builds", "ink_build", "drag_only", "join_gap"}
+APP_ONLY_SETTINGS = {"pen_setup", "pen_width", "ink_opacity", "ink_builds", "ink_opaque", "ink_build", "drag_only", "join_gap"}
 
 # What a pen preset remembers (ink_opacity is how much the paper shows through a stroke, and
 # ink_builds whether more of the same ink darkens what's already there, and ink_build how much a
-# second pass adds when it does, all for the preview).
+# second pass adds when it does, and ink_opaque whether it covers what's under it - paper and other
+# inks - instead of blending with them, all for the preview).
 # Paper size is chosen separately and isn't part of a preset.
 PRESET_NUMERIC = {
     "pen_pos_down", "pen_pos_up", "pen_setup", "pen_rate_lower", "pen_rate_raise",
-    "speed_pendown", "speed_penup", "accel", "handling", "pen_width", "ink_opacity", "ink_builds", "ink_build",
-    "join_gap",
+    "speed_pendown", "speed_penup", "accel", "handling", "pen_width", "ink_opacity", "ink_builds", "ink_opaque",
+    "ink_build", "join_gap",
 }
 
 # Walk commands in the NextDraw software don't check the carriage's range of motion.
