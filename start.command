@@ -23,6 +23,12 @@ if [ -d .git ]; then
 fi
 
 # 2. Python packages: on the first run, and again whenever requirements.txt changes.
+# A setup made on another Mac - the folder copied across rather than cloned - points at that Mac's
+# Python and holds packages built for its chip, so it can't start here. It's made again instead.
+if [ -d .venv ] && ! .venv/bin/python -c "import flask; from lxml import etree" 2>/dev/null; then
+  warn "The Python setup in this folder doesn't work on this Mac, so it's being made again."
+  rm -rf .venv
+fi
 if [ ! -d .venv ]; then
   echo "Setting up Python…"
   python3 -m venv .venv || { warn "Couldn't set up Python. Is python3 installed (xcode-select --install)?"; read -k1; exit 1; }
