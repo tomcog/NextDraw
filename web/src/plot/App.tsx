@@ -1581,12 +1581,14 @@ export default function App() {
               layerLooks={layerLooks}
               layerOrder={layerOrder}
               penWidthMm={active?.settings.pen_width ?? settings.pen_width}
-              inkOpacity={active?.settings.ink_opacity ?? settings.ink_opacity}
+              // The ink is the tool's own, never one left in the page's settings by the tool chosen
+              // before it: picking a tool merges its settings over the page's, so a value it doesn't
+              // set stays behind - the MATTEHOP's opaque ink made the Flair cover instead of blend. A
+              // tool without a value takes the preview's default (solid, building, not opaque).
+              inkOpacity={active ? active.settings.ink_opacity : settings.ink_opacity}
               layerInkOpacity={secondTool ? layerInkOpacity : undefined}
-              inkBuilds={active?.settings.ink_builds ?? settings.ink_builds}
-              inkOpaque={active?.settings.ink_opaque ?? settings.ink_opaque}
-              // The tool's own, never one left in the page's settings by the tool chosen before it: a
-              // tool without a build-up value has none.
+              inkBuilds={active ? active.settings.ink_builds : settings.ink_builds}
+              inkOpaque={active ? active.settings.ink_opaque : settings.ink_opaque}
               inkBuild={active ? active.settings.ink_build : settings.ink_build}
               layerInkBuild={secondTool ? layerInkBuild : undefined}
               inkSim={view === "preview"}
