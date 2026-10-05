@@ -23,10 +23,10 @@ if [ -d .git ]; then
 fi
 
 # 2. Python packages: on the first run, and again whenever requirements.txt changes.
-# A setup made on another Mac - the folder copied across rather than cloned - points at that Mac's
-# Python and holds packages built for its chip, so it can't start here. It's made again instead.
-if [ -d .venv ] && ! .venv/bin/python -c "import flask; from lxml import etree" 2>/dev/null; then
-  warn "The Python setup in this folder doesn't work on this Mac, so it's being made again."
+# A setup is only ever replaced when its Python can't run at all here - made on another Mac and
+# copied across with the folder. One whose packages are missing has them installed again instead.
+if [ -d .venv ] && ! .venv/bin/python -c "pass" 2>/dev/null; then
+  warn "The Python setup in this folder was made on another Mac, so it's being made again."
   rm -rf .venv
 fi
 if [ ! -d .venv ]; then
@@ -34,12 +34,18 @@ if [ ! -d .venv ]; then
   python3 -m venv .venv || { warn "Couldn't set up Python. Is python3 installed (xcode-select --install)?"; read -k1; exit 1; }
 fi
 req_hash=$(shasum requirements.txt | cut -d' ' -f1)
-if [ "$(cat .venv/.requirements-hash 2>/dev/null)" != "$req_hash" ]; then
+if [ "$(cat .venv/.requirements-hash 2>/dev/null)" != "$req_hash" ] || ! .venv/bin/python -c "import flask, nextdraw" 2>/dev/null; then
   echo "Installing Python packages…"
-  if .venv/bin/pip install --quiet -r requirements.txt; then
+  # The plotter driver comes from drivers/ (see requirements.txt). pip's own messages are kept and
+  # shown if it fails, so the window says why.
+  if pip_out=$(.venv/bin/pip install --quiet --disable-pip-version-check --find-links drivers -r requirements.txt 2>&1); then
     echo "$req_hash" > .venv/.requirements-hash
   else
-    warn "Couldn't install the Python packages. Trying to start anyway."
+    print -r -- "$pip_out" | tail -15
+    [ -d drivers ] || warn "The drivers folder is missing: copy it into this folder from the Mac where the app works."
+    warn "Couldn't install the Python packages, so the app can't start. Press a key to close."
+    read -k1
+    exit 1
   fi
 fi
 

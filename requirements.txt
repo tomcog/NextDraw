@@ -1,2 +1,10 @@
 flask>=3.0
-nextdraw_api @ https://software-download.bantamtools.com/nd/api/nextdraw_api.zip
+# The plotter driver, held at the version the plotters were set up and tested with. Bantam Tools only
+# offers its latest download (1.7.4 on 2026-10-03, which needs Python 3.10, newer than macOS's own
+# 3.9), so 1.5.0 is installed from drivers/: the version this Mac had, packed as wheels. drivers/ is
+# not in git - the repository is public and nextdrawcore states no licence - so it travels with the
+# folder when it is copied to another Mac.
+nextdraw_api==1.5.0
+nextdrawcore==1.5.0
+plotink==1.14.2
+ink_extensions==2.2.0

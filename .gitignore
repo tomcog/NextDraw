@@ -12,3 +12,6 @@ jobs/
 # Local machine files
 .DS_Store
 .claude/
+
+# The plotter driver, packed from a working install (see requirements.txt)
+drivers/
