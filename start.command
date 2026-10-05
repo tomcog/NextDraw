@@ -36,16 +36,23 @@ fi
 req_hash=$(shasum requirements.txt | cut -d' ' -f1)
 if [ "$(cat .venv/.requirements-hash 2>/dev/null)" != "$req_hash" ] || ! .venv/bin/python -c "import flask, nextdraw" 2>/dev/null; then
   echo "Installing Python packages…"
-  # The plotter driver comes from drivers/ (see requirements.txt). pip's own messages are kept and
-  # shown if it fails, so the window says why.
-  if pip_out=$(.venv/bin/pip install --quiet --disable-pip-version-check --find-links drivers -r requirements.txt 2>&1); then
+  # The plotter driver comes from drivers/ (see requirements.txt), put in first over whatever copy is
+  # there: a driver installed from Bantam's download names its partner by a temporary file long gone,
+  # and pip stops at that. pip's own messages are kept and shown if it fails, so the window says why.
+  pip=(.venv/bin/python -m pip install --quiet --disable-pip-version-check)
+  if pip_out=$({ [ ! -d drivers ] || $pip --no-deps --force-reinstall drivers/*.whl; } 2>&1 \
+    && $pip --find-links drivers -r requirements.txt 2>&1); then
     echo "$req_hash" > .venv/.requirements-hash
   else
     print -r -- "$pip_out" | tail -15
     [ -d drivers ] || warn "The drivers folder is missing: copy it into this folder from the Mac where the app works."
-    warn "Couldn't install the Python packages, so the app can't start. Press a key to close."
-    read -k1
-    exit 1
+    # A setup that still has what the app needs starts anyway: a failed update is no reason to stop.
+    if ! .venv/bin/python -c "import flask, nextdraw" 2>/dev/null; then
+      warn "Couldn't install the Python packages, so the app can't start. Press a key to close."
+      read -k1
+      exit 1
+    fi
+    warn "Couldn't update the Python packages, so this starts with the ones already here."
   fi
 fi
 
