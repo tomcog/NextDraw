@@ -72,6 +72,14 @@ export interface Shape {
    */
   photo?: Photo;
   /**
+   * The shape it belongs to, when it is one of several paths kept together as one shape: picked,
+   * moved, sized and deleted as one, and written out as a group of its own inside its layer, so
+   * Illustrator and Inkscape see the group too. One level only - a group inside a group read from a
+   * file joins the outer one. Every path of the shape carries the same id, and the shape's name.
+   */
+  group?: string;
+  groupName?: string;
+  /**
    * The layer it sits on, which is what decides the colour it's drawn in. A layer is one pen:
    * everything on it plots in that one colour, because plotting a layer is what a pen change is for.
    * Colour is never a property of a shape.
@@ -100,6 +108,49 @@ export interface Page {
 
 let counter = 0;
 export const newShapeId = () => `shape-${++counter}-${Date.now().toString(36)}`;
+
+let groupCounter = 0;
+export const newGroupId = () => `group-${++groupCounter}-${Date.now().toString(36)}`;
+
+/**
+ * The paths that make a shape, by group id: only a group of two or more counts, since a shape of one
+ * path is just that path.
+ */
+export function groupsOf(shapes: Shape[]): Map<string, Shape[]> {
+  const byGroup = new Map<string, Shape[]>();
+  for (const s of shapes) {
+    if (!s.group) continue;
+    const members = byGroup.get(s.group);
+    if (members) members.push(s);
+    else byGroup.set(s.group, [s]);
+  }
+  for (const [id, members] of byGroup) if (members.length < 2) byGroup.delete(id);
+  return byGroup;
+}
+
+/** These ids, with every other path of any shape one of them belongs to. */
+export function withWholeGroups(ids: string[], shapes: Shape[]): string[] {
+  if (!ids.length) return ids;
+  const groups = groupsOf(shapes);
+  if (!groups.size) return ids;
+  const byId = new Map(shapes.map((s) => [s.id, s]));
+  const out: string[] = [];
+  const seen = new Set<string>();
+  for (const id of ids) {
+    const g = byId.get(id)?.group;
+    const members = g ? groups.get(g) : undefined;
+    for (const m of members ? members.map((s) => s.id) : [id]) {
+      if (!seen.has(m)) {
+        seen.add(m);
+        out.push(m);
+      }
+    }
+  }
+  return out;
+}
+
+/** What a shape is called in the list: its name, or Shape and its place among the layer's shapes. */
+export const groupLabel = (members: Shape[], index: number) => members[0]?.groupName?.trim() || `Shape ${index + 1}`;
 
 /** The box a shape occupies, normalised so x0/y0 is the top-left whichever way it was drawn. */
 /** Every run of a path, the single-run case included: what draws it, and what it is measured by. */

@@ -1,12 +1,12 @@
 import { ButtonRound, LayerController } from "@tomcoggia/ui";
-import { EllipsisVertical, Image as ImageIcon, Trash2 } from "lucide-react";
+import { EllipsisVertical, Image as ImageIcon, Shapes, Trash2 } from "lucide-react";
 import { Section } from "../../../shared/components/controls/Section";
 import controls from "../../../shared/components/controls/controls.module.css";
 import { trimNum } from "../../../shared/lib/format";
-import { boxOf, shapeName, type Layer, type Shape } from "../../lib/shapes";
+import { boxAround, boxOf, groupLabel, groupsOf, shapeName, type Layer, type Shape } from "../../lib/shapes";
 import styles from "../../App.module.css";
 
-/** How many shapes are listed by name. A separation's layer is tens of thousands of marks. */
+/** How many rows are listed by name. A separation's layer is tens of thousands of marks. */
 const SHAPE_LIST_LIMIT = 200;
 
 interface Props {
@@ -15,11 +15,12 @@ interface Props {
   shapes: Shape[];
   picked: Set<string>;
   busy: boolean;
-  /** The shape whose name is open for typing into, if any. */
+  /** The path or shape whose name is open for typing into, if any: a path by its id, a shape by its group's. */
   renaming: string | null;
-  /** The shape whose row menu is open, if any. */
+  /** The path or shape whose row menu is open, if any. */
   rowMenuId: string | undefined;
-  /** Pick a shape from its row: alone, or added to (or taken out of) the selection with Shift. */
+  /** Pick a path from its row: alone, or added to (or taken out of) the selection with Shift. A
+   *  shape's row picks the first of its paths, which picks the whole shape. */
   onPick: (id: string, add: boolean) => void;
   onDeleteAll: () => void;
   onRenameType: (id: string, name: string) => void;
@@ -28,6 +29,28 @@ interface Props {
   /** The name field left: keep what was typed. */
   onRenameDone: (id: string) => void;
   onRowMenu: (id: string, anchor: HTMLElement) => void;
+  /** The menu of a shape made of several paths, by its group id. */
+  onGroupMenu: (groupId: string, anchor: HTMLElement) => void;
+}
+
+/** A row of the list: one path, or one shape standing for the several paths it is made of. */
+type Row = { kind: "path"; shape: Shape; index: number } | { kind: "shape"; id: string; members: Shape[]; index: number };
+
+/** The layer's paths as rows, each shape's paths as the one row, where the first of them is. */
+function rowsOf(shapes: Shape[]): Row[] {
+  const groups = groupsOf(shapes);
+  const rows: Row[] = [];
+  const listed = new Set<string>();
+  shapes.forEach((sh, i) => {
+    const members = sh.group ? groups.get(sh.group) : undefined;
+    if (!members) {
+      rows.push({ kind: "path", shape: sh, index: i });
+    } else if (!listed.has(sh.group!)) {
+      listed.add(sh.group!);
+      rows.push({ kind: "shape", id: sh.group!, members, index: listed.size - 1 });
+    }
+  });
+  return rows;
 }
 
 /**
@@ -35,8 +58,9 @@ interface Props {
  * Only while there is something on the layer: a heading over a line saying there is nothing under
  * it is two lines to say one thing.
  */
-export function ShapeList({ layer, shapes, picked, busy, renaming, rowMenuId, onPick, onDeleteAll, onRenameType, onRenameCancel, onRenameDone, onRowMenu }: Props) {
+export function ShapeList({ layer, shapes, picked, busy, renaming, rowMenuId, onPick, onDeleteAll, onRenameType, onRenameCancel, onRenameDone, onRowMenu, onGroupMenu }: Props) {
   if (!shapes.length) return null;
+  const rows = rowsOf(shapes);
   return (
     <Section
       // The layer's ink in front of its name - after the "On", so the dot reads as part
@@ -57,21 +81,27 @@ export function ShapeList({ layer, shapes, picked, busy, renaming, rowMenuId, on
       forget
       action={
         <ButtonRound size="sm" icon={<Trash2 />} aria-label="Delete everything on this layer"
-          title="Delete every shape on this layer" disabled={busy} onClick={onDeleteAll} />
+          title="Delete every path on this layer" disabled={busy} onClick={onDeleteAll} />
       }
     >
       <ul className={styles.shapeList}>
-        {shapes.slice(0, SHAPE_LIST_LIMIT).map((sh, i) => {
-          const b = boxOf(sh);
-          const name = shapeName(sh, i);
+        {rows.slice(0, SHAPE_LIST_LIMIT).map((row) => {
+          // A shape stands for its paths: one row, its own name, the box round all of them, and its
+          // own menu. Picking it picks every one of its paths.
+          const group = row.kind === "shape";
+          const sh = group ? row.members[0] : row.shape;
+          const id = group ? row.id : sh.id;
+          const b = group ? boxAround(row.members) : boxOf(sh);
+          const name = group ? groupLabel(row.members, row.index) : shapeName(sh, row.index);
+          const on = group ? row.members.every((m) => picked.has(m.id)) : picked.has(sh.id);
           return (
             // The same row a layer has: its number, its name, and the same kebab
             // after it - with the size where a layer keeps its eye.
-            <li key={sh.id} className={styles.layerRow}>
+            <li key={id} className={styles.layerRow}>
               <LayerController
                 // A group of its own per row: several shapes can be picked at once,
                 // and a browser only ever lets one radio of a group be on.
-                name={`studio-shape-${sh.id}`}
+                name={`studio-shape-${id}`}
                 purpose="draw"
                 // No numeral: a layer is numbered because it is plotted in that
                 // order, and a shape on it isn't. The row still says which it is to a
@@ -81,10 +111,11 @@ export function ShapeList({ layer, shapes, picked, busy, renaming, rowMenuId, on
                 // the row right above says which it is.
                 hideVisibility
                 hideHandle
-                // A photo isn't drawn like the other shapes, so its row says so in the box.
-                icon={sh.kind === "photo" ? <ImageIcon /> : undefined}
-                checked={picked.has(sh.id)}
-                aria-label={`Shape ${i + 1}, ${name}`}
+                // A photo isn't drawn like the paths, so its row says so in the box.
+                // A shape made of several paths says so the same way.
+                icon={group ? <Shapes /> : sh.kind === "photo" ? <ImageIcon /> : undefined}
+                checked={on}
+                aria-label={group ? `Shape ${row.index + 1}, ${name}, ${row.members.length} paths` : `Path ${row.index + 1}, ${name}`}
                 // The click decides, not the box: several shapes can be picked, which
                 // a radio would otherwise undo for us. Shift adds one to the selection
                 // or takes it out; a plain click picks that shape alone.
@@ -98,7 +129,7 @@ export function ShapeList({ layer, shapes, picked, busy, renaming, rowMenuId, on
                     {/* The name is text: clicking the row picks the shape, and a field
                       sitting here would take the caret and quietly eat whatever was
                       typed next. Renaming is asked for from the kebab. */}
-                    {renaming === sh.id ? (
+                    {renaming === id ? (
                       <input
                         className={`${styles.shapeName} ${styles.shapeNameEdit}`}
                         data-renaming
@@ -107,19 +138,19 @@ export function ShapeList({ layer, shapes, picked, busy, renaming, rowMenuId, on
                         autoFocus
                         disabled={busy}
                         onFocus={(e) => e.currentTarget.select()}
-                        onChange={(e) => onRenameType(sh.id, e.target.value)}
-                        onBlur={() => onRenameDone(sh.id)}
+                        onChange={(e) => onRenameType(id, e.target.value)}
+                        onBlur={() => onRenameDone(id)}
                         onKeyDown={(e) => {
-                          if (e.key === "Escape") onRenameCancel(sh.id);
+                          if (e.key === "Escape") onRenameCancel(id);
                           if (e.key === "Enter" || e.key === "Escape") e.currentTarget.blur();
                         }}
                       />
                     ) : (
                       <span
-                        className={picked.has(sh.id)
+                        className={on
                           ? `${styles.shapeName} ${styles.shapeNameOn}`
                           : styles.shapeName}
-                        title="Click to pick this shape"
+                        title={group ? `Click to pick this shape: ${row.members.length} paths` : "Click to pick this path"}
                         onClick={(e) => onPick(sh.id, e.shiftKey)}
                       >
                         {name}
@@ -136,18 +167,18 @@ export function ShapeList({ layer, shapes, picked, busy, renaming, rowMenuId, on
               <ButtonRound size="sm" variant="tertiary" icon={<EllipsisVertical />}
                 aria-label={`More for ${name}`}
                 aria-haspopup="menu"
-                aria-expanded={rowMenuId === sh.id}
-                title="Duplicate, move or delete this shape"
+                aria-expanded={rowMenuId === id}
+                title={group ? "Ungroup, duplicate, move or delete this shape" : "Duplicate, move or delete this path"}
                 disabled={busy}
-                onClick={(e) => onRowMenu(sh.id, e.currentTarget)} />
+                onClick={(e) => (group ? onGroupMenu(id, e.currentTarget) : onRowMenu(sh.id, e.currentTarget))} />
             </li>
           );
         })}
-        {shapes.length > SHAPE_LIST_LIMIT && (
+        {rows.length > SHAPE_LIST_LIMIT && (
           // A separation's layer is tens of thousands of marks: a row each would be a list nobody
           // reads, and the slowest thing on the page. They're picked up together instead.
           <li className={styles.empty}>
-            {`And ${(shapes.length - SHAPE_LIST_LIMIT).toLocaleString()} more - too many to list. Select all on layer, from the layer’s menu, picks them all.`}
+            {`And ${(rows.length - SHAPE_LIST_LIMIT).toLocaleString()} more - too many to list. Select all on layer, from the layer’s menu, picks them all.`}
           </li>
         )}
       </ul>

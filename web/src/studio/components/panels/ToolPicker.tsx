@@ -30,7 +30,7 @@ export function ToolPicker({ tool, onTool }: Props) {
   return (
     <Card variant="flat" className={styles.controls}>
       <div className={styles.cardBody}>
-        <div className={styles.tools} role="group" aria-label="Shape to draw">
+        <div className={styles.tools} role="group" aria-label="What to draw">
           {TOOLS.map((t) => (
             <ButtonRound
               key={t.kind}

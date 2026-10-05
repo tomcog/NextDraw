@@ -442,10 +442,12 @@ export function Canvas({ loupe, page, paperColor, shapes, fills, layers, activeL
     if (!p) return;
     // Shift adds a shape to the selection, or takes it out again. Otherwise: a shape already in the
     // selection keeps the whole of it, so dragging any one of them moves the lot; anything else
-    // becomes the selection on its own.
+    // becomes the selection on its own. A path of a shape made of several is taken out with the rest
+    // of them, since it is never picked alone.
     const inSelection = selected.includes(shape.id);
+    const sameShape = (id: string) => id === shape.id || (!!shape.group && shapes.find((s) => s.id === id)?.group === shape.group);
     const next = e.shiftKey
-      ? (inSelection ? selected.filter((id) => id !== shape.id) : [...selected, shape.id])
+      ? (inSelection ? selected.filter((id) => !sameShape(id)) : [...selected, shape.id])
       : (inSelection ? selected : [shape.id]);
     onSelect(next);
     if (e.shiftKey && !next.includes(shape.id)) return; // just taken out: nothing to drag
@@ -458,6 +460,9 @@ export function Canvas({ loupe, page, paperColor, shapes, fills, layers, activeL
     // A photo's tone bands are one photo on the page: carrying one carries them all.
     const groups = new Set(shapes.filter((s) => set.has(s.id) && s.photo?.group).map((s) => s.photo!.group));
     for (const s of shapes) if (s.photo?.group && groups.has(s.photo.group)) set.add(s.id);
+    // And a path of a shape made of several carries the rest of them.
+    const made = new Set(shapes.filter((s) => set.has(s.id) && s.group).map((s) => s.group));
+    for (const s of shapes) if (s.group && made.has(s.group)) set.add(s.id);
     const origins = shapes.filter((s) => set.has(s.id));
     if (!origins.length) return;
     begin(e, { mode: "move", from: p, origins, ids: set, box: boxAround(origins), by: { x: 0, y: 0 } });

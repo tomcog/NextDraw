@@ -3,7 +3,7 @@ import { DrawingToolSection } from "../shared/components/controls/DrawingToolSec
 import { PaperSection } from "../shared/components/controls/PaperSection";
 import { SettingsSection } from "../shared/components/controls/SettingsSection";
 import { Button, Card } from "@tomcoggia/ui";
-import { ArrowDownToLine, ClipboardCopy, ClipboardPaste, Copy, Layers2, LayersArrowDown, MousePointer2, PenLine, Spline, SquareDimensions, Trash2 } from "lucide-react";
+import { ArrowDownToLine, ClipboardCopy, ClipboardPaste, Copy, Layers2, LayersArrowDown, MousePointer2, PenLine, Spline, SquareDimensions, Trash2, Ungroup } from "lucide-react";
 import { FileBrowser, type CombineResult, type OpenResult } from "../shared/components/FileBrowser";
 import { Section } from "../shared/components/controls/Section";
 import controls from "../shared/components/controls/controls.module.css";
@@ -48,7 +48,7 @@ import { FileSection } from "./components/panels/FileSection";
 import { GridSection } from "./components/panels/GridSection";
 import { ToolPicker } from "./components/panels/ToolPicker";
 import { LayersSection, type AlignEdge } from "./components/panels/LayersSection";
-import { boxAround, boxOf, clampToPage, moveBy, newLayerId, newShapeId, resizeTo, shapeName, turnAround, type Layer, type Page, type Shape } from "./lib/shapes";
+import { boxAround, boxOf, clampToPage, groupLabel, groupsOf, moveBy, newGroupId, newLayerId, newShapeId, resizeTo, shapeName, turnAround, withWholeGroups, type Layer, type Page, type Shape } from "./lib/shapes";
 import { buildSvg, svgForMarks } from "./lib/svg";
 import { drawnMiddle, fitToPage, reshapeDrawing, runsOffPage, turnDrawingLeft } from "./lib/drawing";
 import { calibrationSheet } from "./lib/calibration";
@@ -198,7 +198,10 @@ export default function App() {
  const [tool, setTool] = useState<Tool>("rect");
  // Everything picked, in the order it was picked. The cards edit the last of them; a drag, a delete
  // or a nudge takes the lot, which is what makes moving a whole layer at once possible.
- const [selected, setSelected] = useState<string[]>([]);
+ // A path of a shape made of several is never picked alone: picking it picks the whole shape. What
+ // was asked for is kept as it was; the selection everything else works from is that, made whole.
+ const [picks, setSelected] = useState<string[]>([]);
+ const selected = useMemo(() => withWholeGroups(picks, shapes), [picks, shapes]);
  const pick = (id: string | null) => setSelected(id ? [id] : []);
  // Choosing a layer in the Layers card only chooses the layer: its paths are listed, but none is
  // selected until one is clicked, on the page or in the list. Whatever was selected on the layer
@@ -374,6 +377,8 @@ export default function App() {
   const copy: Shape = {
    ...moveBy(clipboard.shape, 0.25, 0.25, page),
    id: newShapeId(),
+   group: undefined,
+   groupName: undefined,
    layerId: layerId ?? activeLayer,
   };
   setShapes((list) => [...list, copy]);
@@ -387,7 +392,7 @@ export default function App() {
   if (!shape) return;
   record();
   const nudge = 0.25;
-  const copy: Shape = { ...shape, id: newShapeId(), x: shape.x + nudge, y: shape.y + nudge, x2: shape.x2 + nudge, y2: shape.y2 + nudge };
+  const copy: Shape = { ...shape, id: newShapeId(), group: undefined, groupName: undefined, x: shape.x + nudge, y: shape.y + nudge, x2: shape.x2 + nudge, y2: shape.y2 + nudge };
   setShapes((list) => [...list, copy]);
   setFills((list) => [...list, ...list.filter((f) => f.shapeId === id).map((f) => ({ ...f, id: newFillId(), shapeId: copy.id }))]);
   pick(copy.id);
@@ -410,6 +415,53 @@ export default function App() {
   setShapes((list) => list.filter((s) => !ids.includes(s.id)));
   setFills((list) => list.filter((f) => !ids.includes(f.shapeId)));
   setSelected((current) => current.filter((id) => !ids.includes(id)));
+ };
+
+ // Shapes made of several paths. Grouping keeps the paths as they are - unlike joining, which makes
+ // them one path - and puts them side by side in the drawing order, where the first of them was, so
+ // the shape is drawn and written out as one thing. One level only: grouping shapes that are already
+ // shapes makes one shape of all their paths. A shape's paths are all on one layer, one pen.
+ const groupable = (ids: string[]) => {
+  const picked = shapes.filter((s) => ids.includes(s.id));
+  return picked.length > 1
+   && picked.every((s) => s.kind !== "photo" && s.layerId === picked[0].layerId)
+   && !(picked[0].group && picked.every((s) => s.group === picked[0].group));
+ };
+ const groupShapes = () => {
+  if (!groupable(selected)) return;
+  const ids = new Set(selected);
+  record();
+  const group = newGroupId();
+  setShapes((list) => {
+   const first = list.findIndex((s) => ids.has(s.id));
+   const rest = list.filter((s) => !ids.has(s.id));
+   const members = list.filter((s) => ids.has(s.id)).map((s) => ({ ...s, group, groupName: undefined }));
+   return [...rest.slice(0, first), ...members, ...rest.slice(first)];
+  });
+ };
+ /** Take the shapes picked apart again: their paths stay where they are, each a path of its own. */
+ const ungroupShapes = (ids: string[]) => {
+  if (!shapes.some((s) => ids.includes(s.id) && s.group)) return;
+  record();
+  setShapes((list) => list.map((s) => (ids.includes(s.id) && s.group ? { ...s, group: undefined, groupName: undefined } : s)));
+ };
+ const membersOf = (group: string) => shapes.filter((s) => s.group === group);
+ /** A copy of a whole shape, its fills too, a step down and across - and picked, ready to drag. */
+ const duplicateGroup = (group: string) => {
+  const members = membersOf(group);
+  if (!members.length) return;
+  record();
+  const copyOf = new Map(members.map((s) => [s.id, newShapeId()]));
+  const again = newGroupId();
+  const copies = members.map((s) => ({ ...moveBy(s, 0.25, 0.25, page), id: copyOf.get(s.id)!, group: again }));
+  setShapes((list) => [...list, ...copies]);
+  setFills((list) => [...list, ...list.filter((f) => copyOf.has(f.shapeId)).map((f) => ({ ...f, id: newFillId(), shapeId: copyOf.get(f.shapeId)! }))]);
+  setSelected(copies.map((s) => s.id));
+ };
+ const moveGroupToLayer = (group: string, layerId: string) => {
+  record();
+  setShapes((list) => list.map((s) => (s.group === group ? { ...s, layerId } : s)));
+  setSelected(membersOf(group).map((s) => s.id));
  };
 
  /**
@@ -660,7 +712,7 @@ export default function App() {
    if (!last || cancelled) return;
    try {
     const res = await api<OpenResult>(`/api/studio/read?path=${encodeURIComponent(last)}`);
-    if (!cancelled) openDrawing(res, (n) => `${handed ? "Opened" : "Picked up"} ${res.name} - ${n} ${n === 1 ? "shape" : "shapes"}`);
+    if (!cancelled) openDrawing(res, (n) => `${handed ? "Opened" : "Picked up"} ${res.name} - ${n} ${n === 1 ? "path" : "paths"}`);
    } catch (err) {
     // Start clean but keep the pointer: the file may be fine and the server merely unreachable,
     // and throwing the only record of what was being worked on is the one unrecoverable move.
@@ -935,6 +987,13 @@ export default function App() {
    : { text: "", ok: true });
  };
  const pickedIds = useMemo(() => new Set(selected), [selected]);
+ // What the one shape picked is called, when what's picked is exactly one whole shape.
+ const pickedShape = useMemo(() => {
+  const group = shapes.find((s) => s.id === selected[0])?.group;
+  if (!group || !selected.every((id) => shapes.find((s) => s.id === id)?.group === group)) return undefined;
+  const ofLayer = [...groupsOf(shapes.filter((s) => s.layerId === shapes.find((m) => m.group === group)?.layerId)).keys()];
+  return groupLabel(membersOf(group), ofLayer.indexOf(group));
+ }, [shapes, selected]); // eslint-disable-line react-hooks/exhaustive-deps
  // The chosen photo's card counts its lines, which can only be made once the photo has been read.
  usePhotoRead(chosen?.photo?.src);
 
@@ -1184,12 +1243,14 @@ export default function App() {
   record();
   const copy: Layer = { ...layer, id: newLayerId(), name: uniqueName(layer.name, layers.map((l) => l.name)) };
   const ids = new Map(shapes.filter((sh) => sh.layerId === id).map((sh) => [sh.id, newShapeId()]));
+  // The copy's shapes are shapes of their own, not more paths of the ones they were copied from.
+  const groupIds = new Map(shapes.filter((sh) => sh.layerId === id && sh.group).map((sh) => [sh.group!, newGroupId()]));
   setLayers((list) => {
    const next = [...list];
    next.splice(next.findIndex((l) => l.id === id) + 1, 0, copy);
    return next;
   });
-  setShapes((list) => [...list, ...list.filter((sh) => ids.has(sh.id)).map((sh) => ({ ...sh, id: ids.get(sh.id)!, layerId: copy.id }))]);
+  setShapes((list) => [...list, ...list.filter((sh) => ids.has(sh.id)).map((sh) => ({ ...sh, id: ids.get(sh.id)!, layerId: copy.id, group: sh.group && groupIds.get(sh.group) }))]);
   setFills((list) => [...list, ...list.filter((f) => ids.has(f.shapeId)).map((f) => ({ ...f, id: newFillId(), shapeId: ids.get(f.shapeId)! }))]);
   setActiveLayer(copy.id);
  };
@@ -1231,20 +1292,29 @@ export default function App() {
 
  // Picking from the list: a plain click takes that shape alone, shift adds one or takes it out.
  // The row's box and its name both do this, which is why it is a function rather than a handler.
+ // A shape's row takes all of its paths out together, as it puts them all in.
  const pickFromRow = (id: string, add: boolean) =>
-  setSelected((current) => (add
-   ? (current.includes(id) ? current.filter((one) => one !== id) : [...current, id])
-   : [id]));
+  setSelected((current) => {
+   if (!add) return [id];
+   const whole = withWholeGroups([id], shapes);
+   return current.some((one) => whole.includes(one)) ? current.filter((one) => !whole.includes(one)) : [...current, id];
+  });
 
  // The shape whose name is open for typing into, and what it was called before: renaming is asked
  // for from the row's menu, and Escape puts the old name back.
  const [renaming, setRenaming] = useState<string | null>(null);
  // The same for a layer's name, which is edited the same way and for the same reason.
  const [renamingLayer, setRenamingLayer] = useState<string | null>(null);
+ // A shape made of several paths is renamed the same way, by its group's id: every one of its paths
+ // carries the name.
  const typeShapeName = (id: string, name: string) =>
-  setShapes((list) => list.map((s) => (s.id === id ? { ...s, name } : s)));
+  setShapes((list) => (list.some((s) => s.group === id)
+   ? list.map((s) => (s.group === id ? { ...s, groupName: name } : s))
+   : list.map((s) => (s.id === id ? { ...s, name } : s))));
  const settleShapeName = (id: string) =>
-  setShapes((list) => list.map((s) => (s.id === id ? { ...s, name: s.name?.trim() || undefined } : s)));
+  setShapes((list) => (list.some((s) => s.group === id)
+   ? list.map((s) => (s.group === id ? { ...s, groupName: s.groupName?.trim() || undefined } : s))
+   : list.map((s) => (s.id === id ? { ...s, name: s.name?.trim() || undefined } : s))));
 
  // A click anywhere but the field itself settles the name. The field's own blur does this too; this
  // is what covers the case where it never took focus in the first place, which would otherwise
@@ -1284,7 +1354,7 @@ export default function App() {
  };
 
  // The kebab menu on a layer or shape row: duplicate and delete.
- const [rowMenu, setRowMenu] = useState<{ kind: "layer" | "shape"; id: string; anchor: HTMLElement } | null>(null);
+ const [rowMenu, setRowMenu] = useState<{ kind: "layer" | "shape" | "group"; id: string; anchor: HTMLElement } | null>(null);
  // The shape whose size in the list is open for typing into. One at a time, like a rename.
  const [sizing, setSizing] = useState<string | null>(null);
  const [sizeAnchor, setSizeAnchor] = useState<HTMLElement | null>(null);
@@ -1473,6 +1543,7 @@ export default function App() {
   <FillPanel
    fills={chosenFills}
    outline={fillLead.outline !== false}
+   count={fillTargets.length}
    actions={{
     setHatched,
     setAt: setFillAt,
@@ -1498,7 +1569,7 @@ export default function App() {
     endpoint="/api/studio/read"
     onClose={() => setBrowserOpen(false)}
     addMode={browserAdds}
-    onOpened={(res) => openDrawing(res, (n) => `Opened ${res.name} - ${n} ${n === 1 ? "shape" : "shapes"}`)}
+    onOpened={(res) => openDrawing(res, (n) => `Opened ${res.name} - ${n} ${n === 1 ? "path" : "paths"}`)}
     combine={{
      endpoint: "/api/studio/combine",
      canAdd: shapes.length > 0,
@@ -1541,7 +1612,29 @@ export default function App() {
     <RowMenu
      anchor={rowMenu.anchor}
      onClose={() => setRowMenu(null)}
-     actions={rowMenu.kind === "layer"
+     actions={rowMenu.kind === "group"
+      ? [
+       {
+        label: "Rename",
+        icon: <PenLine />,
+        onSelect: () => {
+         nameBeforeEdit.current = membersOf(rowMenu.id)[0]?.groupName ?? "";
+         record();
+         setRenaming(rowMenu.id);
+        },
+       },
+       { label: "Ungroup", icon: <Ungroup />, onSelect: () => ungroupShapes(membersOf(rowMenu.id).map((s) => s.id)) },
+       { label: "Duplicate shape", icon: <Copy />, onSelect: () => duplicateGroup(rowMenu.id) },
+       ...layers
+        .filter((l) => l.id !== membersOf(rowMenu.id)[0]?.layerId)
+        .map((l) => ({
+         label: `Move to ${l.name}`,
+         icon: <Layers2 />,
+         onSelect: () => moveGroupToLayer(rowMenu.id, l.id),
+        })),
+       { label: "Delete", icon: <Trash2 />, danger: true, onSelect: () => removeShapes(membersOf(rowMenu.id).map((s) => s.id)) },
+      ]
+      : rowMenu.kind === "layer"
       ? [
        {
         label: "Select all on layer",
@@ -1597,7 +1690,7 @@ export default function App() {
          },
         ]
         : []),
-       { label: "Copy shape", icon: <ClipboardCopy />, onSelect: () => copyShape(rowMenu.id) },
+       { label: "Copy path", icon: <ClipboardCopy />, onSelect: () => copyShape(rowMenu.id) },
        {
         label: "Set size",
         icon: <SquareDimensions />,
@@ -1620,7 +1713,7 @@ export default function App() {
         })(),
         onSelect: () => flattenShape(rowMenu.id),
        },
-       { label: "Duplicate shape", icon: <Copy />, onSelect: () => duplicateShape(rowMenu.id) },
+       { label: "Duplicate path", icon: <Copy />, onSelect: () => duplicateShape(rowMenu.id) },
        // One entry per other layer: a layer is a pen, so this is "draw this in that pen".
        ...layers
         .filter((l) => l.id !== shapes.find((s) => s.id === rowMenu.id)?.layerId)
@@ -1814,6 +1907,7 @@ export default function App() {
           setRenaming(null);
          }}
          onRowMenu={(id, anchor) => setRowMenu((open) => (open?.id === id ? null : { kind: "shape", id, anchor }))}
+         onGroupMenu={(id, anchor) => setRowMenu((open) => (open?.id === id ? null : { kind: "group", id, anchor }))}
         />
        )}
        </Section>
@@ -1825,7 +1919,12 @@ export default function App() {
        count={selected.length}
        fillable={fillTargets.length}
        busy={busy}
+       shapeName={pickedShape}
+       canGroup={groupable(selected)}
+       canUngroup={shapes.some((s) => s.group && pickedIds.has(s.id))}
        canPaste={Boolean(fillClipboard)}
+       onGroup={groupShapes}
+       onUngroup={() => ungroupShapes(selected)}
        onJoin={joinShapes}
        onPaste={pasteFill}
        fillPanel={fillPanel}

@@ -3,8 +3,8 @@ import { curveFromData } from "./parametric";
 import { flattenRun, mapNode, parsePath, type Node } from "./path";
 import { apply, axisAligned, multiply, parseTransform, IDENTITY, type Matrix } from "./transform";
 import { repeatFromData } from "./repeat";
-import { newLayerId, newShapeId, pointsBox, type Layer, type Page, type Shape } from "./shapes";
-import { FILL_GROUP_PREFIX, PHOTO_GROUP_PREFIX } from "./svg";
+import { newGroupId, newLayerId, newShapeId, pointsBox, type Layer, type Page, type Shape } from "./shapes";
+import { FILL_GROUP_PREFIX, GROUP_PREFIX, PHOTO_GROUP_PREFIX, SOURCE_GROUP_SUFFIX } from "./svg";
 import { photoFromData, PLATES } from "./photo";
 
 // Reading a drawing back in, so work can be picked up again after it's been handed to Plot.
@@ -263,11 +263,43 @@ export function parseDrawing(text: string): Opened {
     }
     return null;
   };
+  // The shape a path belongs to: the outermost group around it inside its layer, so a group inside a
+  // group joins the outer one - Studio keeps shapes one level deep. Studio's own groups keep their id,
+  // which is what puts a shape's outlined and unoutlined paths back together; anyone else's is given
+  // one. A group of just one path - a turn or a move wrapped round a single mark - is no shape at all,
+  // and is let go once everything has been read.
+  const groupOfShape = new Map<string, string>(); // shape id -> group id
+  const groupName = new Map<string, string>(); // group id -> what it is called
+  const groupIdOf = new Map<Element, string>();
+  const noteGroup = (el: Element, shapeId: string) => {
+    let outer: Element | null = null;
+    for (let up = el.parentElement; up && up.parentElement && up.parentElement !== svg; up = up.parentElement) {
+      if (up.nodeName.toLowerCase() !== "g") continue;
+      const gid = up.getAttribute("id") ?? "";
+      if (gid.startsWith(FILL_GROUP_PREFIX) || gid.startsWith(PHOTO_GROUP_PREFIX)) return;
+      outer = up;
+    }
+    if (!outer) return;
+    let id = groupIdOf.get(outer);
+    if (!id) {
+      const own = outer.getAttribute("id") ?? "";
+      id = own.startsWith(GROUP_PREFIX)
+        ? own.slice(GROUP_PREFIX.length).replace(new RegExp(`${SOURCE_GROUP_SUFFIX}$`), "")
+        : newGroupId();
+      groupIdOf.set(outer, id);
+      // Named by its label, or by its id where that is how Illustrator writes a name; an id an
+      // editor made up for itself (Inkscape's g1234) is no name.
+      const name = labelOf(outer) ?? outer.getAttribute("data-name")?.trim() ?? (illustrator ? nameOf(outer) : "");
+      if (name && !groupName.has(id)) groupName.set(id, name);
+    }
+    groupOfShape.set(shapeId, id);
+  };
   const noteSource = (el: Element) => {
     const id = idOf(el);
     if (onSkippedLayer(el)) sources.add(id);
     const layer = layerFor(el);
     if (layer) layerOf.set(id, layer);
+    noteGroup(el, id);
     return id;
   };
   // Applied once every shape is read, since the flag belongs to the shape rather than to its fills.
@@ -480,6 +512,18 @@ export function parseDrawing(text: string): Opened {
   }
 
   markOutlines();
+
+  {
+    const count = new Map<string, number>();
+    for (const g of groupOfShape.values()) count.set(g, (count.get(g) ?? 0) + 1);
+    for (const s of shapes) {
+      const g = groupOfShape.get(s.id);
+      if (!g || (count.get(g) ?? 0) < 2) continue;
+      s.group = g;
+      const name = groupName.get(g);
+      if (name) s.groupName = name;
+    }
+  }
 
   // Studio's own parameters, if the drawing was made here. A fill whose shape has gone is dropped.
   const ids = new Set(shapes.map((s) => s.id));

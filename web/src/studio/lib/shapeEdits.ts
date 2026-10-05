@@ -178,7 +178,7 @@ export function joined(shapes: Shape[], fonts: Record<string, StrokeFont>): Shap
   const b = pointsBox(runs.flatMap((run) => flattenRun(run)));
   return {
     ...picked[0], kind: "path", runs, points: undefined,
-    curve: undefined, repeat: undefined, rotation: undefined,
+    curve: undefined, repeat: undefined, rotation: undefined, group: undefined, groupName: undefined,
     text: undefined, font: undefined, tracking: undefined, leading: undefined,
     x: b.x0, y: b.y0, x2: b.x1, y2: b.y1,
   };

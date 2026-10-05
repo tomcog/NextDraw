@@ -82,8 +82,8 @@ export function ShapeCard({ shape, title, busy, hasFill, canPaste, panel, onPane
             <ButtonRound
               size="sm"
               icon={<ArrowDownToLine />}
-              aria-label="Flatten shape"
-              title="Flatten: the numbers behind this shape are given up and it becomes points to drag. Its turn and its copies are left as they are."
+              aria-label="Flatten path"
+              title="Flatten: the numbers behind this path are given up and it becomes points to drag. Its turn and its copies are left as they are."
               onClick={() => actions.flatten(shape.id)}
             />
           ) : undefined}
@@ -157,7 +157,7 @@ export function ShapeCard({ shape, title, busy, hasFill, canPaste, panel, onPane
 
           {(shape.runs?.length ?? 0) > 1 && (
             <Button size="md" variant="secondary" onClick={() => actions.split(shape.id)}>
-              {`Split into ${shape.runs?.length} shapes`}
+              {`Split into ${shape.runs?.length} paths`}
             </Button>
           )}
           <div className={styles.tools} role="group" aria-label="What is done to this shape">
@@ -185,7 +185,7 @@ export function ShapeCard({ shape, title, busy, hasFill, canPaste, panel, onPane
                 aria-label="Hatch"
                 aria-expanded={filling}
                 aria-pressed={filling}
-                title="Hatch: fill this shape with lines, and set how they run"
+                title="Hatch: fill this path with lines, and set how they run"
                 onClick={() => onPanel("fill")}
               />
             )}
@@ -195,7 +195,7 @@ export function ShapeCard({ shape, title, busy, hasFill, canPaste, panel, onPane
                 size="sm"
                 icon={<Pipette />}
                 aria-label="Copy fill"
-                title="Copy fill: pick up this shape's fill, to paste onto another shape"
+                title="Copy fill: pick up this path's fill, to paste onto another path"
                 disabled={busy}
                 onClick={actions.copyFill}
               />
@@ -205,7 +205,7 @@ export function ShapeCard({ shape, title, busy, hasFill, canPaste, panel, onPane
                 size="sm"
                 icon={<PaintRoller />}
                 aria-label="Paste fill"
-                title="Paste fill: give this shape the fill you copied, in place of its own"
+                title="Paste fill: give this path the fill you copied, in place of its own"
                 disabled={busy}
                 onClick={actions.pasteFill}
               />
@@ -219,7 +219,7 @@ export function ShapeCard({ shape, title, busy, hasFill, canPaste, panel, onPane
               aria-label="Rotate"
               aria-expanded={rotating}
               aria-pressed={rotating}
-              title="Rotate: turn this shape about the middle of its box"
+              title="Rotate: turn this path about the middle of its box"
               onClick={() => onPanel("rotate")}
             />
             <ButtonRound
@@ -229,7 +229,7 @@ export function ShapeCard({ shape, title, busy, hasFill, canPaste, panel, onPane
               aria-label="Repeat"
               aria-expanded={repeating}
               aria-pressed={repeating}
-              title="Repeat: draw this shape more than once, in a row, a grid or a ring"
+              title="Repeat: draw this path more than once, in a row, a grid or a ring"
               onClick={() => onPanel("repeat")}
             />
           </div>
@@ -304,7 +304,7 @@ export function ShapeCard({ shape, title, busy, hasFill, canPaste, panel, onPane
                     size="sm"
                     icon={<FlameKindling />}
                     aria-label="Bake the copies"
-                    title={`Bake: all ${placements(shape).length} copies become shapes of their own, each still made of its own numbers`}
+                    title={`Bake: all ${placements(shape).length} copies become paths of their own, each still made of its own numbers`}
                     onClick={() => actions.bake(shape.id)}
                   />
                 </div>

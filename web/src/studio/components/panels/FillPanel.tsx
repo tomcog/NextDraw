@@ -14,7 +14,7 @@ const FILL_ICON: Record<FillKind, JSX.Element> = {
 
 const FILL_HINT: Record<FillKind, string> = {
   hatch: "Straight lines, the spacing apart",
-  concentric: "The shape's own outline stepped inward",
+  concentric: "The path's own outline stepped inward",
   wavy: "The same lines drawn as waves",
   dashes: "The same lines broken into strokes: lighter, and a pen lift each",
 };
@@ -39,18 +39,20 @@ interface Props {
   fills: Fill[];
   /** Whether the shape's own outline is drawn as well. */
   outline: boolean;
+  /** How many paths the fill goes on: one, or each of several picked together. */
+  count?: number;
   actions: FillActions;
 }
 
 /** The Hatch settings, for the chosen shape or for a whole selection at once. */
-export function FillPanel({ fills, outline, actions }: Props) {
+export function FillPanel({ fills, outline, count = 1, actions }: Props) {
   const first = fills[0];
   const kind = first?.kind ?? "hatch";
   return (
     <>
       <Checkbox
         checked={fills.length > 0}
-        label="Fill shape"
+        label={count > 1 ? "Fill each path" : "Fill path"}
         onChange={(e) => actions.setHatched(e.target.checked)}
       />
       {first && (

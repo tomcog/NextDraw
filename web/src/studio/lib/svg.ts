@@ -3,7 +3,7 @@ import { curveStrokes, pointsAttr, type Point } from "./parametric";
 import { textRuns, type StrokeFont } from "./text";
 import { placementAttr, placements } from "./repeat";
 import { hasCurves, pathData } from "./path";
-import { boxOf, drawnNodes, drawnRuns, pathRuns, pointsBox, turnAttr, type Layer, type Page, type Shape } from "./shapes";
+import { boxOf, drawnNodes, drawnRuns, groupsOf, pathRuns, pointsBox, turnAttr, type Layer, type Page, type Shape } from "./shapes";
 import { photoData, photoMarks, photoOrigin } from "./photo";
 
 // The drawing Studio writes out. Two things matter to Plot at the other end:
@@ -105,6 +105,34 @@ function shapeMarkup(s: Shape, fonts: Record<string, StrokeFont> = {}): string {
 
 // A photo's lines go in a group named after the photo, for the same reason as a fill's below.
 export const PHOTO_GROUP_PREFIX = "studio-photo-";
+
+// A shape made of several paths is a group of its own inside its layer, so other programs see it as
+// one thing too, and reading the drawing back puts it together again. Its paths on the unplotted
+// layer, if some of them aren't outlined, are in a second group whose id ends SOURCE_GROUP_SUFFIX.
+export const GROUP_PREFIX = "studio-group-";
+export const SOURCE_GROUP_SUFFIX = "--sources";
+
+/** The paths of a layer, each shape's paths together in a group where the first of them stood. */
+function withGroups(list: Shape[], all: Shape[], markup: (s: Shape) => string, suffix = ""): string {
+  const groups = groupsOf(all);
+  const written = new Set<string>();
+  const lines: string[] = [];
+  for (const sh of list) {
+    const members = sh.group ? groups.get(sh.group) : undefined;
+    if (!members) {
+      lines.push(`      ${markup(sh)}`);
+      continue;
+    }
+    if (written.has(sh.group!)) continue;
+    written.add(sh.group!);
+    const here = list.filter((m) => m.group === sh.group);
+    const name = members[0].groupName?.trim();
+    lines.push(`      <g id="${escapeAttr(GROUP_PREFIX + sh.group + suffix)}"${name ? ` inkscape:label="${escapeAttr(name)}"` : ""}>`);
+    lines.push(...here.map((m) => `        ${markup(m)}`));
+    lines.push("      </g>");
+  }
+  return lines.join("\n");
+}
 
 // Fill lines go in a group named after the shape they fill, so reading the drawing back can tell
 // them apart from shapes that were drawn by hand and regenerate them instead of listing them.
@@ -286,7 +314,7 @@ export function buildSvg(
       const drawn = mine.filter((sh) => sh.outline !== false);
       const myFills = fills.filter((f) => mine.some((sh) => sh.id === f.shapeId));
       const inner = [
-        drawn.map((sh) => `      ${shapeMarkup(sh, opts.fonts)}`).join("\n"),
+        withGroups(drawn, shapes, (sh) => shapeMarkup(sh, opts.fonts)),
         fillMarkup(shapes, myFills),
       ].filter(Boolean).join("\n");
       if (!inner) return "";
@@ -307,14 +335,14 @@ ${inner}
      viewBox="0 0 ${num(page.w)} ${num(page.h)}">
 ${plotBlock(page, opts)}
 ${designBlock(fills, shapes, layers)}
-${body}${sourceLayer(sources, opts.fonts ?? {})}</svg>
+${body}${sourceLayer(sources, opts.fonts ?? {}, shapes)}</svg>
 `;
 }
 
 /** The unplotted layer holding shapes that are filled but not outlined. Left out when it's empty. */
-function sourceLayer(sources: Shape[], fonts: Record<string, StrokeFont>): string {
+function sourceLayer(sources: Shape[], fonts: Record<string, StrokeFont>, all: Shape[]): string {
   if (!sources.length) return "";
-  const body = sources.map((s) => `      ${shapeMarkup(s, fonts)}`).join("\n");
+  const body = withGroups(sources, all, (s) => shapeMarkup(s, fonts), SOURCE_GROUP_SUFFIX);
   return `  <g inkscape:groupmode="layer" inkscape:label="${escapeAttr(SOURCE_LAYER)}" id="studio-sources"
      fill="none" stroke="#000000" stroke-width="${STROKE_IN}">
 ${body}
