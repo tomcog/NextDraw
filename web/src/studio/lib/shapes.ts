@@ -217,6 +217,16 @@ export const scaleInto = (shapes: Shape[], from: ReturnType<typeof boxOf>, to: R
   });
 };
 
+/** The same shape moved by dx, dy: its box, and a path's points with their handles. */
+export const shiftShape = (s: Shape, dx: number, dy: number): Shape => {
+  const by = (run: Node[]) => run.map((n) => mapNode(n, (p) => ({ x: p.x + dx, y: p.y + dy })));
+  return {
+    ...s,
+    x: s.x + dx, y: s.y + dy, x2: s.x2 + dx, y2: s.y2 + dy,
+    ...(s.runs ? { runs: s.runs.map(by) } : s.points ? { points: by(s.points) } : {}),
+  };
+};
+
 /**
  * Every shape of a group, turned about one point: each one's own turn takes up the angle, and its
  * box is carried round to where the turn puts it.
@@ -225,15 +235,9 @@ export const turnAround = (shapes: Shape[], about: { x: number; y: number }, deg
   shapes.map((s) => {
     const c = centerOf(s);
     const to = turnPoint(c, about, deg);
-    const dx = to.x - c.x;
-    const dy = to.y - c.y;
     return {
-      ...s,
+      ...shiftShape(s, to.x - c.x, to.y - c.y),
       rotation: ((((s.rotation ?? 0) + deg) % 360) + 360) % 360 || undefined,
-      x: s.x + dx, y: s.y + dy, x2: s.x2 + dx, y2: s.y2 + dy,
-      ...(s.runs
-        ? { runs: s.runs.map((run) => run.map((n) => mapNode(n, (p) => ({ x: p.x + dx, y: p.y + dy })))) }
-        : s.points ? { points: s.points.map((n) => mapNode(n, (p) => ({ x: p.x + dx, y: p.y + dy }))) } : {}),
     };
   });
 

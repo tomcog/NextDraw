@@ -5,9 +5,10 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "node scripts/check-boundaries.mjs && tsc --noEmit && vite build",
+    "build": "node scripts/check-boundaries.mjs && tsc --noEmit && node scripts/test.mjs && vite build",
     "typecheck": "tsc --noEmit",
-    "check": "node scripts/check-boundaries.mjs"
+    "check": "node scripts/check-boundaries.mjs",
+    "test": "node scripts/test.mjs"
   },
   "dependencies": {
     "@tomcoggia/ui": "github:tomcog/component-library#v0.79.0",
