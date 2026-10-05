@@ -37,7 +37,7 @@ import { usePhotoRead } from "./lib/usePhotoRead";
 import { PaletteMenu } from "../shared/components/controls/PaletteMenu";
 import { Hints } from "../shared/components/controls/Hints";
 import { RowMenu } from "./components/controls/RowMenu";
-import { boxAround, boxOf, centerOf, clampToPage, drawnNodes, drawnRuns, moveBy, newLayerId, newShapeId, outlinePoints, pathRuns, pointsBox, resizeTo, shapeName, turnPoint, POINT_HANDLE_LIMIT, type Layer, type Page, type Shape } from "./lib/shapes";
+import { boxAround, boxOf, centerOf, clampToPage, drawnNodes, drawnRuns, moveBy, newLayerId, newShapeId, outlinePoints, pathRuns, pointsBox, resizeTo, shapeName, turnAround, turnPoint, POINT_HANDLE_LIMIT, type Layer, type Page, type Shape } from "./lib/shapes";
 import { buildSvg, svgForMarks, cleanFileName } from "./lib/svg";
 import { CALIBRATION_COVERS, calibrationSheet } from "./lib/calibration";
 import { readCalibration, readingProblems, sheetLayout } from "./lib/calibrationRead";
@@ -1173,6 +1173,25 @@ export default function App() {
   const dy = edge === "top" ? to.y0 - from.y0 : edge === "bottom" ? to.y1 - from.y1 : edge === "middle" ? (to.y0 + to.y1 - from.y0 - from.y1) / 2 : 0;
   if (Math.abs(dx) < 1e-6 && Math.abs(dy) < 1e-6) return;
   moveShapes(onActive.map((sh) => sh.id), dx, dy);
+ };
+ // Turning the active layer as one, about the middle of the box round it: what dragging the turn grip
+ // does to the layer picked whole, by an exact angle. Photos stay as they are - they stand square to
+ // the page, and their layers are in register with each other - and turn from their own card.
+ const [layerTurnBy, setLayerTurnBy] = useState(15);
+ const turnLayer = (deg: number) => {
+  const turning = onActive.filter((sh) => !sh.photo);
+  if (!deg) return;
+  if (!turning.length) {
+   setMessage({ text: "A photo turns from its own card, where all its layers turn together", ok: false });
+   return;
+  }
+  const b = boxAround(turning);
+  const turned = new Map(turnAround(turning, { x: (b.x0 + b.x1) / 2, y: (b.y0 + b.y1) / 2 }, deg).map((sh) => [sh.id, sh]));
+  record();
+  setShapes((list) => list.map((sh) => turned.get(sh.id) ?? sh));
+  setMessage(turning.length < onActive.length
+   ? { text: "The photo on this layer stays as it is: turn it from its own card", ok: false }
+   : { text: "", ok: true });
  };
  const pickedIds = useMemo(() => new Set(selected), [selected]);
  // The chosen photo's card counts its lines, which can only be made once the photo has been read.
@@ -3443,6 +3462,14 @@ export default function App() {
            <Segment icon={<AlignCenterHorizontal />} aria-label="Middles" title="Middles: move this layer up or down so the two are centred on each other" disabled={busy} onClick={() => alignLayer("middle")} />
            <Segment icon={<AlignEndHorizontal />} aria-label="Bottom edges" title="Bottom edges: move this layer so its bottom meets the other's" disabled={busy} onClick={() => alignLayer("bottom")} />
           </SegmentedControl>
+          {/* Turned as one, about its middle: a quarter either way, or by an angle typed in,
+            clockwise and negative for the other way. */}
+          <div className={styles.turnRow}>
+           <ButtonRound size="sm" icon={<RotateCcwSquare />} aria-label={`Turn ${active.name} left`} title={`Turn ${active.name} 90° left, about its middle`} disabled={busy} onClick={() => turnLayer(-90)} />
+           <ButtonRound size="sm" icon={<RotateCwSquare />} aria-label={`Turn ${active.name} right`} title={`Turn ${active.name} 90° right, about its middle`} disabled={busy} onClick={() => turnLayer(90)} />
+           <NumberField label="Turn by" unit="°" min={-359} max={359} step={1} value={layerTurnBy} disabled={busy} onChange={setLayerTurnBy} />
+           <Button size="md" variant="secondary" title={`Turn ${active.name} by ${layerTurnBy}°, clockwise - a negative angle turns it the other way`} disabled={busy || !layerTurnBy} onClick={() => turnLayer(layerTurnBy)}>Turn</Button>
+          </div>
          </div>
         )}
        </Section>

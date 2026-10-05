@@ -84,6 +84,15 @@
 
 .alignRow > :first-child { align-self: stretch; }
 
+/* Turning the layer: the two quarter turns, then an angle and the button that turns by it. */
+.turnRow {
+  display: flex;
+  align-items: flex-end;
+  gap: 0.5rem;
+}
+
+.turnRow > :nth-child(3) { flex: 0 1 6rem; min-width: 4.5rem; }
+
 /* The way back to the tool's own spacing sits under the spacing field it undoes, at the right,
    rather than under the angle beside it. */
 .fillFollow {
