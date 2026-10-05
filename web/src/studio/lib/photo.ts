@@ -352,6 +352,34 @@ export async function workingCopy(file: File): Promise<Pick<Photo, "src" | "widt
   }
 }
 
+/**
+ * The working copy turned a quarter, right (1) or left (-1): to stand a picture the way the paper
+ * does. The pixels are turned, not the shape, so its lines are worked out square to the paper as
+ * any photo's are. A JPEG at the working copy's quality, so the drawing that carries it stays its size.
+ */
+export async function turnedCopy(src: string, quarter: 1 | -1): Promise<Pick<Photo, "src" | "width" | "height">> {
+  const img = await createImageBitmap(await (await fetch(src)).blob());
+  try {
+    const canvas = document.createElement("canvas");
+    canvas.width = img.height;
+    canvas.height = img.width;
+    const ctx = canvas.getContext("2d")!;
+    ctx.translate(canvas.width / 2, canvas.height / 2);
+    ctx.rotate((quarter * Math.PI) / 2);
+    ctx.drawImage(img, -img.width / 2, -img.height / 2);
+    return { src: canvas.toDataURL("image/jpeg", 0.85), width: canvas.width, height: canvas.height };
+  } finally {
+    img.close();
+  }
+}
+
+/** A crop - left, top, right, bottom, as fractions - turned with its picture. */
+export function turnedCrop(crop: Photo["crop"], quarter: 1 | -1): Photo["crop"] {
+  if (!crop) return undefined;
+  const [l, t, r, b] = crop;
+  return quarter === 1 ? [1 - b, l, 1 - t, r] : [t, 1 - r, b, 1 - l];
+}
+
 // ---------- Hatching ----------
 
 /** The hatching, one path per pass of lines, in inches from the photo's own top-left corner. */

@@ -3,7 +3,7 @@ import { DrawingToolSection } from "../shared/components/controls/DrawingToolSec
 import { PaperSection } from "../shared/components/controls/PaperSection";
 import { SettingsSection } from "../shared/components/controls/SettingsSection";
 import { Button, ButtonRound, Card, Checkbox, InputSelect, InputText, InputTextarea, LayerController, Segment, SegmentedControl, Toolbar, ToolbarExpander } from "@tomcoggia/ui";
-import { AlignCenterHorizontal, AlignCenterVertical, AlignEndHorizontal, AlignEndVertical, AlignStartHorizontal, AlignStartVertical, ArrowDownLeft, ArrowDownRight, ArrowDownToLine, ArrowUpLeft, ArrowUpRight, AudioWaveform, Circle, ClipboardCopy, ClipboardPaste, Copy, Ellipsis, EllipsisVertical, File as FileIcon, FilePlus, FlameKindling, FolderOpen, Image as ImageIcon, ImagePlus, Grid2x2, Layers2, LayersArrowDown, LayersArrowUp, Merge, LineStyle, LoaderPinwheel, Menu, Minus, MousePointer2, Orbit, PaintBucket, PaintRoller, PenLine, Pipette, Pentagon, Plus, Rainbow, RotateCw, Save, Send, Shell, Signal, Spline, Square, SquareDimensions, SquareStack, Star, Target, Trash2, Type, Waves } from "lucide-react";
+import { AlignCenterHorizontal, AlignCenterVertical, AlignEndHorizontal, AlignEndVertical, AlignStartHorizontal, AlignStartVertical, ArrowDownLeft, ArrowDownRight, ArrowDownToLine, ArrowUpLeft, ArrowUpRight, AudioWaveform, Circle, ClipboardCopy, ClipboardPaste, Copy, Ellipsis, EllipsisVertical, File as FileIcon, FileInput, FilePlus, FlameKindling, FolderOpen, Image as ImageIcon, ImagePlus, Grid2x2, Layers2, LayersArrowDown, LayersArrowUp, Merge, LineStyle, LoaderPinwheel, Menu, Minus, MousePointer2, Orbit, PaintBucket, PaintRoller, PenLine, Pipette, Pentagon, Plus, Rainbow, RotateCcwSquare, RotateCw, RotateCwSquare, Save, Send, Shell, Signal, Spline, Square, SquareDimensions, SquareStack, Star, Target, Trash2, Type, Waves } from "lucide-react";
 import { FileBrowser, LAST_FOLDER_KEY, type CombineResult, type OpenResult } from "../shared/components/FileBrowser";
 import { Section } from "../shared/components/controls/Section";
 import { NumberField } from "../shared/components/controls/NumberField";
@@ -32,7 +32,7 @@ import { flattenPath, flattenRun, mapNode, parsePath, simplifyRun, type Node } f
 import { fitText, textRuns } from "./lib/text";
 import { defaultRepeat, placements, REPEAT_FIELDS, type Repeat, type RepeatKind } from "./lib/repeat";
 import { parseDrawing } from "./lib/parse";
-import { type PhotoMarks, BAND_NAMES, BLACK_SHARE, KEY_FROM, LAYER_SETTINGS, PLATES, PLATE_AIMS, MOST_LAYERS, PHOTO_DEFAULTS, WAVE_DEFAULTS, OUTLINE_DEFAULTS, CENTER_DEFAULTS, SILHOUETTE_DEFAULTS, photoMarks, colourGroups, darkestOf, isColourful, matchPens, placeOnPage, plateNamed, platePens, readTones, stemWithoutPlate, workingCopy, type Photo, type PhotoPart, type Plate } from "./lib/photo";
+import { type PhotoMarks, BAND_NAMES, BLACK_SHARE, KEY_FROM, LAYER_SETTINGS, PLATES, PLATE_AIMS, MOST_LAYERS, PHOTO_DEFAULTS, WAVE_DEFAULTS, OUTLINE_DEFAULTS, CENTER_DEFAULTS, SILHOUETTE_DEFAULTS, photoMarks, colourGroups, darkestOf, isColourful, matchPens, placeOnPage, plateNamed, platePens, readTones, stemWithoutPlate, turnedCopy, turnedCrop, workingCopy, type Photo, type PhotoPart, type Plate } from "./lib/photo";
 import { usePhotoRead } from "./lib/usePhotoRead";
 import { PaletteMenu } from "../shared/components/controls/PaletteMenu";
 import { Hints } from "../shared/components/controls/Hints";
@@ -280,6 +280,7 @@ export default function App() {
  const [saved, setSaved] = useState<Saved>(null);
  const [busy, setBusy] = useState(false);
  const [browserOpen, setBrowserOpen] = useState(false);
+ const [browserAdds, setBrowserAdds] = useState(false); // opened to add a file as a layer, not to open one
  // Marks in the drawing on disk that Studio can't redraw, and the name it was opened under. Saving
  // rewrites a file from the shapes Studio holds, so overwriting that file would delete them.
  const [past, setPast] = useState<Snapshot[]>([]);
@@ -1690,6 +1691,47 @@ export default function App() {
   }
  };
 
+ /**
+  * Turn the chosen photo - every layer of it - a quarter, so it stands the way the paper does. The
+  * picture itself turns, and with it any crop. Sized to the page, it's sized again; placed by hand,
+  * it turns about its middle.
+  */
+ const turnPhoto = async (quarter: 1 | -1) => {
+  if (!chosen?.photo) return;
+  const group = chosen.photo.group;
+  const members = shapes.filter((sh) => sh.id === chosen.id || (group && sh.photo?.group === group));
+  try {
+   // Each picture once: a split's layers share one, a separation's each have their own.
+   const turned = new Map<string, Pick<Photo, "src" | "width" | "height">>();
+   for (const sh of members) {
+    if (!turned.has(sh.photo!.src)) turned.set(sh.photo!.src, await turnedCopy(sh.photo!.src, quarter));
+   }
+   await Promise.all([...turned.values()].map((t) => readTones(t.src)));
+   const was = chosen.photo;
+   const aspect = was.height / was.width;
+   let box: { x: number; y: number; x2: number; y2: number };
+   let crop: Photo["crop"];
+   if (was.fit) {
+    const placed = placeOnPage(aspect, page, was.fit, was.margin ?? 0.5);
+    crop = placed.crop;
+    box = { x: placed.x, y: placed.y, x2: placed.x2, y2: placed.y2 };
+   } else {
+    const b = boxOf(chosen);
+    const cx = (b.x0 + b.x1) / 2;
+    const cy = (b.y0 + b.y1) / 2;
+    const w = b.y1 - b.y0;
+    const h = b.x1 - b.x0;
+    box = { x: cx - w / 2, y: cy - h / 2, x2: cx + w / 2, y2: cy + h / 2 };
+    crop = turnedCrop(was.crop, quarter);
+   }
+   record();
+   const ids = new Set(members.map((sh) => sh.id));
+   setShapes((list) => list.map((sh) => (ids.has(sh.id) ? { ...sh, ...box, photo: { ...sh.photo!, ...turned.get(sh.photo!.src)!, crop } } : sh)));
+  } catch (err) {
+   setMessage({ text: `Couldn’t turn the photo: ${(err as Error).message}`, ok: false });
+  }
+ };
+
  /** Change how the chosen photo is turned into lines. */
  const setPhotoOf = (patch: Partial<Photo>) => {
   if (!chosen?.photo) return;
@@ -2441,7 +2483,11 @@ export default function App() {
          title={shapeName(chosen, onActive.indexOf(chosen))}
          collapsibleKey="photo"
          action={
-          <>
+          <span className={controls.headerTools}>
+           {/* A quarter at a time, to stand the picture the way the paper does: the same
+             buttons as Plot's for turning a drawing. */}
+           <ButtonRound size="sm" icon={<RotateCcwSquare />} aria-label="Turn the photo left" title="Turn the photo 90° left" disabled={busy} onClick={() => turnPhoto(-1)} />
+           <ButtonRound size="sm" icon={<RotateCwSquare />} aria-label="Turn the photo right" title="Turn the photo 90° right" disabled={busy} onClick={() => turnPhoto(1)} />
            <Button size="sm" variant="secondary" title={chosen.photo.separation ? "Put a different picture in for this plate, keeping its settings" : "Put a different photo in, keeping every setting"} onClick={() => replaceInput.current?.click()}>
             Replace…
            </Button>
@@ -2455,7 +2501,7 @@ export default function App() {
              e.target.value = "";
             }}
            />
-          </>
+          </span>
          }
         >
          {/* How many layers the photo is split into by tone. Each band layer has its own settings
@@ -2873,6 +2919,7 @@ export default function App() {
     open={browserOpen}
     endpoint="/api/studio/read"
     onClose={() => setBrowserOpen(false)}
+    addMode={browserAdds}
     onOpened={(res) => openDrawing(res, (n) => `Opened ${res.name} - ${n} ${n === 1 ? "shape" : "shapes"}`)}
     combine={{
      endpoint: "/api/studio/combine",
@@ -3110,9 +3157,26 @@ export default function App() {
              hideLabel
              title="Open a drawing to carry on with"
              disabled={busy}
-             onClick={() => setBrowserOpen(true)}
+             onClick={() => {
+              setBrowserAdds(false);
+              setBrowserOpen(true);
+             }}
             >
              Open a drawing
+            </Segment>
+            {/* Another file onto this drawing, a layer of its own: the browser's "Add as layer",
+              without the ticking. */}
+            <Segment
+             icon={<FileInput />}
+             hideLabel
+             title="Add an SVG or Illustrator file to this drawing, as a new layer"
+             disabled={busy || !shapes.length}
+             onClick={() => {
+              setBrowserAdds(true);
+              setBrowserOpen(true);
+             }}
+            >
+             Add as a layer
             </Segment>
             {/* A photo is opened rather than drawn: it becomes a new drawing, in image conversion. */}
             <Segment

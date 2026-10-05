@@ -1614,6 +1614,7 @@ export default function App() {
                 onTrim={trimPage}
                 onRotate={(turn) => setRotation((r) => (((r + turn * 90) % 360) + 360) % 360)}
                 // Only a drawing that lives in a folder: an uploaded copy has nowhere for Studio to read it from.
+                onEditInStudio={status?.file_path ? () => openInStudio(status.file_path!) : undefined}
               />
               {shownMisfits && (
                 <div className={styles.misfits} role="status">

@@ -64,6 +64,9 @@ interface Props {
   /** What picking a file means. Plot loads it; Studio reads it for editing. */
   endpoint?: string;
   combine?: Combine;
+  /** Studio's "Add as a layer": picking a file puts it on top of the open drawing, a layer of its
+   * own, rather than opening it. Needs combine. */
+  addMode?: boolean;
 }
 
 // Where the browser opens, in both apps: the last folder browsed, or the folder of the drawing last
@@ -77,7 +80,7 @@ const fmtDate = (seconds = 0) =>
   new Date(seconds * 1000).toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
 
 // Browse the folders the server allows and open an SVG, or import an Illustrator file as SVG.
-export function FileBrowser({ open, onClose, onOpened, endpoint = "/api/open", combine }: Props) {
+export function FileBrowser({ open, onClose, onOpened, endpoint = "/api/open", combine, addMode = false }: Props) {
   const dialog = useRef<HTMLDialogElement>(null);
   const [listing, setListing] = useState<Listing | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -86,7 +89,7 @@ export function FileBrowser({ open, onClose, onOpened, endpoint = "/api/open", c
   // Ticked files, in the order they were ticked: the first is the bottom layer, as it plots first.
   // Kept by path, so files from more than one folder can go into one drawing.
   const [ticked, setTicked] = useState<Entry[]>([]);
-  const [stackChoice, setStackChoice] = useState<{ add: boolean; svgNames: string[] } | null>(null);
+  const [stackChoice, setStackChoice] = useState<{ add: boolean; svgNames: string[]; files: Entry[] } | null>(null);
   const [adding, setAdding] = useState(false); // the "add a folder" row is open
   const [newFolder, setNewFolder] = useState("");
 
@@ -186,25 +189,26 @@ export function FileBrowser({ open, onClose, onOpened, endpoint = "/api/open", c
   const tick = (file: Entry, on: boolean) =>
     setTicked((list) => (on ? [...list, file] : list.filter((f) => f.path !== file.path)));
 
-  const stack = async (add: boolean, mode?: "existing" | "import") => {
-    if (!combine || !ticked.length) return;
+  // The ticked files, or the one file picked in add mode.
+  const stack = async (add: boolean, mode?: "existing" | "import", files: Entry[] = ticked) => {
+    if (!combine || !files.length) return;
     setError(null);
     setStackChoice(null);
-    const importing = mode !== "existing" && ticked.some((f) => f.kind === "ai");
-    const what = ticked.length === 1 ? ticked[0].name : `${ticked.length} files`;
+    const importing = mode !== "existing" && files.some((f) => f.kind === "ai");
+    const what = files.length === 1 ? files[0].name : `${files.length} files`;
     setWorking(importing
       ? `Importing from Illustrator… This can take a few seconds a file.`
-      : add ? `Adding ${what} as ${ticked.length === 1 ? "a layer" : "layers"}…` : `Opening ${what} as layers…`);
+      : add ? `Adding ${what} as ${files.length === 1 ? "a layer" : "layers"}…` : `Opening ${what} as layers…`);
     try {
       type Answer = Omit<CombineResult, "added"> & { choice?: boolean; svg_names?: string[] };
       const res = await postJSON<Answer>(combine.endpoint, {
-        paths: ticked.map((f) => f.path),
+        paths: files.map((f) => f.path),
         mode,
         add,
         ...(add && combine.base ? { base: combine.base() } : {}),
       });
       if (res.choice) {
-        setStackChoice({ add, svgNames: res.svg_names ?? [] });
+        setStackChoice({ add, svgNames: res.svg_names ?? [], files });
         return;
       }
       combine.onCombined({ ...res, mismatched: res.mismatched ?? [], added: add });
@@ -219,8 +223,12 @@ export function FileBrowser({ open, onClose, onOpened, endpoint = "/api/open", c
   return (
     <dialog ref={dialog} className={styles.dialog} onClose={onClose} onCancel={(e) => { if (working) e.preventDefault(); }}>
       <div className={styles.header}>
-        <h2 className={styles.title}>Open drawing</h2>
-        {combine && (
+        <h2 className={styles.title}>{addMode ? "Add as a layer" : "Open drawing"}</h2>
+        {combine && addMode ? (
+          <p className={styles.hint}>
+            Pick a file to put on top of this drawing as a layer of its own. Tick several to add a layer each, in the order they're ticked.
+          </p>
+        ) : combine && (
           <p className={styles.hint}>
             Tick files to stack them as layers, one layer each, in the order they're ticked: the first is layer 1 and plots first.
           </p>
@@ -305,8 +313,8 @@ export function FileBrowser({ open, onClose, onOpened, endpoint = "/api/open", c
           <p className={styles.muted}>Use them to keep the changes saved in them, or import again if you’ve changed the artwork in Illustrator.</p>
           <div className={styles.buttons}>
             <Button size="md" variant="ghost" onClick={() => setStackChoice(null)}>Back</Button>
-            <Button size="md" variant="secondary" onClick={() => stack(stackChoice.add, "import")}>Import again</Button>
-            <Button size="md" variant="primary" autoFocus onClick={() => stack(stackChoice.add, "existing")}>Use existing</Button>
+            <Button size="md" variant="secondary" onClick={() => stack(stackChoice.add, "import", stackChoice.files)}>Import again</Button>
+            <Button size="md" variant="primary" autoFocus onClick={() => stack(stackChoice.add, "existing", stackChoice.files)}>Use existing</Button>
           </div>
         </div>
       ) : choice ? (
@@ -347,7 +355,7 @@ export function FileBrowser({ open, onClose, onOpened, endpoint = "/api/open", c
                   onChange={(e) => tick(file, e.target.checked)}
                 />
               )}
-              <button type="button" className={styles.row} onClick={() => openFile(file)}>
+              <button type="button" className={styles.row} onClick={() => (addMode ? stack(true, undefined, [file]) : openFile(file))}>
                 {file.kind === "ai"
                   ? <PenTool className={styles.icon} aria-hidden="true" />
                   : <FileImage className={styles.icon} aria-hidden="true" />}
@@ -385,7 +393,7 @@ export function FileBrowser({ open, onClose, onOpened, endpoint = "/api/open", c
               </Button>
             )}
             {/* One file is simply opened: it is already a drawing of one layer. */}
-            <Button
+            {!addMode && <Button
               size="md"
               variant="primary"
               disabled={Boolean(working) || ticked.length < 2}
@@ -393,7 +401,7 @@ export function FileBrowser({ open, onClose, onOpened, endpoint = "/api/open", c
               onClick={() => stack(false)}
             >
               Open as layers
-            </Button>
+            </Button>}
           </>
         )}
         <Button size="md" variant="ghost" disabled={Boolean(working)} onClick={onClose}>Cancel</Button>
