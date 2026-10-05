@@ -3585,6 +3585,11 @@ export default function App() {
           </>
          )}
          collapsibleKey="shapes-on-layer"
+         // Folded each time a layer is picked, and opened only by a click: a layer of hundreds of
+         // paths would otherwise unroll them all down the panel just for being chosen.
+         key={active.id}
+         defaultOpen={false}
+         forget
          action={
           onActive.length ? (
            <ButtonRound size="sm" icon={<Trash2 />} aria-label="Delete everything on this layer"

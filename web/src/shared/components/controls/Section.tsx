@@ -15,20 +15,22 @@ interface Props {
    */
   collapsibleKey?: string;
   defaultOpen?: boolean;
+  /** Leave the choice unremembered, so the card starts as `defaultOpen` says every time it appears. */
+  forget?: boolean;
   /** Hide the action while the section is folded: buttons that only act on what's inside it. */
   actionWhenOpen?: boolean;
   /** What the heading row shows at its end while the section is folded, in place of the action. */
   closedAction?: ReactNode;
 }
 
-export function Section({ title, action, children, collapsibleKey, defaultOpen = true, actionWhenOpen = false, closedAction }: Props) {
+export function Section({ title, action, children, collapsibleKey, defaultOpen = true, forget = false, actionWhenOpen = false, closedAction }: Props) {
   const [open, setOpen] = useState(() =>
-    collapsibleKey ? load<boolean>(`studio-open-${collapsibleKey}`) ?? defaultOpen : true,
+    collapsibleKey ? (forget ? undefined : load<boolean>(`studio-open-${collapsibleKey}`)) ?? defaultOpen : true,
   );
   const toggle = () => {
     const next = !open;
     setOpen(next);
-    if (collapsibleKey) save(`studio-open-${collapsibleKey}`, next);
+    if (collapsibleKey && !forget) save(`studio-open-${collapsibleKey}`, next);
   };
 
   const heading = collapsibleKey ? (
