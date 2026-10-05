@@ -39,8 +39,29 @@ from plotink import ebb_serial  # noqa: E402
 
 HOST, PORT = "127.0.0.1", 5055
 ROOT = Path(__file__).parent
-JOBS = ROOT / "jobs"
-JOBS.mkdir(exist_ok=True)
+# This Mac's own working state - the open drawing, a plot to resume, the settings every page shows.
+# Kept out of the app folder, which is in iCloud Drive: two Macs sharing one copy each took up the
+# other's open drawing, and refused to save it once iCloud had rewritten its modified time.
+JOBS = Path.home() / "Library" / "Application Support" / "NextDraw Plot" / "jobs"
+OLD_JOBS = ROOT / "jobs"  # where it was kept before
+
+
+def move_in_old_jobs():
+    """
+    Start from what the app folder's jobs/ held, the first time this Mac keeps its own. Copied, not
+    moved: the other Mac takes its own copy when it starts. iCloud's "current 2.svg" duplicates are
+    left behind, and so is the drawing's recorded modified time, which another Mac may have written.
+    """
+    if JOBS.exists() or not OLD_JOBS.is_dir():
+        return
+    JOBS.mkdir(parents=True)
+    for old in OLD_JOBS.iterdir():
+        if old.is_file() and not re.search(r" \d+\.\w+$", old.name) and old.name != "current.mtime":
+            shutil.copy2(old, JOBS / old.name)
+
+
+move_in_old_jobs()
+JOBS.mkdir(parents=True, exist_ok=True)
 CURRENT_SVG = JOBS / "current.svg"
 CURRENT_MTIME = JOBS / "current.mtime"  # the file's modified time when opened or last saved, to catch outside edits
 CURRENT_OPENED = JOBS / "current.opened"  # changes each time a drawing is opened, by anyone
