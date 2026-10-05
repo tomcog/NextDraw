@@ -511,7 +511,9 @@ export default function App() {
   const [choicesTick, setChoicesTick] = useState(0);
   // The choices saved in a drawing: where it goes, how big, its layers, its paper. Used when a drawing
   // is opened, and when another open page (odin's own screen, the laptop) saves its choices.
-  const applyChoices = useCallback((plot: Plot | null) => {
+  // keepPaper: joining a drawing other pages already have open. Their paper is in the shared settings,
+  // which may hold a change not yet saved into the file, so the file's paper isn't taken over it.
+  const applyChoices = useCallback((plot: Plot | null, keepPaper = false) => {
     setPlacementState(plot?.placement ?? { x: 0, y: 0 });
     const nextScale = plot?.scale ?? 100;
     refs.current.scale = nextScale;
@@ -532,7 +534,7 @@ export default function App() {
     // otherwise swap the chosen pen, and its pen positions and speeds with it, in the middle of
     // setting up a plot. The tool the page remembers stays chosen until it's changed by hand. Plot
     // still writes `tool` into the file, because Studio reads it to draw in the right ink.
-    const patch = { ...(plot?.paper ?? {}) };
+    const patch = keepPaper ? {} : { ...(plot?.paper ?? {}) };
     if (Object.keys(patch).length) {
       refs.current.settings = { ...refs.current.settings, ...patch };
       setSettings((prev) => ({ ...prev, ...patch }));
@@ -543,8 +545,8 @@ export default function App() {
   }, []);
   // A drawing was loaded: use the choices saved in it (or start at home, full size), then let auto-save
   // watch for changes from there. Returns the scale to estimate at.
-  const applyPlot = useCallback((name: string, plot: Plot | null) => {
-    const nextScale = applyChoices(plot);
+  const applyPlot = useCallback((name: string, plot: Plot | null, keepPaper = false) => {
+    const nextScale = applyChoices(plot, keepPaper);
     setPenColors({});
     setPrintLayer(null);
     setLayerMode("preview");
@@ -711,7 +713,9 @@ export default function App() {
           } else {
             refs.current.fileName = next.file;
             refs.current.opened = next.file_opened;
-            applyPlot(next.file, drawing.plot);
+            // Opening a page to watch mustn't change what the others show: with shared settings
+            // already taken, their paper stands, as their tool and settings do.
+            applyPlot(next.file, drawing.plot, Boolean(refs.current.settingsVersion));
             setFileName(next.file);
           }
         }
