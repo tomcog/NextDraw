@@ -4,25 +4,10 @@
   align-items: center;
   gap: 0.75rem;
   padding: 0.5rem 1rem 0.5rem 1.5rem;
-  background: var(--ui-surface-inverse);
-  color: var(--ui-text-on-inverse);
-  font-size: 13px;
-}
-
-.banner[data-tone="error"] {
-  background: var(--ui-danger);
-  color: var(--ui-text-on-danger);
-}
-
-/* The app's caution yellow (index.css), as the old caution button by the File heading wore it. */
-.banner[data-tone="caution"] {
-  background: var(--nd-caution);
-  color: var(--ui-text-default);
-}
-
-.banner[data-tone="brand"] {
+  /* Every message in the brand red, whatever it says: errors, notes and questions alike. */
   background: var(--ui-brand);
   color: var(--ui-text-on-brand);
+  font-size: 13px;
 }
 
 .text { flex: 1; min-width: 0; }

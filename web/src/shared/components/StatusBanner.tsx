@@ -40,11 +40,11 @@ export function StatusBanner({ message }: { message: BannerMessage | null }) {
         )}
       </div>
       {message.action && (
-        <Button size="sm" variant={tone === "brand" ? "secondary" : "primary"} onClick={message.action.onClick}>{message.action.label}</Button>
+        <Button size="sm" variant="secondary" onClick={message.action.onClick}>{message.action.label}</Button>
       )}
       <ButtonRound
         size="sm"
-        variant={tone === "caution" ? "ghost" : "outline-light"}
+        variant="outline-light"
         icon={<X />}
         aria-label="Close"
         title="Close"
