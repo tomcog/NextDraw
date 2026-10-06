@@ -2196,8 +2196,11 @@ def run_manual(command, settings, distance_mm, axis):
 
 
 def ensure_presets_file():
-    """Make sure the shared presets file is there and downloaded. iCloud can leave only a placeholder
-    (".presets.json.icloud") until a file is asked for; brctl asks for it."""
+    """Make sure the shared presets file is downloaded. iCloud can leave only a placeholder
+    (".presets.json.icloud") until a file is asked for; brctl asks for it. A file that isn't there
+    at all is never made up from the bundled copy: on 2026-10-05 iCloud emptied the folder for a
+    while, and the copy written in its place hid the real file, which had gone to the Trash with
+    every tool added since the bundled one was made."""
     if PRESETS_FILE == BUNDLED_PRESETS or PRESETS_FILE.exists():
         return
     placeholder = PRESETS_FILE.with_name(f".{PRESETS_FILE.name}.icloud")
@@ -2207,16 +2210,19 @@ def ensure_presets_file():
             if PRESETS_FILE.exists():
                 return
             time.sleep(0.25)
-        return
-    PRESETS_FILE.parent.mkdir(parents=True, exist_ok=True)
-    if BUNDLED_PRESETS.exists():
-        shutil.copyfile(BUNDLED_PRESETS, PRESETS_FILE)
+
+
+class PresetsMissing(RuntimeError):
+    pass
 
 
 def load_presets():
+    """The tools. With the shared file missing, the bundled copy is read so the page still has
+    tools to show - read only, never written into the shared folder."""
     try:
         ensure_presets_file()
-        data = json.loads(PRESETS_FILE.read_text())
+        source = PRESETS_FILE if PRESETS_FILE.exists() else BUNDLED_PRESETS
+        data = json.loads(source.read_text())
         return data if isinstance(data, list) else []
     except (OSError, ValueError):
         return []
@@ -2224,9 +2230,17 @@ def load_presets():
 
 def save_presets(presets):
     ensure_presets_file()
+    if PRESETS_FILE != BUNDLED_PRESETS and not PRESETS_FILE.exists():
+        raise PresetsMissing(f"The tools file is missing from {display_path(PRESETS_FILE.parent)}, so nothing "
+                             "was saved. Put presets.json back there (check the Trash), then try again.")
     tmp = PRESETS_FILE.with_suffix(".tmp")
     tmp.write_text(json.dumps(presets, indent=2))
     tmp.replace(PRESETS_FILE)
+
+
+@app.errorhandler(PresetsMissing)
+def presets_missing(exc):
+    return jsonify(error=str(exc)), 409
 
 
 def clean_preset_settings(raw):
