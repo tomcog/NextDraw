@@ -3948,8 +3948,9 @@ def put_palette(name):
 
 
 # What a calibration sheet read back from a photo holds: for each pen, the colour it came out at each
-# share of the paper covered ("100", "50", "25", "12.5"), measured against the paper beside it.
-CALIBRATION_COVERS = {"100", "50", "25", "12.5"}
+# share of the paper covered ("100", "50", "25", "12.5"), measured against the paper beside it, and
+# "line": the colour of the line itself, which is what the preview draws the pen in.
+CALIBRATION_COVERS = {"100", "50", "25", "12.5", "line"}
 
 
 def clean_calibration(raw):

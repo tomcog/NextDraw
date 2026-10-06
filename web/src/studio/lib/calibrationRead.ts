@@ -9,6 +9,7 @@ import { boxOf, type Shape } from "./shapes";
 
 type Corner = "top left" | "top right" | "bottom left" | "bottom right";
 const CORNERS: Corner[] = ["top left", "top right", "bottom left", "bottom right"];
+const OPPOSITE: Record<Corner, Corner> = { "top left": "bottom right", "top right": "bottom left", "bottom left": "top right", "bottom right": "top left" };
 
 interface Box { x0: number; y0: number; x1: number; y1: number }
 interface Patch { pen: string; cover: string; box: Box }
@@ -132,7 +133,7 @@ function darkSquares(pic: Picture): Blob[] {
   return blobs;
 }
 
-/** The four marks: of the dark squares, the one furthest into each corner of the photo. */
+/** The four marks: of the dark squares, the one furthest into each corner of the photo, or three and where they put the fourth. */
 function findMarks(pic: Picture): Record<Corner, Blob> | null {
   const blobs = darkSquares(pic);
   if (blobs.length < 4) return null;
@@ -147,8 +148,18 @@ function findMarks(pic: Picture): Record<Corner, Blob> | null {
   if (new Set(Object.values(found)).size < 4) return null;
   // The marks are all one size: a different one is a patch or the table, not a mark.
   const sizes = CORNERS.map((c) => found[c].size);
-  if (Math.max(...sizes) > 1.6 * Math.min(...sizes)) return null;
-  return found;
+  if (Math.max(...sizes) <= 1.6 * Math.min(...sizes)) return found;
+  // One mark missing - dirt or a pen skipping as it starts leaves it in pieces - is where the other
+  // three put it: the sheet is near enough a parallelogram in any photo straight enough to read.
+  for (const lost of CORNERS) {
+    const rest = CORNERS.filter((c) => c !== lost);
+    const restSizes = rest.map((c) => found[c].size);
+    if (Math.max(...restSizes) > 1.6 * Math.min(...restSizes)) continue;
+    const across = found[OPPOSITE[lost]];
+    const [a, b] = rest.filter((c) => c !== OPPOSITE[lost]).map((c) => found[c]);
+    return { ...found, [lost]: { x: a.x + b.x - across.x, y: a.y + b.y - across.y, size: across.size } };
+  }
+  return null;
 }
 
 /* ---------- From the sheet to the photo ---------- */
@@ -217,6 +228,39 @@ function average(pic: Picture, m: Homography, box: Box, share: number): number[]
   return sum.map((v) => v / n);
 }
 
+/**
+ * The colour of a pen's line itself: the darkest pixels across the middle of its solid patch - the
+ * cores of the lines, not the paper between them - leaving out the very darkest as dirt and specks.
+ * Averaged as the screen shows them, which is how it was checked by eye against the paper.
+ */
+function lineColour(pic: Picture, m: Homography, box: Box): number[] {
+  const cx = (box.x0 + box.x1) / 2;
+  const cy = (box.y0 + box.y1) / 2;
+  const hw = (box.x1 - box.x0) / 4;
+  const hh = (box.y1 - box.y0) / 4;
+  const steps = 80;
+  const seen: number[][] = [];
+  for (let i = 0; i < steps; i++) {
+    for (let j = 0; j < steps; j++) {
+      const p = project(m, cx - hw + (2 * hw * i) / (steps - 1), cy - hh + (2 * hh * j) / (steps - 1));
+      const x = Math.round(p.x);
+      const y = Math.round(p.y);
+      if (x < 0 || y < 0 || x >= pic.w || y >= pic.h) continue;
+      const at = (y * pic.w + x) * 4;
+      seen.push([pic.data[at], pic.data[at + 1], pic.data[at + 2]]);
+    }
+  }
+  if (!seen.length) throw new Error("Part of the sheet is outside the photo. Take it again with the whole sheet in view.");
+  const light = (c: number[]) => 0.299 * c[0] + 0.587 * c[1] + 0.114 * c[2];
+  seen.sort((a, b) => light(a) - light(b));
+  const cores = seen.slice(Math.floor(seen.length * LINE_SPECKS), Math.max(1, Math.floor(seen.length * LINE_CORES)));
+  // Back to linear light, to be set on the paper like the patches are.
+  return [0, 1, 2].map((i) => LINEAR[Math.round(cores.reduce((sum, c) => sum + c[i], 0) / cores.length)]);
+}
+
+const LINE_SPECKS = 0.02; // the darkest share of a solid patch, left out as dirt
+const LINE_CORES = 0.3; // and up to this share, the cores of the lines
+
 /* ---------- Reading it ---------- */
 
 const PAPER_SPOT = 0.12; // in: the bare paper measured either side of each pen's patches, this wide
@@ -256,6 +300,10 @@ export async function readCalibration(file: File, layout: SheetLayout, paper: st
       const under = left.map((l, i) => l * (1 - t) + right[i] * t);
       const seen = average(pic, m, patch.box, 0.5);
       covers[patch.cover] = hexOf(seen.map((v, i) => Math.min(1, v / Math.max(1e-4, under[i])) * paperLinear[i]));
+      if (patch.cover === "100") {
+        const line = lineColour(pic, m, patch.box);
+        covers.line = hexOf(line.map((v, i) => Math.min(1, v / Math.max(1e-4, under[i])) * paperLinear[i]));
+      }
     }
     pens[pen] = covers;
   }

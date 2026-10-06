@@ -227,6 +227,8 @@ export interface Tilt {
 export interface Calibration {
   measured: string; // when, as an ISO date
   paper: string; // the paper colour the pens were measured against
+  // Each pen's colour at each share covered ("100", "50", "25", "12.5"), and "line": the colour of the
+  // line itself, off the cores of the solid patch's lines.
   pens: Record<string, Record<string, string>>;
 }
 
