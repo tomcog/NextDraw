@@ -708,7 +708,7 @@ export default function App() {
       ? {
         text: "A tool in use was changed somewhere else. Plot is still using the values it had:",
         items: heldPresets.changes,
-        caution: true,
+        brand: true,
         id: heldPresets.changes.join("\n"),
         action: { label: "Use the new values", onClick: takeHeldPresets },
       }

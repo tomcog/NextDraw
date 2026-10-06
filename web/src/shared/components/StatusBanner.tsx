@@ -10,6 +10,8 @@ export interface BannerMessage {
   error?: boolean;
   /** Advice rather than a failure: Plot's notes about a drawing. */
   caution?: boolean;
+  /** Something to decide, in the brand colour: a tool changed elsewhere. */
+  brand?: boolean;
   /** What closing it is remembered by. Without one, each new message object shows again, even with
    *  the same words; with one, a message with the same id stays closed. */
   id?: string;
@@ -27,7 +29,7 @@ export interface BannerMessage {
 export function StatusBanner({ message }: { message: BannerMessage | null }) {
   const [closed, setClosed] = useState<BannerMessage | string | null>(null);
   if (!message?.text || (message.id ?? message) === closed) return null;
-  const tone = message.error ? "error" : message.caution ? "caution" : undefined;
+  const tone = message.error ? "error" : message.brand ? "brand" : message.caution ? "caution" : undefined;
   return (
     <div className={styles.banner} role={message.error ? "alert" : "status"} data-tone={tone}>
       {message.working && <Spinner size={14} label={message.text} />}
@@ -38,7 +40,7 @@ export function StatusBanner({ message }: { message: BannerMessage | null }) {
         )}
       </div>
       {message.action && (
-        <Button size="sm" variant="primary" onClick={message.action.onClick}>{message.action.label}</Button>
+        <Button size="sm" variant={tone === "brand" ? "secondary" : "primary"} onClick={message.action.onClick}>{message.action.label}</Button>
       )}
       <ButtonRound
         size="sm"

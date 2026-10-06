@@ -20,6 +20,11 @@
   color: var(--ui-text-default);
 }
 
+.banner[data-tone="brand"] {
+  background: var(--ui-brand);
+  color: var(--ui-text-on-brand);
+}
+
 .text { flex: 1; min-width: 0; }
 
 .items {
