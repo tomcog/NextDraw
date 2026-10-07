@@ -104,8 +104,31 @@ to 17.3 ΔE (4 pens, best fit). The estimate for 4 pens was 16.2. The difference
 fixed steps. At EnerGel's 0.35 mm spacing, a pen covers 0, 40, 64, 88 or 96% of the paper, so a pale
 colour has nothing between bare paper and 40%.
 
+**Step 3, built.** Best fit has an **Overlaid pairs** box, ticked by default. Each point of the photo
+takes whichever colour the chosen pens can make comes nearest: bare paper, one pen at 1 to 4
+passes, or two pens hatched across each other at 1 to 4 passes each (`fitMenu` in the shared
+`photo.ts`). Pairs mix the same way the prediction does: as filters, or covering for an opaque ink,
+laid lightest first. Each pen's layer then draws the passes its share needs.
+
+- **Discrete steps.** The fit and the pen search now both use the hatching's real steps rather than
+  any share of the paper, so the estimate agrees with the predicted print.
+- **Angles.** Paired pens' lines must cross, not lie along each other, so each layer is hatched at
+  its own angle, spread across a quarter turn from 45°.
+- **Saved with the photo.** `fitPairs` and `fitOpaque` are saved, so Studio redraws the drawing the
+  same way.
+
+On the colour test picture with EnerGel and 4 pens:
+
+| Split | Predicted print |
+| --- | --- |
+| By groups (5 pens) | 22.3 ΔE |
+| Single pens, best fit | 16.6 ΔE |
+| With pairs (Lime Green, Orange, Blue, Sepia) | 6.7 ΔE |
+
+The estimate with pairs was 7.3 ΔE.
+
 ## Next
 
-Step 3: two pens hatched over each other, for colours no single pen makes, such as olive (yellow
-under a dark pen). Also to settle: how pale colours are reached. Wider spacing for colour layers, or
+- Read the pen pairs sheet back, to correct the predicted overlaps with measured ones.
+- Settle how pale colours are reached. Wider spacing for colour layers, or
 lighter first passes, would give steps between bare paper and 40%.

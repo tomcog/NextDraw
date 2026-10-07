@@ -20,6 +20,8 @@ export interface PhotoActions {
   splitByColor: (count: number) => void;
   /** Split by colour into the `count` pens that come nearest the photo as they really come out on paper. */
   splitBestFit: (count: number) => void;
+  /** Split by best fit again, with or without two pens hatched across each other. */
+  setPairs: (on: boolean) => void;
   setKeyLayer: (on: boolean) => void;
   place: (how: "fit" | "fill", margin: number) => void;
   setMargin: (margin: number) => void;
@@ -131,6 +133,15 @@ export function PhotoCard({ shape, title, shapes, layers, busy, all, onAll, scal
                     value={inks}
                     onChange={photo.fitPaper ? actions.splitBestFit : actions.splitByColor}
                   />
+                  {photo.fitPaper && (
+                    // Two pens hatched across each other, for colours neither makes alone - an olive
+                    // from a yellow under a dark green. Each pen's layer gets its own angle so the lines cross.
+                    <Checkbox
+                      checked={Boolean(photo.fitPairs)}
+                      label="Overlaid pairs, for colours no one pen makes"
+                      onChange={(e) => actions.setPairs(e.target.checked)}
+                    />
+                  )}
                   {photo.fitPaper && estimates && estimates.length > 0 && (
                     <p className={styles.empty}>
                       Best fit, as near as the pens come to the photo: {estimates.map((e) => `${e.pens} ${e.pens === 1 ? "pen" : "pens"} ${e.err.toFixed(1)} ΔE`).join(", ")}. Lower is closer.

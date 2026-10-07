@@ -8,7 +8,7 @@ import { lightness } from "../../shared/lib/color";
 import type { PenColor, Preset } from "../../shared/lib/types";
 import {
   BAND_NAMES, LAYER_SETTINGS, MOST_LAYERS, PHOTO_DEFAULTS, PLATES, PLATE_AIMS, colourGroups, darkestOf, isColourful, matchPens, photoMode,
-  placeOnPage, plateNamed, platePens, readTones, hexLinear, linearHex, stemWithoutPlate, turnedCopy, turnedCrop, workingCopy, type Photo, type PhotoPart, type Plate,
+  placeOnPage, plateNamed, platePens, readTones, hexLinear, linearHex, coverSteps, stemWithoutPlate, turnedCopy, turnedCrop, workingCopy, type Photo, type PhotoPart, type Plate,
 } from "../../shared/lib/drawing/photo";
 import { boxOf, newLayerId, newShapeId, type Layer, type Page, type Shape } from "../../shared/lib/drawing/shapes";
 import { choosePens, type Candidate } from "./choosePens";
@@ -452,28 +452,37 @@ export function photoActions(ctx: PhotoContext) {
     return { pens, list };
   };
 
+  /** What a best fit for the chosen photo is made with: its hatching's steps, the tool's ink, and pairs or not. */
+  const fitSettings = (pairs: boolean) => ({
+    steps: coverSteps(tool2?.settings.pen_width ?? 0.5, chosen?.photo?.spacingMm ?? 0.5, chosen?.photo?.levels ?? 4),
+    pairs,
+    opaque: tool2?.settings.ink_opaque === true,
+  });
+
   /** The best `count` pens for the chosen photo on this paper, and how near the photo each count comes. */
-  const bestPens = (count: number) => {
+  const bestPens = (count: number, pairs: boolean) => {
     if (!chosen?.photo) return null;
     const { pens, list } = candidates();
-    const choice = choosePens(chosen.photo.src, chosen.photo.brightness, chosen.photo.contrast, list, paper, count);
+    const choice = choosePens(chosen.photo.src, chosen.photo.brightness, chosen.photo.contrast, list, paper, count, fitSettings(pairs));
     return choice ? { ...choice, pens: choice.pens.map((k) => ({ pen: pens[k], onPaper: list[k].onPaper })) } : null;
   };
 
   /**
    * Split the chosen photo by best fit: the `count` pens of the tool that, as they really come out on
    * this paper, come nearest the photo between them, a layer each. Each point is drawn by the pen that
-   * comes nearest there, as much of it as matches. Layers stack by their pens' lightness, lightest at
-   * the bottom.
+   * comes nearest there, as much of it as matches - or, with `pairs`, by two pens hatched across each
+   * other where together they come nearer. Layers stack by their pens' lightness, lightest at the
+   * bottom. Paired pens' lines have to cross rather than lie along each other for their colours to mix
+   * as worked out, so each layer is hatched at its own angle, spread across the quarter turn.
    */
-  const splitPhotoBestFit = (count: number, extra: Partial<Photo> = {}) => {
+  const splitPhotoBestFit = (count: number, extra: Partial<Photo> = {}, pairs = chosen?.photo?.fitPairs ?? true) => {
     if (!chosen?.photo) return;
     if (!tool2?.palette?.length) {
       setMessage({ text: `${tool2?.name ?? "This tool"} has no palette of inks to split a photo into`, ok: false });
       return;
     }
     const n = Math.min(MOST_LAYERS, Math.max(1, Math.round(count)));
-    const best = bestPens(n);
+    const best = bestPens(n, pairs);
     if (!best) {
       setMessage({ text: "The photo is still being read: try again in a moment", ok: false });
       return;
@@ -484,18 +493,23 @@ export function photoActions(ctx: PhotoContext) {
       .map((p, region) => ({ pen: p.pen, region }))
       .sort((a, b) => (lightness(b.pen.color) ?? 0) - (lightness(a.pen.color) ?? 0));
     const { name } = photoStem();
+    // Spread from where hatching starts, not from whichever layer's angle is picked now.
+    const base = PHOTO_DEFAULTS.angle;
     rebuildPhoto(
-      parts.map(({ pen, region }) => ({
+      parts.map(({ pen, region }, i) => ({
         layerName: pen.name,
         layerColor: pen.color,
         shapeName: `${name} ${pen.name}`,
         photo: {
           band: undefined, key: undefined, keyInk: undefined, plate: undefined, plates: undefined,
-          ink: pen.color, regions, region, regionInks, fitPaper: paper, penMm: tool2.settings.pen_width ?? 0.5, ...extra,
+          ink: pen.color, regions, region, regionInks, fitPaper: paper, penMm: tool2.settings.pen_width ?? 0.5,
+          fitPairs: pairs || undefined, fitOpaque: tool2.settings.ink_opaque === true || undefined,
+          ...(pairs && parts.length > 1 ? { angle: Math.round((base + (i * 90) / parts.length) * 10) / 10 } : {}),
+          ...extra,
         },
       })),
       parts.length > 1 ? chosen.photo.group ?? newShapeId() : undefined,
-      `Best ${parts.length === 1 ? "pen" : `${parts.length} pens`} for this photo on this paper: ${parts.map((p) => p.pen.name).join(", ")}`,
+      `Best ${parts.length === 1 ? "pen" : `${parts.length} pens`} for this photo on this paper${pairs ? ", in pairs where that comes nearer" : ""}: ${parts.map((p) => p.pen.name).join(", ")}`,
     );
   };
 
