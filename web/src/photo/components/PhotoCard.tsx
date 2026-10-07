@@ -22,6 +22,8 @@ export interface PhotoActions {
   splitBestFit: (count: number) => void;
   /** Split by best fit again, with or without two pens hatched across each other. */
   setPairs: (on: boolean) => void;
+  /** Split by best fit again, hatched in fine steps or in whole passes. */
+  setFine: (on: boolean) => void;
   setKeyLayer: (on: boolean) => void;
   place: (how: "fit" | "fill", margin: number) => void;
   setMargin: (margin: number) => void;
@@ -140,6 +142,15 @@ export function PhotoCard({ shape, title, shapes, layers, busy, all, onAll, scal
                       checked={Boolean(photo.fitPairs)}
                       label="Overlaid pairs, for colours no one pen makes"
                       onChange={(e) => actions.setPairs(e.target.checked)}
+                    />
+                  )}
+                  {photo.fitPaper && (
+                    // Lines come in one at a time rather than a pass at once, so pale colours can be a
+                    // few sparse lines rather than nothing or a third of the paper.
+                    <Checkbox
+                      checked={Boolean(photo.fineSteps)}
+                      label="Fine steps, for pale colours"
+                      onChange={(e) => actions.setFine(e.target.checked)}
                     />
                   )}
                   {photo.fitPaper && estimates && estimates.length > 0 && (

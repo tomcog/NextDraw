@@ -78,6 +78,13 @@ export interface Photo {
   /** Split by best fit: the tool's ink covers what's under it rather than letting it show through. */
   fitOpaque?: boolean;
   /**
+   * Hatching in fine steps (NextDraw Photo, 2026-10-06): instead of whole passes, each two lines
+   * apart, lines of the closest spacing come in one at a time in a set order - one in eight, then two,
+   * four, six and all eight one way, then two, four and eight across - so a pale colour can be a few
+   * sparse lines rather than nothing or a third of the paper. Every line is still drawn once.
+   */
+  fineSteps?: boolean;
+  /**
    * The key layer of a photo split by colour: shading drawn over the colours in its ink, across the
    * whole photo, heavier where it's darker - like shading a coloured drawing with a black pen. Only
    * one of a photo's layers is the key; it has no `region`.
@@ -262,7 +269,7 @@ export interface PhotoPart {
 /** The settings a layer of a photo keeps as its own, as opposed to the photo's: what a mode remembers. */
 export const LAYER_SETTINGS = [
   "style", "angle", "spacingMm", "levels", "rowMm", "waveMm", "contours", "smoothMm", "centerFrom", "centerSmoothMm", "centerShortestMm", "silhouetteFrom", "silhouetteSmoothMm", "silhouetteSmallestMm", "offsetMm",
-  "band", "ink", "regions", "region", "key", "regionInks", "keyInk", "plate", "plates", "fitPaper", "penMm", "fitPairs", "fitOpaque",
+  "band", "ink", "regions", "region", "key", "regionInks", "keyInk", "plate", "plates", "fitPaper", "penMm", "fitPairs", "fitOpaque", "fineSteps",
 ] as const;
 
 /** What each band is called, lightest first, for a photo split into this many. */
@@ -434,7 +441,7 @@ export function photoMarks(photo: Photo, w: number, h: number): PhotoMarks | nul
 
 /** Everything a photo's lines depend on, as one string: the same key, the same lines. */
 function marksKey(photo: Photo, w: number, h: number) {
-  return [photo.src.length, photo.src.slice(-32), w.toFixed(4), h.toFixed(4), photo.brightness, photo.contrast, photo.angle, photo.spacingMm, photo.levels, photo.band?.join(",") ?? "", photo.crop?.join(",") ?? "", photo.bleed ?? 0, photo.style ?? "hatch", photo.rowMm ?? "", photo.waveMm ?? "", photo.ink ?? "", photo.regions?.join(",") ?? "", photo.region ?? "", photo.contours ?? "", photo.smoothMm ?? "", photo.key ? "key" : "", photo.keyInk ?? "", photo.regionInks?.join(",") ?? "", photo.keyStrength ?? "", photo.keyFrom ?? "", photo.plate ?? "", photo.plates?.join(",") ?? "", photo.blackShare ?? "", photo.centerFrom ?? "", photo.centerSmoothMm ?? "", photo.centerShortestMm ?? "", photo.silhouetteFrom ?? "", photo.silhouetteSmoothMm ?? "", photo.silhouetteSmallestMm ?? "", photo.fitPaper ?? "", photo.penMm ?? "", photo.fitPairs ? "pairs" : "", photo.fitOpaque ? "opaque" : ""].join("|");
+  return [photo.src.length, photo.src.slice(-32), w.toFixed(4), h.toFixed(4), photo.brightness, photo.contrast, photo.angle, photo.spacingMm, photo.levels, photo.band?.join(",") ?? "", photo.crop?.join(",") ?? "", photo.bleed ?? 0, photo.style ?? "hatch", photo.rowMm ?? "", photo.waveMm ?? "", photo.ink ?? "", photo.regions?.join(",") ?? "", photo.region ?? "", photo.contours ?? "", photo.smoothMm ?? "", photo.key ? "key" : "", photo.keyInk ?? "", photo.regionInks?.join(",") ?? "", photo.keyStrength ?? "", photo.keyFrom ?? "", photo.plate ?? "", photo.plates?.join(",") ?? "", photo.blackShare ?? "", photo.centerFrom ?? "", photo.centerSmoothMm ?? "", photo.centerShortestMm ?? "", photo.silhouetteFrom ?? "", photo.silhouetteSmoothMm ?? "", photo.silhouetteSmallestMm ?? "", photo.fitPaper ?? "", photo.penMm ?? "", photo.fitPairs ? "pairs" : "", photo.fitOpaque ? "opaque" : "", photo.fineSteps ? "fine" : ""].join("|");
 }
 
 /**
@@ -684,7 +691,7 @@ interface Fit {
 /** A photo layer's best fit, or undefined when it isn't split that way. */
 const fitOf = (photo: Photo): Fit | undefined =>
   photo.fitPaper
-    ? { paper: photo.fitPaper, steps: coverSteps(photo.penMm ?? 0.5, photo.spacingMm, photo.levels), pairs: Boolean(photo.fitPairs), opaque: Boolean(photo.fitOpaque) }
+    ? { paper: photo.fitPaper, steps: coverSteps(photo.penMm ?? 0.5, photo.spacingMm, photo.levels, photo.fineSteps), pairs: Boolean(photo.fitPairs), opaque: Boolean(photo.fitOpaque) }
     : undefined;
 
 /** Bleed, as a share, in CIELAB units: how much further a group may be than the nearest and still draw. */
@@ -778,12 +785,33 @@ export function fitMenu(paper: string, pens: string[], steps: number[], pairs: b
  * apart and up to `levels` passes. Each pass draws lines two spacings apart: the second crosses the
  * first, the third falls between the first's lines and the fourth between the second's.
  */
-export function coverSteps(penMm: number, spacingMm: number, levels: number): number[] {
+export function coverSteps(penMm: number, spacingMm: number, levels: number, fine = false): number[] {
+  if (fine) {
+    // Fine steps: lines of the closest spacing, so many in eight one way, then so many across.
+    const line = Math.min(1, penMm / Math.max(0.05, spacingMm));
+    const along = FINE_ALONG.map((n) => Math.min(1, (line * n) / FINE_PERIOD));
+    const across = FINE_ACROSS.map((n) => 1 - (1 - along[along.length - 1]) * (1 - Math.min(1, (line * n) / FINE_PERIOD)));
+    return [0, ...along, ...across];
+  }
   const one = Math.min(1, penMm / (2 * Math.max(0.05, spacingMm)));
   const both = Math.min(1, 2 * one);
   const steps = [0, one, 1 - (1 - one) ** 2, 1 - (1 - both) * (1 - one), 1 - (1 - both) ** 2];
   return steps.slice(0, Math.min(4, Math.max(1, Math.round(levels))) + 1);
 }
+
+/** Fine steps: lines come in eight at a time across the closest spacing. */
+const FINE_PERIOD = 8;
+/** How many of each eight are drawn one way at each step, then across at each step after. */
+const FINE_ALONG = [1, 2, 4, 6, 8];
+const FINE_ACROSS = [2, 4, 8];
+/**
+ * The step at which each of the eight lines comes in, one way and across: spread so the lines drawn
+ * at any step are as evenly spaced as they can be - one, then the one opposite it, then the quarters.
+ */
+const FINE_ALONG_FROM = [1, 5, 3, 4, 2, 5, 3, 4];
+const FINE_ACROSS_FROM = [6, 8, 7, 8, 6, 8, 7, 8];
+/** How many steps fine steps have. */
+const FINE_STEPS = FINE_ALONG.length + FINE_ACROSS.length;
 
 /**
  * Which colour group each point of the photo belongs to - the nearest - and the density of its
@@ -988,7 +1016,7 @@ function colourSampler(tones: Tones, photo: Photo) {
     // Best fit: as many passes of this pen as the colour chosen here takes, as a tone that just
     // clears that many of the hatching's thresholds.
     const { menu, choice } = areas;
-    const levels = Math.min(4, Math.max(1, Math.round(photo.levels)));
+    const levels = photo.fineSteps ? FINE_STEPS : Math.min(4, Math.max(1, Math.round(photo.levels)));
     return (u: number, v: number) => {
       const passes = menu[choice[pointAt(u, v)]].passes[mine];
       return passes ? (passes + 0.5) / (levels + 1) : -1;
@@ -1943,6 +1971,7 @@ const reverseNodes = (run: Node[]): Node[] => [...run].reverse().map((p) => {
  * spacing the tool fills solid at, and the lightest are left as paper.
  */
 function hatch(tones: Tones, photo: Photo, w: number, h: number): PhotoMarks {
+  if (photo.fineSteps) return fineHatch(tones, photo, w, h);
   const spacing = Math.max(0.05, photo.spacingMm) / 25.4;
   const levels = Math.min(4, Math.max(1, Math.round(photo.levels)));
   // Along each line, a look at the photo every half a line-spacing: fine enough that a line stops
@@ -2000,6 +2029,63 @@ function hatch(tones: Tones, photo: Photo, w: number, h: number): PhotoMarks {
   return { passes, strokes };
 }
 
+/**
+ * Hatching in fine steps: every line at the closest spacing, one way and then across, each drawn
+ * where the photo wants at least the step it comes in at - so the first step is one line in eight,
+ * and a pale colour is a few sparse lines. Lines are numbered from the box's corner, so neighbouring
+ * parts of the photo share them and a line runs on unbroken across a change of step.
+ */
+function fineHatch(tones: Tones, photo: Photo, w: number, h: number): PhotoMarks {
+  const spacing = Math.max(0.05, photo.spacingMm) / 25.4;
+  const step = spacing / 2;
+  const shortest = spacing * 1.5;
+  const cx = w / 2;
+  const cy = h / 2;
+  const reach = Math.hypot(w, h) / 2;
+  const n = (v: number) => Number(v.toFixed(4));
+  const passes: string[] = [];
+  let strokes = 0;
+  const { toneAt } = toneSampler(tones, photo, w, h);
+  for (const [turn, from] of [[0, FINE_ALONG_FROM], [90, FINE_ACROSS_FROM]] as const) {
+    const rad = ((photo.angle + turn) * Math.PI) / 180;
+    const dx = Math.cos(rad);
+    const dy = Math.sin(rad);
+    const parts: string[] = [];
+    let drawn = 0;
+    for (let j = 0, o = -reach; o <= reach; j++, o += spacing) {
+      const threshold = from[j % FINE_PERIOD] / (FINE_STEPS + 1);
+      // Every other line drawn runs back the way the last came, so the pen doesn't travel home between them.
+      const back = drawn % 2 === 1;
+      let start: number | null = null;
+      let end = 0;
+      let any = false;
+      const close = () => {
+        if (start !== null && end - start >= shortest) {
+          const a = back ? end : start;
+          const b = back ? start : end;
+          parts.push(`M${n(cx - dy * o + dx * a)} ${n(cy + dx * o + dy * a)}L${n(cx - dy * o + dx * b)} ${n(cy + dx * o + dy * b)}`);
+          strokes++;
+          any = true;
+        }
+        start = null;
+      };
+      for (let t = -reach; t <= reach; t += step) {
+        const tone = toneAt(cx - dy * o + dx * t, cy + dx * o + dy * t);
+        if (tone > threshold) {
+          if (start === null) start = t;
+          end = t;
+        } else {
+          close();
+        }
+      }
+      close();
+      if (any) drawn++;
+    }
+    passes.push(parts.join(""));
+  }
+  return { passes, strokes };
+}
+
 /** A photo read back from a saved drawing: only a picture and numbers are kept, so check them on the way in. */
 export function photoFromData(raw: Record<string, unknown>): Photo | null {
   const src = raw.src;
@@ -2038,6 +2124,7 @@ export function photoFromData(raw: Record<string, unknown>): Photo | null {
     ...(Number.isFinite(Number(raw.pen_mm)) && raw.pen_mm !== undefined ? { penMm: Number(raw.pen_mm) } : {}),
     ...(raw.fit_pairs === true ? { fitPairs: true } : {}),
     ...(raw.fit_opaque === true ? { fitOpaque: true } : {}),
+    ...(raw.fine_steps === true ? { fineSteps: true } : {}),
     ...(raw.key === true ? { key: true } : {}),
     ...(raw.modes && typeof raw.modes === "object" ? { modes: raw.modes as Photo["modes"] } : {}),
     ...(typeof raw.key_ink === "string" ? { keyInk: raw.key_ink } : {}),
@@ -2077,6 +2164,7 @@ export const photoData = (p: Photo) => ({
   ...(p.smoothMm !== undefined ? { smooth_mm: p.smoothMm } : {}),
   ...(p.ink ? { ink: p.ink, regions: p.regions, region: p.region } : {}),
   ...(p.fitPaper ? { fit_paper: p.fitPaper, pen_mm: p.penMm, ...(p.fitPairs ? { fit_pairs: true } : {}), ...(p.fitOpaque ? { fit_opaque: true } : {}) } : {}),
+  ...(p.fineSteps ? { fine_steps: true } : {}),
   ...(p.key ? { key: true } : {}),
   ...(p.modes ? { modes: p.modes } : {}),
   ...(p.keyInk ? { key_ink: p.keyInk } : {}),

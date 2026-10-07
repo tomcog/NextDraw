@@ -453,17 +453,17 @@ export function photoActions(ctx: PhotoContext) {
   };
 
   /** What a best fit for the chosen photo is made with: its hatching's steps, the tool's ink, and pairs or not. */
-  const fitSettings = (pairs: boolean) => ({
-    steps: coverSteps(tool2?.settings.pen_width ?? 0.5, chosen?.photo?.spacingMm ?? 0.5, chosen?.photo?.levels ?? 4),
+  const fitSettings = (pairs: boolean, fine: boolean) => ({
+    steps: coverSteps(tool2?.settings.pen_width ?? 0.5, chosen?.photo?.spacingMm ?? 0.5, chosen?.photo?.levels ?? 4, fine),
     pairs,
     opaque: tool2?.settings.ink_opaque === true,
   });
 
   /** The best `count` pens for the chosen photo on this paper, and how near the photo each count comes. */
-  const bestPens = (count: number, pairs: boolean) => {
+  const bestPens = (count: number, pairs: boolean, fine: boolean) => {
     if (!chosen?.photo) return null;
     const { pens, list } = candidates();
-    const choice = choosePens(chosen.photo.src, chosen.photo.brightness, chosen.photo.contrast, list, paper, count, fitSettings(pairs));
+    const choice = choosePens(chosen.photo.src, chosen.photo.brightness, chosen.photo.contrast, list, paper, count, fitSettings(pairs, fine));
     return choice ? { ...choice, pens: choice.pens.map((k) => ({ pen: pens[k], onPaper: list[k].onPaper })) } : null;
   };
 
@@ -475,14 +475,19 @@ export function photoActions(ctx: PhotoContext) {
    * bottom. Paired pens' lines have to cross rather than lie along each other for their colours to mix
    * as worked out, so each layer is hatched at its own angle, spread across the quarter turn.
    */
-  const splitPhotoBestFit = (count: number, extra: Partial<Photo> = {}, pairs = chosen?.photo?.fitPairs ?? true) => {
+  const splitPhotoBestFit = (
+    count: number,
+    extra: Partial<Photo> = {},
+    pairs = chosen?.photo?.fitPaper ? Boolean(chosen.photo.fitPairs) : true,
+    fine = chosen?.photo?.fitPaper ? Boolean(chosen.photo.fineSteps) : true,
+  ) => {
     if (!chosen?.photo) return;
     if (!tool2?.palette?.length) {
       setMessage({ text: `${tool2?.name ?? "This tool"} has no palette of inks to split a photo into`, ok: false });
       return;
     }
     const n = Math.min(MOST_LAYERS, Math.max(1, Math.round(count)));
-    const best = bestPens(n, pairs);
+    const best = bestPens(n, pairs, fine);
     if (!best) {
       setMessage({ text: "The photo is still being read: try again in a moment", ok: false });
       return;
@@ -503,7 +508,7 @@ export function photoActions(ctx: PhotoContext) {
         photo: {
           band: undefined, key: undefined, keyInk: undefined, plate: undefined, plates: undefined,
           ink: pen.color, regions, region, regionInks, fitPaper: paper, penMm: tool2.settings.pen_width ?? 0.5,
-          fitPairs: pairs || undefined, fitOpaque: tool2.settings.ink_opaque === true || undefined,
+          fitPairs: pairs || undefined, fitOpaque: tool2.settings.ink_opaque === true || undefined, fineSteps: fine || undefined,
           ...(pairs && parts.length > 1 ? { angle: Math.round((base + (i * 90) / parts.length) * 10) / 10 } : {}),
           ...extra,
         },

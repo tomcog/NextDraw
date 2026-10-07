@@ -593,11 +593,11 @@ export default function App() {
     const out: { pens: number; err: number }[] = [];
     for (const n of [inks - 1, inks, inks + 1]) {
       if (n < 1 || n > (tool?.palette?.length ?? 0)) continue;
-      const best = bestPens(n, Boolean(chosen.photo.fitPairs));
+      const best = bestPens(n, Boolean(chosen.photo.fitPairs), Boolean(chosen.photo.fineSteps));
       if (best?.errors.length) out.push({ pens: n, err: best.errors[best.errors.length - 1] });
     }
     return out.length ? out : undefined;
-  }, [chosen?.photo?.src, chosen?.photo?.brightness, chosen?.photo?.contrast, chosen?.photo?.fitPaper, chosen?.photo?.fitPairs, chosen?.photo?.spacingMm, chosen?.photo?.levels, convertRead, inks, tool, paperColor]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [chosen?.photo?.src, chosen?.photo?.brightness, chosen?.photo?.contrast, chosen?.photo?.fitPaper, chosen?.photo?.fitPairs, chosen?.photo?.fineSteps, chosen?.photo?.spacingMm, chosen?.photo?.levels, convertRead, inks, tool, paperColor]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // The chosen photo's card: how it's turned into lines.
   const photoCard = chosen?.photo ? (
@@ -624,6 +624,7 @@ export default function App() {
         splitByColor: splitPhotoByColor,
         splitBestFit: (count) => splitPhotoBestFit(count),
         setPairs: (on) => splitPhotoBestFit(inks, {}, on),
+        setFine: (on) => splitPhotoBestFit(inks, {}, undefined, on),
         setKeyLayer,
         place: placePhoto,
         setMargin: setPhotoMargin,

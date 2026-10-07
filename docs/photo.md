@@ -127,6 +127,29 @@ On the colour test picture with EnerGel and 4 pens:
 
 The estimate with pairs was 7.3 ΔE.
 
+**Pale colours, built.** Best fit has a **Fine steps** box, ticked by default for a new best fit.
+
+- **The problem.** The normal hatching comes in whole passes, each drawing every other line at the
+  closest spacing. For EnerGel at 0.35 mm, nothing falls between bare paper and 40% of it inked.
+- **What fine steps do.** Lines at the closest spacing come in one at a time, in a fixed order, in
+  groups of eight: 1, 2, 4, 6 and 8 of them one way, then 2, 4 and 8 across (`fineHatch`, `coverSteps`
+  with `fine`). For EnerGel that gives about 10, 20, 40, 60, 80, 84, 88 and 96% coverage. Each line
+  is still drawn once. Mid-tones show slightly uneven line spacing.
+- **Saved with the photo** as `fineSteps`.
+
+On the colour test picture with pairs, the predicted print went from 6.7 to 5.5 ΔE, with less pen
+travel (264 m against 299 m). On a pastel test picture:
+
+| Split | Predicted print |
+| --- | --- |
+| By value (nothing drawn) | 12.9 ΔE |
+| By groups | 12.4 ΔE |
+| Best fit, whole passes | 7.1 ΔE |
+| Best fit, fine steps | 2.9 ΔE |
+
+Re-splitting with pairs and fine steps can hold the page for about a second, because the pen search
+runs on the main thread.
+
 ## Next
 
 - Read the pen pairs sheet back, to correct the predicted overlaps with measured ones.
