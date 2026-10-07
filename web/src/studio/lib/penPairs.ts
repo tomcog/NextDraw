@@ -1,4 +1,5 @@
 import { hexToHsl, lightness } from "../../shared/lib/color";
+import { joinLayerName } from "../../shared/lib/ink";
 import type { PenColor, Preset } from "../../shared/lib/types";
 import { newFillId, type Fill } from "./hatch";
 import { newLayerId, newShapeId, type Layer, type Page, type Shape } from "./shapes";
@@ -8,7 +9,7 @@ import { newLayerId, newShapeId, type Layer, type Page, type Shape } from "./sha
 // from. The patches are dense, so most of each one is ink over ink and it reads as an area of colour
 // rather than two sets of lines. Not every pair - twenty pens make 190 - but the ones a photo would
 // reach for: in-between colours, skin, foliage, sky and water, shadows. Like the calibration sheet it's an ordinary drawing, a
-// layer per pen, lightest at the bottom, which is the order Plot draws in and so the only order a
+// layer per pen and one for the words, the pens lightest at the bottom, which is the order Plot draws in and so the only order a
 // photo will ever come out in.
 
 /** How much of the paper each pen covers in a patch, as a share: both solid, one solid and the other
@@ -34,9 +35,9 @@ const PATCH_GAP = 0.08;
 const COLUMN_GAP = 0.45;
 // The words, sized to be read off the paper across a desk, and spaced out: a gel line is wide for
 // letters this size, and set close they run together.
-const LABEL = 0.18; // the pair's pens, on two lines left of its patches
-const COVER_LABEL = 0.13; // "100" over "+50" above each patch of the top row
-const HEADING = 0.22;
+const LABEL = 0.21; // the pair's pens, on two lines left of its patches
+const COVER_LABEL = 0.15; // "100" over "+50" above each patch of the top row
+const HEADING = 0.26;
 const TRACKING = 15; // percent of the size, between letters
 const LEADING = 1.3; // a two-line name's lines apart, as a multiple of the font's own
 const PER_LETTER = 0.75; // ems a letter takes, spacing included - generous, so names never reach the patches
@@ -138,12 +139,16 @@ export function pairsSheet(tool: Preset, page: Page, font: string): PairsSheet |
   }
   if (!fit) return { error: `${pairs.length} pairs don’t fit on ${trim(page.w)} × ${trim(page.h)} in paper. Choose a larger paper size.` };
 
-  // A layer per pen on the sheet, lightest at the bottom; the darkest carries the marks and words.
+  // A layer per pen on the sheet, lightest at the bottom; the darkest carries the marks, and the words
+  // have a layer of their own in that pen, on top.
   const used = palette.filter((p) => pairs.some((pair) => pair.includes(p)));
   const byLightness = [...used].sort((a, b) => (lightness(b.color) ?? 0) - (lightness(a.color) ?? 0));
   const layers: Layer[] = byLightness.map((pen) => ({ id: newLayerId(), name: pen.name, color: pen.color }));
   const layerOf = new Map(byLightness.map((pen, i) => [pen.name, layers[i].id]));
   const key = layers[layers.length - 1].id;
+  const darkest = byLightness[byLightness.length - 1];
+  const wordsLayer: Layer = { id: newLayerId(), name: joinLayerName(darkest.name, "Words"), color: darkest.color };
+  layers.push(wordsLayer);
 
   const shapes: Shape[] = [];
   const fills: Fill[] = [];
@@ -156,7 +161,7 @@ export function pairsSheet(tool: Preset, page: Page, font: string): PairsSheet |
     // The box holds every line at this size, with room between them for the letters that hang down.
     const lines = text.split("\n").length;
     const tall = size * (1 + (lines - 1) * LEADING);
-    shapes.push({ id: newShapeId(), kind: "text", layerId: key, text, font, tracking: TRACKING, ...(lines > 1 ? { leading: LEADING } : {}), x, y, x2: x, y2: y + tall, ...(name ? { name } : {}) });
+    shapes.push({ id: newShapeId(), kind: "text", layerId: wordsLayer.id, text, font, tracking: TRACKING, ...(lines > 1 ? { leading: LEADING } : {}), x, y, x2: x, y2: y + tall, ...(name ? { name } : {}) });
   };
 
   const left = MARGIN;

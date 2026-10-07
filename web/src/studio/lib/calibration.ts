@@ -1,4 +1,5 @@
 import { lightness } from "../../shared/lib/color";
+import { joinLayerName } from "../../shared/lib/ink";
 import type { PenColor, Preset } from "../../shared/lib/types";
 import { newFillId, type Fill } from "./hatch";
 import { newLayerId, newShapeId, type Layer, type Page, type Shape } from "./shapes";
@@ -6,7 +7,8 @@ import { newLayerId, newShapeId, type Layer, type Page, type Shape } from "./sha
 // A calibration sheet: every pen of a drawing tool, hatched at a few densities, on the paper it will
 // be used on. Photographed back in, it tells Studio what each pen really looks like there - at full
 // strength and with paper showing through - which a palette's colours, picked off a screen, can't.
-// It is an ordinary drawing, one layer per pen, so it saves, plots and reopens like any other.
+// It is an ordinary drawing, one layer per pen and one for the words, so it saves, plots and reopens
+// like any other.
 
 /**
  * How much of the paper each patch covers with ink, as a share: solid, then half, a quarter and an
@@ -22,12 +24,12 @@ const PATCH_GAP = 0.08; // between the patches of one pen
 const COLUMN_GAP = 0.3; // between one pen's patches and the next pen's, across
 // The words, sized to be read off the paper across a desk, and spaced out: a gel line is wide for
 // letters this size, and set close they run together.
-const LABEL = 0.16; // the pen's name, under its patches - smaller only when a long name needs it
-const LABEL_SMALLEST = 0.12;
+const LABEL = 0.19; // the pen's name, under its patches - smaller only when a long name needs it
+const LABEL_SMALLEST = 0.14;
 const LABEL_GAP = 0.05;
 const ROW_GAP = 0.18;
-const HEADING = 0.22; // the sheet's title, between the top marks
-const COVER_LABEL = 0.12; // "100" over each patch of the top row
+const HEADING = 0.26; // the sheet's title, between the top marks
+const COVER_LABEL = 0.14; // "100" over each patch of the top row
 const TRACKING = 15; // percent of the size, between letters
 const PER_LETTER = 0.75; // ems a letter takes, spacing included - generous, so names never run into the next
 
@@ -77,12 +79,16 @@ export function calibrationSheet(tool: Preset, page: Page, font: string): Calibr
     return { error: `${pens.length} pens don’t fit on ${trim(page.w)} × ${trim(page.h)} in paper. Choose a larger paper size.` };
   }
 
-  // A layer per pen, lightest at the bottom. The darkest also carries the marks and the words:
-  // they're for reading the sheet, and the darkest pen is the one that reads best.
+  // A layer per pen, lightest at the bottom. The darkest also carries the marks, and the words go on
+  // a layer of their own in that pen, on top: they're for reading the sheet, the darkest pen reads
+  // best, and on their own they can be left out of a plot or drawn last.
   const byLightness = [...pens].sort((a, b) => (lightness(b.color) ?? 0) - (lightness(a.color) ?? 0));
   const layers: Layer[] = byLightness.map((pen) => ({ id: newLayerId(), name: pen.name, color: pen.color }));
   const layerOf = new Map(byLightness.map((pen, i) => [pen.name, layers[i].id]));
   const key = layers[layers.length - 1].id;
+  const darkest = byLightness[byLightness.length - 1];
+  const wordsLayer: Layer = { id: newLayerId(), name: joinLayerName(darkest.name, "Words"), color: darkest.color };
+  layers.push(wordsLayer);
 
   const shapes: Shape[] = [];
   const fills: Fill[] = [];
@@ -92,7 +98,7 @@ export function calibrationSheet(tool: Preset, page: Page, font: string): Calibr
     fills.push({ id: newFillId(), shapeId: shape.id, angle, spacingMm: spacingFor(cover), scale: 100, custom: true });
   };
   const words = (text: string, x: number, y: number, size: number, name?: string) => {
-    shapes.push({ id: newShapeId(), kind: "text", layerId: key, text, font, tracking: TRACKING, x, y, x2: x, y2: y + size, ...(name ? { name } : {}) });
+    shapes.push({ id: newShapeId(), kind: "text", layerId: wordsLayer.id, text, font, tracking: TRACKING, x, y, x2: x, y2: y + size, ...(name ? { name } : {}) });
   };
 
   // The corner marks, at the corners of everything drawn.
