@@ -6,7 +6,7 @@
       "speed_pendown": 45,
       "speed_penup": 75,
       "accel": 50,
-      "pen_pos_up": 65,
+      "pen_pos_up": 60,
       "pen_setup": 60,
       "pen_rate_lower": 12,
       "pen_rate_raise": 100,
@@ -155,7 +155,7 @@
       "pen_setup": 60,
       "pen_rate_lower": 12,
       "pen_rate_raise": 100,
-      "pen_width": 0.18,
+      "pen_width": 0.28,
       "ink_opacity": 0.95,
       "join_gap": 0.25,
       "ink_builds": false
@@ -163,90 +163,216 @@
     "palette": [
       {
         "name": "Black",
-        "color": "#231f20"
+        "color": "#434444"
       },
       {
         "name": "Navy Blue",
-        "color": "#211f45"
+        "color": "#2c496c"
       },
       {
         "name": "Blue",
-        "color": "#391e9c"
+        "color": "#4b72c8"
       },
       {
         "name": "Sepia",
-        "color": "#4f3737"
+        "color": "#615756"
       },
       {
         "name": "Forest Green",
-        "color": "#1f4736"
+        "color": "#22563d"
       },
       {
         "name": "Burgundy",
-        "color": "#7d2828"
+        "color": "#7c4551"
       },
       {
         "name": "Brown",
-        "color": "#663b28"
+        "color": "#7c534f"
       },
       {
         "name": "Violet",
-        "color": "#732594"
+        "color": "#8443c5"
       },
       {
         "name": "Magenta",
-        "color": "#912474"
+        "color": "#b721b9"
       },
       {
         "name": "Gray",
-        "color": "#5b5e66"
+        "color": "#838b8e"
       },
       {
         "name": "Lilac",
-        "color": "#6a56b0"
+        "color": "#856ac0"
       },
       {
         "name": "Green",
-        "color": "#008252"
+        "color": "#12a77c"
       },
       {
         "name": "Turquoise",
-        "color": "#00838a"
+        "color": "#03aab6"
       },
       {
         "name": "Sky Blue",
-        "color": "#0f94e6"
+        "color": "#21a4de"
       },
       {
         "name": "Red",
-        "color": "#ed3221"
+        "color": "#d74a63"
       },
       {
         "name": "Pink",
-        "color": "#ee3f89"
+        "color": "#f03295"
       },
       {
         "name": "Orange",
-        "color": "#ed681f"
+        "color": "#fe824e"
       },
       {
         "name": "Coral pink",
-        "color": "#ff6b63"
+        "color": "#fe6b7e"
       },
       {
         "name": "Lime Green",
-        "color": "#3cb227"
+        "color": "#4cc25f"
       },
       {
         "name": "Yellow",
-        "color": "#fee338"
+        "color": "#f3e42b"
       }
     ],
+    "barrel_mm": 11.44,
     "hatch": {
       "angle": 45,
       "spacing_mm": 0.35
     },
-    "barrel_mm": 11.44
+    "calibration": {
+      "measured": "2026-10-06",
+      "paper": "#ffffff",
+      "pens": {
+        "Black": {
+          "25": "#e2e3e2",
+          "50": "#bcbebd",
+          "100": "#6a6b6c",
+          "12.5": "#f1f1f1"
+        },
+        "Navy Blue": {
+          "25": "#dde1e5",
+          "50": "#afb9c4",
+          "100": "#456284",
+          "12.5": "#eff0f2"
+        },
+        "Blue": {
+          "25": "#e5eaf4",
+          "50": "#c5d1e8",
+          "100": "#7192d5",
+          "12.5": "#f4f6fa"
+        },
+        "Sepia": {
+          "25": "#e7e5e5",
+          "50": "#c4c1c1",
+          "100": "#817676",
+          "12.5": "#f2f2f2"
+        },
+        "Forest Green": {
+          "25": "#d9dedb",
+          "50": "#a5b3ac",
+          "100": "#47715e",
+          "12.5": "#eceeed"
+        },
+        "Burgundy": {
+          "25": "#e8e2e3",
+          "50": "#ccbbbf",
+          "100": "#93606e",
+          "12.5": "#f4f0f1"
+        },
+        "Brown": {
+          "25": "#e9e4e4",
+          "50": "#cfc2c1",
+          "100": "#946d6b",
+          "12.5": "#f4f1f1"
+        },
+        "Violet": {
+          "25": "#e7e1f1",
+          "50": "#cab9e0",
+          "100": "#9e6fd1",
+          "12.5": "#f3f0f8"
+        },
+        "Magenta": {
+          "25": "#eddcee",
+          "50": "#d8acd9",
+          "100": "#c340c7",
+          "12.5": "#f6edf6"
+        },
+        "Gray": {
+          "25": "#eceded",
+          "50": "#d5d8d8",
+          "100": "#a1a6a9",
+          "12.5": "#f4f5f5"
+        },
+        "Lilac": {
+          "25": "#e9e6f2",
+          "50": "#cfcae4",
+          "100": "#9a83cb",
+          "12.5": "#f4f2f8"
+        },
+        "Green": {
+          "25": "#dfefe9",
+          "50": "#b5ddcf",
+          "100": "#53bc9c",
+          "12.5": "#eff7f4"
+        },
+        "Turquoise": {
+          "25": "#dceff1",
+          "50": "#a9dade",
+          "100": "#30bbc6",
+          "12.5": "#edf7f8"
+        },
+        "Sky Blue": {
+          "25": "#dfeff6",
+          "50": "#b4dced",
+          "100": "#49b6e4",
+          "12.5": "#f0f7fb"
+        },
+        "Red": {
+          "25": "#f6e4e7",
+          "50": "#edc2c8",
+          "100": "#e36e83",
+          "12.5": "#fbf2f3"
+        },
+        "Pink": {
+          "25": "#f9dfeb",
+          "50": "#f3b4d2",
+          "100": "#f44da5",
+          "12.5": "#fceff5"
+        },
+        "Orange": {
+          "25": "#fceae4",
+          "50": "#fbcfc0",
+          "100": "#fe9a71",
+          "12.5": "#fef4f1"
+        },
+        "Coral pink": {
+          "25": "#fde6e9",
+          "50": "#fbc9cf",
+          "100": "#fe8495",
+          "12.5": "#fef2f3"
+        },
+        "Lime Green": {
+          "25": "#e5f4e7",
+          "50": "#c6e8ca",
+          "100": "#75d083",
+          "12.5": "#f2f9f3"
+        },
+        "Yellow": {
+          "25": "#fcfae4",
+          "50": "#f9f3bc",
+          "100": "#f8ea57",
+          "12.5": "#fdfcf1"
+        }
+      }
+    }
   },
   {
     "name": "Faber-Castell AD",
@@ -255,7 +381,7 @@
       "speed_pendown": 55,
       "speed_penup": 65,
       "accel": 40,
-      "pen_pos_up": 75,
+      "pen_pos_up": 60,
       "pen_setup": 60,
       "pen_rate_lower": 10,
       "pen_rate_raise": 50,
@@ -299,11 +425,11 @@
       "speed_pendown": 26,
       "speed_penup": 65,
       "accel": 75,
-      "pen_pos_up": 70,
+      "pen_pos_up": 60,
       "pen_setup": 60,
       "pen_rate_lower": 12,
       "pen_rate_raise": 75,
-      "ink_opacity": 0.85,
+      "ink_opacity": 1.0,
       "ink_build": 0.35,
       "ink_builds": true
     },
@@ -311,39 +437,35 @@
     "palette": [
       {
         "name": "Black",
-        "color": "#000000"
-      },
-      {
-        "name": "Blue",
-        "color": "#0620a2"
-      },
-      {
-        "name": "Green",
-        "color": "#054d17"
+        "color": "#242424"
       },
       {
         "name": "Purple",
-        "color": "#610bb7"
+        "color": "#7310d5"
       },
       {
-        "name": "Magenta",
-        "color": "#9e0a45"
+        "name": "Blue",
+        "color": "#2f49ca"
+      },
+      {
+        "name": "Red",
+        "color": "#bd3245"
       },
       {
         "name": "Brown",
         "color": "#a94f14"
       },
       {
-        "name": "Red",
-        "color": "#d3122c"
+        "name": "Magenta",
+        "color": "#d411b1"
+      },
+      {
+        "name": "Green",
+        "color": "#009451"
       },
       {
         "name": "Pink",
-        "color": "#f74a8f"
-      },
-      {
-        "name": "Tangerine",
-        "color": "#f9731a"
+        "color": "#fe81c1"
       },
       {
         "name": "Lilac",
@@ -351,7 +473,11 @@
       },
       {
         "name": "Sky Blue",
-        "color": "#17d0d3"
+        "color": "#17c7d3"
+      },
+      {
+        "name": "Tangerine",
+        "color": "#ff9d5c"
       },
       {
         "name": "Lime",
@@ -371,11 +497,12 @@
         "name": "Medium",
         "settings": {
           "pen_pos_down": 25,
-          "pen_width": 0.4
+          "pen_width": 0.28,
+          "speed_pendown": 32
         },
         "hatch": {
           "angle": 45,
-          "spacing_mm": 0.3
+          "spacing_mm": 0.27
         },
         "tilt": {
           "angle": 40,
@@ -388,6 +515,383 @@
         "settings": {
           "pen_width": 0.8
         }
+      }
+    ]
+  },
+  {
+    "name": "Pentel MATTEHOP",
+    "settings": {
+      "handling": 1,
+      "speed_pendown": 50,
+      "speed_penup": 75,
+      "accel": 50,
+      "pen_pos_down": 30,
+      "pen_pos_up": 60,
+      "pen_setup": 60,
+      "pen_rate_lower": 12,
+      "pen_rate_raise": 100,
+      "pen_width": 0.529,
+      "ink_opacity": 1.0,
+      "join_gap": 0.152,
+      "ink_builds": false,
+      "ink_opaque": true
+    },
+    "hatch": {
+      "angle": 45,
+      "spacing_mm": 0.6
+    },
+    "palette": [
+      {
+        "name": "Black",
+        "color": "#1e1e1e"
+      },
+      {
+        "name": "Blue",
+        "color": "#1e4da4"
+      },
+      {
+        "name": "Brown",
+        "color": "#6a462f"
+      },
+      {
+        "name": "Red",
+        "color": "#d62e33"
+      },
+      {
+        "name": "Violet",
+        "color": "#7741b9"
+      },
+      {
+        "name": "Green",
+        "color": "#19ae5a"
+      },
+      {
+        "name": "Orange",
+        "color": "#f07a2a"
+      },
+      {
+        "name": "Pink",
+        "color": "#f75fa3"
+      },
+      {
+        "name": "Coral Pink",
+        "color": "#f18e7e"
+      },
+      {
+        "name": "Sky Blue",
+        "color": "#3e9fea"
+      },
+      {
+        "name": "Yellow Orange",
+        "color": "#f9b548"
+      },
+      {
+        "name": "Yellow Green",
+        "color": "#cbe641"
+      },
+      {
+        "name": "Yellow",
+        "color": "#f7f13b"
+      },
+      {
+        "name": "Ivory White",
+        "color": "#f6f1e1"
+      }
+    ]
+  },
+  {
+    "name": "Sharpie S-Gel",
+    "settings": {
+      "handling": 1,
+      "speed_pendown": 25,
+      "speed_penup": 50,
+      "accel": 50,
+      "pen_pos_down": 50,
+      "pen_pos_up": 100,
+      "pen_setup": 50,
+      "pen_rate_lower": 50,
+      "pen_rate_raise": 38
+    },
+    "plotter": "idraw"
+  },
+  {
+    "name": "Stabilo point 88",
+    "settings": {
+      "handling": 1,
+      "speed_pendown": 50,
+      "speed_penup": 75,
+      "accel": 50,
+      "pen_pos_down": 24,
+      "pen_pos_up": 60,
+      "pen_setup": 60,
+      "pen_rate_lower": 12,
+      "pen_rate_raise": 100,
+      "pen_width": 0.4,
+      "ink_opacity": 0.95,
+      "join_gap": 0.152,
+      "ink_builds": false
+    },
+    "barrel_mm": 7.7,
+    "palette": [
+      {
+        "name": "black (46)",
+        "color": "#000a12"
+      },
+      {
+        "name": "nightblue (22)",
+        "color": "#1a105c"
+      },
+      {
+        "name": "violet (55)",
+        "color": "#5a1c83"
+      },
+      {
+        "name": "Payne's grey (98)",
+        "color": "#13406e"
+      },
+      {
+        "name": "blue (41)",
+        "color": "#084096"
+      },
+      {
+        "name": "brown (45)",
+        "color": "#6c3e27"
+      },
+      {
+        "name": "deep cold grey (97)",
+        "color": "#4c505c"
+      },
+      {
+        "name": "umber (65)",
+        "color": "#68523e"
+      },
+      {
+        "name": "olive green (63)",
+        "color": "#405e34"
+      },
+      {
+        "name": "sienna (75)",
+        "color": "#844d34"
+      },
+      {
+        "name": "purple (19)",
+        "color": "#b41f52"
+      },
+      {
+        "name": "lilac (58)",
+        "color": "#9c32b5"
+      },
+      {
+        "name": "dark red (50)",
+        "color": "#cf073f"
+      },
+      {
+        "name": "pine green (53)",
+        "color": "#007768"
+      },
+      {
+        "name": "plum (60)",
+        "color": "#965596"
+      },
+      {
+        "name": "sanguine (38)",
+        "color": "#c43e30"
+      },
+      {
+        "name": "carmine (48)",
+        "color": "#e40006"
+      },
+      {
+        "name": "red (40)",
+        "color": "#e40006"
+      },
+      {
+        "name": "dark grey (96)",
+        "color": "#697689"
+      },
+      {
+        "name": "grey violet (62)",
+        "color": "#936793"
+      },
+      {
+        "name": "rust red (47)",
+        "color": "#cb4d53"
+      },
+      {
+        "name": "dark ochre (89)",
+        "color": "#c46111"
+      },
+      {
+        "name": "green (36)",
+        "color": "#00944d"
+      },
+      {
+        "name": "blue (32)",
+        "color": "#0087cd"
+      },
+      {
+        "name": "mud green (37)",
+        "color": "#96874a"
+      },
+      {
+        "name": "moss green (35)",
+        "color": "#808e45"
+      },
+      {
+        "name": "orange (54)",
+        "color": "#eb5620"
+      },
+      {
+        "name": "light blue (31)",
+        "color": "#0090d1"
+      },
+      {
+        "name": "turquoise blue (51)",
+        "color": "#009bb4"
+      },
+      {
+        "name": "strawberry red (49)",
+        "color": "#ed6169"
+      },
+      {
+        "name": "pale vermillion (30)",
+        "color": "#ed671e"
+      },
+      {
+        "name": "pink (56)",
+        "color": "#ee6ea9"
+      },
+      {
+        "name": "neon pink (056)",
+        "color": "#ee6ea9"
+      },
+      {
+        "name": "medium cold grey (95)",
+        "color": "#969da8"
+      },
+      {
+        "name": "light ochre (88)",
+        "color": "#d19b54"
+      },
+      {
+        "name": "ice green (13)",
+        "color": "#36b7ad"
+      },
+      {
+        "name": "light lilac (59)",
+        "color": "#bd9acc"
+      },
+      {
+        "name": "light green (43)",
+        "color": "#76ba3f"
+      },
+      {
+        "name": "light pink (29)",
+        "color": "#f08b9f"
+      },
+      {
+        "name": "azure (57)",
+        "color": "#14bbe0"
+      },
+      {
+        "name": "neon green (033)",
+        "color": "#86be3c"
+      },
+      {
+        "name": "heliotrope (17)",
+        "color": "#e597c1"
+      },
+      {
+        "name": "khaki (66)",
+        "color": "#bdb063"
+      },
+      {
+        "name": "warm grey (93)",
+        "color": "#b2afa7"
+      },
+      {
+        "name": "neon blue (031)",
+        "color": "#3bc1ef"
+      },
+      {
+        "name": "apple green (33)",
+        "color": "#a3c00c"
+      },
+      {
+        "name": "pistachio (34)",
+        "color": "#a3c072"
+      },
+      {
+        "name": "curry (87)",
+        "color": "#d7b739"
+      },
+      {
+        "name": "mint green (16)",
+        "color": "#87c896"
+      },
+      {
+        "name": "eucalyptus (12)",
+        "color": "#90c4b9"
+      },
+      {
+        "name": "neon red (040)",
+        "color": "#f4a9b7"
+      },
+      {
+        "name": "light orange (25)",
+        "color": "#e4b683"
+      },
+      {
+        "name": "apricot (26)",
+        "color": "#f6b196"
+      },
+      {
+        "name": "blush (28)",
+        "color": "#e6b7b5"
+      },
+      {
+        "name": "neon orange (054)",
+        "color": "#fcbc2e"
+      },
+      {
+        "name": "papaya (85)",
+        "color": "#e7c37f"
+      },
+      {
+        "name": "light grey (94)",
+        "color": "#bacad9"
+      },
+      {
+        "name": "mustard (67)",
+        "color": "#d4d172"
+      },
+      {
+        "name": "lime green (14)",
+        "color": "#cad96d"
+      },
+      {
+        "name": "ice blue (11)",
+        "color": "#a6dbf2"
+      },
+      {
+        "name": "yellow (44)",
+        "color": "#fad400"
+      },
+      {
+        "name": "beige (86)",
+        "color": "#e9d7b8"
+      },
+      {
+        "name": "lemon yellow (24)",
+        "color": "#f6eb4b"
+      },
+      {
+        "name": "neon yellow (024)",
+        "color": "#fdea01"
+      },
+      {
+        "name": "light yellow (23)",
+        "color": "#f8eba2"
       }
     ]
   }
