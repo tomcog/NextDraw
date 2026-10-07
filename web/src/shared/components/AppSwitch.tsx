@@ -1,17 +1,26 @@
 import { Segment, SegmentedControl, Toolbar } from "@tomcoggia/ui";
-import { PenTool, Waypoints } from "lucide-react";
+import { Aperture, PenTool, Waypoints } from "lucide-react";
 import { showApp, type AppName } from "../lib/apps";
 
 /**
- * Shared: the way between the two apps, in the same place in both headers. The app you are in is the
- * one pressed; the other brings its tab forward, or opens one. The marks are the ones each app's name
- * carries in its title. Figma: `AppSwitcher` (64:660) - a small white bar of two icons, Studio then
- * Plot, the names left to their tooltips and to screen readers.
+ * Shared: the way between the apps, in the same place in every header. The app you are in is the one
+ * pressed; another brings its tab forward, or opens one. The marks are the ones each app's name
+ * carries in its title. Figma: `AppSwitcher` (64:660) - a small white bar of icons, the names left to
+ * their tooltips and to screen readers. Photo, Studio, Plot: the order a photo goes through them.
  */
 export function AppSwitch({ current }: { current: AppName }) {
   return (
     <Toolbar tone="white" aria-label="Apps">
       <SegmentedControl size="sm" aria-label="App">
+        <Segment
+          selected={current === "photo"}
+          icon={<Aperture />}
+          hideLabel
+          title={current === "photo" ? "You're in Photo" : "Go to Photo, in its own tab"}
+          onClick={() => current !== "photo" && showApp("photo")}
+        >
+          Photo
+        </Segment>
         <Segment
           selected={current === "studio"}
           icon={<PenTool />}

@@ -2369,6 +2369,13 @@ def studio_index():
     return send_from_directory(ROOT / "static", "studio.html")
 
 
+@app.get("/photo")
+def photo_index():
+    """NextDraw Photo: a photo turned into lines for a tool's pens, saved as a drawing this app plots
+    (docs/photo.md). Built from web/ into static/ with the other two."""
+    return send_from_directory(ROOT / "static", "photo.html")
+
+
 @app.get("/api/info")
 def info():
     model_list = [

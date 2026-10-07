@@ -1,5 +1,5 @@
-// The one rule the folders are for: shared code may not know which app is using it, and the two
-// apps may not reach into each other. Without this the boundary is a naming convention, and a
+// The one rule the folders are for: shared code may not know which app is using it, and the apps
+// may not reach into each other. Without this the boundary is a naming convention, and a
 // convention is exactly what drifted before the folders existed.
 //
 // Run by `npm run build`, so a crossing cannot ship. `npm run check` runs it on its own.
@@ -15,9 +15,10 @@ const walk = (d) => readdirSync(d).flatMap((n) => {
 const areaOf = (file) => relative(SRC, file).split("/")[0];
 
 const FORBIDDEN = {
-  shared: ["plot", "studio"],   // shared serves both, so it may know neither
-  plot: ["studio"],
-  studio: ["plot"],
+  shared: ["plot", "studio", "photo"],   // shared serves them all, so it may know none
+  plot: ["studio", "photo"],
+  studio: ["plot", "photo"],
+  photo: ["plot", "studio"],
 };
 
 const bad = [];
@@ -35,4 +36,4 @@ if (bad.length) {
   console.error("Shared code cannot import an app. If both apps need it, move it into src/shared.\n");
   process.exit(1);
 }
-console.log(`Boundaries hold: shared knows neither app, and the apps do not import each other.`);
+console.log(`Boundaries hold: shared knows no app, and the apps do not import each other.`);

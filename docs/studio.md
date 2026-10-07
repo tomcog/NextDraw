@@ -176,6 +176,7 @@ failure mode of drift is hatching that looks right on screen and comes out wrong
 
 **Both front ends live in this repo**, and in one `web/` folder: `index.html` is Plot, `studio.html`
 is Studio, and one `npm run build` writes both into `static/`. Studio's code is `web/src/studio/`.
+(Since 2026-10-06 there is a third, `photo.html`, NextDraw Photo, built the same way: see `photo.md`.)
 One repo, one install, one `start.command`, one deploy to odin.
 
 *Why:* this follows from one Flask process rather than being a separate choice. A Studio in its own

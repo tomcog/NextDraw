@@ -2,13 +2,13 @@ import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import { resolve } from "node:path";
 
-// Two front ends, one build: Plot at index.html and Studio at studio.html. They share this folder so
-// they share one install and one version of the component library - the drift between two copies is
+// Three front ends, one build: Plot at index.html, Studio at studio.html and Photo at photo.html. They
+// share this folder so they share one install and one version of the component library - the drift between two copies is
 // what the single-server decision was meant to avoid (see docs/studio.md).
 // The Flask server (server.py) serves the built pages from ../static at /static/.
 // During `npm run dev`, Vite proxies /api and /fonts to the running Flask server.
-// In dev, the pages answer at the same addresses Flask gives them: Plot at the bare origin and Studio
-// at /studio. Two sets of addresses - Studio at the root here, Plot at the root there - meant a link
+// In dev, the pages answer at the same addresses Flask gives them: Plot at the bare origin, Studio at
+// /studio and Photo at /photo. Two sets of addresses - Studio at the root here, Plot at the root there - meant a link
 // between the apps could land in the wrong one. The pages themselves live under /static/ in both.
 const sameAddressesAsFlask = () => ({
   name: "same-addresses-as-flask",
@@ -18,7 +18,7 @@ const sameAddressesAsFlask = () => ({
       // harness that runs this server probes the root for a plain 200 before it calls the server
       // ready - it never was, so every one of these was marked unhealthy and stopped under us.
       const [path, query] = (req.url ?? "").split("?");
-      const page = path === "/" || path === "" ? "/static/index.html" : path === "/studio" ? "/static/studio.html" : null;
+      const page = path === "/" || path === "" ? "/static/index.html" : path === "/studio" ? "/static/studio.html" : path === "/photo" ? "/static/photo.html" : null;
       if (page) req.url = query ? `${page}?${query}` : page;
       next();
     });
@@ -35,6 +35,7 @@ export default defineConfig({
       input: {
         index: resolve(__dirname, "index.html"),
         studio: resolve(__dirname, "studio.html"),
+        photo: resolve(__dirname, "photo.html"),
       },
     },
   },

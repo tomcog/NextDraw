@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>NextDraw Photo</title>
+    <!-- Add to Home Screen: opens full screen, like an app, on an iPad or phone. -->
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-title" content="NextDraw" />
+    <!-- A drawn circle, a lens: neither Plot's nib nor Studio's square, so the three tabs tell themselves apart. -->
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Ccircle cx='8' cy='8' r='5.5' fill='none' stroke='%23d6322b' stroke-width='2'/%3E%3C/svg%3E" />
+    <script>
+      // The theme the switch in the header last set, applied before the first paint so there is no
+      // flash of the wrong one. Light unless dark was chosen. Keep in step with src/lib/theme.ts.
+      (function () {
+        var chosen = "light";
+        try { if (localStorage.getItem("nextdraw-theme") === "dark") chosen = "dark"; } catch (e) {}
+        document.documentElement.dataset.theme = chosen;
+      })();
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/photo/main.tsx"></script>
+  </body>
+</html>
