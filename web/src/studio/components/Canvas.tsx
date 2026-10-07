@@ -6,7 +6,7 @@ import {
 } from "../../shared/lib/drawing/shapes";
 import { fillRuns, shapeAsOne, type Fill } from "../../shared/lib/drawing/hatch";
 import { photoMarks, photoOrigin } from "../../shared/lib/drawing/photo";
-import { usePhotoRead } from "../lib/usePhotoRead";
+import { usePhotoRead } from "../../shared/lib/drawing/usePhotoRead";
 import { pathData } from "../../shared/lib/drawing/path";
 import { curveStrokes, pointsAttr, DEFAULT_CURVE, type CurveKind } from "../../shared/lib/drawing/parametric";
 import { placementAttr, placements } from "../../shared/lib/drawing/repeat";

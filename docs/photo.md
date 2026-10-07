@@ -40,14 +40,24 @@ get complicated, and it never needs Studio's tools for drawing and transforming 
   `photo/lib/` (`calibration.ts`, `penPairs.ts`, `calibrationRead.ts`) and
   `photo/components/CalibrationSection.tsx`.
 
-## To move over from Studio, one piece at a time
+- **Photo conversion** (2026-10-06), moved from Studio. It is the whole of Photo's main view:
+  - The shared File card. Open a photo, or several separations, starts a new drawing named after it.
+    Open a drawing opens one with a photo in it (anything else is Studio's to edit). Photo also has
+    New, Save, Send to Plot and Edit in Studio, which saves and then opens the drawing in Studio.
+  - On the stage, Studio's conversion view: picture and lines side by side, overlay and mask views,
+    synced zoom, undo and redo. In the rail, the stroke and length count, Settings, and the photo's
+    card with hatching, tone bands, tone lines, colour and CMYK, fit and fill.
+  - Photo holds the whole drawing. Anything Studio added (crop marks, words) is kept and saved back.
+    The drawing worked on last is picked up again (`photo-last-file`), and `/photo?open=<path>` opens
+    a given one.
 
-Agree each move with Tom first. Studio's version keeps working until its replacement here does.
+  Studio still draws, moves and sizes photo layers, since they are part of its drawings, but it no
+  longer opens photos or tunes them. A photo picked in Studio shows a card with "Save and open in
+  Photo". `FileSection`, `useHistory` and `usePhotoRead` are shared now; `photoActions`, `PhotoCard`
+  and `ConvertStage` are Photo's.
 
-1. ~~Calibration~~: done.
-2. Photo conversion: `photo.ts`, `photoActions.ts`, `usePhotoRead.ts`, `PhotoCard`, `ConvertStage`.
-   These cover hatching, tone bands, tone lines and splitting by colour into palette pens.
-3. ~~Saving and Send to Plot~~: the model and `useDrawingFile` are shared now; Photo's photo
-   drawings use them once conversion is here.
-4. Then the photo-to-print plan: choose the best pens against the measured colours, hatch two pens
-   over each other, and show a predicted print beside the original.
+## Next
+
+The photo-to-print plan: choose the best pens against the measured colours, hatch two pens over
+each other for in-between colours, and show a predicted print beside the original. Agree it with
+Tom first.

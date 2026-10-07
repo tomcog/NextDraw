@@ -50,7 +50,7 @@
   object-fit: contain;
 }
 
-.empty {
+.stageEmpty {
   border: none;
   background: none;
   font: inherit;
@@ -149,3 +149,30 @@
 
 /* The palette's own colour, set apart from the measured ones after it. */
 .swatch[data-palette="true"] { margin-right: 0.25rem; }
+
+/* Fields side by side while they stay readable, then onto the next line - as in Studio's cards. */
+.fillRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 0.5rem;
+}
+
+.fillRow > * { flex: 1 1 4.5rem; min-width: 4.5rem; }
+
+.empty {
+  margin: 0;
+  font-size: 11px;
+  color: var(--ui-text-muted);
+}
+
+/* A photo band's ink, beside its layer number in the band switch. */
+.bandDot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  margin-right: 4px;
+  border-radius: 50%;
+  box-shadow: inset 0 0 0 1px rgb(0 0 0 / 0.2);
+  vertical-align: middle;
+}

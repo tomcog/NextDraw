@@ -1,4 +1,4 @@
-// What is done to a photo in Studio: putting one in, splitting it into layers by value, by colour or
+// What is done to a photo in Photo (moved from Studio, 2026-10-06): putting one in, splitting it into layers by value, by colour or
 // into CMYK plates, sizing it to the page, turning it, replacing its picture, and its settings. Each
 // acts on the chosen photo - and on all its layers where it should - through the app's own state,
 // which it is handed, so App.tsx keeps the state and this keeps what is done with it.
@@ -6,7 +6,6 @@
 import type { Dispatch, SetStateAction } from "react";
 import { lightness } from "../../shared/lib/color";
 import type { PenColor, Preset } from "../../shared/lib/types";
-import type { Tool } from "../components/Canvas";
 import {
   BAND_NAMES, LAYER_SETTINGS, MOST_LAYERS, PHOTO_DEFAULTS, PLATES, PLATE_AIMS, colourGroups, darkestOf, isColourful, matchPens, photoMode,
   placeOnPage, plateNamed, platePens, readTones, stemWithoutPlate, turnedCopy, turnedCrop, workingCopy, type Photo, type PhotoPart, type Plate,
@@ -34,12 +33,11 @@ export interface PhotoContext {
   record: () => void;
   addShape: (shape: Shape) => void;
   pick: (id: string | null) => void;
-  setTool: (tool: Tool) => void;
   setMessage: (message: { text: string; ok: boolean }) => void;
 }
 
 export function photoActions(ctx: PhotoContext) {
-  const { chosen, shapes, setShapes, layers, setLayers, active, setActiveLayer, page, tool: tool2, all: photoAll, record, addShape, pick, setTool, setMessage } = ctx;
+  const { chosen, shapes, setShapes, layers, setLayers, active, setActiveLayer, page, tool: tool2, all: photoAll, record, addShape, pick, setMessage } = ctx;
   const defaults = { spacingMm: ctx.spacingMm };
 
   // A photo, from a file on this Mac: made into a working copy, fitted to the page inside a half-inch
@@ -103,7 +101,6 @@ export function photoActions(ctx: PhotoContext) {
       setShapes((list) => [...list, ...made]);
       setActiveLayer(newLayers[0].id);
       pick(made[0].id);
-      setTool("select");
       setMessage({ text: "", ok: true }); // added: it's there on the page and in Layers, nothing to say
     } catch (err) {
       setMessage({ text: (err as Error).message, ok: false });
@@ -169,7 +166,6 @@ export function photoActions(ctx: PhotoContext) {
       setShapes((list) => [...list, ...made]);
       setActiveLayer(newLayers[0].id);
       pick(made[0].id);
-      setTool("select");
       // Pictures of other proportions are stretched over the first, which puts them out of register.
       const aspect = first.copy.width / first.copy.height;
       const odd = copies.filter(({ copy }) => Math.abs(copy.width / copy.height / aspect - 1) > 0.01).map(({ file }) => file.name);

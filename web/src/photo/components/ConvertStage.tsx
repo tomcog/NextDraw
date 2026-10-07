@@ -2,7 +2,7 @@ import { Segment, SegmentedControl, Toolbar } from "@tomcoggia/ui";
 import { Columns2, Contrast, Layers, Maximize, Redo2, Undo2, ZoomIn, ZoomOut } from "lucide-react";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { photoMarks, photoMask, type Photo } from "../../shared/lib/drawing/photo";
-import { usePhotoRead } from "../lib/usePhotoRead";
+import { usePhotoRead } from "../../shared/lib/drawing/usePhotoRead";
 import styles from "./ConvertStage.module.css";
 
 /**

@@ -1,0 +1,6 @@
+/* The File card's buttons in its heading, closer together than other cards' - a drawer and Save. */
+.headerTools {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+}

@@ -44,3 +44,11 @@ export function openInStudio(path: string) {
   const url = `${APP_URL.studio}?open=${encodeURIComponent(path)}`;
   if (!window.open(url, "_blank")) window.location.href = url;
 }
+
+/**
+ * Photo, on a drawing: a new tab, as for Studio - the one open could be in the middle of a photo.
+ */
+export function openInPhoto(path: string) {
+  const url = `${APP_URL.photo}?open=${encodeURIComponent(path)}`;
+  if (!window.open(url, "_blank")) window.location.href = url;
+}

@@ -1,12 +1,12 @@
 import { useRef } from "react";
 import { Button, ButtonRound, Card, Checkbox, InputSelect, Segment, SegmentedControl } from "@tomcoggia/ui";
 import { RotateCcwSquare, RotateCwSquare } from "lucide-react";
-import { Section } from "../../../shared/components/controls/Section";
-import { NumberField } from "../../../shared/components/controls/NumberField";
-import controls from "../../../shared/components/controls/controls.module.css";
-import { BLACK_SHARE, CENTER_DEFAULTS, KEY_FROM, MOST_LAYERS, OUTLINE_DEFAULTS, PLATES, PLATE_AIMS, SILHOUETTE_DEFAULTS, WAVE_DEFAULTS, photoMarks, photoMode, type Photo, type Plate } from "../../../shared/lib/drawing/photo";
-import { boxOf, type Layer, type Shape } from "../../../shared/lib/drawing/shapes";
-import styles from "../../App.module.css";
+import { Section } from "../../shared/components/controls/Section";
+import { NumberField } from "../../shared/components/controls/NumberField";
+import controls from "../../shared/components/controls/controls.module.css";
+import { BLACK_SHARE, CENTER_DEFAULTS, KEY_FROM, MOST_LAYERS, OUTLINE_DEFAULTS, PLATES, PLATE_AIMS, SILHOUETTE_DEFAULTS, WAVE_DEFAULTS, photoMarks, photoMode, type Photo, type Plate } from "../../shared/lib/drawing/photo";
+import { boxOf, type Layer, type Shape } from "../../shared/lib/drawing/shapes";
+import styles from "../App.module.css";
 
 /** What the card does to the photo. Each acts on the chosen photo, and on all its layers where it should. */
 export interface PhotoActions {

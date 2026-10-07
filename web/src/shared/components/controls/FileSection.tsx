@@ -1,9 +1,9 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { ButtonRound, InputText, Segment, Toolbar, ToolbarExpander } from "@tomcoggia/ui";
-import { File as FileIcon, FileInput, FilePlus, FolderOpen, ImagePlus, Save, Send } from "lucide-react";
-import { Section } from "../../../shared/components/controls/Section";
-import controls from "../../../shared/components/controls/controls.module.css";
-import styles from "../../App.module.css";
+import { File as FileIcon, FileInput, FilePlus, FolderOpen, ImagePlus, PenTool, Save, Send } from "lucide-react";
+import { Section } from "./Section";
+import controls from "./controls.module.css";
+import styles from "./FileSection.module.css";
 
 interface Props {
   /** The drawing's name, and where it was last saved, if it has been. */
@@ -17,15 +17,22 @@ interface Props {
   /** The question asked before a new drawing replaces one with unsaved work, when it's being asked. */
   confirm: ReactNode;
   onOpen: () => void;
-  onAddLayer: () => void;
-  onOpenPhotos: (files: File[]) => void;
+  /** Studio: another file onto this drawing, as a layer. */
+  onAddLayer?: () => void;
+  /** Photo: a photo, or several separations, as a new drawing. */
+  onOpenPhotos?: (files: File[]) => void;
   onNew: () => void;
+  /** Photo: save, then carry on with the drawing in Studio - crop marks, words, anything drawn. */
+  onEditInStudio?: () => void;
   onSendToPlot: () => void;
   onSave: () => void;
 }
 
-/** The File card: the drawing's name, where it's saved, and opening, starting, sending and saving. */
-export function FileSection({ name, onName, saved, dirty, hasShapes, busy, confirm, onOpen, onAddLayer, onOpenPhotos, onNew, onSendToPlot, onSave }: Props) {
+/**
+ * Shared: the File card - the drawing's name, where it's saved, and opening, starting, sending and
+ * saving. The same card in Studio and Photo; the buttons only one app has are passed in by that app.
+ */
+export function FileSection({ name, onName, saved, dirty, hasShapes, busy, confirm, onOpen, onAddLayer, onOpenPhotos, onNew, onEditInStudio, onSendToPlot, onSave }: Props) {
   const photoInput = useRef<HTMLInputElement>(null);
   // The drawer: its buttons each do one thing and fold it, so a click anywhere else in the app
   // folds it too, as the row menus do.
@@ -65,22 +72,31 @@ export function FileSection({ name, onName, saved, dirty, hasShapes, busy, confi
               </Segment>
               {/* Another file onto this drawing, a layer of its own: the browser's "Add as layer",
                 without the ticking. */}
+              {onAddLayer && (
               <Segment icon={<FileInput />} hideLabel title="Add an SVG or Illustrator file to this drawing, as a new layer" disabled={busy || !hasShapes} onClick={onAddLayer}>
                 Add as a layer
               </Segment>
-              {/* A photo is opened rather than drawn: it becomes a new drawing, in image conversion. */}
+              )}
+              {/* A photo is opened rather than drawn: it becomes a new drawing, turned into lines. */}
+              {onOpenPhotos && (
               <Segment
                 icon={<ImagePlus />}
                 hideLabel
-                title="Open a photo to turn into lines, matched to the tool's pens: a new drawing, in image conversion. Pick several greyscale separations at once (…_C, …_M, …_Y, …_K) for a layer each"
+                title="Open a photo to turn into lines, matched to the tool's pens: a new drawing. Pick several greyscale separations at once (…_C, …_M, …_Y, …_K) for a layer each"
                 disabled={busy}
                 onClick={() => photoInput.current?.click()}
               >
                 Open a photo
               </Segment>
+              )}
               <Segment icon={<FilePlus />} hideLabel title="Close this drawing and start a new one" disabled={busy} onClick={onNew}>
                 New drawing
               </Segment>
+              {onEditInStudio && (
+                <Segment icon={<PenTool />} hideLabel title="Save this drawing and carry on with it in Studio, in its own tab" disabled={busy || !hasShapes} onClick={onEditInStudio}>
+                  Edit in Studio
+                </Segment>
+              )}
               <Segment icon={<Send />} hideLabel title="Save this drawing and open it in Plot, ready to draw" disabled={busy || !hasShapes} onClick={onSendToPlot}>
                 Send to Plot
               </Segment>
@@ -93,7 +109,7 @@ export function FileSection({ name, onName, saved, dirty, hasShapes, busy, confi
             hidden
             multiple
             onChange={(e) => {
-              onOpenPhotos([...(e.target.files ?? [])]);
+              onOpenPhotos?.([...(e.target.files ?? [])]);
               e.target.value = ""; // so the same photo can be opened again
             }}
           />

@@ -8,7 +8,7 @@ import { FileBrowser, type CombineResult, type OpenResult } from "../shared/comp
 import { Section } from "../shared/components/controls/Section";
 import controls from "../shared/components/controls/controls.module.css";
 import { api } from "../shared/lib/api";
-import { showApp } from "../shared/lib/apps";
+import { openInPhoto, showApp } from "../shared/lib/apps";
 import { load, save as remember } from "../shared/lib/storage";
 import { DEFAULT_SETTINGS, PAPER_SIZES } from "../shared/lib/constants";
 import type { Info, PenColor, PlotterModel, Preset } from "../shared/lib/types";
@@ -19,7 +19,6 @@ import { PreviewToolbar, SetupToolbar, type View } from "../shared/components/Pr
 import { StatusBanner } from "../shared/components/StatusBanner";
 import type { Zoom } from "../shared/components/BedCanvas";
 import { Canvas, type Tool } from "./components/Canvas";
-import { ConvertStage, type ConvertView } from "./components/ConvertStage";
 import { mergeLines } from "./lib/mergeLines";
 import { SizePopover } from "./components/SizePopover";
 import { StudioHeader } from "./components/StudioHeader";
@@ -27,26 +26,22 @@ import { ThemeToggle } from "../shared/components/ThemeToggle";
 import { canFill, newFillId, shapeAsOne, type Fill } from "../shared/lib/drawing/hatch";
 import { type Curve, type Point } from "../shared/lib/drawing/parametric";
 import { fontNames, loadFont, type StrokeFont } from "../shared/lib/drawing/font";
-import { flattenPath } from "../shared/lib/drawing/path";
 import { fitText } from "../shared/lib/drawing/text";
 import { type Repeat } from "../shared/lib/drawing/repeat";
 import { parseDrawing } from "../shared/lib/drawing/parse";
-import { type PhotoMarks, PLATES, photoMarks, placeOnPage, stemWithoutPlate, type Photo } from "../shared/lib/drawing/photo";
-import { usePhotoRead } from "./lib/usePhotoRead";
-import { photoActions } from "./lib/photoActions";
-import { useHistory } from "./lib/useHistory";
+import { PLATES, placeOnPage } from "../shared/lib/drawing/photo";
+import { useHistory } from "../shared/lib/useHistory";
 import { useDrawingFile } from "../shared/lib/drawing/useDrawingFile";
 import { bakedCopies, flattened, handOutFills, joined, markRuns, simplified, splitApart } from "./lib/shapeEdits";
 import { PaletteMenu } from "../shared/components/controls/PaletteMenu";
 import { Hints } from "../shared/components/controls/Hints";
 import { RowMenu } from "./components/controls/RowMenu";
 import { ShapeList } from "./components/panels/ShapeList";
-import { PhotoCard } from "./components/panels/PhotoCard";
 import { canFlatten, hasShapeCard, ShapeCard, type ShapePanel } from "./components/panels/ShapeCard";
 import { TextCard } from "./components/panels/TextCard";
 import { SelectionCard } from "./components/panels/SelectionCard";
 import { FillPanel } from "./components/panels/FillPanel";
-import { FileSection } from "./components/panels/FileSection";
+import { FileSection } from "../shared/components/controls/FileSection";
 import { GridSection } from "./components/panels/GridSection";
 import { ToolPicker } from "./components/panels/ToolPicker";
 import { LayersSection, type AlignEdge } from "./components/panels/LayersSection";
@@ -108,22 +103,6 @@ function uniqueName(wanted: string, taken: string[]): string {
  let n = 2;
  while (taken.includes(`${base} ${n}`)) n++;
  return `${base} ${n}`;
-}
-
-/**
- * How far the pen travels drawing a photo's lines, in inches. Worked out once for each set of lines:
- * the same lines come back as the same object from photoMarks' own cache.
- */
-const lengths = new WeakMap<PhotoMarks, number>();
-function drawnLength(marks: PhotoMarks) {
- const known = lengths.get(marks);
- if (known !== undefined) return known;
- let length = 0;
- for (const d of marks.passes) {
-  for (const run of flattenPath(d)) for (let i = 1; i < run.length; i++) length += Math.hypot(run[i].x - run[i - 1].x, run[i].y - run[i - 1].y);
- }
- lengths.set(marks, length);
- return length;
 }
 
 /**
@@ -533,7 +512,7 @@ export default function App() {
     ArrowLeft: [-step, 0], ArrowRight: [step, 0], ArrowUp: [0, -step], ArrowDown: [0, step],
    };
    const move = by[e.key];
-   if (!move || e.metaKey || e.ctrlKey || converting.current) return;
+   if (!move || e.metaKey || e.ctrlKey) return;
    const el = document.activeElement;
    // In a field the arrows belong to the text, or to the number being stepped.
    if (el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement || (el as HTMLElement)?.isContentEditable) return;
@@ -549,7 +528,7 @@ export default function App() {
  useEffect(() => {
   const onKey = (e: KeyboardEvent) => {
    const picked = TOOL_KEYS[e.key.toLowerCase()];
-   if (!picked || converting.current) return;
+   if (!picked) return;
    if (e.metaKey || e.ctrlKey || e.altKey) return; // paste, and whatever else the system has
    const el = document.activeElement;
    if (el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement || (el as HTMLElement)?.isContentEditable) return;
@@ -563,7 +542,7 @@ export default function App() {
  // browser's own copy and paste belong to the text.
  useEffect(() => {
   const onKey = (e: KeyboardEvent) => {
-   if (!(e.metaKey || e.ctrlKey) || e.altKey || converting.current) return;
+   if (!(e.metaKey || e.ctrlKey) || e.altKey) return;
    const el = document.activeElement;
    if (el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement || (el as HTMLElement)?.isContentEditable) return;
    const key = e.key.toLowerCase();
@@ -586,7 +565,7 @@ export default function App() {
  useEffect(() => {
   const onKey = (e: KeyboardEvent) => {
    if (e.key !== "Delete" && e.key !== "Backspace") return;
-   if (!selected.length || e.metaKey || e.ctrlKey || e.altKey || converting.current) return;
+   if (!selected.length || e.metaKey || e.ctrlKey || e.altKey) return;
    const el = document.activeElement;
    if (el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement || (el as HTMLElement)?.isContentEditable) return;
    e.preventDefault();
@@ -598,9 +577,8 @@ export default function App() {
 
  // Close whatever is open and begin again on a blank page. The page size stays as it is: it's the
  // paper you're working on today, and a new drawing is almost always for the same sheet.
- // Which new drawing is waiting on the question: a blank one, or a picture opened for image
- // conversion.
- const [confirmNew, setConfirmNew] = useState<"blank" | "image" | null>(null);
+ // Whether a new drawing is waiting on the question about unsaved work.
+ const [confirmNew, setConfirmNew] = useState<"blank" | null>(null);
  const newDrawing = useCallback(() => {
   const noShapes: Shape[] = [];
   const noFills: Fill[] = [];
@@ -614,7 +592,6 @@ export default function App() {
   setSelected([]);
   clearHistory();
   setConfirmNew(null);
-  setConvertId(null);
   setMessage({ text: "New drawing", ok: true });
   // An empty page is not unsaved work, and the paper it's on came from the drawing before it.
   started("Untitled", { shapes: noShapes, fills: noFills, layers: onlyLayer, page });
@@ -626,28 +603,7 @@ export default function App() {
   if (dirty && shapes.length) setConfirmNew("blank");
   else newDrawing();
  };
- const beginNew = () => (confirmNew === "image" && imageWaiting.current ? startImage(imageWaiting.current) : newDrawing());
-
- // A photo opened with the File card's photo button: a new drawing named after it, the photo placed
- // on the paper and matched to the tool's pens, and then image conversion. Several at once are
- // separations - one photo already split into plates, a layer each. The photo goes in once the new
- // drawing is in place, and is converted once it's there.
- const imageWaiting = useRef<File[] | null>(null);
- const [pendingImage, setPendingImage] = useState<File[] | null>(null);
- const [convertNext, setConvertNext] = useState(false);
- const openPhotos = (files: File[]) => {
-  if (!files.length) return;
-  if (dirty && shapes.length) {
-   imageWaiting.current = files;
-   setConfirmNew("image");
-  } else startImage(files);
- };
- const startImage = (files: File[]) => {
-  imageWaiting.current = null;
-  newDrawing();
-  setName(files.length > 1 ? stemWithoutPlate(files[0].name) : files[0].name.replace(/\.[^.]+$/, ""));
-  setPendingImage(files);
- };
+ const beginNew = () => newDrawing();
 
  const openDrawing = useCallback((res: OpenResult, note: (n: number) => string) => {
   const drawing = parseDrawing(res.svg ?? "");
@@ -659,7 +615,6 @@ export default function App() {
   setActiveLayer(drawing.layers[0]?.id ?? "");
   setSelected([]);
   clearHistory();
-  setConvertId(null);
   opened(res, drawing);
   // The drawing comes up in the tool it was saved for, in either app - unless that tool is gone
   // from the presets, when the one already chosen stays. Not a change to the drawing: it's the
@@ -790,20 +745,11 @@ export default function App() {
  useEffect(() => {
   if (!hasPhoto && view === "photo") setView("outline");
  }, [hasPhoto, view]);
- // Whether a photo's settings go to the layer being set, or to all its layers at once.
- const [photoAll, setPhotoAll] = useState(false);
 
  const tool2 = presets.find((t) => t.name === toolName) ?? null;
 
  // Setup: away from the drawing, getting the drawing tools ready.
  const [setupOpen, setSetupOpen] = useState(false);
-
- // Image conversion: the one photo being worked on, on its own - its picture and lines take the
- // stage, and the rail holds how it's converted. The drawing waits, as it does for Setup; the keys
- // that would change it are off while it's hidden.
- const [convertId, setConvertId] = useState<string | null>(null);
- const [convertView, setConvertView] = useState<ConvertView>("side");
- const converting = useRef(false);
 
  const palette: PenColor[] = tool2?.palette?.length ? tool2.palette : [PLAIN_PEN];
  // Darkest last in the list, so the default pen is the one you'd reach for first.
@@ -874,28 +820,6 @@ export default function App() {
  // nothing is edited behind your back when a whole group is selected.
  const chosen = selected.length === 1 ? shapes.find((s) => s.id === selected[0]) ?? null : null;
 
- // The photo being converted, while there still is one: undo can take it away.
- const converted = convertId ? shapes.find((s) => s.id === convertId && s.kind === "photo" && s.photo) ?? null : null;
- converting.current = Boolean(converted);
- useEffect(() => {
-  if (convertId && !converted) setConvertId(null);
- }, [convertId, converted]);
- const convertBox = converted ? boxOf(converted) : null;
- // All of the photo's layers, bottom first, each in its pen: the lines it comes out as, together.
- const convertParts = converted
-  ? layers.flatMap((l) => shapes.filter((sh) => sh.layerId === l.id && sh.kind === "photo" && sh.photo && (sh.id === converted.id || (converted.photo!.group && sh.photo.group === converted.photo!.group))).map((sh) => ({ photo: sh.photo!, color: l.color })))
-  : [];
- const convertMarks = convertBox ? convertParts.map((part) => photoMarks(part.photo, convertBox.x1 - convertBox.x0, convertBox.y1 - convertBox.y0)) : [];
- const convertStrokes = convertMarks.reduce((n, m) => n + (m?.strokes ?? 0), 0);
- const convertRead = convertMarks.length > 0 && convertMarks.every(Boolean);
- // How far the pen travels drawing it all, in inches: what a plot of it costs, beside how many strokes.
- const convertLength = convertMarks.reduce((sum, m) => sum + (m ? drawnLength(m) : 0), 0);
- /** Into image conversion with a photo: it stays chosen, so its card is the one in the rail. */
- const openConvert = (id: string) => {
-  setSelected([id]);
-  setSetupOpen(false);
-  setConvertId(id);
- };
  // The group id of the one shape picked, when what's picked is exactly one whole shape of several paths.
  const pickedGroup = useMemo(() => {
   const group = shapes.find((s) => s.id === selected[0])?.group;
@@ -945,12 +869,12 @@ export default function App() {
  };
  // Turning the active layer as one, about the middle of the box round it: what dragging the turn grip
  // does to the layer picked whole, by an exact angle. Photos stay as they are - they stand square to
- // the page, and their layers are in register with each other - and turn from their own card.
+ // the page, and their layers are in register with each other - and turn in Photo.
  const turnLayer = (deg: number) => {
   const turning = onActive.filter((sh) => !sh.photo);
   if (!deg) return;
   if (!turning.length) {
-   setMessage({ text: "A photo turns from its own card, where all its layers turn together", ok: false });
+   setMessage({ text: "A photo is turned in Photo, where all its layers turn together", ok: false });
    return;
   }
   const b = boxAround(turning);
@@ -958,7 +882,7 @@ export default function App() {
   record();
   setShapes((list) => list.map((sh) => turned.get(sh.id) ?? sh));
   setMessage(turning.length < onActive.length
-   ? { text: "The photo on this layer stays as it is: turn it from its own card", ok: false }
+   ? { text: "The photo on this layer stays as it is: turn it in Photo", ok: false }
    : { text: "", ok: true });
  };
  const pickedIds = useMemo(() => new Set(selected), [selected]);
@@ -969,33 +893,6 @@ export default function App() {
   const ofLayer = [...groupsOf(shapes.filter((s) => s.layerId === shapes.find((m) => m.group === group)?.layerId)).keys()];
   return groupLabel(membersOf(group), ofLayer.indexOf(group));
  }, [shapes, pickedGroup]); // eslint-disable-line react-hooks/exhaustive-deps
- // The chosen photo's card counts its lines, which can only be made once the photo has been read.
- usePhotoRead(chosen?.photo?.src);
-
- const {
-  addPhoto, addSeparations, setSeparationPlate, switchPhotoMode, setKeyLayer, splitPhoto, splitPhotoByColor,
-  placePhoto, photoScale, setPhotoScale, setPhotoMargin, replacePhoto, turnPhoto, setPhotoOf,
- } = photoActions({
-  chosen, shapes, setShapes, layers, setLayers, active, setActiveLayer, page, tool: tool2,
-  spacingMm: defaults.spacingMm, all: photoAll, record, addShape, pick, setTool, setMessage,
- });
-
- // The picture opened for conversion goes in once its new, empty drawing is in place...
- useEffect(() => {
-  if (!pendingImage || shapes.length) return;
-  const files = pendingImage;
-  setPendingImage(null);
-  setConvertNext(true);
-  if (files.length > 1) addSeparations(files);
-  else addPhoto(files[0]);
- }, [pendingImage, shapes.length]); // eslint-disable-line react-hooks/exhaustive-deps
- // ...and is converted once it's there and chosen.
- useEffect(() => {
-  if (!convertNext || chosen?.kind !== "photo") return;
-  setConvertNext(false);
-  openConvert(chosen.id);
- }, [convertNext, chosen]); // eslint-disable-line react-hooks/exhaustive-deps
-
  const newFill = (angle: number): Fill => ({
   id: newFillId(),
   shapeId: fillLead!.id,
@@ -1445,68 +1342,29 @@ export default function App() {
   </Card>
  );
 
- // The chosen photo's card: in the drawing's rail, and in image conversion's under its own.
+ // A photo layer is drawn, moved and sized here like anything else, but how it's turned into lines is
+ // set in Photo: saved first, so Photo opens what's on screen.
+ const editInPhoto = async () => {
+  const where = dirty || !saved ? await save() : saved;
+  if (where) openInPhoto(where.path);
+ };
  const photoCard = chosen?.kind === "photo" && chosen.photo ? (
-  <PhotoCard
-   shape={chosen as Shape & { photo: Photo }}
-   title={shapeName(chosen, onActive.indexOf(chosen))}
-   shapes={shapes}
-   layers={layers}
-   busy={busy}
-   all={photoAll}
-   onAll={setPhotoAll}
-   scale={(() => { const { b, fitW } = photoScale(chosen); return Math.round(((b.x1 - b.x0) / fitW) * 100); })()}
-   actions={{
-    turn: turnPhoto,
-    replace: replacePhoto,
-    setPlate: setSeparationPlate,
-    switchMode: switchPhotoMode,
-    set: setPhotoOf,
-    split: splitPhoto,
-    splitByColor: splitPhotoByColor,
-    setKeyLayer,
-    place: placePhoto,
-    setMargin: setPhotoMargin,
-    setScale: setPhotoScale,
-    pickBand: (id, layerId) => { pick(id); setActiveLayer(layerId); },
-   }}
-  />
+  <Card variant="flat" className={styles.controls}>
+   <div className={`${styles.cardBody} ${controls.cardSections}`}>
+    <Section title="Photo">
+     <p className={controls.hint}>This is a photo, drawn as lines. How it’s turned into lines - hatching, tone bands, colours - is set in Photo.</p>
+     <Button size="sm" variant="secondary" disabled={busy} onClick={editInPhoto}>Save and open in Photo</Button>
+    </Section>
+   </div>
+  </Card>
  ) : null;
 
- // Setup and image conversion both take the drawing's place; going to one leaves the other.
+ // Setup takes the drawing's place while it's open.
  const setupToolbar = (
   <SetupToolbar
    open={setupOpen}
-   onToggle={() => {
-    setConvertId(null);
-    setSetupOpen((open) => !open);
-   }}
+   onToggle={() => setSetupOpen((open) => !open)}
   />
- );
-
- // Image conversion's rail: what it is and how the lines come out, then the photo's own card.
- const convertLayer = converted ? layers.find((l) => l.id === converted.layerId) : undefined;
- const convertRail = converted && (
-  <>
-   <Card variant="flat" className={styles.controls}>
-    <div className={`${styles.cardBody} ${controls.cardSections}`}>
-     <Section
-      title="Image conversion"
-      action={<Button size="sm" variant="secondary" title="Leave image conversion: the drawing with its layers and tools, the photo drawn as set here" onClick={() => setConvertId(null)}>Edit as drawing</Button>}
-     >
-      <p className={controls.hint}>
-       Working out how best to draw this picture. Scroll over it to zoom, drag to move, double-click to see all of it.
-      </p>
-      <p className={controls.hint}>
-       {convertRead
-        ? `${convertStrokes.toLocaleString()} ${convertStrokes === 1 ? "stroke" : "strokes"}, ${convertLength * 0.0254 >= 1 ? `${(convertLength * 0.0254).toFixed(1)} m` : `${Math.round(convertLength * 25.4)} mm`} of drawing${convertParts.length > 1 ? ` in ${convertParts.length} pens` : convertLayer ? `, in ${convertLayer.name}` : ""}.`
-        : "Reading the photo…"}
-      </p>
-     </Section>
-    </div>
-   </Card>
-   {photoCard}
-  </>
  );
 
  /** The copied fill onto the chosen shape, or every fillable shape selected, in place of their own. */
@@ -1732,20 +1590,7 @@ export default function App() {
    />
 
    <main className={styles.layout}>
-    <section className={styles.stage} aria-label={converted ? "Image conversion" : "Drawing page"}>
-     {converted && convertBox ? (
-      <ConvertStage
-       photo={converted.photo!}
-       w={convertBox.x1 - convertBox.x0}
-       h={convertBox.y1 - convertBox.y0}
-       parts={convertParts}
-       view={convertView}
-       onView={setConvertView}
-       history={{ canUndo, canRedo, onUndo: undo, onRedo: redo }}
-       toolbar={setupToolbar}
-       disabled={busy}
-      />
-     ) : (
+    <section className={styles.stage} aria-label="Drawing page">
      <Canvas
       loupe={loupe}
       page={page}
@@ -1791,7 +1636,6 @@ export default function App() {
       onUpdate={updateShape}
       onEditStart={record}
      />
-     )}
     </section>
 
     <div className={styles.side}>
@@ -1814,7 +1658,6 @@ export default function App() {
          setBrowserAdds(true);
          setBrowserOpen(true);
         }}
-        onOpenPhotos={openPhotos}
         onNew={() => startNew()}
         onSendToPlot={sendToPlot}
         onSave={save}
@@ -1825,14 +1668,12 @@ export default function App() {
        <SettingsSection collapsibleKey="settings">
         {paperSection}
 
-        {!converted && <GridSection snapping={snapping} onSnapping={setSnapping} step={snapStep} onStep={setSnapStep} />}
+        <GridSection snapping={snapping} onSnapping={setSnapping} step={snapStep} onStep={setSnapStep} />
 
         <DrawingToolSection tools={presets} value={toolName} onPick={pickTool} collapsibleKey="pen" disabled={busy} />
        </SettingsSection>
       </div>
      </Card>
-     {/* Image conversion keeps the file and what it is drawn on and with; the rest is the drawing's. */}
-     {converted ? convertRail : (<>
 
      <ToolPicker tool={tool} onTool={setTool} />
 
@@ -1956,7 +1797,6 @@ export default function App() {
        }}
       />
      )}
-     </>)}
      </>)}
 
     </div>
