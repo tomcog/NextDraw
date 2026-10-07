@@ -84,6 +84,28 @@ average ΔE between the print and the photo, each averaged over patches 4 mm acr
   palette colour, which for EnerGel is the measured line core.
 - **Not yet modelled.** A building ink (a brush) darkening where its own lines cross.
 
+**Step 2, built.** Colour mode has a choice: **Best fit** (the default for a new colour split) or
+**By groups** (the old way: group the photo's colours, then give each group its nearest pen).
+
+- **Choosing pens** (`photo/lib/choosePens.ts`). Each pen is taken as it comes out solid on this
+  paper: its measured line colour moved from the paper it was measured on to this one, or its palette
+  colour if it hasn't been measured. For a sample of 3000 pixels and each pen, it works out the share
+  of paper the pen should cover to come nearest, mixed in linear light (`fitCover` in the shared
+  `photo.ts`). Pens are added one at a time, each the one that helps most, then swapped while any
+  swap helps.
+- **Drawing them.** Each point goes to the pen that comes nearest there, or to bare paper if nothing
+  beats it. That pen hatches it with as many passes as come nearest the share it wants
+  (`coverSteps`, `passesFor`). This needs the pen's width, so `penMm` and `fitPaper` are saved with
+  the photo and Studio redraws it the same way.
+- **The Inks number** shows the estimated ΔE with one fewer, the same and one more pen.
+
+On the colour test picture with EnerGel, the predicted print went from 22.3 ΔE (5 pens, by groups)
+to 17.3 ΔE (4 pens, best fit). The estimate for 4 pens was 16.2. The difference is the hatching's
+fixed steps. At EnerGel's 0.35 mm spacing, a pen covers 0, 40, 64, 88 or 96% of the paper, so a pale
+colour has nothing between bare paper and 40%.
+
 ## Next
 
-Step 2 of photo to print: choosing the best N pens.
+Step 3: two pens hatched over each other, for colours no single pen makes, such as olive (yellow
+under a dark pen). Also to settle: how pale colours are reached. Wider spacing for colour layers, or
+lighter first passes, would give steps between bare paper and 40%.

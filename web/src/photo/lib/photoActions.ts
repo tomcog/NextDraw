@@ -8,9 +8,10 @@ import { lightness } from "../../shared/lib/color";
 import type { PenColor, Preset } from "../../shared/lib/types";
 import {
   BAND_NAMES, LAYER_SETTINGS, MOST_LAYERS, PHOTO_DEFAULTS, PLATES, PLATE_AIMS, colourGroups, darkestOf, isColourful, matchPens, photoMode,
-  placeOnPage, plateNamed, platePens, readTones, stemWithoutPlate, turnedCopy, turnedCrop, workingCopy, type Photo, type PhotoPart, type Plate,
+  placeOnPage, plateNamed, platePens, readTones, hexLinear, linearHex, stemWithoutPlate, turnedCopy, turnedCrop, workingCopy, type Photo, type PhotoPart, type Plate,
 } from "../../shared/lib/drawing/photo";
 import { boxOf, newLayerId, newShapeId, type Layer, type Page, type Shape } from "../../shared/lib/drawing/shapes";
+import { choosePens, type Candidate } from "./choosePens";
 
 export interface PhotoContext {
   /** The one shape picked, if one is. */
@@ -29,6 +30,8 @@ export interface PhotoContext {
   spacingMm: number;
   /** Whether a change of settings goes to all the photo's layers, not just the one picked. */
   all: boolean;
+  /** The paper being printed on: pens are chosen for how they come out on it. */
+  paper: string;
   /** Take an undo snapshot before a change. */
   record: () => void;
   addShape: (shape: Shape) => void;
@@ -37,7 +40,7 @@ export interface PhotoContext {
 }
 
 export function photoActions(ctx: PhotoContext) {
-  const { chosen, shapes, setShapes, layers, setLayers, active, setActiveLayer, page, tool: tool2, all: photoAll, record, addShape, pick, setMessage } = ctx;
+  const { chosen, shapes, setShapes, layers, setLayers, active, setActiveLayer, page, tool: tool2, all: photoAll, paper, record, addShape, pick, setMessage } = ctx;
   const defaults = { spacingMm: ctx.spacingMm };
 
   // A photo, from a file on this Mac: made into a working copy, fitted to the page inside a half-inch
@@ -261,7 +264,7 @@ export function photoActions(ctx: PhotoContext) {
         `Back to how it was split by ${to}`,
       );
     } else if (to === "colour") {
-      splitPhotoByColor(3, { modes });
+      splitPhotoBestFit(3, { modes });
     } else if (to === "cmyk") {
       splitPhotoCmyk({ modes });
     } else {
@@ -419,17 +422,80 @@ export function photoActions(ctx: PhotoContext) {
           layerName: pen.name,
           layerColor: pen.color,
           shapeName: `${name} ${pen.name}`,
-          photo: { band: undefined, key: undefined, plate: undefined, plates: undefined, ink: pen.color, regions: groups, region, regionInks, keyInk: withKey ? keyPen!.color : undefined, ...extra },
+          photo: { band: undefined, key: undefined, plate: undefined, plates: undefined, fitPaper: undefined, penMm: undefined, ink: pen.color, regions: groups, region, regionInks, keyInk: withKey ? keyPen!.color : undefined, ...extra },
         })),
         ...(withKey ? [{
           layerName: `${keyPen!.name} key`,
           layerColor: keyPen!.color,
           shapeName: `${name} ${keyPen!.name} key`,
-          photo: { band: undefined, key: true, plate: undefined, plates: undefined, ink: keyPen!.color, regions: groups, region: undefined, regionInks, keyInk: keyPen!.color, ...extra },
+          photo: { band: undefined, key: true, plate: undefined, plates: undefined, fitPaper: undefined, penMm: undefined, ink: keyPen!.color, regions: groups, region: undefined, regionInks, keyInk: keyPen!.color, ...extra },
         }] : []),
       ],
       parts.length + (withKey ? 1 : 0) > 1 ? chosen.photo.group ?? newShapeId() : undefined,
       `Split into ${parts.map((p) => p.pen.name).join(", ")}${withKey ? `, with ${keyPen!.name} as the key` : ""}${parts.length < n ? ` - the rest was paper, or near enough another` : ""}`,
+    );
+  };
+
+  /**
+   * The tool's pens as candidates for a photo on this paper: each pen's colour as it comes out solid -
+   * its measured line where the tool has been calibrated, its palette colour where it hasn't - moved
+   * from the paper it was measured on to this one, as a filter is.
+   */
+  const candidates = (): { pens: PenColor[]; list: Candidate[] } => {
+    const pens = tool2?.palette ?? [];
+    const measuredOn = hexLinear(tool2?.calibration?.paper ?? "#ffffff");
+    const onto = hexLinear(paper);
+    const list = pens.map((pen) => {
+      const line = hexLinear(tool2?.calibration?.pens[pen.name]?.line ?? pen.color);
+      return { name: pen.name, onPaper: linearHex(line.map((c, i) => onto[i] * Math.min(1, c / Math.max(1e-4, measuredOn[i])))) };
+    });
+    return { pens, list };
+  };
+
+  /** The best `count` pens for the chosen photo on this paper, and how near the photo each count comes. */
+  const bestPens = (count: number) => {
+    if (!chosen?.photo) return null;
+    const { pens, list } = candidates();
+    const choice = choosePens(chosen.photo.src, chosen.photo.brightness, chosen.photo.contrast, list, paper, count);
+    return choice ? { ...choice, pens: choice.pens.map((k) => ({ pen: pens[k], onPaper: list[k].onPaper })) } : null;
+  };
+
+  /**
+   * Split the chosen photo by best fit: the `count` pens of the tool that, as they really come out on
+   * this paper, come nearest the photo between them, a layer each. Each point is drawn by the pen that
+   * comes nearest there, as much of it as matches. Layers stack by their pens' lightness, lightest at
+   * the bottom.
+   */
+  const splitPhotoBestFit = (count: number, extra: Partial<Photo> = {}) => {
+    if (!chosen?.photo) return;
+    if (!tool2?.palette?.length) {
+      setMessage({ text: `${tool2?.name ?? "This tool"} has no palette of inks to split a photo into`, ok: false });
+      return;
+    }
+    const n = Math.min(MOST_LAYERS, Math.max(1, Math.round(count)));
+    const best = bestPens(n);
+    if (!best) {
+      setMessage({ text: "The photo is still being read: try again in a moment", ok: false });
+      return;
+    }
+    const regions = best.pens.map((p) => p.onPaper);
+    const regionInks = best.pens.map((p) => p.pen.color);
+    const parts = best.pens
+      .map((p, region) => ({ pen: p.pen, region }))
+      .sort((a, b) => (lightness(b.pen.color) ?? 0) - (lightness(a.pen.color) ?? 0));
+    const { name } = photoStem();
+    rebuildPhoto(
+      parts.map(({ pen, region }) => ({
+        layerName: pen.name,
+        layerColor: pen.color,
+        shapeName: `${name} ${pen.name}`,
+        photo: {
+          band: undefined, key: undefined, keyInk: undefined, plate: undefined, plates: undefined,
+          ink: pen.color, regions, region, regionInks, fitPaper: paper, penMm: tool2.settings.pen_width ?? 0.5, ...extra,
+        },
+      })),
+      parts.length > 1 ? chosen.photo.group ?? newShapeId() : undefined,
+      `Best ${parts.length === 1 ? "pen" : `${parts.length} pens`} for this photo on this paper: ${parts.map((p) => p.pen.name).join(", ")}`,
     );
   };
 
@@ -593,7 +659,7 @@ export function photoActions(ctx: PhotoContext) {
   };
 
   return {
-    addPhoto, addSeparations, setSeparationPlate, switchPhotoMode, setKeyLayer, splitPhoto, splitPhotoByColor,
+    addPhoto, addSeparations, setSeparationPlate, switchPhotoMode, setKeyLayer, splitPhoto, splitPhotoByColor, splitPhotoBestFit, bestPens,
     placePhoto, photoScale, setPhotoScale, setPhotoMargin, replacePhoto, turnPhoto, setPhotoOf,
   };
 }

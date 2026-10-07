@@ -18,6 +18,8 @@ export interface PhotoActions {
   set: (patch: Partial<Photo>) => void;
   split: (count: number) => void;
   splitByColor: (count: number) => void;
+  /** Split by colour into the `count` pens that come nearest the photo as they really come out on paper. */
+  splitBestFit: (count: number) => void;
   setKeyLayer: (on: boolean) => void;
   place: (how: "fit" | "fill", margin: number) => void;
   setMargin: (margin: number) => void;
@@ -38,6 +40,8 @@ interface Props {
   onAll: (all: boolean) => void;
   /** The photo's size as a percent of what Fit gives it. */
   scale: number;
+  /** Split by best fit: how near the photo the best pens come, one fewer, as many and one more (ΔE). */
+  estimates?: { pens: number; err: number }[];
   actions: PhotoActions;
 }
 
@@ -45,9 +49,11 @@ interface Props {
  * The chosen photo's card - in the drawing's rail, and in image conversion's under its own: how it is
  * split into layers, sized to the page, and what each layer's lines are drawn as.
  */
-export function PhotoCard({ shape, title, shapes, layers, busy, all, onAll, scale, actions }: Props) {
+export function PhotoCard({ shape, title, shapes, layers, busy, all, onAll, scale, estimates, actions }: Props) {
   const replaceInput = useRef<HTMLInputElement>(null);
   const photo = shape.photo;
+  // How many inks a photo split by colour is in: its layers, not counting the key.
+  const inks = photo.group ? shapes.filter((sh) => sh.photo?.group === photo.group && !sh.photo?.key).length : 1;
   const b = boxOf(shape);
   const marks = photoMarks(photo, b.x1 - b.x0, b.y1 - b.y0);
   return (
@@ -111,14 +117,25 @@ export function PhotoCard({ shape, title, shapes, layers, busy, all, onAll, scal
                 <NumberField label="Black" unit="%" min={0} max={100} step={5} value={Math.round((photo.blackShare ?? BLACK_SHARE) * 100)} onChange={(v) => actions.set({ blackShare: v / 100 })} />
               ) : photo.ink ? (
                 <>
+                  {/* How the pens are chosen: the ones that come nearest the photo as they really come
+                    out on paper, or the nearest pen to each of the photo's own colour groups. */}
+                  <SegmentedControl size="sm" variant="dark" aria-label="Choose pens">
+                    <Segment selected={Boolean(photo.fitPaper)} title="Best fit: the pens that, as they really come out on this paper, come nearest the photo between them" onClick={() => !photo.fitPaper && actions.splitBestFit(inks)}>Best fit</Segment>
+                    <Segment selected={!photo.fitPaper} title="By groups: the photo's colours gathered into groups, each drawn in the pen nearest its colour" onClick={() => photo.fitPaper && actions.splitByColor(inks)}>By groups</Segment>
+                  </SegmentedControl>
                   <NumberField
                     label="Inks"
                     min={1}
                     max={MOST_LAYERS}
                     step={1}
-                    value={photo.group ? shapes.filter((sh) => sh.photo?.group === photo.group && !sh.photo?.key).length : 1}
-                    onChange={actions.splitByColor}
+                    value={inks}
+                    onChange={photo.fitPaper ? actions.splitBestFit : actions.splitByColor}
                   />
+                  {photo.fitPaper && estimates && estimates.length > 0 && (
+                    <p className={styles.empty}>
+                      Best fit, as near as the pens come to the photo: {estimates.map((e) => `${e.pens} ${e.pens === 1 ? "pen" : "pens"} ${e.err.toFixed(1)} ΔE`).join(", ")}. Lower is closer.
+                    </p>
+                  )}
                   {/* A key ink over the colours, darkening shadows the colour layers can't reach alone.
                     Its pen is the layer's: change it with the layer's dot. */}
                   <Checkbox

@@ -64,6 +64,16 @@ export interface Photo {
   regions?: string[];
   region?: number;
   /**
+   * Split by best fit (NextDraw Photo, 2026-10-06): the pens were chosen for how they come out on
+   * paper, and `regions` are those pens' colours on this paper, solid. Each point goes to the pen whose
+   * colour, at the share of paper that matches best, comes nearest the photo's - mixed in linear light
+   * - and that pen hatches it as near that share as its passes allow. Absent, `regions` are the
+   * photo's own colour groups, as before.
+   */
+  fitPaper?: string;
+  /** Split by best fit: the pen's real line width, in mm, which with the spacing sets how much paper a pass covers. */
+  penMm?: number;
+  /**
    * The key layer of a photo split by colour: shading drawn over the colours in its ink, across the
    * whole photo, heavier where it's darker - like shading a coloured drawing with a black pen. Only
    * one of a photo's layers is the key; it has no `region`.
@@ -248,7 +258,7 @@ export interface PhotoPart {
 /** The settings a layer of a photo keeps as its own, as opposed to the photo's: what a mode remembers. */
 export const LAYER_SETTINGS = [
   "style", "angle", "spacingMm", "levels", "rowMm", "waveMm", "contours", "smoothMm", "centerFrom", "centerSmoothMm", "centerShortestMm", "silhouetteFrom", "silhouetteSmoothMm", "silhouetteSmallestMm", "offsetMm",
-  "band", "ink", "regions", "region", "key", "regionInks", "keyInk", "plate", "plates",
+  "band", "ink", "regions", "region", "key", "regionInks", "keyInk", "plate", "plates", "fitPaper", "penMm",
 ] as const;
 
 /** What each band is called, lightest first, for a photo split into this many. */
@@ -420,7 +430,7 @@ export function photoMarks(photo: Photo, w: number, h: number): PhotoMarks | nul
 
 /** Everything a photo's lines depend on, as one string: the same key, the same lines. */
 function marksKey(photo: Photo, w: number, h: number) {
-  return [photo.src.length, photo.src.slice(-32), w.toFixed(4), h.toFixed(4), photo.brightness, photo.contrast, photo.angle, photo.spacingMm, photo.levels, photo.band?.join(",") ?? "", photo.crop?.join(",") ?? "", photo.bleed ?? 0, photo.style ?? "hatch", photo.rowMm ?? "", photo.waveMm ?? "", photo.ink ?? "", photo.regions?.join(",") ?? "", photo.region ?? "", photo.contours ?? "", photo.smoothMm ?? "", photo.key ? "key" : "", photo.keyInk ?? "", photo.regionInks?.join(",") ?? "", photo.keyStrength ?? "", photo.keyFrom ?? "", photo.plate ?? "", photo.plates?.join(",") ?? "", photo.blackShare ?? "", photo.centerFrom ?? "", photo.centerSmoothMm ?? "", photo.centerShortestMm ?? "", photo.silhouetteFrom ?? "", photo.silhouetteSmoothMm ?? "", photo.silhouetteSmallestMm ?? ""].join("|");
+  return [photo.src.length, photo.src.slice(-32), w.toFixed(4), h.toFixed(4), photo.brightness, photo.contrast, photo.angle, photo.spacingMm, photo.levels, photo.band?.join(",") ?? "", photo.crop?.join(",") ?? "", photo.bleed ?? 0, photo.style ?? "hatch", photo.rowMm ?? "", photo.waveMm ?? "", photo.ink ?? "", photo.regions?.join(",") ?? "", photo.region ?? "", photo.contours ?? "", photo.smoothMm ?? "", photo.key ? "key" : "", photo.keyInk ?? "", photo.regionInks?.join(",") ?? "", photo.keyStrength ?? "", photo.keyFrom ?? "", photo.plate ?? "", photo.plates?.join(",") ?? "", photo.blackShare ?? "", photo.centerFrom ?? "", photo.centerSmoothMm ?? "", photo.centerShortestMm ?? "", photo.silhouetteFrom ?? "", photo.silhouetteSmoothMm ?? "", photo.silhouetteSmallestMm ?? "", photo.fitPaper ?? "", photo.penMm ?? ""].join("|");
 }
 
 /**
@@ -654,6 +664,8 @@ interface Areas {
   /** Which group each point is nearest, the paper being the last. */
   best: Uint8Array;
   want: Float32Array;
+  /** Split by best fit: for each point and group, the share of paper that group's pen should cover there. */
+  cover?: Float32Array;
 }
 
 /** Bleed, as a share, in CIELAB units: how much further a group may be than the nearest and still draw. */
@@ -668,12 +680,70 @@ function inArea(areas: Areas, at: number, group: number, bleed: number) {
 }
 const areasCache = new Map<string, Areas>();
 
+// ---------- Best fit: pens as they come out on paper ----------
+
+/** A colour's light, per channel, 0 to 1: what mixes when a pen's lines and the paper between them blur together. */
+export const hexLinear = (hex: string): [number, number, number] => {
+  const n = parseInt(hex.replace("#", "").padEnd(6, "0").slice(0, 6), 16);
+  return [linear((n >> 16) & 255), linear((n >> 8) & 255), linear(n & 255)];
+};
+const unlinear = (l: number) => 255 * (l <= 0.0031308 ? 12.92 * l : 1.055 * l ** (1 / 2.4) - 0.055);
+/** A colour as a hex, from its light per channel. */
+export const linearHex = (rgb: number[]) => toHex(rgb.map((v) => unlinear(Math.min(1, Math.max(0, v)))));
+/** CIELAB from light per channel. */
+export function labOfLinear([R, G, B]: number[]): [number, number, number] {
+  const x = (0.4124 * R + 0.3576 * G + 0.1805 * B) / 0.9505;
+  const y = 0.2126 * R + 0.7152 * G + 0.0722 * B;
+  const z = (0.0193 * R + 0.1192 * G + 0.9505 * B) / 1.089;
+  const f = (t: number) => (t > 0.008856 ? Math.cbrt(t) : 7.787 * t + 16 / 116);
+  return [116 * f(y) - 16, 500 * (f(x) - f(y)), 200 * (f(y) - f(z))];
+}
+
+/**
+ * The share of the paper a pen's lines should cover to come nearest a colour, and how near that comes
+ * (ΔE). Hatching seen from a little way off is the paper and the pen's colour mixed by how much of
+ * the paper the lines cover, in linear light - which predicts a calibration sheet's measured patches
+ * to within about 2 ΔE. `x`, `paper` and `pen` are light per channel; `pen` is the pen's colour on
+ * this paper, solid; `xLab` the colour's CIELAB, when it's already known.
+ */
+export function fitCover(x: number[], paper: number[], pen: number[], xLab = labOfLinear(x)): { cover: number; err: number } {
+  const d0 = paper[0] - pen[0];
+  const d1 = paper[1] - pen[1];
+  const d2 = paper[2] - pen[2];
+  const span = d0 * d0 + d1 * d1 + d2 * d2;
+  const cover = span < 1e-9 ? 0 : Math.min(1, Math.max(0, ((paper[0] - x[0]) * d0 + (paper[1] - x[1]) * d1 + (paper[2] - x[2]) * d2) / span));
+  const made = labOfLinear([paper[0] - cover * d0, paper[1] - cover * d1, paper[2] - cover * d2]);
+  return { cover, err: Math.sqrt(dist2(made, xLab)) };
+}
+
+/**
+ * How much of the paper hatching covers with 0, 1, 2… passes, for a line `penMm` wide, `spacingMm`
+ * apart and up to `levels` passes. Each pass draws lines two spacings apart: the second crosses the
+ * first, the third falls between the first's lines and the fourth between the second's.
+ */
+export function coverSteps(penMm: number, spacingMm: number, levels: number): number[] {
+  const one = Math.min(1, penMm / (2 * Math.max(0.05, spacingMm)));
+  const both = Math.min(1, 2 * one);
+  const steps = [0, one, 1 - (1 - one) ** 2, 1 - (1 - both) * (1 - one), 1 - (1 - both) ** 2];
+  return steps.slice(0, Math.min(4, Math.max(1, Math.round(levels))) + 1);
+}
+
+/** The number of passes whose cover comes nearest the share wanted. */
+export function passesFor(cover: number, steps: number[]): number {
+  let best = 0;
+  steps.forEach((step, k) => { if (Math.abs(step - cover) < Math.abs(steps[best] - cover)) best = k; });
+  return best;
+}
+
 /**
  * Which colour group each point of the photo belongs to - the nearest - and the density of its
  * colour, worked out small and read at its nearest pixel. What each layer draws is its group's area.
+ * Split by best fit, the groups are pens on `fitPaper`, and nearest means the pen that, at the share
+ * of paper it should cover there, comes nearest the photo; the paper is nearest only where bare
+ * paper beats every pen.
  */
-function areasOf(tones: Tones, groups: string[], brightness: number, contrast: number): Areas {
-  const key = [tones.w, tones.h, tones.light[0], tones.light[tones.light.length >> 1], groups.join(","), brightness, contrast].join("|");
+function areasOf(tones: Tones, groups: string[], brightness: number, contrast: number, fitPaper?: string): Areas {
+  const key = [tones.w, tones.h, tones.light[0], tones.light[tones.light.length >> 1], groups.join(","), brightness, contrast, fitPaper ?? ""].join("|");
   const known = areasCache.get(key);
   if (known) return known;
   const adjust = adjuster(brightness, contrast);
@@ -688,6 +758,9 @@ function areasOf(tones: Tones, groups: string[], brightness: number, contrast: n
   const nearestAll = new Float32Array(w * h);
   const bestAll = new Uint8Array(w * h);
   const want = new Float32Array(w * h * 3);
+  const paperLight = fitPaper ? hexLinear(fitPaper) : null;
+  const penLight = fitPaper ? groups.map(hexLinear) : [];
+  const cover = fitPaper ? new Float32Array(w * h * count) : undefined;
   for (let y = 0; y < h; y++) {
     const sy = Math.min(tones.h - 1, Math.round((y / Math.max(1, h - 1)) * (tones.h - 1)));
     for (let x = 0; x < w; x++) {
@@ -699,18 +772,31 @@ function areasOf(tones: Tones, groups: string[], brightness: number, contrast: n
       const here = lab(r, g, b);
       const at = y * w + x;
       let nearest = Infinity;
-      centres.forEach((c, k) => {
-        const d = Math.sqrt(dist2(here, c));
-        dist[at * count + k] = d;
-        if (d < nearest) { nearest = d; bestAll[at] = k; }
-      });
+      if (paperLight && cover) {
+        const light = [linear(r), linear(g), linear(b)];
+        penLight.forEach((pen, k) => {
+          const fit = fitCover(light, paperLight, pen, here);
+          dist[at * count + k] = fit.err;
+          cover[at * count + k] = fit.cover;
+          if (fit.err < nearest) { nearest = fit.err; bestAll[at] = k; }
+        });
+        const bare = Math.sqrt(dist2(here, labOfLinear(paperLight)));
+        dist[at * count + count - 1] = bare;
+        if (bare < nearest) { nearest = bare; bestAll[at] = count - 1; }
+      } else {
+        centres.forEach((c, k) => {
+          const d = Math.sqrt(dist2(here, c));
+          dist[at * count + k] = d;
+          if (d < nearest) { nearest = d; bestAll[at] = k; }
+        });
+      }
       nearestAll[at] = nearest;
       want[at * 3] = density(r);
       want[at * 3 + 1] = density(g);
       want[at * 3 + 2] = density(b);
     }
   }
-  const made = { w, h, groups: count, dist, nearest: nearestAll, best: bestAll, want };
+  const made = { w, h, groups: count, dist, nearest: nearestAll, best: bestAll, want, cover };
   if (areasCache.size > 8) areasCache.delete(areasCache.keys().next().value!);
   areasCache.set(key, made);
   return made;
@@ -814,7 +900,7 @@ export const KEY_FROM = 0.35;
  * the bleed - as much of its pen as comes nearest the photo there. The key shades over all of them.
  */
 function colourSampler(tones: Tones, photo: Photo) {
-  const areas = areasOf(tones, photo.regions!, photo.brightness, photo.contrast);
+  const areas = areasOf(tones, photo.regions!, photo.brightness, photo.contrast, photo.fitPaper);
   const bleed = Math.max(0, photo.bleed ?? 0);
   const own = densityOf(photo.ink!);
   const pointAt = (u: number, v: number) =>
@@ -834,6 +920,19 @@ function colourSampler(tones: Tones, photo: Photo) {
     };
   }
   const mine = photo.region!;
+  if (photo.fitPaper && areas.cover) {
+    // Best fit: as many passes as come nearest the share of paper this pen should cover here, as a
+    // tone that just clears that many of the hatching's thresholds.
+    const cover = areas.cover;
+    const steps = coverSteps(photo.penMm ?? 0.5, photo.spacingMm, photo.levels);
+    const levels = steps.length - 1;
+    return (u: number, v: number) => {
+      const at = pointAt(u, v);
+      if (!inArea(areas, at, mine, bleed)) return -1;
+      const passes = passesFor(cover[at * areas.groups + mine], steps);
+      return passes ? (passes + 0.5) / (levels + 1) : -1;
+    };
+  }
   const dd = own[0] * own[0] + own[1] * own[1] + own[2] * own[2];
   return (u: number, v: number) => {
     const at = pointAt(u, v);
@@ -1086,7 +1185,7 @@ function fieldOf(tones: Tones, photo: Photo, gw: number, gh: number, count: numb
     for (let k = 1; k <= count; k++) levels.push(k / (count + 1));
   } else if (photo.ink && photo.regions && photo.region !== undefined) {
     // A colour layer: 1 inside its colour's area, 0 outside, traced at the half-way line.
-    const areas = areasOf(tones, photo.regions, photo.brightness, photo.contrast);
+    const areas = areasOf(tones, photo.regions, photo.brightness, photo.contrast, photo.fitPaper);
     for (let gy = 0; gy < gh; gy++) {
       for (let gx = 0; gx < gw; gx++) {
         const u = c0 + (gx / (gw - 1)) * (c2 - c0);
@@ -1874,6 +1973,8 @@ export function photoFromData(raw: Record<string, unknown>): Photo | null {
       : {}),
     ...(Array.isArray(raw.regions) && raw.regions.every((v) => typeof v === "string") ? { regions: raw.regions as string[] } : {}),
     ...(Number.isInteger(Number(raw.region)) && raw.region !== undefined ? { region: Number(raw.region) } : {}),
+    ...(typeof raw.fit_paper === "string" ? { fitPaper: raw.fit_paper } : {}),
+    ...(Number.isFinite(Number(raw.pen_mm)) && raw.pen_mm !== undefined ? { penMm: Number(raw.pen_mm) } : {}),
     ...(raw.key === true ? { key: true } : {}),
     ...(raw.modes && typeof raw.modes === "object" ? { modes: raw.modes as Photo["modes"] } : {}),
     ...(typeof raw.key_ink === "string" ? { keyInk: raw.key_ink } : {}),
@@ -1912,6 +2013,7 @@ export const photoData = (p: Photo) => ({
   ...(p.contours !== undefined ? { contours: p.contours } : {}),
   ...(p.smoothMm !== undefined ? { smooth_mm: p.smoothMm } : {}),
   ...(p.ink ? { ink: p.ink, regions: p.regions, region: p.region } : {}),
+  ...(p.fitPaper ? { fit_paper: p.fitPaper, pen_mm: p.penMm } : {}),
   ...(p.key ? { key: true } : {}),
   ...(p.modes ? { modes: p.modes } : {}),
   ...(p.keyInk ? { key_ink: p.keyInk } : {}),

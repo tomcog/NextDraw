@@ -292,11 +292,11 @@ export default function App() {
   }, [record, pick]);
 
   const {
-    addPhoto, addSeparations, setSeparationPlate, switchPhotoMode, setKeyLayer, splitPhoto, splitPhotoByColor,
+    addPhoto, addSeparations, setSeparationPlate, switchPhotoMode, setKeyLayer, splitPhoto, splitPhotoByColor, splitPhotoBestFit, bestPens,
     placePhoto, photoScale, setPhotoScale, setPhotoMargin, replacePhoto, turnPhoto, setPhotoOf,
   } = photoActions({
     chosen, shapes, setShapes, layers, setLayers, active, setActiveLayer, page, tool,
-    spacingMm: tool?.hatch?.spacing_mm ?? 1.5, all: photoAll, record, addShape, pick, setMessage,
+    spacingMm: tool?.hatch?.spacing_mm ?? 1.5, all: photoAll, paper: paperColor, record, addShape, pick, setMessage,
   });
 
   // A new, empty drawing on the paper as it is.
@@ -584,6 +584,21 @@ export default function App() {
     </Card>
   );
 
+  // Split by best fit: how near the best pens come to the photo, with one fewer and one more than it
+  // has, so what another pen buys can be seen. An estimate from a sample of the photo's pixels, each
+  // at the share of paper that suits it best - the predicted print says what the hatching really makes.
+  const inks = chosen?.photo?.group ? shapes.filter((sh) => sh.photo?.group === chosen.photo!.group && !sh.photo?.key).length : 1;
+  const estimates = useMemo(() => {
+    if (!chosen?.photo?.fitPaper || !convertRead) return undefined;
+    const out: { pens: number; err: number }[] = [];
+    for (const n of [inks - 1, inks, inks + 1]) {
+      if (n < 1 || n > (tool?.palette?.length ?? 0)) continue;
+      const best = bestPens(n);
+      if (best?.errors.length) out.push({ pens: n, err: best.errors[best.errors.length - 1] });
+    }
+    return out.length ? out : undefined;
+  }, [chosen?.photo?.src, chosen?.photo?.brightness, chosen?.photo?.contrast, chosen?.photo?.fitPaper, convertRead, inks, tool, paperColor]); // eslint-disable-line react-hooks/exhaustive-deps
+
   // The chosen photo's card: how it's turned into lines.
   const photoCard = chosen?.photo ? (
     <PhotoCard
@@ -594,6 +609,7 @@ export default function App() {
       busy={busy}
       all={photoAll}
       onAll={setPhotoAll}
+      estimates={estimates}
       scale={(() => {
         const { b, fitW } = photoScale(chosen);
         return Math.round(((b.x1 - b.x0) / fitW) * 100);
@@ -606,6 +622,7 @@ export default function App() {
         set: setPhotoOf,
         split: splitPhoto,
         splitByColor: splitPhotoByColor,
+        splitBestFit: splitPhotoBestFit,
         setKeyLayer,
         place: placePhoto,
         setMargin: setPhotoMargin,
