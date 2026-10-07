@@ -18,6 +18,8 @@ interface Props {
   /** Pens on the open sheet that aren't this tool's. */
   strangers: string[];
   onNewSheet: () => void;
+  /** Make a sheet of the tool's pens two at a time, hatched over each other. */
+  onNewPairs: () => void;
   onReadPhoto: (file: File | undefined) => void;
   /** The question asked before a new drawing replaces one with unsaved work, when it's being asked. */
   confirm: ReactNode;
@@ -27,7 +29,7 @@ interface Props {
  * Setup's calibration: a sheet of every pen at four strengths, plotted and photographed, read back as
  * each pen really comes out - and what was measured, pen by pen.
  */
-export function CalibrationSection({ tool, toolName, busy, sheetOpen, sheetIsTool, strangers, onNewSheet, onReadPhoto, confirm }: Props) {
+export function CalibrationSection({ tool, toolName, busy, sheetOpen, sheetIsTool, strangers, onNewSheet, onNewPairs, onReadPhoto, confirm }: Props) {
   const input = useRef<HTMLInputElement>(null);
   const calibrated = tool?.calibration;
   return (
@@ -73,6 +75,18 @@ export function CalibrationSection({ tool, toolName, busy, sheetOpen, sheetIsToo
       {sheetOpen && !sheetIsTool && tool && (
         <p className={controls.hint}>The open sheet is of other pens than {tool.name}’s ({strangers.length > 3 ? `${strangers.slice(0, 3).join(", ")} and ${strangers.length - 3} more` : listOf(strangers)}).</p>
       )}
+      <p className={controls.hint}>
+        Pen pairs: a spread of {tool?.name ?? "the drawing tool"}’s pens two at a time, the lighter hatched first and the darker across it, to see what overlaid hatching makes on paper.
+      </p>
+      <Button
+        size="sm"
+        variant="secondary"
+        disabled={busy || (tool?.palette?.length ?? 0) < 2}
+        title={(tool?.palette?.length ?? 0) < 2 ? "This drawing tool needs at least two colours" : undefined}
+        onClick={onNewPairs}
+      >
+        New pen pairs sheet
+      </Button>
       {confirm}
       {calibrated && tool && (
         <ul className={styles.calibration} aria-label={`${tool.name} as measured`}>

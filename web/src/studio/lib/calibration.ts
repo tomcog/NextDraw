@@ -20,11 +20,16 @@ const PATCH_LARGEST = 0.45; // a patch as big as the page allows, down to the sm
 const PATCH_SMALLEST = 0.3;
 const PATCH_GAP = 0.08; // between the patches of one pen
 const COLUMN_GAP = 0.3; // between one pen's patches and the next pen's, across
-const LABEL = 0.1; // the pen's name, under its patches
-const LABEL_GAP = 0.04;
+// The words, sized to be read off the paper across a desk, and spaced out: a gel line is wide for
+// letters this size, and set close they run together.
+const LABEL = 0.16; // the pen's name, under its patches - smaller only when a long name needs it
+const LABEL_SMALLEST = 0.12;
+const LABEL_GAP = 0.05;
 const ROW_GAP = 0.18;
-const HEADING = 0.15; // the sheet's title, between the top marks
-const COVER_LABEL = 0.08; // "100" over each patch of the top row
+const HEADING = 0.22; // the sheet's title, between the top marks
+const COVER_LABEL = 0.12; // "100" over each patch of the top row
+const TRACKING = 15; // percent of the size, between letters
+const PER_LETTER = 0.75; // ems a letter takes, spacing included - generous, so names never run into the next
 
 /** A patch's name says which pen and how much ink, so the sheet can be read back by its shapes. */
 export const patchName = (pen: string, cover: number) => `${pen} ${Math.round(cover * 1000) / 10}%`;
@@ -54,14 +59,17 @@ export function calibrationSheet(tool: Preset, page: Page, font: string): Calibr
   // The largest patch that gets every pen onto the page.
   const across = page.w - 2 * MARGIN;
   const down = page.h - 2 * MARGIN - MARK - HEADING - 2 * COVER_LABEL - MARK;
-  let fit: { patch: number; cellW: number; pitch: number; columns: number; rows: number } | null = null;
+  const longest = Math.max(...pens.map((p) => p.name.length));
+  let fit: { patch: number; cellW: number; pitch: number; columns: number; rows: number; label: number } | null = null;
   for (let patch = PATCH_LARGEST; patch >= PATCH_SMALLEST - 1e-9; patch -= 0.05) {
     const cellW = CALIBRATION_COVERS.length * patch + (CALIBRATION_COVERS.length - 1) * PATCH_GAP;
-    const pitch = patch + LABEL_GAP + LABEL + ROW_GAP;
+    // The names as large as they go, up to the most, with the longest still inside its patches' width.
+    const label = Math.max(LABEL_SMALLEST, Math.min(LABEL, (cellW + COLUMN_GAP * 0.5) / (longest * PER_LETTER)));
+    const pitch = patch + LABEL_GAP + label + ROW_GAP;
     const columns = Math.floor((across + COLUMN_GAP) / (cellW + COLUMN_GAP));
     const rows = Math.floor((down + ROW_GAP) / pitch);
     if (columns > 0 && columns * rows >= pens.length) {
-      fit = { patch, cellW, pitch, columns, rows };
+      fit = { patch, cellW, pitch, columns, rows, label };
       break;
     }
   }
@@ -84,7 +92,7 @@ export function calibrationSheet(tool: Preset, page: Page, font: string): Calibr
     fills.push({ id: newFillId(), shapeId: shape.id, angle, spacingMm: spacingFor(cover), scale: 100, custom: true });
   };
   const words = (text: string, x: number, y: number, size: number, name?: string) => {
-    shapes.push({ id: newShapeId(), kind: "text", layerId: key, text, font, x, y, x2: x, y2: y + size, ...(name ? { name } : {}) });
+    shapes.push({ id: newShapeId(), kind: "text", layerId: key, text, font, tracking: TRACKING, x, y, x2: x, y2: y + size, ...(name ? { name } : {}) });
   };
 
   // The corner marks, at the corners of everything drawn.
@@ -113,7 +121,7 @@ export function calibrationSheet(tool: Preset, page: Page, font: string): Calibr
       solid(layerOf.get(pen.name)!, px, y, fit.patch, patchName(pen.name, cover), cover);
       if (row === 0) words(coverText(cover), px, y - COVER_LABEL - 0.06, COVER_LABEL);
     });
-    words(pen.name, x, y + fit.patch + LABEL_GAP, LABEL, `${pen.name} label`);
+    words(pen.name, x, y + fit.patch + LABEL_GAP, fit.label, `${pen.name} label`);
   });
 
   return { layers, shapes, fills };

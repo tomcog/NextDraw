@@ -54,6 +54,7 @@ import { boxAround, boxOf, clampToPage, groupLabel, groupsOf, moveBy, newGroupId
 import { buildSvg, svgForMarks } from "./lib/svg";
 import { drawnMiddle, fitToPage, reshapeDrawing, runsOffPage, turnDrawingLeft } from "./lib/drawing";
 import { calibrationSheet } from "./lib/calibration";
+import { pairsSheet } from "./lib/penPairs";
 import { readCalibration, readingProblems, sheetLayout } from "./lib/calibrationRead";
 import styles from "./App.module.css";
 
@@ -599,7 +600,7 @@ export default function App() {
  // paper you're working on today, and a new drawing is almost always for the same sheet.
  // Which new drawing is waiting on the question: a blank one, a calibration sheet, or a picture
  // opened for image conversion.
- const [confirmNew, setConfirmNew] = useState<"blank" | "calibration" | "image" | null>(null);
+ const [confirmNew, setConfirmNew] = useState<"blank" | "calibration" | "pairs" | "image" | null>(null);
  const newDrawing = useCallback(() => {
   const noShapes: Shape[] = [];
   const noFills: Fill[] = [];
@@ -621,12 +622,13 @@ export default function App() {
 
  // Undo can't bring back which file was open - a snapshot is the drawing, not the drawing's name -
  // so unsaved work gets a question rather than a silent discard.
- const startNew = (what: "blank" | "calibration" = "blank") => {
+ const startNew = (what: "blank" | "calibration" | "pairs" = "blank") => {
   if (dirty && shapes.length) setConfirmNew(what);
   else if (what === "calibration") newCalibration();
+  else if (what === "pairs") newPairs();
   else newDrawing();
  };
- const beginNew = () => (confirmNew === "calibration" ? newCalibration() : confirmNew === "image" && imageWaiting.current ? startImage(imageWaiting.current) : newDrawing());
+ const beginNew = () => (confirmNew === "calibration" ? newCalibration() : confirmNew === "pairs" ? newPairs() : confirmNew === "image" && imageWaiting.current ? startImage(imageWaiting.current) : newDrawing());
 
  // A photo opened with the File card's photo button: a new drawing named after it, the photo placed
  // on the paper and matched to the tool's pens, and then image conversion. Several at once are
@@ -816,6 +818,29 @@ export default function App() {
   setConfirmNew(null);
   started(sheetName); // a new sheet to be saved and plotted
   setMessage({ text: `${sheetName}: ${sheet.layers.length} pens`, ok: true });
+ };
+
+ // A new drawing that is the drawing tool's pen pairs sheet: a spread of its pens two at a time, the
+ // lighter hatched first and the darker across it, to see what overlaid hatching makes on paper.
+ const newPairs = () => {
+  if (!tool2) return;
+  const sheet = pairsSheet(tool2, page, font);
+  if ("error" in sheet) {
+   setConfirmNew(null);
+   setMessage({ text: sheet.error, ok: false });
+   return;
+  }
+  const fitted = sheet.shapes.map((sh) => (sh.kind === "text" ? fitText(sh, fontsRef.current[sh.font ?? ""]) : sh));
+  const sheetName = `${tool2.name} pen pairs`;
+  setShapes(fitted);
+  setFills(sheet.fills);
+  setLayers(sheet.layers);
+  setActiveLayer(sheet.layers[0].id);
+  setSelected([]);
+  clearHistory();
+  setConfirmNew(null);
+  started(sheetName);
+  setMessage({ text: `${sheetName}: ${sheet.pairs.length} pairs, ${sheet.layers.length} pens`, ok: true });
  };
 
  // The drawing open is a calibration sheet when it has the sheet's corner marks and named patches.
@@ -1496,6 +1521,7 @@ export default function App() {
      sheetIsTool={sheetIsTool}
      strangers={strangers}
      onNewSheet={() => startNew("calibration")}
+     onNewPairs={() => startNew("pairs")}
      onReadPhoto={readSheetPhoto}
      confirm={confirmNewBlock}
     />
