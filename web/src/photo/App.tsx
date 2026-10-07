@@ -13,6 +13,7 @@ import { StatusBanner } from "../shared/components/StatusBanner";
 import { ThemeToggle } from "../shared/components/ThemeToggle";
 import { api } from "../shared/lib/api";
 import { openInStudio } from "../shared/lib/apps";
+import { splitLayerName } from "../shared/lib/ink";
 import { PAPER_SIZES } from "../shared/lib/constants";
 import { load, save as remember } from "../shared/lib/storage";
 import type { Preset } from "../shared/lib/types";
@@ -31,6 +32,7 @@ import { calibrationSheet } from "./lib/calibration";
 import { pairsSheet } from "./lib/penPairs";
 import { readCalibration, readingProblems, sheetLayout } from "./lib/calibrationRead";
 import { photoActions } from "./lib/photoActions";
+import { predictPrint, type Prediction } from "./lib/predict";
 import { CalibrationSection } from "./components/CalibrationSection";
 import { ConvertStage, type ConvertView } from "./components/ConvertStage";
 import { PhotoCard } from "./components/PhotoCard";
@@ -230,19 +232,56 @@ export default function App() {
 
   // All of the photo's layers, bottom first, each in its pen: the lines it comes out as, together.
   const convertBox = chosen ? boxOf(chosen) : null;
-  const convertParts = chosen
-    ? layers.flatMap((l) =>
-        shapes
-          .filter((sh) => sh.layerId === l.id && sh.kind === "photo" && sh.photo && (sh.id === chosen.id || (chosen.photo!.group && sh.photo.group === chosen.photo!.group)))
-          .map((sh) => ({ photo: sh.photo!, color: l.color })),
-      )
-    : [];
+  const convertParts = useMemo(
+    () =>
+      chosen
+        ? layers.flatMap((l) =>
+            shapes
+              .filter((sh) => sh.layerId === l.id && sh.kind === "photo" && sh.photo && (sh.id === chosen.id || (chosen.photo!.group && sh.photo.group === chosen.photo!.group)))
+              .map((sh) => ({ photo: sh.photo!, color: l.color, name: l.name })),
+          )
+        : [],
+    [shapes, layers, chosen],
+  );
   usePhotoRead(chosen?.photo?.src);
   const convertMarks = convertBox ? convertParts.map((part) => photoMarks(part.photo, convertBox.x1 - convertBox.x0, convertBox.y1 - convertBox.y0)) : [];
   const convertStrokes = convertMarks.reduce((n, m) => n + (m?.strokes ?? 0), 0);
   const convertRead = convertMarks.length > 0 && convertMarks.every(Boolean);
   const convertLength = convertMarks.reduce((sum, m) => sum + (m ? drawnLength(m) : 0), 0);
   const [convertView, setConvertView] = useState<ConvertView>("side");
+
+  // The predicted print: each layer's lines in the colour its pen really makes - as measured off a
+  // calibration sheet when the tool has been, its palette colour standing in when it hasn't - on the
+  // paper chosen, and how close that comes to the photo. Worked out a moment after the last change.
+  const measured = Boolean(tool?.calibration);
+  const printLines = convertParts.map((part) => {
+    const pen = splitLayerName(part.name, tool?.palette ?? []).pen;
+    const pens = tool?.calibration?.pens ?? {};
+    return (pen && pens[pen]?.line) ?? (pen && tool?.palette?.find((p) => p.name === pen)?.color) ?? part.color;
+  });
+  const printKey = printLines.join(",");
+  const [prediction, setPrediction] = useState<Prediction | null>(null);
+  const [predicting, setPredicting] = useState(false);
+  useEffect(() => {
+    if (!chosen?.photo || !convertBox || !convertRead) {
+      setPrediction(null);
+      return;
+    }
+    setPredicting(true);
+    const timer = window.setTimeout(() => {
+      setPrediction(
+        predictPrint(
+          convertParts.map((part, k) => ({ photo: part.photo, line: printLines[k] })),
+          chosen.photo!,
+          convertBox.x1 - convertBox.x0,
+          convertBox.y1 - convertBox.y0,
+          { penWidthMm, paper: paperColor, measuredOn: tool?.calibration?.paper ?? "#ffffff", opaque: tool?.settings.ink_opaque === true },
+        ),
+      );
+      setPredicting(false);
+    }, 250);
+    return () => window.clearTimeout(timer);
+  }, [convertParts, convertRead, printKey, penWidthMm, paperColor, tool?.calibration?.paper, tool?.settings.ink_opaque]); // eslint-disable-line react-hooks/exhaustive-deps
   // Whether a photo's settings go to the layer being set, or to all its layers at once.
   const [photoAll, setPhotoAll] = useState(false);
 
@@ -607,6 +646,12 @@ export default function App() {
                   ? `${convertStrokes.toLocaleString()} ${convertStrokes === 1 ? "stroke" : "strokes"}, ${convertLength * 0.0254 >= 1 ? `${(convertLength * 0.0254).toFixed(1)} m` : `${Math.round(convertLength * 25.4)} mm`} of drawing${convertParts.length > 1 ? ` in ${convertParts.length} pens` : convertLayer ? `, in ${convertLayer.name}` : ""}.`
                   : "Reading the photo…"}
               </p>
+              <p className={controls.hint}>
+                {predicting || !prediction
+                  ? "Working out the predicted print…"
+                  : `Predicted print: ${prediction.score.toFixed(1)} ΔE from the photo, over 4 mm patches - lower is closer.`}
+                {tool && !measured && ` ${tool.name} isn’t measured yet, so its palette colours stand in for what its pens really make.`}
+              </p>
             </Section>
           )}
           <SettingsSection collapsibleKey="photo-settings">
@@ -657,6 +702,7 @@ export default function App() {
               view={convertView}
               onView={setConvertView}
               history={{ canUndo, canRedo, onUndo: undo, onRedo: redo }}
+              prediction={predicting ? null : prediction?.url ?? null}
               toolbar={setupToolbar}
               disabled={busy}
             />

@@ -1,5 +1,5 @@
 import { Segment, SegmentedControl, Toolbar } from "@tomcoggia/ui";
-import { Columns2, Contrast, Layers, Maximize, Redo2, Undo2, ZoomIn, ZoomOut } from "lucide-react";
+import { Columns2, Contrast, Layers, Maximize, Printer, Redo2, Undo2, ZoomIn, ZoomOut } from "lucide-react";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { photoMarks, photoMask, type Photo } from "../../shared/lib/drawing/photo";
 import { usePhotoRead } from "../../shared/lib/drawing/usePhotoRead";
@@ -9,7 +9,7 @@ import styles from "./ConvertStage.module.css";
  * How the picture and its lines are laid out to compare them: side by side; the lines over a faded
  * copy of the picture; or what the style sees in the picture - the mask it traces - beside the lines.
  */
-export type ConvertView = "side" | "over" | "mask";
+export type ConvertView = "side" | "over" | "mask" | "print";
 
 interface Props {
   /** The layer of the photo being set: its picture, and what it sees in the mask view. */
@@ -22,6 +22,9 @@ interface Props {
   view: ConvertView;
   onView: (view: ConvertView) => void;
   history: { canUndo: boolean; canRedo: boolean; onUndo: () => void; onRedo: () => void };
+  /** The predicted print, as a picture of the box: what the lines should look like on paper. Null
+   *  while it's being worked out. */
+  prediction?: string | null;
   /** What sits at the right-hand end of the bar: the way to Setup, as over the drawing. */
   toolbar?: ReactNode;
   disabled?: boolean;
@@ -36,7 +39,7 @@ const MOST_ZOOM = 40;
  * zoom where the pointer is, drag to move, double-click to see all of it again - so a line can be
  * held against the picture it came from.
  */
-export function ConvertStage({ photo, parts, w, h, view, onView, history, toolbar, disabled }: Props) {
+export function ConvertStage({ photo, parts, w, h, view, onView, history, prediction, toolbar, disabled }: Props) {
   const read = usePhotoRead(photo.src);
   const mask = read && view === "mask" ? photoMask(photo, w, h) : null;
   // The mask as a picture: what the style finds dark on white, a grid point to a pixel.
@@ -156,6 +159,7 @@ export function ConvertStage({ photo, parts, w, h, view, onView, history, toolba
             <Segment selected={view === "side"} onClick={() => onView("side")} icon={<Columns2 />} aria-label="Side by side" title="Side by side: the picture, and the lines made from it" />
             <Segment selected={view === "over"} onClick={() => onView("over")} icon={<Layers />} aria-label="Overlay" title="Overlay: the lines over a faded copy of the picture, to see where they stray from it" />
             <Segment selected={view === "mask"} onClick={() => onView("mask")} icon={<Contrast />} aria-label="Mask" title="Mask: what the style sees in the picture - what it traces, dark - beside the lines it makes" />
+            <Segment selected={view === "print"} onClick={() => onView("print")} icon={<Printer />} aria-label="Predicted print" title="Predicted print: the picture, beside what its lines should look like on the paper, in the pens' real colours" />
           </SegmentedControl>
           <SegmentedControl size="sm" variant="dark" actions aria-label="Zoom">
             <Segment icon={<ZoomOut />} title="Zoom out" aria-label="Zoom out" disabled={at.zoom <= 1} onClick={() => zoomBy(1 / 2)} />
@@ -178,6 +182,12 @@ export function ConvertStage({ photo, parts, w, h, view, onView, history, toolba
           <>
             {pane("What the style sees", maskUrl ? <image href={maskUrl} width={w} height={h} preserveAspectRatio="none" className={styles.mask} /> : null)}
             {pane("Lines", lines)}
+          </>
+        )}
+        {view === "print" && (
+          <>
+            {pane("Picture", picture())}
+            {pane("Predicted print", prediction ? <image href={prediction} width={w} height={h} preserveAspectRatio="none" /> : null)}
           </>
         )}
         {!read && <p className={styles.reading}>Reading the photo…</p>}

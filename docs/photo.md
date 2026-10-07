@@ -56,8 +56,34 @@ get complicated, and it never needs Studio's tools for drawing and transforming 
   Photo". `FileSection`, `useHistory` and `usePhotoRead` are shared now; `photoActions`, `PhotoCard`
   and `ConvertStage` are Photo's.
 
+## Photo to print
+
+Agreed with Tom on 2026-10-06:
+1. A predicted print and a closeness score.
+2. Choosing the best N pens against their measured colours. N is Tom's choice, shown alongside the
+   scores for N−1 and N+1.
+3. Two pens hatched over each other. The overlap is predicted from single-pen measurements at
+   first, and corrected later from the pen pairs sheet.
+
+A tool that hasn't been measured uses its palette colours instead, with a note saying so.
+
+**Step 1, built.** The Predicted print view (the printer button over the stage) shows the picture
+beside what its lines should look like on the paper. The conversion summary gives the score: the
+average ΔE between the print and the photo, each averaged over patches 4 mm across. The code is in
+`photo/lib/predict.ts`.
+
+- **The model.** Each layer's real lines are drawn at the pen's width. A layer passes its ink's share
+  of the light (its line colour against the paper it was measured on), mixed by how much of each
+  spot it covers. Layers multiply over the paper's colour, like filters. An opaque ink covers what's
+  under it instead.
+- **Checked against the EnerGel calibration sheet.** Line colour over its covered share, mixed in
+  linear light, predicts the measured 50, 25 and 12.5% patches to a mean of 1.8 ΔE (worst 8.3).
+  The best-fit shares were 0.52, 0.24 and 0.13 against the nominal 0.5, 0.25 and 0.125. Mixing in
+  sRGB values was 7.9 ΔE.
+- **The line colour.** It is the measured `line` where the calibration has one. Otherwise it is the
+  palette colour, which for EnerGel is the measured line core.
+- **Not yet modelled.** A building ink (a brush) darkening where its own lines cross.
+
 ## Next
 
-The photo-to-print plan: choose the best pens against the measured colours, hatch two pens over
-each other for in-between colours, and show a predicted print beside the original. Agree it with
-Tom first.
+Step 2 of photo to print: choosing the best N pens.
