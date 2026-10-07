@@ -2,8 +2,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { drawnBox, fitToPage, reshapeDrawing, runsOffPage, turnDrawingLeft } from "../src/studio/lib/drawing";
-import type { Fill } from "../src/studio/lib/hatch";
-import type { Page, Shape } from "../src/studio/lib/shapes";
+import type { Fill } from "../src/shared/lib/drawing/hatch";
+import type { Page, Shape } from "../src/shared/lib/drawing/shapes";
 
 const page: Page = { w: 11, h: 8.5 };
 const shape = (over: Partial<Shape>): Shape => ({ id: "s", kind: "rect", x: 0, y: 0, x2: 1, y2: 1, layerId: "l", ...over });

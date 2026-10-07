@@ -10,8 +10,8 @@ import type { Tool } from "../components/Canvas";
 import {
   BAND_NAMES, LAYER_SETTINGS, MOST_LAYERS, PHOTO_DEFAULTS, PLATES, PLATE_AIMS, colourGroups, darkestOf, isColourful, matchPens, photoMode,
   placeOnPage, plateNamed, platePens, readTones, stemWithoutPlate, turnedCopy, turnedCrop, workingCopy, type Photo, type PhotoPart, type Plate,
-} from "./photo";
-import { boxOf, newLayerId, newShapeId, type Layer, type Page, type Shape } from "./shapes";
+} from "../../shared/lib/drawing/photo";
+import { boxOf, newLayerId, newShapeId, type Layer, type Page, type Shape } from "../../shared/lib/drawing/shapes";
 
 export interface PhotoContext {
   /** The one shape picked, if one is. */

@@ -3,15 +3,15 @@ import {
   angleFromCenter, boxAround, boxOf, clampToPage, dragHandleTurned, handlePoints, isDegenerate,
   drawnNodes, moveBy, newShapeId, scaleInto, turnAround, turnAttr, turnGrip, CURSOR,
   type Handle, type Page, type Shape, type ShapeKind,
-} from "../lib/shapes";
-import { fillRuns, shapeAsOne, type Fill } from "../lib/hatch";
-import { photoMarks, photoOrigin } from "../lib/photo";
+} from "../../shared/lib/drawing/shapes";
+import { fillRuns, shapeAsOne, type Fill } from "../../shared/lib/drawing/hatch";
+import { photoMarks, photoOrigin } from "../../shared/lib/drawing/photo";
 import { usePhotoRead } from "../lib/usePhotoRead";
-import { pathData } from "../lib/path";
-import { curveStrokes, pointsAttr, DEFAULT_CURVE, type CurveKind } from "../lib/parametric";
-import { placementAttr, placements } from "../lib/repeat";
-import { textRuns, type StrokeFont } from "../lib/text";
-import type { Layer } from "../lib/shapes";
+import { pathData } from "../../shared/lib/drawing/path";
+import { curveStrokes, pointsAttr, DEFAULT_CURVE, type CurveKind } from "../../shared/lib/drawing/parametric";
+import { placementAttr, placements } from "../../shared/lib/drawing/repeat";
+import { textRuns, type StrokeFont } from "../../shared/lib/drawing/text";
+import type { Layer } from "../../shared/lib/drawing/shapes";
 import { BedCanvas, type BedCanvasHandle, type Box, type Zoom } from "../../shared/components/BedCanvas";
 import type { View } from "../../shared/components/PreviewToolbar";
 import { DEFAULT_SETTINGS, UNITS } from "../../shared/lib/constants";

@@ -78,7 +78,7 @@ def main():
     esbuild = ROOT / "web" / "node_modules" / ".bin" / "esbuild"
     with tempfile.TemporaryDirectory() as tmp:
         src = Path(tmp) / "run.ts"
-        src.write_text(SCRIPT % (ROOT / "web" / "src" / "studio" / "lib" / "path.ts", json.dumps(files)))
+        src.write_text(SCRIPT % (ROOT / "web" / "src" / "shared" / "lib" / "drawing" / "path.ts", json.dumps(files)))
         out = Path(tmp) / "run.js"
         subprocess.run([str(esbuild), str(src), "--bundle", "--platform=node", "--log-level=error", f"--outfile={out}"], check=True)
         results = json.loads(subprocess.run(["node", str(out)], check=True, capture_output=True, text=True).stdout)

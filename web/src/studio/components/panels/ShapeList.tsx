@@ -3,7 +3,7 @@ import { EllipsisVertical, Image as ImageIcon, Shapes, Trash2 } from "lucide-rea
 import { Section } from "../../../shared/components/controls/Section";
 import controls from "../../../shared/components/controls/controls.module.css";
 import { trimNum } from "../../../shared/lib/format";
-import { boxAround, boxOf, groupLabel, groupsOf, shapeName, type Layer, type Shape } from "../../lib/shapes";
+import { boxAround, boxOf, groupLabel, groupsOf, shapeName, type Layer, type Shape } from "../../../shared/lib/drawing/shapes";
 import styles from "../../App.module.css";
 
 /** How many rows are listed by name. A separation's layer is tens of thousands of marks. */

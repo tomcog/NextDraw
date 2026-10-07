@@ -2,7 +2,7 @@ import { Button, ButtonRound, Checkbox } from "@tomcoggia/ui";
 import { LineStyle, Menu, Target, Waves } from "lucide-react";
 import { NumberField } from "../../../shared/components/controls/NumberField";
 import controls from "../../../shared/components/controls/controls.module.css";
-import { canConnect, fillNumbers, FILL_LABEL, type Fill, type FillKind } from "../../lib/hatch";
+import { canConnect, fillNumbers, FILL_LABEL, type Fill, type FillKind } from "../../../shared/lib/drawing/hatch";
 import styles from "../../App.module.css";
 
 const FILL_ICON: Record<FillKind, JSX.Element> = {

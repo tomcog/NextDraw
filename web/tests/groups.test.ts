@@ -3,9 +3,9 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { DOMParser } from "linkedom";
-import { buildSvg } from "../src/studio/lib/svg";
-import { parseDrawing } from "../src/studio/lib/parse";
-import { groupsOf, withWholeGroups, type Layer, type Page, type Shape } from "../src/studio/lib/shapes";
+import { buildSvg } from "../src/shared/lib/drawing/svg";
+import { parseDrawing } from "../src/shared/lib/drawing/parse";
+import { groupsOf, withWholeGroups, type Layer, type Page, type Shape } from "../src/shared/lib/drawing/shapes";
 
 (globalThis as { DOMParser?: unknown }).DOMParser = DOMParser;
 
@@ -82,7 +82,7 @@ test("picking one path of a shape picks all of it", () => {
 });
 
 test("a shape is hatched as one area: a path inside another leaves a hole, and the fill comes back on the shape", async () => {
-  const { fillRuns, fillTarget } = await import("../src/studio/lib/hatch");
+  const { fillRuns, fillTarget } = await import("../src/shared/lib/drawing/hatch");
   const ring: Shape[] = [
     { id: "outer", kind: "rect", x: 1, y: 1, x2: 5, y2: 5, layerId: "a", group: "g9" },
     { id: "inner", kind: "rect", x: 2, y: 2, x2: 4, y2: 4, layerId: "a", group: "g9" },

@@ -3,7 +3,7 @@
 Plot's hatch fills are Studio's hatch fills.
 
 Plot regenerates a Studio fill when it plots it at a different spacing or scale (regenerate_hatches in
-server.py), so the server carries a Python port of Studio's hatch geometry (web/src/studio/lib/hatch.ts).
+server.py), so the server carries a Python port of Studio's hatch geometry (web/src/shared/lib/drawing/hatch.ts).
 Two copies of the same geometry drift apart quietly: the preview and the paper would stop matching
 what Studio shows, a fraction of a millimetre at a time. This runs both on the same shapes - rectangles
 and ellipses, at several angles and spacings, with and without the ends connected - and fails on any
@@ -68,7 +68,7 @@ def studio():
     esbuild = ROOT / "web" / "node_modules" / ".bin" / "esbuild"
     with tempfile.TemporaryDirectory() as tmp:
         src = Path(tmp) / "run.ts"
-        lib = ROOT / "web" / "src" / "studio" / "lib"
+        lib = ROOT / "web" / "src" / "shared" / "lib" / "drawing"
         src.write_text(SCRIPT % (lib / "hatch.ts", lib / "parametric.ts", json.dumps(CASES)))
         out = Path(tmp) / "run.js"
         subprocess.run([str(esbuild), str(src), "--bundle", "--platform=node", "--log-level=error", f"--outfile={out}"], check=True)

@@ -2,9 +2,9 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { drawnBox } from "../src/studio/lib/drawing";
-import type { Fill } from "../src/studio/lib/hatch";
+import type { Fill } from "../src/shared/lib/drawing/hatch";
 import { bakedCopies, flattened, handOutFills, joined, markRuns, simplified, splitApart } from "../src/studio/lib/shapeEdits";
-import { pathRuns, type Shape } from "../src/studio/lib/shapes";
+import { pathRuns, type Shape } from "../src/shared/lib/drawing/shapes";
 
 const shape = (over: Partial<Shape>): Shape => ({ id: "s", kind: "rect", x: 1, y: 1, x2: 3, y2: 2, layerId: "l", ...over });
 const close = (a: number, b: number, what = "") => assert.ok(Math.abs(a - b) < 1e-6, `${what} ${a} ≠ ${b}`);

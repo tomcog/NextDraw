@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { readTones, tonesOf } from "./photo";
+import { readTones, tonesOf } from "../../shared/lib/drawing/photo";
 
 /**
  * Whether a photo has been read yet, redrawing whatever asks once it has. Reading a photo takes a

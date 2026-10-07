@@ -751,7 +751,7 @@ def rotate_document(root, rotation):
 # at a scale other than the one the lines were made for. Either way the lines are made again here, in
 # the copy sent to the plotter and the preview, from the same parameters - the file is untouched.
 #
-# The geometry is a port of web/src/studio/lib/hatch.ts (hatchLines and hatchStroke) and has to stay
+# The geometry is a port of web/src/shared/lib/drawing/hatch.ts (hatchLines and hatchStroke) and has to stay
 # in step with it: tests/hatch_matches_studio.py compares the two.
 STUDIO_FILL_PREFIX = "studio-fill-"
 DESIGN_TAG = "{%s}design" % PLOT_NS
@@ -1041,7 +1041,7 @@ def hatch_stroke(kind, box, lines, outline=None):
     return points
 
 
-# Reading path data, as web/src/studio/lib/path.ts reads it - a port, kept in step by
+# Reading path data, as web/src/shared/lib/drawing/path.ts reads it - a port, kept in step by
 # tests/plot_walks_a_path_out_as_studio_does.py. Studio keeps a curve as the curve, and writes it back
 # as one; to hatch a curved shape here the curve is walked out into points at the same step Studio
 # walks it at, so the outline Plot clips to is the outline Studio clipped to.

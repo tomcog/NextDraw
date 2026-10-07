@@ -3,13 +3,13 @@
 // for whoever needs them. Plain geometry: each returns the shapes that take the old ones' place, and
 // App.tsx records, sets and picks.
 
-import { fillRuns, newFillId, type Fill } from "./hatch";
-import type { StrokeFont } from "./font";
-import { curveStrokes, type Point } from "./parametric";
-import { flattenPath, flattenRun, mapNode, parsePath, simplifyRun, type Node } from "./path";
-import { placements } from "./repeat";
-import { centerOf, drawnNodes, drawnRuns, newShapeId, outlinePoints, pathRuns, pointsBox, turnPoint, type Shape } from "./shapes";
-import { textRuns } from "./text";
+import { fillRuns, newFillId, type Fill } from "../../shared/lib/drawing/hatch";
+import type { StrokeFont } from "../../shared/lib/drawing/font";
+import { curveStrokes, type Point } from "../../shared/lib/drawing/parametric";
+import { flattenPath, flattenRun, mapNode, parsePath, simplifyRun, type Node } from "../../shared/lib/drawing/path";
+import { placements } from "../../shared/lib/drawing/repeat";
+import { centerOf, drawnNodes, drawnRuns, newShapeId, outlinePoints, pathRuns, pointsBox, turnPoint, type Shape } from "../../shared/lib/drawing/shapes";
+import { textRuns } from "../../shared/lib/drawing/text";
 
 /**
  * The fills of a shape that has been replaced by others, handed to each of them, so the drawing looks

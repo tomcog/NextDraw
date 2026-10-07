@@ -5,7 +5,7 @@ Plot walks a curve out to the same points Studio does.
 Studio keeps a path's curves as curves and writes them back as curves, and Plot walks them out into
 points itself when it needs points - to regenerate a hatch fill on a curved shape at a spacing or
 scale other than the one the fill was made for. So the server carries a Python port of Studio's path
-reader (flatten_path_data in server.py, from web/src/studio/lib/path.ts).
+reader (flatten_path_data in server.py, from web/src/shared/lib/drawing/path.ts).
 
 Two copies of the same walk drift apart quietly: the outline Plot clips a fill to would stop being
 the outline Studio clipped it to, a fraction of a millimetre at a time, and the preview and the paper
@@ -46,7 +46,7 @@ def main():
     esbuild = ROOT / "web" / "node_modules" / ".bin" / "esbuild"
     with tempfile.TemporaryDirectory() as tmp:
         src = Path(tmp) / "run.ts"
-        src.write_text(SCRIPT % (ROOT / "web" / "src" / "studio" / "lib" / "path.ts", json.dumps(files)))
+        src.write_text(SCRIPT % (ROOT / "web" / "src" / "shared" / "lib" / "drawing" / "path.ts", json.dumps(files)))
         out = Path(tmp) / "run.js"
         subprocess.run([str(esbuild), str(src), "--bundle", "--platform=node", "--log-level=error", f"--outfile={out}"], check=True)
         studio = json.loads(subprocess.run(["node", str(out)], check=True, capture_output=True, text=True).stdout)

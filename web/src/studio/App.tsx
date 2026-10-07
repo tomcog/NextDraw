@@ -8,6 +8,7 @@ import { FileBrowser, type CombineResult, type OpenResult } from "../shared/comp
 import { Section } from "../shared/components/controls/Section";
 import controls from "../shared/components/controls/controls.module.css";
 import { api } from "../shared/lib/api";
+import { showApp } from "../shared/lib/apps";
 import { load, save as remember } from "../shared/lib/storage";
 import { DEFAULT_SETTINGS, PAPER_SIZES } from "../shared/lib/constants";
 import type { Info, PenColor, PlotterModel, Preset } from "../shared/lib/types";
@@ -23,18 +24,18 @@ import { mergeLines } from "./lib/mergeLines";
 import { SizePopover } from "./components/SizePopover";
 import { StudioHeader } from "./components/StudioHeader";
 import { ThemeToggle } from "../shared/components/ThemeToggle";
-import { canFill, newFillId, shapeAsOne, type Fill } from "./lib/hatch";
-import { type Curve, type Point } from "./lib/parametric";
-import { fontNames, loadFont, type StrokeFont } from "./lib/font";
-import { flattenPath } from "./lib/path";
-import { fitText } from "./lib/text";
-import { type Repeat } from "./lib/repeat";
-import { parseDrawing } from "./lib/parse";
-import { type PhotoMarks, PLATES, photoMarks, placeOnPage, stemWithoutPlate, type Photo } from "./lib/photo";
+import { canFill, newFillId, shapeAsOne, type Fill } from "../shared/lib/drawing/hatch";
+import { type Curve, type Point } from "../shared/lib/drawing/parametric";
+import { fontNames, loadFont, type StrokeFont } from "../shared/lib/drawing/font";
+import { flattenPath } from "../shared/lib/drawing/path";
+import { fitText } from "../shared/lib/drawing/text";
+import { type Repeat } from "../shared/lib/drawing/repeat";
+import { parseDrawing } from "../shared/lib/drawing/parse";
+import { type PhotoMarks, PLATES, photoMarks, placeOnPage, stemWithoutPlate, type Photo } from "../shared/lib/drawing/photo";
 import { usePhotoRead } from "./lib/usePhotoRead";
 import { photoActions } from "./lib/photoActions";
 import { useHistory } from "./lib/useHistory";
-import { LAST_FILE_KEY, useDrawingFile } from "./lib/useDrawingFile";
+import { useDrawingFile } from "../shared/lib/drawing/useDrawingFile";
 import { bakedCopies, flattened, handOutFills, joined, markRuns, simplified, splitApart } from "./lib/shapeEdits";
 import { PaletteMenu } from "../shared/components/controls/PaletteMenu";
 import { Hints } from "../shared/components/controls/Hints";
@@ -45,17 +46,13 @@ import { canFlatten, hasShapeCard, ShapeCard, type ShapePanel } from "./componen
 import { TextCard } from "./components/panels/TextCard";
 import { SelectionCard } from "./components/panels/SelectionCard";
 import { FillPanel } from "./components/panels/FillPanel";
-import { CalibrationSection } from "./components/panels/CalibrationSection";
 import { FileSection } from "./components/panels/FileSection";
 import { GridSection } from "./components/panels/GridSection";
 import { ToolPicker } from "./components/panels/ToolPicker";
 import { LayersSection, type AlignEdge } from "./components/panels/LayersSection";
-import { boxAround, boxOf, clampToPage, groupLabel, groupsOf, moveBy, newGroupId, newLayerId, newShapeId, resizeTo, shapeName, turnAround, withWholeGroups, type Layer, type Page, type Shape } from "./lib/shapes";
-import { buildSvg, svgForMarks } from "./lib/svg";
+import { boxAround, boxOf, clampToPage, groupLabel, groupsOf, moveBy, newGroupId, newLayerId, newShapeId, resizeTo, shapeName, turnAround, withWholeGroups, type Layer, type Page, type Shape } from "../shared/lib/drawing/shapes";
+import { buildSvg, svgForMarks } from "../shared/lib/drawing/svg";
 import { drawnMiddle, fitToPage, reshapeDrawing, runsOffPage, turnDrawingLeft } from "./lib/drawing";
-import { calibrationSheet } from "./lib/calibration";
-import { pairsSheet } from "./lib/penPairs";
-import { readCalibration, readingProblems, sheetLayout } from "./lib/calibrationRead";
 import styles from "./App.module.css";
 
 // Page sizes, in inches, from the list Plot already offers. Stored width-first the way they're drawn
@@ -70,6 +67,9 @@ const SIZES = PAPER_SIZES.filter((p) => p.w && p.h).map((p) => ({
 // Used when a tool has no palette of its own, so there is always a pen to draw with.
 const PLAIN_PEN: PenColor = { name: "Black", color: "#262626" };
 const TOOL_KEY = "studio-tool";
+// The drawing being worked on, remembered so that handing one to Plot - which navigates away - isn't
+// the same as losing it. Its own key: Plot's keys share this origin and still carry the old name.
+const LAST_FILE_KEY = "studio-last-file";
 const FONT_KEY = "studio-font";
 const SNAP_KEY = "studio-snap";
 const SIMPLIFY_KEY = "studio-simplify";
@@ -238,7 +238,7 @@ export default function App() {
  }, [page]);
 
  const { name, setName, saved, dirty, touch, opened, combined, started, save, sendToPlot } = useDrawingFile({
-  shapes, fills, layers, page, sizeId, toolName, fonts, setBusy, setMessage,
+  shapes, fills, layers, page, sizeId, toolName, fonts, setBusy, setMessage, lastFileKey: LAST_FILE_KEY,
  });
 
  // The drawing tool is written into the file too, so picking one is a change - but only when it's
@@ -598,9 +598,9 @@ export default function App() {
 
  // Close whatever is open and begin again on a blank page. The page size stays as it is: it's the
  // paper you're working on today, and a new drawing is almost always for the same sheet.
- // Which new drawing is waiting on the question: a blank one, a calibration sheet, or a picture
- // opened for image conversion.
- const [confirmNew, setConfirmNew] = useState<"blank" | "calibration" | "pairs" | "image" | null>(null);
+ // Which new drawing is waiting on the question: a blank one, or a picture opened for image
+ // conversion.
+ const [confirmNew, setConfirmNew] = useState<"blank" | "image" | null>(null);
  const newDrawing = useCallback(() => {
   const noShapes: Shape[] = [];
   const noFills: Fill[] = [];
@@ -622,13 +622,11 @@ export default function App() {
 
  // Undo can't bring back which file was open - a snapshot is the drawing, not the drawing's name -
  // so unsaved work gets a question rather than a silent discard.
- const startNew = (what: "blank" | "calibration" | "pairs" = "blank") => {
-  if (dirty && shapes.length) setConfirmNew(what);
-  else if (what === "calibration") newCalibration();
-  else if (what === "pairs") newPairs();
+ const startNew = () => {
+  if (dirty && shapes.length) setConfirmNew("blank");
   else newDrawing();
  };
- const beginNew = () => (confirmNew === "calibration" ? newCalibration() : confirmNew === "pairs" ? newPairs() : confirmNew === "image" && imageWaiting.current ? startImage(imageWaiting.current) : newDrawing());
+ const beginNew = () => (confirmNew === "image" && imageWaiting.current ? startImage(imageWaiting.current) : newDrawing());
 
  // A photo opened with the File card's photo button: a new drawing named after it, the photo placed
  // on the paper and matched to the tool's pens, and then image conversion. Several at once are
@@ -797,54 +795,7 @@ export default function App() {
 
  const tool2 = presets.find((t) => t.name === toolName) ?? null;
 
- // A new drawing that is the drawing tool's calibration sheet, on the paper chosen now: every pen,
- // a layer each, hatched at four strengths. Unsaved, like any new drawing, until it's saved.
- const newCalibration = () => {
-  if (!tool2) return;
-  const sheet = calibrationSheet(tool2, page, font);
-  if ("error" in sheet) {
-   setConfirmNew(null);
-   setMessage({ text: sheet.error, ok: false });
-   return;
-  }
-  const fitted = sheet.shapes.map((sh) => (sh.kind === "text" ? fitText(sh, fontsRef.current[sh.font ?? ""]) : sh));
-  const sheetName = `${tool2.name} calibration`;
-  setShapes(fitted);
-  setFills(sheet.fills);
-  setLayers(sheet.layers);
-  setActiveLayer(sheet.layers[0].id);
-  setSelected([]);
-  clearHistory();
-  setConfirmNew(null);
-  started(sheetName); // a new sheet to be saved and plotted
-  setMessage({ text: `${sheetName}: ${sheet.layers.length} pens`, ok: true });
- };
-
- // A new drawing that is the drawing tool's pen pairs sheet: a spread of its pens two at a time, the
- // lighter hatched first and the darker across it, to see what overlaid hatching makes on paper.
- const newPairs = () => {
-  if (!tool2) return;
-  const sheet = pairsSheet(tool2, page, font);
-  if ("error" in sheet) {
-   setConfirmNew(null);
-   setMessage({ text: sheet.error, ok: false });
-   return;
-  }
-  const fitted = sheet.shapes.map((sh) => (sh.kind === "text" ? fitText(sh, fontsRef.current[sh.font ?? ""]) : sh));
-  const sheetName = `${tool2.name} pen pairs`;
-  setShapes(fitted);
-  setFills(sheet.fills);
-  setLayers(sheet.layers);
-  setActiveLayer(sheet.layers[0].id);
-  setSelected([]);
-  clearHistory();
-  setConfirmNew(null);
-  started(sheetName);
-  setMessage({ text: `${sheetName}: ${sheet.pairs.length} pairs, ${sheet.layers.length} pens`, ok: true });
- };
-
- // The drawing open is a calibration sheet when it has the sheet's corner marks and named patches.
- // A photo of it, plotted, is read back into the tool's preset: each pen as it really came out.
+ // Setup: away from the drawing, getting the drawing tools ready.
  const [setupOpen, setSetupOpen] = useState(false);
 
  // Image conversion: the one photo being worked on, on its own - its picture and lines take the
@@ -854,35 +805,6 @@ export default function App() {
  const [convertView, setConvertView] = useState<ConvertView>("side");
  const converting = useRef(false);
 
- const sheet = useMemo(() => sheetLayout(shapes), [shapes]);
- // Read into the drawing tool only when the sheet is of its pens: a sheet made for one marker read
- // into another would write the first one's colours over the second's.
- const sheetPens = useMemo(() => [...new Set(sheet?.patches.map((p) => p.pen) ?? [])], [sheet]);
- const strangers = sheetPens.filter((pen) => !(tool2?.palette ?? []).some((p) => p.name === pen));
- const sheetIsTool = Boolean(sheet && tool2 && sheetPens.length && !strangers.length);
- const readSheetPhoto = async (file: File | undefined) => {
-  if (!file || !sheet || !tool2 || !sheetIsTool) return;
-  setBusy(true);
-  setMessage({ text: `Reading ${file.name}…`, ok: true, progress: true });
-  try {
-   const calibration = await readCalibration(file, sheet, paperColor);
-   const res = await api<{ presets: Preset[] }>(`/api/presets/${encodeURIComponent(tool2.name)}/calibration`, {
-    method: "PUT",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(calibration),
-   });
-   setPresets(res.presets);
-   const problems = readingProblems(calibration);
-   const count = Object.keys(calibration.pens).length;
-   setMessage(problems.length
-    ? { text: `Read ${count} pens, but ${problems.join(" ")}`, ok: false }
-    : { text: `Read ${count} pens into ${tool2.name}`, ok: true });
-  } catch (err) {
-   setMessage({ text: (err as Error).message, ok: false });
-  } finally {
-   setBusy(false);
-  }
- };
  const palette: PenColor[] = tool2?.palette?.length ? tool2.palette : [PLAIN_PEN];
  // Darkest last in the list, so the default pen is the one you'd reach for first.
  // The real line the pen lays down, so the drawing shows its true weight against the hatch spacing.
@@ -1481,7 +1403,7 @@ export default function App() {
          </div>
  );
 
- // The same Paper card in both rails: a calibration sheet is laid out on the paper chosen here.
+ // The Paper card, in the drawing's rail and image conversion's.
  const paperSection = (
   <PaperSection
    w={page.w * 25.4}
@@ -1503,30 +1425,21 @@ export default function App() {
   />
  );
 
- // Setup: getting the drawing tools ready, away from the drawing. For now that is calibration -
- // a sheet of every pen plotted and photographed, read back as each pen really comes out.
+ // Setup: getting the drawing tools ready, away from the drawing. Calibrating the pens is Photo's.
  const setupRail = (
   <Card variant="flat" className={styles.controls}>
    <div className={`${styles.cardBody} ${controls.cardSections}`}>
     <Section title="Setup">
      <p className={controls.hint}>Getting the drawing tools ready. The drawing stays as it is; the gear goes back to it.</p>
     </Section>
-    {paperSection}
     <DrawingToolSection tools={presets} value={toolName} onPick={pickTool} collapsibleKey="setup-pen" disabled={busy} />
-    <CalibrationSection
-     tool={tool2}
-     toolName={toolName}
-     busy={busy}
-     sheetOpen={Boolean(sheet)}
-     sheetIsTool={sheetIsTool}
-     strangers={strangers}
-     onNewSheet={() => startNew("calibration")}
-     onNewPairs={() => startNew("pairs")}
-     onReadPhoto={readSheetPhoto}
-     confirm={confirmNewBlock}
-    />
+    {/* Calibrating the pens moved to Photo, which is what it's for: making photos print true. */}
+    <Section title="Calibration">
+     <p className={controls.hint}>Calibrating a tool’s pens - the calibration and pen pairs sheets, and reading a photo of them back - is in Photo’s Setup.</p>
+     <Button size="sm" variant="secondary" onClick={() => showApp("photo")}>Go to Photo</Button>
+    </Section>
     <Section title="Appearance" action={<ThemeToggle />}>
-     <p className={controls.hint}>Light or dark. Plot follows the same choice.</p>
+     <p className={controls.hint}>Light or dark. Plot and Photo follow the same choice.</p>
     </Section>
    </div>
   </Card>

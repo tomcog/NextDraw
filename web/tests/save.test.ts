@@ -2,10 +2,10 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { DOMParser } from "linkedom";
-import { buildSvg } from "../src/studio/lib/svg";
-import { parseDrawing } from "../src/studio/lib/parse";
-import type { Fill } from "../src/studio/lib/hatch";
-import type { Layer, Page, Shape } from "../src/studio/lib/shapes";
+import { buildSvg } from "../src/shared/lib/drawing/svg";
+import { parseDrawing } from "../src/shared/lib/drawing/parse";
+import type { Fill } from "../src/shared/lib/drawing/hatch";
+import type { Layer, Page, Shape } from "../src/shared/lib/drawing/shapes";
 
 // Reading a drawing uses the browser's parser; linkedom stands in for it here.
 (globalThis as { DOMParser?: unknown }).DOMParser = DOMParser;

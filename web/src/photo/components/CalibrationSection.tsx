@@ -1,11 +1,11 @@
 import { useRef, type ReactNode } from "react";
 import { Button } from "@tomcoggia/ui";
-import { Section } from "../../../shared/components/controls/Section";
-import controls from "../../../shared/components/controls/controls.module.css";
-import { listOf } from "../../../shared/lib/format";
-import type { Preset } from "../../../shared/lib/types";
-import { CALIBRATION_COVERS } from "../../lib/calibration";
-import styles from "../../App.module.css";
+import { Section } from "../../shared/components/controls/Section";
+import controls from "../../shared/components/controls/controls.module.css";
+import { listOf } from "../../shared/lib/format";
+import type { Preset } from "../../shared/lib/types";
+import { CALIBRATION_COVERS } from "../lib/calibration";
+import styles from "../App.module.css";
 
 interface Props {
   /** The drawing tool being calibrated, and its name as chosen. */
@@ -20,6 +20,10 @@ interface Props {
   onNewSheet: () => void;
   /** Make a sheet of the tool's pens two at a time, hatched over each other. */
   onNewPairs: () => void;
+  /** Open a sheet saved before, to read a photo of it. */
+  onOpenSheet: () => void;
+  /** The sheet in hand: its name, Save and Send to Plot. Left out while there is none. */
+  sheetFile?: ReactNode;
   onReadPhoto: (file: File | undefined) => void;
   /** The question asked before a new drawing replaces one with unsaved work, when it's being asked. */
   confirm: ReactNode;
@@ -27,9 +31,10 @@ interface Props {
 
 /**
  * Setup's calibration: a sheet of every pen at four strengths, plotted and photographed, read back as
- * each pen really comes out - and what was measured, pen by pen.
+ * each pen really comes out - and what was measured, pen by pen. Moved from Studio's Setup on
+ * 2026-10-06; the sheet is shown on Photo's stage rather than opened as a drawing.
  */
-export function CalibrationSection({ tool, toolName, busy, sheetOpen, sheetIsTool, strangers, onNewSheet, onNewPairs, onReadPhoto, confirm }: Props) {
+export function CalibrationSection({ tool, toolName, busy, sheetOpen, sheetIsTool, strangers, onNewSheet, onNewPairs, onOpenSheet, sheetFile, onReadPhoto, confirm }: Props) {
   const input = useRef<HTMLInputElement>(null);
   const calibrated = tool?.calibration;
   return (
@@ -50,14 +55,19 @@ export function CalibrationSection({ tool, toolName, busy, sheetOpen, sheetIsToo
       >
         New calibration sheet
       </Button>
+      {confirm}
+      {sheetFile}
       <p className={controls.hint}>
-        2. Photograph the plotted sheet flat and evenly lit, with the whole sheet in view, and read it in with the sheet open here.
+        2. Photograph the plotted sheet flat and evenly lit, with the whole sheet in view, and read it in with its sheet made or opened here.
       </p>
+      <Button size="sm" variant="secondary" disabled={busy} onClick={onOpenSheet}>
+        Open a sheet
+      </Button>
       <Button
         size="sm"
         variant="secondary"
         disabled={busy || !sheetIsTool}
-        title={!sheetOpen ? "Open the calibration sheet first" : !sheetIsTool ? `This sheet isn’t of ${toolName || "the drawing tool"}’s pens: choose the tool it was made for` : undefined}
+        title={!sheetOpen ? "Make or open the calibration sheet first" : !sheetIsTool ? `This sheet isn’t of ${toolName || "the drawing tool"}’s pens: choose the tool it was made for` : undefined}
         onClick={() => input.current?.click()}
       >
         Read a photo of the sheet
@@ -87,7 +97,6 @@ export function CalibrationSection({ tool, toolName, busy, sheetOpen, sheetIsToo
       >
         New pen pairs sheet
       </Button>
-      {confirm}
       {calibrated && tool && (
         <ul className={styles.calibration} aria-label={`${tool.name} as measured`}>
           <li className={styles.calibrationRow}>

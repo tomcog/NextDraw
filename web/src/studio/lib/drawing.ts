@@ -2,11 +2,11 @@
 // paper. Plain geometry over the shapes and their fills, so it can be worked out - and tested -
 // apart from the app that keeps them.
 
-import { newFillId, type Fill } from "./hatch";
-import { type Point } from "./parametric";
-import { mapNode, type Node } from "./path";
-import { placements } from "./repeat";
-import { boxOf, centerOf, drawnRuns, newShapeId, outlinePoints, shiftShape, turnPoint, type Page, type Shape } from "./shapes";
+import { newFillId, type Fill } from "../../shared/lib/drawing/hatch";
+import { type Point } from "../../shared/lib/drawing/parametric";
+import { mapNode, type Node } from "../../shared/lib/drawing/path";
+import { placements } from "../../shared/lib/drawing/repeat";
+import { boxOf, centerOf, drawnRuns, newShapeId, outlinePoints, shiftShape, turnPoint, type Page, type Shape } from "../../shared/lib/drawing/shapes";
 
 export interface Box {
   x0: number;

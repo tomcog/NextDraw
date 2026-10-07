@@ -4,10 +4,10 @@ import { ArrowDownLeft, ArrowDownRight, ArrowDownToLine, ArrowUpLeft, ArrowUpRig
 import { Section } from "../../../shared/components/controls/Section";
 import { NumberField } from "../../../shared/components/controls/NumberField";
 import controls from "../../../shared/components/controls/controls.module.css";
-import { canFill } from "../../lib/hatch";
-import { closingTurns, CURVE_FIELDS, type Corner, type Curve } from "../../lib/parametric";
-import { defaultRepeat, placements, REPEAT_FIELDS, type Repeat, type RepeatKind } from "../../lib/repeat";
-import { pathRuns, POINT_HANDLE_LIMIT, type Shape } from "../../lib/shapes";
+import { canFill } from "../../../shared/lib/drawing/hatch";
+import { closingTurns, CURVE_FIELDS, type Corner, type Curve } from "../../../shared/lib/drawing/parametric";
+import { defaultRepeat, placements, REPEAT_FIELDS, type Repeat, type RepeatKind } from "../../../shared/lib/drawing/repeat";
+import { pathRuns, POINT_HANDLE_LIMIT, type Shape } from "../../../shared/lib/drawing/shapes";
 import styles from "../../App.module.css";
 
 /** Which of the shape's settings are on show, if any: one at a time. */

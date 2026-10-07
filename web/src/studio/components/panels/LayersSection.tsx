@@ -6,7 +6,7 @@ import { NumberField } from "../../../shared/components/controls/NumberField";
 import { isPalettePen, labelAfter, LABEL_SEPARATOR } from "../../../shared/lib/ink";
 import type { Preset } from "../../../shared/lib/types";
 import { useRowDrag } from "../../lib/useRowDrag";
-import type { Layer } from "../../lib/shapes";
+import type { Layer } from "../../../shared/lib/drawing/shapes";
 import styles from "../../App.module.css";
 
 export type AlignEdge = "left" | "centre" | "right" | "top" | "middle" | "bottom";

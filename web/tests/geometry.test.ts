@@ -1,10 +1,10 @@
 // The geometry under what the pen draws: hatch fills, and simplifying a path.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { hatchLines, stepInches, type Fill } from "../src/studio/lib/hatch";
-import { parsePath, pathData, simplifyRun } from "../src/studio/lib/path";
-import type { Point } from "../src/studio/lib/parametric";
-import type { Shape } from "../src/studio/lib/shapes";
+import { hatchLines, stepInches, type Fill } from "../src/shared/lib/drawing/hatch";
+import { parsePath, pathData, simplifyRun } from "../src/shared/lib/drawing/path";
+import type { Point } from "../src/shared/lib/drawing/parametric";
+import type { Shape } from "../src/shared/lib/drawing/shapes";
 
 const rect: Shape = { id: "r", kind: "rect", x: 1, y: 1, x2: 3, y2: 2, layerId: "l" };
 const fill = (over: Partial<Fill>): Fill => ({ id: "f", shapeId: "r", angle: 0, spacingMm: 2.54, scale: 100, ...over });

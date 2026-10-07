@@ -1,8 +1,8 @@
 import { hexToHsl, lightness } from "../../shared/lib/color";
 import { joinLayerName } from "../../shared/lib/ink";
 import type { PenColor, Preset } from "../../shared/lib/types";
-import { newFillId, type Fill } from "./hatch";
-import { newLayerId, newShapeId, type Layer, type Page, type Shape } from "./shapes";
+import { newFillId, type Fill } from "../../shared/lib/drawing/hatch";
+import { newLayerId, newShapeId, type Layer, type Page, type Shape } from "../../shared/lib/drawing/shapes";
 
 // A pen pairs sheet: two of a tool's pens hatched over each other, the lighter first and the darker
 // across it - what overlaid hatching really makes on paper, where print gets its in-between colours

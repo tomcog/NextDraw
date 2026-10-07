@@ -1,7 +1,7 @@
 import { Card, InputSelect, InputTextarea } from "@tomcoggia/ui";
 import { Section } from "../../../shared/components/controls/Section";
 import { NumberField } from "../../../shared/components/controls/NumberField";
-import type { Shape } from "../../lib/shapes";
+import type { Shape } from "../../../shared/lib/drawing/shapes";
 import styles from "../../App.module.css";
 
 type TextPatch = Partial<Pick<Shape, "text" | "font" | "tracking" | "leading">>;

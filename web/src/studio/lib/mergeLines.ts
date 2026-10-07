@@ -4,9 +4,9 @@
 // row is the few strokes it looks like, and what is drawn doesn't change: the same pen over the same
 // line covers the same ink.
 
-import type { Point } from "./parametric";
-import type { Node } from "./path";
-import { newShapeId, pathRuns, pointsBox, type Shape } from "./shapes";
+import type { Point } from "../../shared/lib/drawing/parametric";
+import type { Node } from "../../shared/lib/drawing/path";
+import { newShapeId, pathRuns, pointsBox, type Shape } from "../../shared/lib/drawing/shapes";
 
 /** How near, in inches, two lines count as one line, and two ends as touching: far under any pen. */
 const NEAR = 0.001;

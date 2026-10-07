@@ -1,17 +1,13 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { LAST_FOLDER_KEY, type CombineResult, type OpenResult } from "../../shared/components/FileBrowser";
-import { postJSON } from "../../shared/lib/api";
-import { APP_URL } from "../../shared/lib/apps";
-import { PLOT_CHANNEL } from "../../shared/lib/constants";
-import { save as remember } from "../../shared/lib/storage";
+import { LAST_FOLDER_KEY, type CombineResult, type OpenResult } from "../../components/FileBrowser";
+import { postJSON } from "../api";
+import { APP_URL } from "../apps";
+import { PLOT_CHANNEL } from "../constants";
+import { save as remember } from "../storage";
 import type { StrokeFont } from "./font";
 import type { Fill } from "./hatch";
 import type { Layer, Page, Shape } from "./shapes";
 import { buildSvg, cleanFileName } from "./svg";
-
-// The drawing being worked on, remembered so that handing one to Plot - which navigates away - isn't
-// the same as losing it. Its own key: Plot's keys share this origin and still carry the old name.
-export const LAST_FILE_KEY = "studio-last-file";
 
 /** Where the drawing was last saved, or read from: the file, and its folder as the File card says it. */
 export type Saved = { path: string; folder: string } | null;
@@ -32,6 +28,9 @@ interface Options {
   fonts: Record<string, StrokeFont>;
   setBusy: (busy: boolean) => void;
   setMessage: (message: Message) => void;
+  /** Where to remember the file being worked on, so the app can pick it up again when it next
+   *  starts. Studio does; Photo, whose drawings are made fresh each time, leaves it out. */
+  lastFileKey?: string;
 }
 
 /** Whether a Plot page is open in another tab of this browser: it answers when asked (see Plot's poll). */
@@ -57,7 +56,10 @@ function plotPageAnswers(): Promise<boolean> {
  * saving and sending it to Plot. Whoever opens or starts a drawing says so with opened, combined or
  * started, so the file's side of it follows; the drawing itself is the app's.
  */
-export function useDrawingFile({ shapes, fills, layers, page, sizeId, toolName, fonts, setBusy, setMessage }: Options) {
+export function useDrawingFile({ shapes, fills, layers, page, sizeId, toolName, fonts, setBusy, setMessage, lastFileKey }: Options) {
+  const rememberFile = (path: string | null) => {
+    if (lastFileKey) remember(lastFileKey, path);
+  };
   const [name, setName] = useState("Untitled");
   const [saved, setSaved] = useState<Saved>(null);
   // Where a drawing that has never been saved will be: files stacked into one are saved next to the
@@ -119,7 +121,7 @@ export function useDrawingFile({ shapes, fills, layers, page, sizeId, toolName, 
     setSaveTo(null);
     setForeign(drawing.unsupported);
     setOpenedAs(res.name);
-    remember(LAST_FILE_KEY, res.path);
+    rememberFile(res.path);
     // What's on screen is what's in the file, so there's nothing new to write yet.
     markClean({ shapes: drawing.shapes, fills: drawing.fills, layers: drawing.layers, page: drawing.page, name: base });
   }, [markClean]);
@@ -134,7 +136,7 @@ export function useDrawingFile({ shapes, fills, layers, page, sizeId, toolName, 
       setSaved(null);
       setSaveTo(res.folder_path ?? null);
       setOpenedAs(null);
-      remember(LAST_FILE_KEY, null); // nothing on disk to pick up again yet
+      rememberFile(null); // nothing on disk to pick up again yet
       onDisk.current = null; // on screen and nowhere else: there is something to save
     }
     setForeign((was) => (res.added ? was : 0) + unsupported);
@@ -150,7 +152,7 @@ export function useDrawingFile({ shapes, fills, layers, page, sizeId, toolName, 
     setSaveTo(null);
     setForeign(0);
     setOpenedAs(null);
-    remember(LAST_FILE_KEY, null); // don't reopen the old drawing next time Studio starts
+    rememberFile(null); // don't reopen the old drawing next time the app starts
     if (clean) markClean({ ...clean, name: newName });
     else setDirty(true);
   }, [markClean]);
@@ -165,7 +167,7 @@ export function useDrawingFile({ shapes, fills, layers, page, sizeId, toolName, 
     // drop the rest. Saving a copy is allowed; overwriting the original is not.
     if (foreign > 0 && cleanFileName(name) === openedAs) {
       setMessage({
-        text: `${openedAs} has ${foreign} ${foreign === 1 ? "mark" : "marks"} Studio can’t redraw. Give it another name to save a copy.`,
+        text: `${openedAs} has ${foreign} ${foreign === 1 ? "mark" : "marks"} that can’t be redrawn here. Give it another name to save a copy.`,
         ok: false,
       });
       return null;
@@ -189,7 +191,7 @@ export function useDrawingFile({ shapes, fills, layers, page, sizeId, toolName, 
       // What's on disk now is exactly what Studio holds, whatever the file used to contain.
       setForeign(0);
       setOpenedAs(res.name);
-      remember(LAST_FILE_KEY, res.path);
+      rememberFile(res.path);
       remember(LAST_FOLDER_KEY, res.path.slice(0, res.path.lastIndexOf("/")));
       markClean({ shapes, fills, layers, page, name: savedName });
       setMessage({ text: `Saved to ${res.folder}`, ok: true });
