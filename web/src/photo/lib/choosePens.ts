@@ -1,6 +1,9 @@
 import { fitMenu, hexLinear, labOfLinear, tonesOf } from "../../shared/lib/drawing/photo";
 
-// Choosing a tool's pens for a photo by how they really come out on paper. With a set of pens, every
+// Choosing a tool's pens for a photo by how they really come out on paper. The photo is sampled here,
+// on the page; the search itself runs in a worker (penSearch.worker.ts), so the page doesn't stop
+// while a few hundred million colour comparisons are made.
+// With a set of pens, every
 // colour they can make is known: bare paper, each pen at each number of passes, and - with pairs -
 // each two hatched across each other (fitMenu, which the drawing itself is made from). The best set
 // of N is the one whose colours, each point of the photo taking the nearest, come nearest on average.
@@ -43,24 +46,31 @@ const toLinear = (v: number) => {
 };
 
 /**
- * The best `most` pens of `candidates` for the photo `src` on `paper`, or null while the photo
- * hasn't been read. Pens are added one at a time, each the one that helps most; then, for the full
- * set, any pen is swapped for another while that brings the photo nearer.
+ * The photo `src`, sampled, in CIELAB - three numbers to a pixel - as its brightness and contrast
+ * make it, or null while it hasn't been read.
  */
-export function choosePens(src: string, brightness: number, contrast: number, candidates: Candidate[], paper: string, most: number, opts: FitOptions): PenChoice | null {
+export function samplePhoto(src: string, brightness: number, contrast: number): Float32Array | null {
   const tones = tonesOf(src);
-  if (!tones || !candidates.length) return null;
+  if (!tones) return null;
   const adjust = adjuster(brightness, contrast);
-
-  // The photo, sampled, in CIELAB.
   const total = tones.w * tones.h;
   const n = Math.min(SAMPLES, total);
   const pixels = new Float32Array(n * 3);
   for (let i = 0; i < n; i++) {
     const p = Math.floor((((i * 2654435761) % 4294967296) / 4294967296) * total) * 4;
-    const here = labOfLinear([toLinear(adjust(tones.rgba[p])), toLinear(adjust(tones.rgba[p + 1])), toLinear(adjust(tones.rgba[p + 2]))]);
-    pixels.set(here, i * 3);
+    pixels.set(labOfLinear([toLinear(adjust(tones.rgba[p])), toLinear(adjust(tones.rgba[p + 1])), toLinear(adjust(tones.rgba[p + 2]))]), i * 3);
   }
+  return pixels;
+}
+
+/**
+ * The best `most` pens of `candidates` for a photo's sampled `pixels` on `paper`. Pens are added one
+ * at a time, each the one that helps most; then, for the full set, any pen is swapped for another
+ * while that brings the photo nearer.
+ */
+export function searchPens(pixels: Float32Array, candidates: Candidate[], paper: string, most: number, opts: FitOptions): PenChoice | null {
+  if (!candidates.length || !pixels.length) return null;
+  const n = pixels.length / 3;
 
   // What a pen alone, and two together, can make - only the colours with that pen (or both) in them.
   const alone = new Map<number, number[][]>();

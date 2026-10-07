@@ -147,8 +147,13 @@ travel (264 m against 299 m). On a pastel test picture:
 | Best fit, whole passes | 7.1 ΔE |
 | Best fit, fine steps | 2.9 ΔE |
 
-Re-splitting with pairs and fine steps can hold the page for about a second, because the pen search
-runs on the main thread.
+**Off the page** (2026-10-06). The pen search runs in a Web Worker (`penSearch.worker.ts`, asked
+through `penSearch.ts`). The page only samples the photo. While a best-fit split waits for its pens,
+the controls are held and the banner says "Choosing pens…". The estimates are worked out the same
+way, and a newer answer replaces an older one. The predicted print also stroked a fine-steps layer
+as one huge self-overlapping path, which took about 2 s. It now strokes each line on its own, in
+about 0.25 s. The page's longest pause after a best-fit change went from about 2.3 s to 0.3 s. That
+0.3 s is working out the new layers' lines, which still happens on the page.
 
 ## Next
 

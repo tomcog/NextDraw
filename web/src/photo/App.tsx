@@ -296,7 +296,7 @@ export default function App() {
     placePhoto, photoScale, setPhotoScale, setPhotoMargin, replacePhoto, turnPhoto, setPhotoOf,
   } = photoActions({
     chosen, shapes, setShapes, layers, setLayers, active, setActiveLayer, page, tool,
-    spacingMm: tool?.hatch?.spacing_mm ?? 1.5, all: photoAll, paper: paperColor, record, addShape, pick, setMessage,
+    spacingMm: tool?.hatch?.spacing_mm ?? 1.5, all: photoAll, paper: paperColor, record, addShape, pick, setMessage, setBusy,
   });
 
   // A new, empty drawing on the paper as it is.
@@ -587,16 +587,24 @@ export default function App() {
   // Split by best fit: how near the best pens come to the photo, with one fewer and one more than it
   // has, so what another pen buys can be seen. An estimate from a sample of the photo's pixels, each
   // at the share of paper that suits it best - the predicted print says what the hatching really makes.
+  // Worked out off the page; a newer question's answer replaces an older one's, whichever comes first.
   const inks = chosen?.photo?.group ? shapes.filter((sh) => sh.photo?.group === chosen.photo!.group && !sh.photo?.key).length : 1;
-  const estimates = useMemo(() => {
-    if (!chosen?.photo?.fitPaper || !convertRead) return undefined;
-    const out: { pens: number; err: number }[] = [];
-    for (const n of [inks - 1, inks, inks + 1]) {
-      if (n < 1 || n > (tool?.palette?.length ?? 0)) continue;
-      const best = bestPens(n, Boolean(chosen.photo.fitPairs), Boolean(chosen.photo.fineSteps));
-      if (best?.errors.length) out.push({ pens: n, err: best.errors[best.errors.length - 1] });
+  const [estimates, setEstimates] = useState<{ pens: number; err: number }[] | undefined>(undefined);
+  const asked = useRef(0);
+  useEffect(() => {
+    const mine = ++asked.current;
+    if (!chosen?.photo?.fitPaper || !convertRead) {
+      setEstimates(undefined);
+      return;
     }
-    return out.length ? out : undefined;
+    const counts = [inks - 1, inks, inks + 1].filter((n) => n >= 1 && n <= (tool?.palette?.length ?? 0));
+    Promise.all(counts.map((n) => bestPens(n, Boolean(chosen.photo!.fitPairs), Boolean(chosen.photo!.fineSteps))))
+      .then((found) => {
+        if (mine !== asked.current) return;
+        const out = found.flatMap((best, i) => (best?.errors.length ? [{ pens: counts[i], err: best.errors[best.errors.length - 1] }] : []));
+        setEstimates(out.length ? out : undefined);
+      })
+      .catch(() => mine === asked.current && setEstimates(undefined));
   }, [chosen?.photo?.src, chosen?.photo?.brightness, chosen?.photo?.contrast, chosen?.photo?.fitPaper, chosen?.photo?.fitPairs, chosen?.photo?.fineSteps, chosen?.photo?.spacingMm, chosen?.photo?.levels, convertRead, inks, tool, paperColor]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // The chosen photo's card: how it's turned into lines.

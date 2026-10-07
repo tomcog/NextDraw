@@ -11,7 +11,8 @@ import {
   placeOnPage, plateNamed, platePens, readTones, hexLinear, linearHex, coverSteps, stemWithoutPlate, turnedCopy, turnedCrop, workingCopy, type Photo, type PhotoPart, type Plate,
 } from "../../shared/lib/drawing/photo";
 import { boxOf, newLayerId, newShapeId, type Layer, type Page, type Shape } from "../../shared/lib/drawing/shapes";
-import { choosePens, type Candidate } from "./choosePens";
+import { samplePhoto, type Candidate } from "./choosePens";
+import { searchPensOffPage } from "./penSearch";
 
 export interface PhotoContext {
   /** The one shape picked, if one is. */
@@ -36,11 +37,13 @@ export interface PhotoContext {
   record: () => void;
   addShape: (shape: Shape) => void;
   pick: (id: string | null) => void;
-  setMessage: (message: { text: string; ok: boolean }) => void;
+  setMessage: (message: { text: string; ok: boolean; progress?: boolean }) => void;
+  /** Hold the controls while something is worked out that a change would go stale under. */
+  setBusy: (busy: boolean) => void;
 }
 
 export function photoActions(ctx: PhotoContext) {
-  const { chosen, shapes, setShapes, layers, setLayers, active, setActiveLayer, page, tool: tool2, all: photoAll, paper, record, addShape, pick, setMessage } = ctx;
+  const { chosen, shapes, setShapes, layers, setLayers, active, setActiveLayer, page, tool: tool2, all: photoAll, paper, record, addShape, pick, setMessage, setBusy } = ctx;
   const defaults = { spacingMm: ctx.spacingMm };
 
   // A photo, from a file on this Mac: made into a working copy, fitted to the page inside a half-inch
@@ -459,11 +462,16 @@ export function photoActions(ctx: PhotoContext) {
     opaque: tool2?.settings.ink_opaque === true,
   });
 
-  /** The best `count` pens for the chosen photo on this paper, and how near the photo each count comes. */
-  const bestPens = (count: number, pairs: boolean, fine: boolean) => {
+  /**
+   * The best `count` pens for the chosen photo on this paper, and how near the photo each count comes:
+   * worked out off the page. Null while the photo hasn't been read.
+   */
+  const bestPens = async (count: number, pairs: boolean, fine: boolean) => {
     if (!chosen?.photo) return null;
+    const pixels = samplePhoto(chosen.photo.src, chosen.photo.brightness, chosen.photo.contrast);
+    if (!pixels) return null;
     const { pens, list } = candidates();
-    const choice = choosePens(chosen.photo.src, chosen.photo.brightness, chosen.photo.contrast, list, paper, count, fitSettings(pairs, fine));
+    const choice = await searchPensOffPage(pixels, list, paper, count, fitSettings(pairs, fine));
     return choice ? { ...choice, pens: choice.pens.map((k) => ({ pen: pens[k], onPaper: list[k].onPaper })) } : null;
   };
 
@@ -473,9 +481,11 @@ export function photoActions(ctx: PhotoContext) {
    * comes nearest there, as much of it as matches - or, with `pairs`, by two pens hatched across each
    * other where together they come nearer. Layers stack by their pens' lightness, lightest at the
    * bottom. Paired pens' lines have to cross rather than lie along each other for their colours to mix
-   * as worked out, so each layer is hatched at its own angle, spread across the quarter turn.
+   * as worked out, so each layer is hatched at its own angle, spread across the quarter turn. The pens
+   * are searched for off the page; the controls are held meanwhile, so the photo is still as it was
+   * when the answer comes.
    */
-  const splitPhotoBestFit = (
+  const splitPhotoBestFit = async (
     count: number,
     extra: Partial<Photo> = {},
     pairs = chosen?.photo?.fitPaper ? Boolean(chosen.photo.fitPairs) : true,
@@ -487,7 +497,17 @@ export function photoActions(ctx: PhotoContext) {
       return;
     }
     const n = Math.min(MOST_LAYERS, Math.max(1, Math.round(count)));
-    const best = bestPens(n, pairs, fine);
+    setBusy(true);
+    setMessage({ text: "Choosing pens…", ok: true, progress: true });
+    let best: Awaited<ReturnType<typeof bestPens>> = null;
+    try {
+      best = await bestPens(n, pairs, fine);
+    } catch (err) {
+      setMessage({ text: `Couldn’t choose pens: ${(err as Error).message}`, ok: false });
+      return;
+    } finally {
+      setBusy(false);
+    }
     if (!best) {
       setMessage({ text: "The photo is still being read: try again in a moment", ok: false });
       return;

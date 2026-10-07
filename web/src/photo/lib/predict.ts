@@ -72,8 +72,12 @@ function coverage(marks: string[], width: number, height: number, scale: number,
   ctx.lineCap = "round";
   ctx.lineJoin = "round";
   // One pen on one layer: where its own lines cross it lays no more ink (a gel pen), so the layer is
-  // the union of its lines.
-  for (const d of marks) if (d) ctx.stroke(new Path2D(d));
+  // the union of its lines. Each line is stroked on its own: as one path, lines close enough to touch
+  // make the browser work out the outline of thousands of overlapping strokes, which took seconds.
+  for (const d of marks) {
+    if (!d) continue;
+    for (const line of d.split("M")) if (line) ctx.stroke(new Path2D(`M${line}`));
+  }
   const px = ctx.getImageData(0, 0, width, height).data;
   const out = new Float32Array(width * height);
   for (let i = 0; i < out.length; i++) out[i] = px[i * 4 + 3] / 255;
