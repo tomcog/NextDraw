@@ -1737,6 +1737,9 @@ function processingBlurred(src: string, tones: Tones): Tones {
  * the amplitude's divisor, in mm, as Inkscape's own millimetre documents have it. Joined, each row
  * turns round into the next half a cell out past the edge.
  *
+ * As the extension's, the waves of the top and bottom rows swing out past the photo's edge where
+ * they're tall enough: nothing here stops them there (Plot's driver stops at the page edge).
+ *
  * Over the extension: rows at the photo's angle; a layer of a photo split by tone or colour breaks
  * off at the cells where it has nothing to draw, and with `squiggleLift` at white ones too; split by
  * colour or into plates, the lightest pen runs on through white.
@@ -1765,7 +1768,6 @@ function squiggleInkscape(tones: Tones, photo: Photo, w: number, h: number): Pho
   // A point by how far along (0 to L) and across (0 to A) the frame it is.
   const at = (t: number, o: number): P => ({ x: cx + (t - L / 2) * dx - (o - A / 2) * dy, y: cy + (t - L / 2) * dy + (o - A / 2) * dx });
   const inside = (p: P) => p.x >= -1e-9 && p.x <= w + 1e-9 && p.y >= -1e-9 && p.y <= h + 1e-9;
-  const inBox = (p: P): P => ({ x: Math.min(w, Math.max(0, p.x)), y: Math.min(h, Math.max(0, p.y)) });
   const n = (v: number) => Number(v.toFixed(4));
   const brightness = (p: P) => {
     if (!inside(p)) return 255;
@@ -1844,15 +1846,15 @@ function squiggleInkscape(tones: Tones, photo: Photo, w: number, h: number): Pho
       if (reversed) amp *= -1;
       const sign = reversed ? -1 : 1;
       const t0 = (reversed ? x + 1 : x) * xinc;
-      if (!run) run = { start: inBox(at(t0, oMid)), segs: [], fromStart: i === 0, toEnd: false, row: r };
+      if (!run) run = { start: at(t0, oMid), segs: [], fromStart: i === 0, toEnd: false, row: r };
       // `freq` waves to the cell, each a hump out and its reflection back: a quadratic, then the extension's smooth 't'.
       const half = (sign * xinc) / 2 / freq;
       for (let f = 0; f < freq; f++) {
         const s = t0 + 2 * half * f;
         const p0 = at(s, oMid);
-        run.segs.push(quad(p0, at(s + half / 2, oMid + (amp / 2) * MM), at(s + half, oMid)).map(inBox) as [P, P, P]);
+        run.segs.push(quad(p0, at(s + half / 2, oMid + (amp / 2) * MM), at(s + half, oMid)));
         const p1 = at(s + half, oMid);
-        run.segs.push(quad(p1, at(s + (3 * half) / 2, oMid - (amp / 2) * MM), at(s + 2 * half, oMid)).map(inBox) as [P, P, P]);
+        run.segs.push(quad(p1, at(s + (3 * half) / 2, oMid - (amp / 2) * MM), at(s + 2 * half, oMid)));
       }
       if (i === order.length - 1) run.toEnd = true;
     }
