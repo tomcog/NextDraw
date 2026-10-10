@@ -25,9 +25,11 @@ export interface Photo {
   levels: number;
   /**
    * What the tone is drawn as: hatching, lines crossing and filling in as it darkens; or tone lines,
-   * one line along each row that waves harder and tighter where it's darker. Absent, hatching.
+   * one line along each row that waves harder and tighter where it's darker; or squiggles, the same
+   * drawn the way SquiggleDraw draws it - smooth curves, unbroken through white, rows joinable into
+   * one line. Absent, hatching.
    */
-  style?: "hatch" | "waves" | "outlines" | "centerlines" | "silhouette";
+  style?: "hatch" | "waves" | "squiggle" | "outlines" | "centerlines" | "silhouette";
   /** Outlines: how many contours, spread across the tones this layer draws. */
   contours?: number;
   /** Outlines: how much fine detail and noise is smoothed away first, in mm on the page. */
@@ -54,6 +56,14 @@ export interface Photo {
   rowMm?: number;
   /** Tone lines: the length of one wave where the photo is darkest, in mm. Lighter tones stretch it. */
   waveMm?: number;
+  /**
+   * Squiggle (after SquiggleDraw, 2026-10-10): how far the line swings at black, as a share of the
+   * row spacing - 1 and neighbouring rows' waves just meet, more and they overlap. Rows and wave
+   * length are tone lines' `rowMm` and `waveMm`.
+   */
+  squiggleHeight?: number;
+  /** Squiggle: each row turns round into the next, so the photo is one line wherever nothing breaks it. */
+  squiggleJoin?: boolean;
   /**
    * Split by colour: the photo's colours gathered into groups of similar colours, `regions`, each
    * the average colour of its group. This layer draws group number `region`'s area, in its pen, `ink`
@@ -268,7 +278,7 @@ export interface PhotoPart {
 
 /** The settings a layer of a photo keeps as its own, as opposed to the photo's: what a mode remembers. */
 export const LAYER_SETTINGS = [
-  "style", "angle", "spacingMm", "levels", "rowMm", "waveMm", "contours", "smoothMm", "centerFrom", "centerSmoothMm", "centerShortestMm", "silhouetteFrom", "silhouetteSmoothMm", "silhouetteSmallestMm", "offsetMm",
+  "style", "angle", "spacingMm", "levels", "rowMm", "waveMm", "squiggleHeight", "squiggleJoin", "contours", "smoothMm", "centerFrom", "centerSmoothMm", "centerShortestMm", "silhouetteFrom", "silhouetteSmoothMm", "silhouetteSmallestMm", "offsetMm",
   "band", "ink", "regions", "region", "key", "regionInks", "keyInk", "plate", "plates", "fitPaper", "penMm", "fitPairs", "fitOpaque", "fineSteps",
 ] as const;
 
@@ -291,6 +301,9 @@ export const PHOTO_DEFAULTS = { brightness: 0, contrast: 0, angle: 45, levels: 4
 
 /** What tone lines start from: rows a couple of millimetres apart, waves a millimetre long at black. */
 export const WAVE_DEFAULTS = { rowMm: 2, waveMm: 1 };
+
+/** What squiggles start from: SquiggleDraw's look, the waves at black half again as tall as a row is wide. */
+export const SQUIGGLE_DEFAULTS = { height: 1.5 };
 
 /** What outlines start from: a handful of contours, a millimetre's detail smoothed away. */
 export const OUTLINE_DEFAULTS = { contours: 6, smoothMm: 1 };
@@ -430,6 +443,7 @@ export function photoMarks(photo: Photo, w: number, h: number): PhotoMarks | nul
   const known = marksCache.get(key);
   if (known) return known;
   const made = photo.style === "waves" ? waves(tones, photo, w, h)
+    : photo.style === "squiggle" ? squiggle(tones, photo, w, h)
     : photo.style === "outlines" ? outlines(tones, photo, w, h)
     : photo.style === "centerlines" ? centerlines(tones, photo, w, h)
     : photo.style === "silhouette" ? silhouette(tones, photo, w, h)
@@ -441,7 +455,7 @@ export function photoMarks(photo: Photo, w: number, h: number): PhotoMarks | nul
 
 /** Everything a photo's lines depend on, as one string: the same key, the same lines. */
 function marksKey(photo: Photo, w: number, h: number) {
-  return [photo.src.length, photo.src.slice(-32), w.toFixed(4), h.toFixed(4), photo.brightness, photo.contrast, photo.angle, photo.spacingMm, photo.levels, photo.band?.join(",") ?? "", photo.crop?.join(",") ?? "", photo.bleed ?? 0, photo.style ?? "hatch", photo.rowMm ?? "", photo.waveMm ?? "", photo.ink ?? "", photo.regions?.join(",") ?? "", photo.region ?? "", photo.contours ?? "", photo.smoothMm ?? "", photo.key ? "key" : "", photo.keyInk ?? "", photo.regionInks?.join(",") ?? "", photo.keyStrength ?? "", photo.keyFrom ?? "", photo.plate ?? "", photo.plates?.join(",") ?? "", photo.blackShare ?? "", photo.centerFrom ?? "", photo.centerSmoothMm ?? "", photo.centerShortestMm ?? "", photo.silhouetteFrom ?? "", photo.silhouetteSmoothMm ?? "", photo.silhouetteSmallestMm ?? "", photo.fitPaper ?? "", photo.penMm ?? "", photo.fitPairs ? "pairs" : "", photo.fitOpaque ? "opaque" : "", photo.fineSteps ? "fine" : ""].join("|");
+  return [photo.src.length, photo.src.slice(-32), w.toFixed(4), h.toFixed(4), photo.brightness, photo.contrast, photo.angle, photo.spacingMm, photo.levels, photo.band?.join(",") ?? "", photo.crop?.join(",") ?? "", photo.bleed ?? 0, photo.style ?? "hatch", photo.rowMm ?? "", photo.waveMm ?? "", photo.squiggleHeight ?? "", photo.squiggleJoin ? "join" : "", photo.ink ?? "", photo.regions?.join(",") ?? "", photo.region ?? "", photo.contours ?? "", photo.smoothMm ?? "", photo.key ? "key" : "", photo.keyInk ?? "", photo.regionInks?.join(",") ?? "", photo.keyStrength ?? "", photo.keyFrom ?? "", photo.plate ?? "", photo.plates?.join(",") ?? "", photo.blackShare ?? "", photo.centerFrom ?? "", photo.centerSmoothMm ?? "", photo.centerShortestMm ?? "", photo.silhouetteFrom ?? "", photo.silhouetteSmoothMm ?? "", photo.silhouetteSmallestMm ?? "", photo.fitPaper ?? "", photo.penMm ?? "", photo.fitPairs ? "pairs" : "", photo.fitOpaque ? "opaque" : "", photo.fineSteps ? "fine" : ""].join("|");
 }
 
 /**
@@ -1139,6 +1153,162 @@ function waves(tones: Tones, photo: Photo, w: number, h: number): PhotoMarks {
     close();
   }
   return { passes: [parts.join("")], strokes };
+}
+
+// ---------- Squiggle ----------
+
+/**
+ * Tone as squiggles, after Gregg Wygonik's SquiggleDraw (public domain): one line along each row,
+ * swinging higher and waving tighter the darker the photo is under it, both in step with the tone.
+ * Unlike tone lines it doesn't lift through white - the line runs on flat - so a photo is a stack of
+ * unbroken rows, or with `squiggleJoin` one line turning round at each end. It lifts only where this
+ * layer has nothing to draw (another band's tone, another pen's colour).
+ *
+ * As SquiggleDraw does, a point goes only at each crest, trough and crossing of the middle, and
+ * the points are joined as a smooth curve through them (Catmull-Rom, written as cubics): few points,
+ * no corners. The waves never get tighter than twice the tool's solid-fill spacing - past that the
+ * crests run together and more of them only costs ink and time.
+ */
+function squiggle(tones: Tones, photo: Photo, w: number, h: number): PhotoMarks {
+  const row = Math.max(0.2, photo.rowMm ?? WAVE_DEFAULTS.rowMm) / 25.4;
+  const tightest = Math.max(0.2, photo.waveMm ?? WAVE_DEFAULTS.waveMm) / 25.4;
+  const shortest = Math.max(tightest, (2 * Math.max(0.05, photo.spacingMm)) / 25.4);
+  const swingAtBlack = (row / 2) * Math.max(0, photo.squiggleHeight ?? SQUIGGLE_DEFAULTS.height);
+  const { toneAt, fromWhite } = toneSampler(tones, photo, w, h);
+  const rad = (photo.angle * Math.PI) / 180;
+  const dx = Math.cos(rad);
+  const dy = Math.sin(rad);
+  const cx = w / 2;
+  const cy = h / 2;
+  const reach = Math.hypot(w, h) / 2;
+  // How often the photo is read along a row: a fifth of a millimetre, or finer for the tightest waves.
+  const step = Math.min(0.2 / 25.4, shortest / 4);
+  const quarter = Math.PI / 2;
+  const strength = (t: number) => (fromWhite ? t : 0.15 + 0.85 * t);
+  const n = (v: number) => Number(v.toFixed(4));
+  type P = { x: number; y: number };
+  const inBox = (p: P): P => ({ x: Math.min(w, Math.max(0, p.x)), y: Math.min(h, Math.max(0, p.y)) });
+
+  // The stretch of a row inside the box, as distances along it from the middle; null if it misses.
+  const span = (o: number): [number, number] | null => {
+    let lo = -Infinity;
+    let hi = Infinity;
+    const clip = (start: number, along: number, max: number) => {
+      if (Math.abs(along) < 1e-9) {
+        if (start < 0 || start > max) lo = Infinity;
+        return;
+      }
+      const a = (0 - start) / along;
+      const b = (max - start) / along;
+      lo = Math.max(lo, Math.min(a, b));
+      hi = Math.min(hi, Math.max(a, b));
+    };
+    clip(cx - dy * o, dx, w);
+    clip(cy + dx * o, dy, h);
+    return hi - lo > step ? [lo, hi] : null;
+  };
+
+  // Each run of line: its points, and whether it reaches its row's start and end.
+  type Run = { points: P[]; fromStart: boolean; toEnd: boolean };
+  const rows: Run[][] = [];
+  let line = 0;
+  for (let o = -reach + row / 2; o <= reach; o += row) {
+    const s0 = span(o);
+    if (!s0) continue;
+    const back = line++ % 2 === 1;
+    const [a, b] = back ? [s0[1], s0[0]] : s0;
+    const along = back ? -1 : 1;
+    const count = Math.max(1, Math.ceil(Math.abs(b - a) / step));
+    const at = (t: number, swing: number): P => ({ x: cx - dy * o + dx * t - dy * swing, y: cy + dx * o + dy * t + dx * swing });
+    // A run ends on the row's middle, as SquiggleDraw's do, dropping a crest too close before it to curve smoothly into.
+    const finish = (r: Run, t: number) => {
+      const end = inBox(at(t, 0));
+      const [before, last] = r.points.slice(-2);
+      if (r.points.length > 1 && Math.hypot(last.x - end.x, last.y - end.y) < 0.75 * Math.hypot(last.x - before.x, last.y - before.y)) r.points.pop();
+      r.points.push(end);
+    };
+    const runs: Run[] = [];
+    let run: Run | null = null;
+    let phase = 0;
+    let swing = 0;
+    let lastT = a;
+    for (let i = 0; i <= count; i++) {
+      const t = i === count ? b : a + along * i * step;
+      const base = at(t, 0);
+      const tone = toneAt(Math.min(w, Math.max(0, base.x)), Math.min(h, Math.max(0, base.y)));
+      if (tone < 0) {
+        if (run) {
+          finish(run, lastT);
+          runs.push(run);
+          run = null;
+        }
+        continue;
+      }
+      const s = strength(tone);
+      const nextSwing = swingAtBlack * s;
+      if (!run) {
+        run = { points: [inBox(base)], fromStart: i === 0, toEnd: false };
+        phase = 0;
+        swing = nextSwing;
+        lastT = t;
+        continue;
+      }
+      // Darker waves tighter: at black the shortest, ten times as long at white, where it's flat anyway.
+      const length = Math.max(shortest, tightest / Math.max(0.1, s));
+      const turned = phase + (2 * Math.PI * Math.abs(t - lastT)) / length;
+      for (let k = Math.floor(phase / quarter) + 1; k * quarter <= turned; k++) {
+        const f = (k * quarter - phase) / (turned - phase);
+        const sw = swing + f * (nextSwing - swing);
+        run.points.push(inBox(at(lastT + f * (t - lastT), sw * Math.round(Math.sin(k * quarter)))));
+      }
+      phase = turned;
+      swing = nextSwing;
+      lastT = t;
+    }
+    if (run) {
+      finish(run, b);
+      run.toEnd = true;
+      runs.push(run);
+    }
+    rows.push(runs);
+  }
+
+  // Joined, a row that reaches its end turns round into the next row where that starts at its start:
+  // a loop out past the edge by a third of a row, as SquiggleDraw makes it.
+  const lines: P[][] = [];
+  let open: P[] | null = null;
+  for (let r = 0; r < rows.length; r++) {
+    const prev = r > 0 ? rows[r - 1][rows[r - 1].length - 1] : undefined;
+    for (let i = 0; i < rows[r].length; i++) {
+      const run = rows[r][i];
+      if (open && photo.squiggleJoin && i === 0 && run.fromStart && prev?.toEnd) {
+        const end = open[open.length - 1];
+        const start = run.points[0];
+        const out = (r - 1) % 2 === 1 ? -1 : 1;
+        open.push({ x: (end.x + start.x) / 2 + dx * out * (row / 3), y: (end.y + start.y) / 2 + dy * out * (row / 3) }, ...run.points);
+        continue;
+      }
+      if (open) lines.push(open);
+      open = [...run.points];
+    }
+  }
+  if (open) lines.push(open);
+
+  // Each line as a smooth curve through its points: a Catmull-Rom spline, written as cubics.
+  const parts: string[] = [];
+  for (const pts of lines) {
+    if (pts.length < 2) continue;
+    let d = `M${n(pts[0].x)} ${n(pts[0].y)}`;
+    for (let i = 0; i < pts.length - 1; i++) {
+      const p0 = pts[Math.max(0, i - 1)];
+      const p1 = pts[i];
+      const p2 = pts[i + 1];
+      const p3 = pts[Math.min(pts.length - 1, i + 2)];
+      d += `C${n(p1.x + (p2.x - p0.x) / 6)} ${n(p1.y + (p2.y - p0.y) / 6)} ${n(p2.x - (p3.x - p1.x) / 6)} ${n(p2.y - (p3.y - p1.y) / 6)} ${n(p2.x)} ${n(p2.y)}`;
+    }
+    parts.push(d);
+  }
+  return { passes: [parts.join("")], strokes: parts.length };
 }
 
 // ---------- Outlines ----------
@@ -2105,7 +2275,7 @@ export function photoFromData(raw: Record<string, unknown>): Photo | null {
       ? { crop: raw.crop.map(Number) as [number, number, number, number] }
       : {}),
     ...(raw.fit === "fit" || raw.fit === "fill" ? { fit: raw.fit } : {}),
-    ...(raw.style === "waves" || raw.style === "outlines" || raw.style === "centerlines" || raw.style === "silhouette" ? { style: raw.style } : {}),
+    ...(raw.style === "waves" || raw.style === "squiggle" || raw.style === "outlines" || raw.style === "centerlines" || raw.style === "silhouette" ? { style: raw.style } : {}),
     ...(Number.isFinite(Number(raw.center_from)) && raw.center_from !== undefined ? { centerFrom: Number(raw.center_from) } : {}),
     ...(Number.isFinite(Number(raw.center_smooth_mm)) && raw.center_smooth_mm !== undefined ? { centerSmoothMm: Number(raw.center_smooth_mm) } : {}),
     ...(Number.isFinite(Number(raw.center_shortest_mm)) && raw.center_shortest_mm !== undefined ? { centerShortestMm: Number(raw.center_shortest_mm) } : {}),
@@ -2137,6 +2307,8 @@ export function photoFromData(raw: Record<string, unknown>): Photo | null {
     ...(Array.isArray(raw.region_inks) ? { regionInks: raw.region_inks.map((c) => (typeof c === "string" ? c : null)) } : {}),
     ...(Number.isFinite(Number(raw.row_mm)) && raw.row_mm !== undefined ? { rowMm: Number(raw.row_mm) } : {}),
     ...(Number.isFinite(Number(raw.wave_mm)) && raw.wave_mm !== undefined ? { waveMm: Number(raw.wave_mm) } : {}),
+    ...(Number.isFinite(Number(raw.squiggle_height)) && raw.squiggle_height !== undefined ? { squiggleHeight: Number(raw.squiggle_height) } : {}),
+    ...(raw.squiggle_join === true ? { squiggleJoin: true } : {}),
     ...(Number.isFinite(Number(raw.bleed)) && raw.bleed !== undefined ? { bleed: Number(raw.bleed) } : {}),
     ...(Number.isFinite(Number(raw.margin)) && raw.margin !== undefined ? { margin: Number(raw.margin) } : {}),
     ...(Array.isArray(raw.band) && raw.band.length === 2 && raw.band.every((v) => Number.isFinite(Number(v)))
@@ -2153,7 +2325,7 @@ export const photoData = (p: Photo) => ({
   ...(p.band ? { band: p.band } : {}),
   ...(p.crop ? { crop: p.crop } : {}),
   ...(p.fit ? { fit: p.fit } : {}),
-  ...(p.style === "waves" || p.style === "outlines" || p.style === "centerlines" || p.style === "silhouette" ? { style: p.style } : {}),
+  ...(p.style === "waves" || p.style === "squiggle" || p.style === "outlines" || p.style === "centerlines" || p.style === "silhouette" ? { style: p.style } : {}),
   ...(p.centerFrom !== undefined ? { center_from: p.centerFrom } : {}),
   ...(p.centerSmoothMm !== undefined ? { center_smooth_mm: p.centerSmoothMm } : {}),
   ...(p.centerShortestMm !== undefined ? { center_shortest_mm: p.centerShortestMm } : {}),
@@ -2177,6 +2349,8 @@ export const photoData = (p: Photo) => ({
   ...(p.offsetMm && (p.offsetMm[0] || p.offsetMm[1]) ? { offset_mm: p.offsetMm } : {}),
   ...(p.rowMm !== undefined ? { row_mm: p.rowMm } : {}),
   ...(p.waveMm !== undefined ? { wave_mm: p.waveMm } : {}),
+  ...(p.squiggleHeight !== undefined ? { squiggle_height: p.squiggleHeight } : {}),
+  ...(p.squiggleJoin ? { squiggle_join: true } : {}),
   ...(p.bleed ? { bleed: p.bleed } : {}),
   ...(p.margin !== undefined ? { margin: p.margin } : {}),
 });
