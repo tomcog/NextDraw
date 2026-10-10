@@ -338,10 +338,17 @@ export function PhotoCard({ shape, title, shapes, layers, busy, all, onAll, scal
                     <NumberField label="Shortest" unit="mm" min={0} max={20} step={0.25} value={photo.centerShortestMm ?? CENTER_DEFAULTS.shortestMm} onChange={(centerShortestMm) => actions.set({ centerShortestMm })} />
                   </div>
                 ) : photo.style === "outlines" ? (
-                  <div className={styles.fillRow}>
-                    <NumberField label="Lines" min={1} max={40} step={1} value={photo.contours ?? OUTLINE_DEFAULTS.contours} onChange={(contours) => actions.set({ contours })} />
-                    <NumberField label="Smoothing" unit="mm" min={0} max={20} step={0.25} value={photo.smoothMm ?? OUTLINE_DEFAULTS.smoothMm} onChange={(smoothMm) => actions.set({ smoothMm })} />
-                  </div>
+                  <>
+                    {/* The color mode first, as in the other effects. No angles: contours follow the
+                      photo, not a direction. */}
+                    {colourMode}
+                    {photo.group && bleed}
+                    <div className={styles.fillRow}>
+                      <NumberField label="Lines" min={1} max={40} step={1} value={photo.contours ?? OUTLINE_DEFAULTS.contours} onChange={(contours) => actions.set({ contours })} />
+                      <NumberField label="Smoothing mm" min={0} max={20} step={0.25} value={photo.smoothMm ?? OUTLINE_DEFAULTS.smoothMm} onChange={(smoothMm) => actions.set({ smoothMm })} />
+                    </div>
+                    {eachLayer("Lines and smoothing")}
+                  </>
                 ) : photo.style === "squiggle" ? (
                   <>
                     {/* As Hatching: the color mode first, then the layers' angles. */}
@@ -410,7 +417,7 @@ export function PhotoCard({ shape, title, shapes, layers, busy, all, onAll, scal
               </Section>
             </div>
           </Card>
-          {splits && effect.key !== "hatch" && effect.key !== "squiggle" && effect.key !== "waves" && (
+          {splits && effect.key !== "hatch" && effect.key !== "squiggle" && effect.key !== "waves" && effect.key !== "outlines" && (
             <Card variant="flat" className={styles.controls}>
               <div className={`${styles.cardBody} ${controls.cardSections}`}>
                 <Section title={photo.separation ? "Separation" : "Layers"} collapsibleKey="photo-layers">
