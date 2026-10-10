@@ -59,3 +59,16 @@ test("squiggle: no angle or row spacing throws, even where a run is a single poi
     }
   }
 });
+
+test("hatching: six passes, the fifth and sixth on the diagonals, each stroke two points", async () => {
+  await gradient("data:gradient");
+  const marks = photoMarks(photo({ style: undefined, levels: 6, angle: 0, spacingMm: 1 }), 4, 2)!;
+  assert.equal(marks.passes.length, 6);
+  for (const [k, d] of marks.passes.entries()) {
+    assert.ok(d.length > 0, `pass ${k + 1} draws`);
+    const [x0, y0, x1, y1] = d.split("L")[0].slice(1).split(" ").concat(d.split("L")[1].split("M")[0].split(" ")).map(Number);
+    const deg = (((Math.atan2(y1 - y0, x1 - x0) * 180) / Math.PI) % 180 + 180) % 180;
+    assert.ok(Math.abs(deg - [0, 90, 0, 90, 45, 135][k]) < 1, `pass ${k + 1} at ${deg}°`);
+  }
+  for (const run of marks.passes.join("").split("M").filter(Boolean)) assert.equal(run.split("L").length, 2);
+});

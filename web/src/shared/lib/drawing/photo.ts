@@ -21,7 +21,10 @@ export interface Photo {
   angle: number;
   /** The closest the lines ever come, in mm: the spacing the tool fills solid at. */
   spacingMm: number;
-  /** How many passes of lines build up the darks, 1 to 4: two directions, then each again between. */
+  /**
+   * How many passes of lines build up the darks, 1 to 6: two directions, then each again between,
+   * then the two diagonals across them for the deepest darks.
+   */
   levels: number;
   /**
    * What the tone is drawn as: hatching, lines crossing and filling in as it darkens; or tone lines,
@@ -298,6 +301,9 @@ export const MOST_LAYERS = 6;
 export const WORKING_EDGE = 1600;
 
 export const PHOTO_DEFAULTS = { brightness: 0, contrast: 0, angle: 45, levels: 4 };
+
+/** The most passes hatching builds the darks in: two directions, each again between, then the diagonals. */
+export const MOST_PASSES = 6;
 
 /** What tone lines start from: rows a couple of millimetres apart, waves a millimetre long at black. */
 export const WAVE_DEFAULTS = { rowMm: 2, waveMm: 1 };
@@ -797,7 +803,8 @@ export function fitMenu(paper: string, pens: string[], steps: number[], pairs: b
 /**
  * How much of the paper hatching covers with 0, 1, 2… passes, for a line `penMm` wide, `spacingMm`
  * apart and up to `levels` passes. Each pass draws lines two spacings apart: the second crosses the
- * first, the third falls between the first's lines and the fourth between the second's.
+ * first, the third falls between the first's lines and the fourth between the second's; the fifth and
+ * sixth run on the diagonals, each laying its share over what's left.
  */
 export function coverSteps(penMm: number, spacingMm: number, levels: number, fine = false): number[] {
   if (fine) {
@@ -809,8 +816,9 @@ export function coverSteps(penMm: number, spacingMm: number, levels: number, fin
   }
   const one = Math.min(1, penMm / (2 * Math.max(0.05, spacingMm)));
   const both = Math.min(1, 2 * one);
-  const steps = [0, one, 1 - (1 - one) ** 2, 1 - (1 - both) * (1 - one), 1 - (1 - both) ** 2];
-  return steps.slice(0, Math.min(4, Math.max(1, Math.round(levels))) + 1);
+  const four = 1 - (1 - both) ** 2;
+  const steps = [0, one, 1 - (1 - one) ** 2, 1 - (1 - both) * (1 - one), four, 1 - (1 - four) * (1 - one), 1 - (1 - four) * (1 - one) ** 2];
+  return steps.slice(0, Math.min(MOST_PASSES, Math.max(1, Math.round(levels))) + 1);
 }
 
 /** Fine steps: lines come in eight at a time across the closest spacing. */
@@ -1030,7 +1038,7 @@ function colourSampler(tones: Tones, photo: Photo) {
     // Best fit: as many passes of this pen as the colour chosen here takes, as a tone that just
     // clears that many of the hatching's thresholds.
     const { menu, choice } = areas;
-    const levels = photo.fineSteps ? FINE_STEPS : Math.min(4, Math.max(1, Math.round(photo.levels)));
+    const levels = photo.fineSteps ? FINE_STEPS : Math.min(MOST_PASSES, Math.max(1, Math.round(photo.levels)));
     return (u: number, v: number) => {
       const passes = menu[choice[pointAt(u, v)]].passes[mine];
       return passes ? (passes + 0.5) / (levels + 1) : -1;
@@ -2138,12 +2146,14 @@ const reverseNodes = (run: Node[]): Node[] => [...run].reverse().map((p) => {
  * Tone as hatching, the way an engraver builds it: a first set of lines where the photo is darker
  * than a fifth of the way to black, a second set across it past two fifths, and each set again
  * between its own lines past three and four fifths. So the darkest parts are crosshatched at the
- * spacing the tool fills solid at, and the lightest are left as paper.
+ * spacing the tool fills solid at, and the lightest are left as paper. Five and six passes go on
+ * with the diagonals, at 45° to the first two, for the deepest darks; the steps between the
+ * passes close up to make room for them.
  */
 function hatch(tones: Tones, photo: Photo, w: number, h: number): PhotoMarks {
   if (photo.fineSteps) return fineHatch(tones, photo, w, h);
   const spacing = Math.max(0.05, photo.spacingMm) / 25.4;
-  const levels = Math.min(4, Math.max(1, Math.round(photo.levels)));
+  const levels = Math.min(MOST_PASSES, Math.max(1, Math.round(photo.levels)));
   // Along each line, a look at the photo every half a line-spacing: fine enough that a line stops
   // where the tone does, coarse enough that a big sheet is still quick.
   const step = spacing / 2;
@@ -2159,12 +2169,13 @@ function hatch(tones: Tones, photo: Photo, w: number, h: number): PhotoMarks {
 
   for (let k = 0; k < levels; k++) {
     const threshold = fromWhite ? (k + 1) / (levels + 1) : k / levels;
-    const rad = ((photo.angle + (k % 2 ? 90 : 0)) * Math.PI) / 180;
+    const rad = ((photo.angle + (k % 2 ? 90 : 0) + (k >= 4 ? 45 : 0)) * Math.PI) / 180;
     const dx = Math.cos(rad);
     const dy = Math.sin(rad);
-    // Lines two spacings apart in each pass; the third and fourth passes fall between the first two's.
+    // Lines two spacings apart in each pass; the third and fourth passes fall between the first two's,
+    // and the fifth and sixth run on the diagonals.
     const gap = spacing * 2;
-    const shift = k >= 2 ? spacing : 0;
+    const shift = k === 2 || k === 3 ? spacing : 0;
     const parts: string[] = [];
     let line = 0;
     for (let o = -reach + shift; o <= reach; o += gap, line++) {
