@@ -44,13 +44,13 @@ export function CalibrationSection({ tool, toolName, busy, sheetOpen, sheetIsToo
       action={<span className={controls.toolInTitle}>{calibrated ? `Measured ${calibrated.measured}` : "Not measured"}</span>}
     >
       <p className={controls.hint}>
-        1. Make the sheet: every {tool?.name ?? "drawing tool"} pen at four strengths, on this paper. Save it and plot it on the paper you’ll use.
+        1. Make the sheet: every {tool?.name ?? "pen"} color at four strengths, on this paper. Save it and plot it on the paper you’ll use.
       </p>
       <Button
         size="sm"
         variant="secondary"
         disabled={busy || !tool?.palette?.length}
-        title={tool?.palette?.length ? undefined : "This drawing tool has no colours yet"}
+        title={tool?.palette?.length ? undefined : "This pen has no colors yet"}
         onClick={onNewSheet}
       >
         New calibration sheet
@@ -67,7 +67,7 @@ export function CalibrationSection({ tool, toolName, busy, sheetOpen, sheetIsToo
         size="sm"
         variant="secondary"
         disabled={busy || !sheetIsTool}
-        title={!sheetOpen ? "Make or open the calibration sheet first" : !sheetIsTool ? `This sheet isn’t of ${toolName || "the drawing tool"}’s pens: choose the tool it was made for` : undefined}
+        title={!sheetOpen ? "Make or open the calibration sheet first" : !sheetIsTool ? `This sheet isn’t of ${toolName || "this pen"}’s colors: choose the pen it was made for` : undefined}
         onClick={() => input.current?.click()}
       >
         Read a photo of the sheet
@@ -86,22 +86,22 @@ export function CalibrationSection({ tool, toolName, busy, sheetOpen, sheetIsToo
         <p className={controls.hint}>The open sheet is of other pens than {tool.name}’s ({strangers.length > 3 ? `${strangers.slice(0, 3).join(", ")} and ${strangers.length - 3} more` : listOf(strangers)}).</p>
       )}
       <p className={controls.hint}>
-        Pen pairs: a spread of {tool?.name ?? "the drawing tool"}’s pens two at a time, the lighter hatched first and the darker across it, to see what overlaid hatching makes on paper.
+        Color pairs: a spread of {tool?.name ?? "the pen"}’s colors two at a time, the lighter hatched first and the darker across it, to see what overlaid hatching makes on paper.
       </p>
       <Button
         size="sm"
         variant="secondary"
         disabled={busy || (tool?.palette?.length ?? 0) < 2}
-        title={(tool?.palette?.length ?? 0) < 2 ? "This drawing tool needs at least two colours" : undefined}
+        title={(tool?.palette?.length ?? 0) < 2 ? "This pen needs at least two colors" : undefined}
         onClick={onNewPairs}
       >
-        New pen pairs sheet
+        New color pairs sheet
       </Button>
       {calibrated && tool && (
         <ul className={styles.calibration} aria-label={`${tool.name} as measured`}>
           <li className={styles.calibrationRow}>
             <span className={styles.calibrationHead}>Pen</span>
-            <span className={styles.calibrationHead} title="The palette's colour">Pal.</span>
+            <span className={styles.calibrationHead} title="The palette's color">Pal.</span>
             {CALIBRATION_COVERS.map((c) => <span key={c} className={styles.calibrationHead}>{Math.round(c * 1000) / 10}</span>)}
           </li>
           {(tool.palette ?? []).map((pen) => {

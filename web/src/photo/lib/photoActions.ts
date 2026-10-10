@@ -8,7 +8,7 @@ import { lightness } from "../../shared/lib/color";
 import type { PenColor, Preset } from "../../shared/lib/types";
 import {
   BAND_NAMES, LAYER_SETTINGS, MOST_LAYERS, PHOTO_DEFAULTS, PLATES, PLATE_AIMS, colourGroups, darkestOf, isColourful, matchPens, photoMode,
-  placeOnPage, plateNamed, platePens, readTones, hexLinear, linearHex, coverSteps, stemWithoutPlate, turnedCopy, turnedCrop, workingCopy, type Photo, type PhotoPart, type Plate,
+  placeOnPage, plateNamed, platePens, presetAngle, readTones, hexLinear, linearHex, coverSteps, stemWithoutPlate, turnedCopy, turnedCrop, workingCopy, type AnglePreset, type Photo, type PhotoPart, type Plate,
 } from "../../shared/lib/drawing/photo";
 import { boxOf, newLayerId, newShapeId, type Layer, type Page, type Shape } from "../../shared/lib/drawing/shapes";
 import { samplePhoto, type Candidate } from "./choosePens";
@@ -41,6 +41,9 @@ export interface PhotoContext {
   /** Hold the controls while something is worked out that a change would go stale under. */
   setBusy: (busy: boolean) => void;
 }
+
+/** An angle turned by so many degrees, kept to a half turn - a line at 190° is the line at 10° - to a tenth. */
+const turnedBy = (angle: number, by: number) => Math.round(((((angle + by) % 180) + 180) % 180) * 10) / 10;
 
 export function photoActions(ctx: PhotoContext) {
   const { chosen, shapes, setShapes, layers, setLayers, active, setActiveLayer, page, tool: tool2, all: photoAll, paper, record, addShape, pick, setMessage, setBusy } = ctx;
@@ -193,7 +196,7 @@ export function photoActions(ctx: PhotoContext) {
     const pen = plate !== "other" && pens.length >= 4 ? platePens(pens)[PLATES.indexOf(plate)] : undefined;
     const was = chosen.photo.separation;
     const wasPlate = PLATES.some((p) => PLATE_AIMS[p].name === was);
-    const separation = plate === "other" ? (wasPlate ? "Ink" : was) : PLATE_AIMS[plate].name;
+    const separation = plate === "other" ? (wasPlate ? "Color" : was) : PLATE_AIMS[plate].name;
     const name = chosen.name?.endsWith(` ${was}`) ? chosen.name.slice(0, -was.length - 1) : chosen.name ?? "Photo";
     record();
     setShapes((list) => list.map((sh) => (sh.id === chosen.id
@@ -207,8 +210,15 @@ export function photoActions(ctx: PhotoContext) {
     * shape and layer, the rest on new layers put just above it, in order. The layers the photo's other
     * shapes were on go with them, once nothing else is left on them.
     */
-  const rebuildPhoto = (parts: { layerName: string; layerColor: string; shapeName: string; photo: Partial<Photo> }[], group: string | undefined, note: string) => {
+  const rebuildPhoto = (parts: { layerName: string; layerColor: string; shapeName: string; photo: Partial<Photo> }[], group: string | undefined, note: string, keepAngles = false) => {
     if (!chosen?.photo) return;
+    // Each layer at its angle in the photo's preset, turned as the photo is - unless putting back
+    // layers as they were, angles and all.
+    if (!keepAngles) {
+      const preset = chosen.photo.anglePreset ?? "classic";
+      const turn = chosen.photo.angleTurn ?? 0;
+      parts = parts.map((p, i) => ({ ...p, photo: { ...p.photo, angle: turnedBy(presetAngle(preset, i, p.photo.plate), turn) } }));
+    }
     const oldGroup = chosen.photo.group;
     const members = oldGroup ? shapes.filter((sh) => sh.photo?.group === oldGroup) : [chosen];
     const base = members.find((m) => !m.photo?.band || m.photo.band[0] <= 0) ?? chosen;
@@ -265,6 +275,7 @@ export function photoActions(ctx: PhotoContext) {
         back.map((part) => ({ ...part, photo: { ...Object.fromEntries(LAYER_SETTINGS.map((k) => [k, undefined])), ...part.photo, modes } })),
         back.length > 1 ? chosen.photo.group ?? newShapeId() : undefined,
         `Back to how it was split by ${to}`,
+        true,
       );
     } else if (to === "colour") {
       splitPhotoBestFit(3, { modes });
@@ -284,7 +295,7 @@ export function photoActions(ctx: PhotoContext) {
     if (!chosen?.photo) return;
     const pens = tool2?.palette ?? [];
     if (pens.length < 4) {
-      setMessage({ text: `${tool2?.name ?? "This tool"} needs four pens in its palette to split a photo into CMYK`, ok: false });
+      setMessage({ text: `${tool2?.name ?? "This pen"} needs four colors in its palette to split a photo into CMYK`, ok: false });
       return;
     }
     const matched = platePens(pens);
@@ -397,7 +408,7 @@ export function photoActions(ctx: PhotoContext) {
     if (!chosen?.photo) return;
     const pens = tool2?.palette ?? [];
     if (!pens.length) {
-      setMessage({ text: `${tool2?.name ?? "This tool"} has no palette of inks to split a photo into`, ok: false });
+      setMessage({ text: `${tool2?.name ?? "This pen"} has no palette of colors to split a photo into`, ok: false });
       return;
     }
     const n = Math.min(MOST_LAYERS, Math.max(1, Math.round(count)));
@@ -410,7 +421,7 @@ export function photoActions(ctx: PhotoContext) {
       // lighter or darker than the group's colour, and the layers go down in the pens.
       .sort((a, b) => (lightness(b.pen.color) ?? 0) - (lightness(a.pen.color) ?? 0));
     if (!parts.length) {
-      setMessage({ text: "There's no colour in this photo to split, only paper", ok: false });
+      setMessage({ text: "There's no color in this photo to split, only paper", ok: false });
       return;
     }
     const { name } = photoStem();
@@ -493,17 +504,17 @@ export function photoActions(ctx: PhotoContext) {
   ) => {
     if (!chosen?.photo) return;
     if (!tool2?.palette?.length) {
-      setMessage({ text: `${tool2?.name ?? "This tool"} has no palette of inks to split a photo into`, ok: false });
+      setMessage({ text: `${tool2?.name ?? "This pen"} has no palette of colors to split a photo into`, ok: false });
       return;
     }
     const n = Math.min(MOST_LAYERS, Math.max(1, Math.round(count)));
     setBusy(true);
-    setMessage({ text: "Choosing pens…", ok: true, progress: true });
+    setMessage({ text: "Choosing colors…", ok: true, progress: true });
     let best: Awaited<ReturnType<typeof bestPens>> = null;
     try {
       best = await bestPens(n, pairs, fine);
     } catch (err) {
-      setMessage({ text: `Couldn’t choose pens: ${(err as Error).message}`, ok: false });
+      setMessage({ text: `Couldn’t choose colors: ${(err as Error).message}`, ok: false });
       return;
     } finally {
       setBusy(false);
@@ -518,10 +529,8 @@ export function photoActions(ctx: PhotoContext) {
       .map((p, region) => ({ pen: p.pen, region }))
       .sort((a, b) => (lightness(b.pen.color) ?? 0) - (lightness(a.pen.color) ?? 0));
     const { name } = photoStem();
-    // Spread from where hatching starts, not from whichever layer's angle is picked now.
-    const base = PHOTO_DEFAULTS.angle;
     rebuildPhoto(
-      parts.map(({ pen, region }, i) => ({
+      parts.map(({ pen, region }) => ({
         layerName: pen.name,
         layerColor: pen.color,
         shapeName: `${name} ${pen.name}`,
@@ -529,12 +538,11 @@ export function photoActions(ctx: PhotoContext) {
           band: undefined, key: undefined, keyInk: undefined, plate: undefined, plates: undefined,
           ink: pen.color, regions, region, regionInks, fitPaper: paper, penMm: tool2.settings.pen_width ?? 0.5,
           fitPairs: pairs || undefined, fitOpaque: tool2.settings.ink_opaque === true || undefined, fineSteps: fine || undefined,
-          ...(pairs && parts.length > 1 ? { angle: Math.round((base + (i * 90) / parts.length) * 10) / 10 } : {}),
           ...extra,
         },
       })),
       parts.length > 1 ? chosen.photo.group ?? newShapeId() : undefined,
-      `Best ${parts.length === 1 ? "pen" : `${parts.length} pens`} for this photo on this paper${pairs ? ", in pairs where that comes nearer" : ""}: ${parts.map((p) => p.pen.name).join(", ")}`,
+      `Best ${parts.length === 1 ? "color" : `${parts.length} colors`} for this photo on this paper${pairs ? ", in pairs where that comes nearer" : ""}: ${parts.map((p) => p.pen.name).join(", ")}`,
     );
   };
 
@@ -674,6 +682,25 @@ export function photoActions(ctx: PhotoContext) {
     }
   };
 
+  /**
+   * Set every layer of the chosen photo at its angle in a preset, the whole set turned: by a preset
+   * newly chosen, or turned by `by` degrees from where it is.
+   */
+  const setAngles = ({ preset, by = 0 }: { preset?: AnglePreset; by?: number }) => {
+    if (!chosen?.photo) return;
+    record();
+    const use = preset ?? chosen.photo.anglePreset ?? "classic";
+    const turn = turnedBy(chosen.photo.angleTurn ?? 0, by);
+    const members = chosen.photo.group ? shapes.filter((sh) => sh.photo?.group === chosen.photo!.group) : [chosen];
+    const place = (sh: Shape) => layers.findIndex((l) => l.id === sh.layerId);
+    const order = [...members].sort((a, b) => place(a) - place(b)).map((m) => m.id);
+    setShapes((list) => list.map((sh) => {
+      const at = order.indexOf(sh.id);
+      if (at < 0) return sh;
+      return { ...sh, photo: { ...sh.photo!, anglePreset: use, angleTurn: turn || undefined, angle: turnedBy(presetAngle(use, at, sh.photo!.plate), turn) } };
+    }));
+  };
+
   /** Change how the chosen photo is turned into lines. */
   const setPhotoOf = (patch: Partial<Photo>) => {
     if (!chosen?.photo) return;
@@ -701,6 +728,6 @@ export function photoActions(ctx: PhotoContext) {
 
   return {
     addPhoto, addSeparations, setSeparationPlate, switchPhotoMode, setKeyLayer, splitPhoto, splitPhotoByColor, splitPhotoBestFit, bestPens,
-    placePhoto, photoScale, setPhotoScale, setPhotoMargin, replacePhoto, turnPhoto, setPhotoOf,
+    placePhoto, photoScale, setPhotoScale, setPhotoMargin, replacePhoto, turnPhoto, setPhotoOf, setAngles,
   };
 }

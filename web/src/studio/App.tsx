@@ -1327,12 +1327,12 @@ export default function App() {
   <Card variant="flat" className={styles.controls}>
    <div className={`${styles.cardBody} ${controls.cardSections}`}>
     <Section title="Setup">
-     <p className={controls.hint}>Getting the drawing tools ready. The drawing stays as it is; the gear goes back to it.</p>
+     <p className={controls.hint}>Getting the pens ready. The drawing stays as it is; the gear goes back to it.</p>
     </Section>
     <DrawingToolSection tools={presets} value={toolName} onPick={pickTool} collapsibleKey="setup-pen" disabled={busy} />
     {/* Calibrating the pens moved to Photo, which is what it's for: making photos print true. */}
     <Section title="Calibration">
-     <p className={controls.hint}>Calibrating a tool’s pens - the calibration and pen pairs sheets, and reading a photo of them back - is in Photo’s Setup.</p>
+     <p className={controls.hint}>Calibrating a pen’s colors - the calibration and color pairs sheets, and reading a photo of them back - is in Photo’s Setup.</p>
      <Button size="sm" variant="secondary" onClick={() => showApp("photo")}>Go to Photo</Button>
     </Section>
     <Section title="Appearance" action={<ThemeToggle />}>
@@ -1352,7 +1352,7 @@ export default function App() {
   <Card variant="flat" className={styles.controls}>
    <div className={`${styles.cardBody} ${controls.cardSections}`}>
     <Section title="Photo">
-     <p className={controls.hint}>This is a photo, drawn as lines. How it’s turned into lines - hatching, tone bands, colours - is set in Photo.</p>
+     <p className={controls.hint}>This is a photo, drawn as lines. How it’s turned into lines - hatching, tone bands, colors - is set in Photo.</p>
      <Button size="sm" variant="secondary" disabled={busy} onClick={editInPhoto}>Save and open in Photo</Button>
     </Section>
    </div>

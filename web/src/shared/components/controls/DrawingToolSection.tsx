@@ -36,7 +36,7 @@ export function DrawingToolSection({ tools, value, onPick, collapsibleKey, disab
   const named = label ?? value;
   return (
     <Section
-      title="Drawing tool"
+      title="Pen"
       collapsibleKey={collapsibleKey}
       action={action}
       actionWhenOpen
@@ -48,7 +48,7 @@ export function DrawingToolSection({ tools, value, onPick, collapsibleKey, disab
           tools={tools}
           value={value}
           onPick={onPick}
-          label="Drawing tool"
+          label="Pen"
           placeholder={placeholder}
           changed={changed}
           disabled={disabled}

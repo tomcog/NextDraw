@@ -4,7 +4,6 @@ import { Save, Send } from "lucide-react";
 import { DrawingToolSection } from "../shared/components/controls/DrawingToolSection";
 import { FileSection } from "../shared/components/controls/FileSection";
 import { PaperSection } from "../shared/components/controls/PaperSection";
-import { SettingsSection } from "../shared/components/controls/SettingsSection";
 import { Section } from "../shared/components/controls/Section";
 import controls from "../shared/components/controls/controls.module.css";
 import { FileBrowser, type OpenResult } from "../shared/components/FileBrowser";
@@ -129,6 +128,11 @@ export default function App() {
   // Whether the rail's top card - File, the conversion summary and Settings - is out. Out unless hidden.
   const [fileCard, setFileCard] = useState(() => load<boolean>("photo-file-card") ?? true);
   useEffect(() => remember("photo-file-card", fileCard), [fileCard]);
+  // The Paper and Pen cards under it: what the drawing is made on, and with.
+  const [paperCard, setPaperCard] = useState(() => load<boolean>("photo-paper-card") ?? true);
+  useEffect(() => remember("photo-paper-card", paperCard), [paperCard]);
+  const [penCard, setPenCard] = useState(() => load<boolean>("photo-pen-card") ?? true);
+  useEffect(() => remember("photo-pen-card", penCard), [penCard]);
   // And the photo's own card, under it: turning, brightness and contrast, size on the page.
   const [infoCard, setInfoCard] = useState(() => load<boolean>("photo-info-card") ?? true);
   useEffect(() => remember("photo-info-card", infoCard), [infoCard]);
@@ -258,8 +262,9 @@ export default function App() {
   const [zoom, setZoom] = useState<Zoom>("paper");
   const [loupe, setLoupe] = useState(false);
 
-  // Whether a photo's settings go to the layer being set, or to all its layers at once.
-  const [photoAll, setPhotoAll] = useState(false);
+  // Whether a photo's settings go to all its layers at once - the whole drawing, as they do unless
+  // "Set each layer on its own" is ticked - or to the layer being set.
+  const [photoAll, setPhotoAll] = useState(true);
 
   const addShape = useCallback((shape: Shape) => {
     record();
@@ -269,7 +274,7 @@ export default function App() {
 
   const {
     addPhoto, addSeparations, setSeparationPlate, switchPhotoMode, setKeyLayer, splitPhoto, splitPhotoByColor, splitPhotoBestFit, bestPens,
-    placePhoto, photoScale, setPhotoScale, setPhotoMargin, replacePhoto, turnPhoto, setPhotoOf,
+    placePhoto, photoScale, setPhotoScale, setPhotoMargin, replacePhoto, turnPhoto, setPhotoOf, setAngles,
   } = photoActions({
     chosen, shapes, setShapes, layers, setLayers, active, setActiveLayer, page, tool,
     spacingMm: tool?.hatch?.spacing_mm ?? 1.5, all: photoAll, paper: paperColor, record, addShape, pick, setMessage, setBusy,
@@ -460,7 +465,7 @@ export default function App() {
       return;
     }
     setSheet({ shapes: made.shapes.map((sh) => (sh.kind === "text" ? fitText(sh, sheetFont) : sh)), fills: made.fills, layers: made.layers, page });
-    sheetFile.started(`${tool.name} ${kind === "calibration" ? "calibration" : "pen pairs"}`); // a new sheet to be saved and plotted
+    sheetFile.started(`${tool.name} ${kind === "calibration" ? "calibration" : "color pairs"}`); // a new sheet to be saved and plotted
     setMessage({ text: "", ok: true });
   };
   const openSheet = (res: OpenResult) => {
@@ -498,7 +503,7 @@ export default function App() {
       setPresets(res.presets);
       const problems = readingProblems(calibration);
       const count = Object.keys(calibration.pens).length;
-      setMessage(problems.length ? { text: `Read ${count} pens, but ${problems.join(" ")}`, ok: false } : { text: `Read ${count} pens into ${tool.name}`, ok: true });
+      setMessage(problems.length ? { text: `Read ${count} colors, but ${problems.join(" ")}`, ok: false } : { text: `Read ${count} colors into ${tool.name}`, ok: true });
     } catch (err) {
       setMessage({ text: (err as Error).message, ok: false });
     } finally {
@@ -581,7 +586,7 @@ export default function App() {
     <Card variant="flat" className={styles.controls}>
       <div className={`${styles.cardBody} ${controls.cardSections}`}>
         <Section title="Setup">
-          <p className={controls.hint}>Getting the drawing tools ready. The photo stays as it is; the gear goes back to it.</p>
+          <p className={controls.hint}>Getting the pens ready. The photo stays as it is; the gear goes back to it.</p>
         </Section>
         {paperSection}
         {toolSection}
@@ -661,6 +666,7 @@ export default function App() {
         place: placePhoto,
         setMargin: setPhotoMargin,
         setScale: setPhotoScale,
+        setAngles,
         pickBand: (id, layerId) => {
           pick(id);
           setActiveLayer(layerId);
@@ -691,11 +697,18 @@ export default function App() {
               onSendToPlot={file.sendToPlot}
               onSave={() => file.save()}
             />
-            <SettingsSection collapsibleKey="photo-settings">
-              {paperSection}
-              {toolSection}
-            </SettingsSection>
           </div>
+        </Card>
+      )}
+      {/* What the drawing is made on, and with: each its own card, shown or hidden from the toolbar. */}
+      {paperCard && (
+        <Card variant="flat" className={styles.controls}>
+          <div className={`${styles.cardBody} ${controls.cardSections}`}>{paperSection}</div>
+        </Card>
+      )}
+      {penCard && (
+        <Card variant="flat" className={styles.controls}>
+          <div className={`${styles.cardBody} ${controls.cardSections}`}>{toolSection}</div>
         </Card>
       )}
       {photoCard}
@@ -718,7 +731,7 @@ export default function App() {
   // The toolbar's effect is the whole photo's. Silhouette has no tones or colours to split by, so a
   // split photo comes back together as one layer drawn that way; separations keep a plate each.
   // Whether the rail has any card to show; with none, the stage takes its width.
-  const railOut = Boolean(setupOpen || fileCard || confirmNext || infoCard || (chosen?.photo && effectCards));
+  const railOut = Boolean(setupOpen || fileCard || paperCard || penCard || confirmNext || infoCard || (chosen?.photo && effectCards));
 
   const setEffect = (effect: Effect) => {
     setEffectCards(true);
@@ -758,7 +771,14 @@ export default function App() {
       <main className={styles.layout} data-rail={railOut ? undefined : "none"}>
         <div className={styles.tools}>
           <AppSwitch current="photo" orientation="vertical" />
-          <PanelToolbar fileCard={fileCard} onFileCard={() => setFileCard((on) => !on)} infoCard={infoCard} onInfoCard={() => setInfoCard((on) => !on)} />
+          <PanelToolbar
+            cards={[
+              { key: "file", on: fileCard, toggle: () => setFileCard((on) => !on) },
+              { key: "paper", on: paperCard, toggle: () => setPaperCard((on) => !on) },
+              { key: "pen", on: penCard, toggle: () => setPenCard((on) => !on) },
+              { key: "image", on: infoCard, toggle: () => setInfoCard((on) => !on) },
+            ]}
+          />
           <EffectToolbar effect={!setupOpen && chosen?.photo ? effectOf(chosen.photo) : undefined} onEffect={setEffect} onAgain={() => setEffectCards((on) => !on)} disabled={setupOpen || !chosen?.photo || busy} />
           {!setupOpen && chosen?.photo && <HistoryToolbar canUndo={canUndo} canRedo={canRedo} onUndo={undo} onRedo={redo} disabled={busy} />}
           {setupToolbar}

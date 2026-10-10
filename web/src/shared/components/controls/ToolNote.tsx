@@ -19,7 +19,7 @@ export function ToolNote({ tool }: { tool: Preset | undefined }) {
   ];
   if (!why.length && widthMm == null) return null;
   return (
-    <p className={styles.tiltNote} {...(why.length ? { title: `This tool is ${why.join("; ")}` } : {})}>
+    <p className={styles.tiltNote} {...(why.length ? { title: `This pen is ${why.join("; ")}` } : {})}>
       {/* The width leads: it is the one number you measure a drawing against, and the rest of the
           row is what to set up before drawing at all. */}
       {widthMm != null && (

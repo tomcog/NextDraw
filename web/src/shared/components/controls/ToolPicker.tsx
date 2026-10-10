@@ -77,7 +77,7 @@ export function ToolPicker({ tools, value, onPick, label, placeholder, changed, 
         if (next) onPick(next);
       }}
     >
-      {!family && !missing && <option value="">{placeholder ?? "Choose a tool"}</option>}
+      {!family && !missing && <option value="">{placeholder ?? "Choose a pen"}</option>}
       {missing && <option value={missing}>{`${missing} (not on this Mac)`}</option>}
       {families.map((f) => (
         <option key={f.name} value={f.name}>

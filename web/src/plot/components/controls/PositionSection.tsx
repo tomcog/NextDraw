@@ -71,16 +71,16 @@ export function PositionSection({ placement, minPlacement, units, disabled, onCh
           <ButtonRound
             size="sm"
             icon={<AlignCenterVertical />}
-            aria-label="Centre across the paper"
-            title="Centre the drawing's lines across the paper"
+            aria-label="Center across the paper"
+            title="Center the drawing's lines across the paper"
             disabled={disabled || !onCentre}
             onClick={() => onCentre?.("x")}
           />
           <ButtonRound
             size="sm"
             icon={<AlignCenterHorizontal />}
-            aria-label="Centre down the paper"
-            title="Centre the drawing's lines down the paper"
+            aria-label="Center down the paper"
+            title="Center the drawing's lines down the paper"
             disabled={disabled || !onCentre}
             onClick={() => onCentre?.("y")}
           />

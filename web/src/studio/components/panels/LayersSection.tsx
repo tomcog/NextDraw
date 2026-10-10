@@ -85,7 +85,7 @@ export function LayersSection(props: Props) {
         <span className={styles.headerTools}>
           {layers.length > 1 && (
             <ButtonRound size="sm" icon={<LayersArrowUp />} aria-label="Sort layers by darkness"
-              title="Sort by darkness: the lightest ink is layer 1 and drawn first, with darker inks over it"
+              title="Sort by darkness: the lightest color is layer 1 and drawn first, with darker colors over it"
               disabled={busy} onClick={props.onSort} />
           )}
           {props.canMerge && (
@@ -94,7 +94,7 @@ export function LayersSection(props: Props) {
               disabled={busy} onClick={props.onMerge} />
           )}
           <ButtonRound size="sm" icon={<Plus />} aria-label="Add a layer"
-            title="Add a layer: one more pen to draw with" disabled={busy} onClick={props.onAdd} />
+            title="Add a layer: one more color to draw with" disabled={busy} onClick={props.onAdd} />
         </span>
       }
     >
@@ -122,11 +122,11 @@ export function LayersSection(props: Props) {
                 swatchCut={notAPen}
                 swatchProps={{
                   "aria-label": notAPen
-                    ? `Pen color for ${layer.name} - no ${tool?.name ?? ""} pen is called that, in that colour`
-                    : `Pen color for ${layer.name}`,
+                    ? `Color for ${layer.name} - not one of ${tool?.name ?? "the pen"}'s colors by that name`
+                    : `Color for ${layer.name}`,
                   "aria-haspopup": "menu",
                   "aria-expanded": props.colorMenuId === layer.id,
-                  title: "Choose the pen this layer draws with",
+                  title: "Choose the color this layer draws with",
                   disabled: busy,
                   onClick: (e) => props.onColorMenu(layer.id, e.currentTarget),
                 }}
@@ -199,10 +199,10 @@ export function LayersSection(props: Props) {
           </InputSelect>
           <SegmentedControl size="sm" variant="dark" actions aria-label={`Align ${active.name}`}>
             <Segment icon={<AlignStartVertical />} aria-label="Left edges" title="Left edges: move this layer so its left edge meets the other's" disabled={busy} onClick={() => props.onAlign("left")} />
-            <Segment icon={<AlignCenterVertical />} aria-label="Centres" title="Centres: move this layer across so the two are centred on each other" disabled={busy} onClick={() => props.onAlign("centre")} />
+            <Segment icon={<AlignCenterVertical />} aria-label="Centers" title="Centers: move this layer across so the two are centered on each other" disabled={busy} onClick={() => props.onAlign("centre")} />
             <Segment icon={<AlignEndVertical />} aria-label="Right edges" title="Right edges: move this layer so its right edge meets the other's" disabled={busy} onClick={() => props.onAlign("right")} />
             <Segment icon={<AlignStartHorizontal />} aria-label="Top edges" title="Top edges: move this layer so its top meets the other's" disabled={busy} onClick={() => props.onAlign("top")} />
-            <Segment icon={<AlignCenterHorizontal />} aria-label="Middles" title="Middles: move this layer up or down so the two are centred on each other" disabled={busy} onClick={() => props.onAlign("middle")} />
+            <Segment icon={<AlignCenterHorizontal />} aria-label="Middles" title="Middles: move this layer up or down so the two are centered on each other" disabled={busy} onClick={() => props.onAlign("middle")} />
             <Segment icon={<AlignEndHorizontal />} aria-label="Bottom edges" title="Bottom edges: move this layer so its bottom meets the other's" disabled={busy} onClick={() => props.onAlign("bottom")} />
           </SegmentedControl>
           {/* Turned as one, about its middle: a quarter either way, or by an angle typed in,

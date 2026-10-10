@@ -1548,7 +1548,7 @@ export default function App() {
       <Header plotterFound={Boolean(status?.plotter_found)} severalPlotters={severalPlotters} plotterName={onIdraw ? "iDraw" : undefined} lostContact={lostContact} />
 
       <main className={styles.layout}>
-        <section className={styles.stage} aria-label={paletteOpen ? "Drawing tool colors" : "Drawing preview"}>
+        <section className={styles.stage} aria-label={paletteOpen ? "Pen colors" : "Drawing preview"}>
           <div className={styles.bedArea}>
             {paletteOpen ? (
               <PaletteEditor
@@ -1823,7 +1823,7 @@ export default function App() {
                   onTarget={setPrintLayer}
                   onVisible={setLayerVisible}
                   paletteFor={paletteFor}
-                  toolFor={(id) => (usesSecond(id) ? secondPreset : active)?.name ?? "this tool"}
+                  toolFor={(id) => (usesSecond(id) ? secondPreset : active)?.name ?? "this pen"}
                   onColor={colorAndNameLayer}
                   onSort={sortLayersByLightness}
                   onResetPrinted={resetPrinted}

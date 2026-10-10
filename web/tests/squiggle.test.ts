@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { photoMarks, readTones, squiggleAmp, type Photo } from "../src/shared/lib/drawing/photo";
+import { photoMarks, presetAngle, readTones, squiggleAmp, type Photo } from "../src/shared/lib/drawing/photo";
 
 // A made-up photo, read without a browser: white on the left darkening to black on the right.
 const W = 200;
@@ -121,4 +121,12 @@ test("squiggle: lifting leaves white as paper, and still draws the darks", async
   assert.ok(Math.min(...xs(flat.passes[0])) < 0.01);
   assert.ok(Math.min(...xs(lifted.passes[0])) > 0.01);
   assert.equal(lifted.strokes, flat.strokes); // one run per row still, each from the first tone to the edge
+});
+
+test("angle presets: classic is print's, cardinal the square, golden spread 137.5° apart", () => {
+  const six = (p: "classic" | "cardinal" | "golden") => [0, 1, 2, 3, 4, 5].map((i) => presetAngle(p, i));
+  assert.deepEqual(six("classic"), [45, 15, 75, 0, 30, 60]);
+  assert.deepEqual(six("cardinal"), [0, 90, 45, 135, 22.5, 112.5]);
+  assert.deepEqual(six("golden"), [0, 137.5, 95, 52.5, 10, 147.5]);
+  assert.deepEqual((["c", "m", "y", "k"] as const).map((p) => presetAngle("classic", 0, p)), [15, 75, 0, 45]);
 });

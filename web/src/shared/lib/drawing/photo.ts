@@ -19,6 +19,14 @@ export interface Photo {
   contrast: number;
   /** Degrees: the direction of the first set of lines. The second crosses it at a right angle. */
   angle: number;
+  /**
+   * How the layers of a photo are set at angles to each other, so they don't all lie the same way -
+   * the whole photo's (each layer keeps a copy). Each layer's `angle` is the preset's for its place,
+   * turned by `angleTurn`. Absent, classic.
+   */
+  anglePreset?: AnglePreset;
+  /** Degrees the whole preset is turned. Absent, none. */
+  angleTurn?: number;
   /** The closest the lines ever come, in mm: the spacing the tool fills solid at. */
   spacingMm: number;
   /**
@@ -314,6 +322,29 @@ export const MOST_LAYERS = 6;
 export const WORKING_EDGE = 1600;
 
 export const PHOTO_DEFAULTS = { brightness: 0, contrast: 0, angle: 45, levels: 4 };
+
+/**
+ * The angle presets: how a photo's layers are set apart, so one pen's lines never lie along
+ * another's. Classic is print's: CMYK's screen angles, and for layers by tone or colour a spread from
+ * 45°. Cardinal keeps to the square and its diagonals. Golden spread turns each layer by the golden
+ * angle from the last - for any number of layers, as far apart as they can be.
+ */
+export type AnglePreset = "classic" | "cardinal" | "golden";
+export const ANGLE_PRESETS: { key: AnglePreset; label: string; about: string }[] = [
+  { key: "classic", label: "Classic", about: "Print's screen angles: cyan 15°, magenta 75°, yellow 0°, black 45°; layers by tone or color 45°, 15°, 75°, 0°, 30°, 60°" },
+  { key: "cardinal", label: "Cardinal", about: "The square and its diagonals: 0°, 90°, 45°, 135°, then 22.5°, 112.5°" },
+  { key: "golden", label: "Golden spread", about: "Each layer turned 137.5° - the golden angle - from the last: 0°, 137.5°, 95°, 52.5°, 10°, 147.5°" },
+];
+const CLASSIC = [45, 15, 75, 0, 30, 60];
+const CARDINAL = [0, 90, 45, 135, 22.5, 112.5];
+const GOLDEN = 180 * (3 - Math.sqrt(5)); // 137.5077...°, the golden angle
+
+/** The angle a preset gives the layer at `index` (bottom first), or the plate it is. */
+export function presetAngle(preset: AnglePreset, index: number, plate?: Plate): number {
+  if (preset === "classic") return plate ? PLATE_AIMS[plate].angle : CLASSIC[index % CLASSIC.length];
+  if (preset === "cardinal") return CARDINAL[index % CARDINAL.length];
+  return Math.round(((index * GOLDEN) % 180) * 10) / 10;
+}
 
 /** The most passes hatching builds the darks in: two directions, each again between, then the diagonals. */
 export const MOST_PASSES = 6;
@@ -2376,6 +2407,8 @@ export function photoFromData(raw: Record<string, unknown>): Photo | null {
     ...(Number.isFinite(Number(raw.squiggle_amp_mm)) && raw.squiggle_amp_mm !== undefined ? { squiggleAmpMm: Number(raw.squiggle_amp_mm) } : {}),
     ...(Number.isFinite(Number(raw.squiggle_height)) && raw.squiggle_height !== undefined ? { squiggleHeight: Number(raw.squiggle_height) } : {}),
     ...(raw.squiggle_join === true ? { squiggleJoin: true } : {}),
+    ...(raw.angle_preset === "classic" || raw.angle_preset === "cardinal" || raw.angle_preset === "golden" ? { anglePreset: raw.angle_preset } : {}),
+    ...(Number.isFinite(Number(raw.angle_turn)) && raw.angle_turn !== undefined ? { angleTurn: Number(raw.angle_turn) } : {}),
     ...(raw.squiggle_lift === true ? { squiggleLift: true } : {}),
     ...(Number.isFinite(Number(raw.bleed)) && raw.bleed !== undefined ? { bleed: Number(raw.bleed) } : {}),
     ...(Number.isFinite(Number(raw.margin)) && raw.margin !== undefined ? { margin: Number(raw.margin) } : {}),
@@ -2421,6 +2454,8 @@ export const photoData = (p: Photo) => ({
   ...(p.squiggleAmpMm !== undefined ? { squiggle_amp_mm: p.squiggleAmpMm } : {}),
   ...(p.squiggleHeight !== undefined ? { squiggle_height: p.squiggleHeight } : {}),
   ...(p.squiggleJoin ? { squiggle_join: true } : {}),
+  ...(p.anglePreset ? { angle_preset: p.anglePreset } : {}),
+  ...(p.angleTurn ? { angle_turn: p.angleTurn } : {}),
   ...(p.squiggleLift ? { squiggle_lift: true } : {}),
   ...(p.bleed ? { bleed: p.bleed } : {}),
   ...(p.margin !== undefined ? { margin: p.margin } : {}),

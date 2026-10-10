@@ -20,7 +20,7 @@ function theWorker(): Worker {
   };
   worker.onerror = (e) => {
     // A worker that fails to start or throws answers nobody: tell everyone waiting, and start afresh next time.
-    for (const asked of waiting.values()) asked.reject(new Error(e.message || "The pen search stopped"));
+    for (const asked of waiting.values()) asked.reject(new Error(e.message || "The color search stopped"));
     waiting.clear();
     worker?.terminate();
     worker = null;

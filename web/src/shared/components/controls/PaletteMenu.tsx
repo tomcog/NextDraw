@@ -137,7 +137,7 @@ export function PaletteMenu({ anchor, palette: pens, current, own, swapped, onPi
           }}
         >
           <span className={`${styles.dot} ${styles.customDot}`} aria-hidden />
-          Other colour…
+          Other color…
         </button>
       )}
     </div>,

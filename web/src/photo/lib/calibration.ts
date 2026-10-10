@@ -50,7 +50,7 @@ export interface CalibrationSheet {
  */
 export function calibrationSheet(tool: Preset, page: Page, font: string): CalibrationSheet | { error: string } {
   const pens: PenColor[] = tool.palette ?? [];
-  if (!pens.length) return { error: `${tool.name} has no colours yet. Add its pens to the palette first.` };
+  if (!pens.length) return { error: `${tool.name} has no colors yet. Add its colors to the palette first.` };
 
   const widthMm = tool.settings.pen_width ?? 0.5;
   const angle = tool.hatch?.angle ?? 45;
@@ -76,7 +76,7 @@ export function calibrationSheet(tool: Preset, page: Page, font: string): Calibr
     }
   }
   if (!fit) {
-    return { error: `${pens.length} pens don’t fit on ${trim(page.w)} × ${trim(page.h)} in paper. Choose a larger paper size.` };
+    return { error: `${pens.length} colors don’t fit on ${trim(page.w)} × ${trim(page.h)} in paper. Choose a larger paper size.` };
   }
 
   // A layer per pen, lightest at the bottom. The darkest also carries the marks, and the words go on

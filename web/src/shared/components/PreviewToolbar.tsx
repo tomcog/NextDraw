@@ -55,14 +55,14 @@ export function PreviewToolbar({ view, onView, canProgress, canPhoto, zoom, onZo
             selected={view === "outline"}
             onClick={() => onView("outline")}
             icon={<EyeDashed />}
-            title="Outline: every path as a thin line in its layer's colour - the paths themselves, quick to draw however many there are"
+            title="Outline: every path as a thin line in its layer's color - the paths themselves, quick to draw however many there are"
             aria-label="Outline"
           />
           <Segment
             selected={view === "preview"}
             onClick={() => onView("preview")}
             icon={<Eye />}
-            title="Preview: the ink - each tool's real width, how solid it is and how it darkens where strokes cross. Slow on a very large drawing"
+            title="Preview: the ink - each pen's real width, how solid it is and how it darkens where strokes cross. Slow on a very large drawing"
             aria-label="Preview"
           />
           {canPhoto && (
@@ -115,7 +115,7 @@ export function SetupToolbar({ open, onToggle, orientation }: { open: boolean; o
             className={open ? styles.on : undefined}
             onClick={onToggle}
             icon={<Settings />}
-            title={open ? "Back to the drawing" : "Setup: getting the drawing tools ready - calibrating their pens"}
+            title={open ? "Back to the drawing" : "Setup: getting the pens ready - calibrating their colors"}
             aria-label="Setup"
           />
         </SegmentedControl>

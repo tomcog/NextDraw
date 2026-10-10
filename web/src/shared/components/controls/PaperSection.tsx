@@ -182,7 +182,7 @@ export function PaperSection({ w, h, sizeId, units, color, collapsibleKey, disab
           size="md"
           variant="secondary"
           title={roomLeft
-            ? `Scale the drawing to fill the paper inside a ${fmtLen(margin, units)} margin, and centre it`
+            ? `Scale the drawing to fill the paper inside a ${fmtLen(margin, units)} margin, and center it`
             : "The margin leaves no paper to fit the drawing into"}
           disabled={disabled || !onFit || !roomLeft}
           onClick={() => onFit?.(margin)}

@@ -99,7 +99,7 @@ export function LayersSection({ mode, onMode, layers, target, linksOf, onLink, o
             size="sm"
             icon={<LayersArrowUp />}
             aria-label="Sort layers by darkness"
-            title="Sort by darkness: the lightest ink is layer 1 and plots first, with darker inks over it"
+            title="Sort by darkness: the lightest color is layer 1 and plots first, with darker colors over it"
             disabled={disabled}
             onClick={onSort}
           />
@@ -121,8 +121,8 @@ export function LayersSection({ mode, onMode, layers, target, linksOf, onLink, o
           // Why the dot is struck through: a colour no pen of the tool draws, or a pen's colour
           // under a name that isn't the pen's.
           const offPen = (l: LayerView) => l.pen
-            ? `Not named after the ${toolFor(l.id)} pen it's drawn with, ${l.pen}`
-            : `No ${toolFor(l.id)} pen draws ${l.color ?? "this colour"}`;
+            ? `Not named after the ${toolFor(l.id)} color it's drawn with, ${l.pen}`
+            : `No ${toolFor(l.id)} color is ${l.color ?? "this color"}`;
           const numbers = (ids: string[]) => ids.map((id) => numberOf.get(id)).join(", ");
           const run = runOf(runTop.get(layer.id)!);
           const place = run.length < 2 ? undefined : run[0] === layer.id ? "top" : run[run.length - 1] === layer.id ? "bottom" : "middle";
@@ -142,10 +142,10 @@ export function LayersSection({ mode, onMode, layers, target, linksOf, onLink, o
                 // in Studio with another tool: the preview shows it, and nothing in the holder will.
                 swatchCut={layer.inPalette === false}
                 swatchProps={{
-                  "aria-label": layer.inPalette === false ? `Ink for ${layer.name} - ${offPen(layer)}` : `Ink for ${layer.name}`,
+                  "aria-label": layer.inPalette === false ? `Color for ${layer.name} - ${offPen(layer)}` : `Color for ${layer.name}`,
                   ...(paletteFor(layer.id).length
-                    ? { "aria-haspopup": "menu" as const, "aria-expanded": colorMenu?.id === layer.id, title: "Choose the ink to plot this layer in" }
-                    : { title: "Pick the ink to plot this layer in" }),
+                    ? { "aria-haspopup": "menu" as const, "aria-expanded": colorMenu?.id === layer.id, title: "Choose the color to plot this layer in" }
+                    : { title: "Pick the color to plot this layer in" }),
                   disabled,
                   onClick: (e) => {
                     if (paletteFor(layer.id).length) {
@@ -198,7 +198,7 @@ export function LayersSection({ mode, onMode, layers, target, linksOf, onLink, o
                   aria-label={links.length ? `Unlink ${numbers([layer.id, ...links])}` : `Link ${layer.name} with ${numbers(partners.map((l) => l.id))}`}
                   title={links.length
                     ? `Prints together with ${numbers(links)}. Click to plot them one at a time.`
-                    : `Print together with ${numbers(partners.map((l) => l.id))}, the same pen - one plot instead of ${partners.length + 1}`}
+                    : `Print together with ${numbers(partners.map((l) => l.id))}, the same color - one plot instead of ${partners.length + 1}`}
                   disabled={disabled}
                   onClick={() => (links.length ? onUnlink(layer.id) : onLink(layer.id, partners.map((l) => l.id)))}
                 />

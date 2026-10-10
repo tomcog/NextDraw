@@ -111,7 +111,7 @@ export interface PairsSheet {
  */
 export function pairsSheet(tool: Preset, page: Page, font: string): PairsSheet | { error: string } {
   const palette: PenColor[] = tool.palette ?? [];
-  if (palette.length < 2) return { error: `${tool.name} needs at least two colours in its palette for a pairs sheet.` };
+  if (palette.length < 2) return { error: `${tool.name} needs at least two colors in its palette for a pairs sheet.` };
   const widthMm = tool.settings.pen_width ?? 0.5;
   const angle = tool.hatch?.angle ?? 45;
   const named = PHOTO_PAIRS[tool.name]
@@ -172,7 +172,7 @@ export function pairsSheet(tool: Preset, page: Page, font: string): PairsSheet |
   for (const [x, y, where] of [[left, top, "top left"], [right, top, "top right"], [left, bottom, "bottom left"], [right, bottom, "bottom right"]] as const) {
     hatch(keyPen, x, y, MARK, `Corner mark ${where}`, 1, angle);
   }
-  words(`${tool.name} pen pairs  ${trim(widthMm)} mm`, left + MARK + 0.2, top + (MARK - HEADING) / 2, HEADING, "Sheet title");
+  words(`${tool.name} color pairs  ${trim(widthMm)} mm`, left + MARK + 0.2, top + (MARK - HEADING) / 2, HEADING, "Sheet title");
 
   const width = fit.columns * fit.cellW + (fit.columns - 1) * COLUMN_GAP;
   const x0 = MARGIN + (across - width) / 2;

@@ -1,5 +1,5 @@
 import { Segment, SegmentedControl, Toolbar } from "@tomcoggia/ui";
-import { AudioWaveform, FileText, Image, FingerprintPattern, Hash, LineSquiggle, Signature, Squircle } from "lucide-react";
+import { AudioWaveform, FileText, Image, Pen, StickyNote, FingerprintPattern, Hash, LineSquiggle, Signature, Squircle } from "lucide-react";
 import type { ReactNode } from "react";
 import type { Photo } from "../../shared/lib/drawing/photo";
 import bar from "../../shared/components/PreviewToolbar.module.css";
@@ -49,31 +49,34 @@ export function EffectToolbar({ effect, onEffect, onAgain, disabled }: { effect?
   );
 }
 
+/** The rail's cards the toolbar above the effects shows and hides, in the order they stack. */
+const PANELS = {
+  file: { label: "File", icon: <FileText />, what: "the File card" },
+  paper: { label: "Paper", icon: <StickyNote />, what: "the Paper card: what the drawing is plotted on" },
+  pen: { label: "Pen", icon: <Pen />, what: "the Pen card: what the drawing is plotted with" },
+  image: { label: "Photo", icon: <Image />, what: "the photo's card" },
+};
+
 /**
- * The toolbar above the effects: which of the rail's cards are out. Each a switch like Setup's, pressed
- * while its card shows: the File card, then the photo's own card.
+ * The toolbar above the effects: which of the rail's cards are out - File, Paper, Pen and the
+ * photo's own. Each a switch like Setup's, pressed while its card shows.
  */
-export function PanelToolbar({ fileCard, onFileCard, infoCard, onInfoCard }: { fileCard: boolean; onFileCard: () => void; infoCard: boolean; onInfoCard: () => void }) {
+export function PanelToolbar({ cards }: { cards: { key: keyof typeof PANELS; on: boolean; toggle: () => void }[] }) {
   return (
     <span className={bar.row}>
       <Toolbar tone="white" orientation="vertical" aria-label="Panels">
         <SegmentedControl size="sm" variant="dark" actions aria-label="Panels">
-          <Segment
-            aria-pressed={fileCard}
-            className={fileCard ? bar.on : undefined}
-            onClick={onFileCard}
-            icon={<FileText />}
-            title={fileCard ? "Hide the File card" : "Show the File card"}
-            aria-label="File card"
-          />
-          <Segment
-            aria-pressed={infoCard}
-            className={infoCard ? bar.on : undefined}
-            onClick={onInfoCard}
-            icon={<Image />}
-            title={infoCard ? "Hide the photo's card" : "Show the photo's card"}
-            aria-label="Photo card"
-          />
+          {cards.map(({ key, on, toggle }) => (
+            <Segment
+              key={key}
+              aria-pressed={on}
+              className={on ? bar.on : undefined}
+              onClick={toggle}
+              icon={PANELS[key].icon}
+              title={`${on ? "Hide" : "Show"} ${PANELS[key].what}`}
+              aria-label={`${PANELS[key].label} card`}
+            />
+          ))}
         </SegmentedControl>
       </Toolbar>
     </span>

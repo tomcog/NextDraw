@@ -48,14 +48,19 @@ get complicated, and it never needs Studio's tools for drawing and transforming 
     and Plot show a drawing on: the bed, the paper, the rulers and the one bar - Outline and Preview (the lines drawn with Studio's ink, `Ink.tsx`), the zooms and the loupe.
     After the shared views, Photo's own: Picture (the image alone, what a new photo opens in), Lines,
     Lines over picture, and Side by side, where a second canvas follows the first's zoom.
-  - Down the left (2026-10-10), vertical toolbars: the app switch; File and Image, which show
-    and hide the File card and the photo's card (with no photo, an Image card with Open a photo);
+  - Down the left (2026-10-10), vertical toolbars: the app switch; File, Paper, Pen and Photo, which
+    show and hide those cards (with no photo, an Image card with Open a photo);
     and one button per effect - Hatching, Tone lines, Squiggle, Outlines, Centerlines, Silhouette -
     which sets the whole photo's effect - clicking the pressed one again puts its cards away, or
-    brings them back; then undo and redo; and Setup at the bottom. The rail shows the File card (with
-    Settings), the photo's card (turn, brightness and contrast, fit and fill), the effect's own card,
-    and a Layers card under it (value, colour and CMYK; hidden for Silhouette, which brings a split
-    photo back to one layer). With no cards out, the stage takes the rail's width. The File card
+    brings them back; then undo and redo; and Setup at the bottom. The rail shows the File, Paper and
+    Pen cards, the photo's card (turn, brightness and contrast, fit and fill), the effect's own card,
+    and for effects other than Hatching a Layers card under it (B&W, CMYK and Color; hidden for
+    Silhouette, which brings a split photo back to one layer).
+  - Hatching's card holds it all, for the whole drawing: the color mode at the top (B&W, CMYK,
+    Color) with that mode's settings, Bleed, an angle preset (Classic - print's screen angles,
+    Cardinal, Golden spread) applied to every layer and to each new split, then Angle (turns the
+    whole set), Spacing, Passes and Smoothing. "Set each layer on its own" shows the layer picker
+    and makes those four the picked layer's. With no cards out, the stage takes the rail's width. The File card
     comes out while it asks about unsaved work.
   - Unsaved work is kept in the browser (IndexedDB, `photo/lib/workInProgress.ts`) and put back after
     a reload; once saved it's dropped, and the last file reopens instead. Every Photo tab in a

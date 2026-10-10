@@ -80,7 +80,7 @@ export function PresetSection({
   // Layer number chips under each tool: a layer belongs to exactly one, so turning a chip on under one
   // tool takes it off the other.
   const chips = (second: boolean) => (
-    <div className={styles.layerChips} role="group" aria-label={second ? "Layers using the second tool" : "Layers using the first tool"}>
+    <div className={styles.layerChips} role="group" aria-label={second ? "Layers using the second pen" : "Layers using the first pen"}>
       {[...layers].sort((a, b) => a.number - b.number).map((l) => {
         const on = secondLayers.includes(l.id) === second;
         return (
@@ -136,9 +136,9 @@ export function PresetSection({
             size="sm"
             icon={<SlidersHorizontal />}
             className={hudOpen ? styles.roundActive : undefined}
-            aria-label={`${hudOpen ? "Hide" : "Show"} the drawing tool's settings`}
+            aria-label={`${hudOpen ? "Hide" : "Show"} the pen's settings`}
             aria-pressed={hudOpen}
-            title={hudOpen ? "Hide the tool's settings" : "Set up the tool: its heights, speeds and offsets, over the preview"}
+            title={hudOpen ? "Hide the pen's settings" : "Set up the pen: its heights, speeds and offsets, over the preview"}
             disabled={!presets.length}
             onClick={onHud}
           />
@@ -146,9 +146,9 @@ export function PresetSection({
             size="sm"
             icon={<Palette />}
             className={paletteOpen ? styles.roundActive : undefined}
-            aria-label={`${paletteOpen ? "Hide" : "Show"} the drawing tool's colors`}
+            aria-label={`${paletteOpen ? "Hide" : "Show"} the pen's colors`}
             aria-expanded={paletteOpen}
-            title={paletteOpen ? "Back to the drawing" : "The tool's colors: add, name and change them"}
+            title={paletteOpen ? "Back to the drawing" : "The pen's colors: add, name and change them"}
             disabled={!presets.length}
             onClick={onPalette}
           />
@@ -162,11 +162,11 @@ export function PresetSection({
             tools={presets.filter((p) => p.name !== active?.name)}
             value={secondTool ?? ""}
             onPick={onSecondTool}
-            label="Second drawing tool"
+            label="Second pen"
             placeholder="Choose a preset"
             disabled={disabled}
             action={
-              <ButtonRound size="sm" variant="tertiary" icon={<X />} aria-label="Remove the second drawing tool" title="Remove the second tool; its layers go back to the first" disabled={disabled} onClick={onRemoveSecond} />
+              <ButtonRound size="sm" variant="tertiary" icon={<X />} aria-label="Remove the second pen" title="Remove the second pen; its layers go back to the first" disabled={disabled} onClick={onRemoveSecond} />
             }
           />
           {tiltSwitch(presets.find((p) => p.name === secondTool))}
@@ -215,7 +215,7 @@ export function PresetSection({
           <ButtonRound
             size="sm"
             icon={<CirclePlus />}
-            aria-label="Add a second drawing tool"
+            aria-label="Add a second pen"
             title="Add another preset, for a drawing that mixes pens"
             disabled={disabled || !presets.length}
             onClick={onAddSecond}

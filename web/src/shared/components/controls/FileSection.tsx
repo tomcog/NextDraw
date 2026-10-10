@@ -82,7 +82,7 @@ export function FileSection({ name, onName, saved, dirty, hasShapes, busy, confi
               <Segment
                 icon={<ImagePlus />}
                 hideLabel
-                title="Open a photo to turn into lines, matched to the tool's pens: a new drawing. Pick several greyscale separations at once (…_C, …_M, …_Y, …_K) for a layer each"
+                title="Open a photo to turn into lines, matched to the pen's colors: a new drawing. Pick several grayscale separations at once (…_C, …_M, …_Y, …_K) for a layer each"
                 disabled={busy}
                 onClick={() => photoInput.current?.click()}
               >

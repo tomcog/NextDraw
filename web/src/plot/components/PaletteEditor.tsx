@@ -104,7 +104,7 @@ export function PaletteEditor({ tool, paper, disabled, saving, error, onChange }
   if (!tool) {
     return (
       <div className={styles.empty}>
-        <p>Choose a drawing tool to give it a palette.</p>
+        <p>Choose a pen to give it a palette.</p>
       </div>
     );
   }
@@ -122,7 +122,7 @@ export function PaletteEditor({ tool, paper, disabled, saving, error, onChange }
 
       {colors.length === 0 ? (
         <div className={styles.empty}>
-          <p>This tool has no palette. Add the colors you own, and they'll be offered for every layer drawn with it.</p>
+          <p>This pen has no palette. Add the colors you own, and they'll be offered for every layer drawn with it.</p>
           <Button size="md" onClick={add} disabled={disabled}>Add the first color</Button>
         </div>
       ) : (
