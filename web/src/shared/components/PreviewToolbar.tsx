@@ -21,9 +21,6 @@ export interface PreviewToolbarProps {
   onZoom: (zoom: Zoom) => void;
   canPaper?: boolean;
   canDrawing: boolean;
-  /** Studio only: the drawing being made has a history. Plot's drawings are read, not changed, so it has none. */
-  history?: { canUndo: boolean; canRedo: boolean; onUndo: () => void; onRedo: () => void };
-  disabled?: boolean;
   /** The loupe: a lens that follows the pointer over the drawing, magnified. */
   loupe?: boolean;
   onLoupe?: (on: boolean) => void;
@@ -34,48 +31,21 @@ export interface PreviewToolbarProps {
 }
 
 /**
- * Shared: both apps look at a drawing on the plotter's bed, and one bar over it says everything true
- * of what is being LOOKED AT - what has just been done to it, how it is drawn, and how close the view
- * sits. Figma: the `Toolbar` frame (44:360), which is three groups at a 16 gap inside a 4 inset.
+ * Shared: every app looks at a drawing on the plotter's bed, and one bar over it says everything true
+ * of how it is LOOKED AT - how it is drawn, and how close the view sits. What changes the drawing -
+ * undo and redo - isn't here but in the toolbars down the left (HistoryToolbar). Figma: the `Toolbar` frame (44:360), which is three groups at a 16 gap inside a 4 inset.
  *
- * Each app brings only what it has: Studio its history, on a small bar of its own ahead of the rest,
- * Plot the plot in progress. The groups they
+ * Each app brings only what it has: Plot the plot in progress, Photo its own views. The groups they
  * share are the same buttons in the same order, so moving between the apps changes nothing about how
  * the page is looked at.
  *
  * Three SegmentedControls, as the mock draws them, each keeping the library's own grey well against
  * the white bar. Nothing here overrides the components. Icons only: what each does is in its
  * tooltip and read out by name, and the bar leaves more of the line for the measurement.
- *
- * The history pair takes the control's `actions` mode: undo and redo are things you do, never a
- * choice one of which holds, so the track is a group of plain buttons rather than a radiogroup.
- * Nothing about it looks different.
  */
-export function PreviewToolbar({ view, onView, canProgress, canPhoto, zoom, onZoom, canPaper = true, canDrawing, history, disabled, working, loupe, onLoupe, extras }: PreviewToolbarProps) {
+export function PreviewToolbar({ view, onView, canProgress, canPhoto, zoom, onZoom, canPaper = true, canDrawing, working, loupe, onLoupe, extras }: PreviewToolbarProps) {
   return (
     <span className={styles.row}>
-      {history && (
-        // Undo and redo on a bar of their own: they change the drawing, where the rest only change
-        // how it is looked at.
-        <Toolbar tone="white" aria-label="History">
-          <SegmentedControl size="sm" variant="dark" actions aria-label="History">
-            <Segment
-              icon={<Undo2 />}
-              title="Undo the last change"
-              disabled={disabled || !history.canUndo}
-              onClick={history.onUndo}
-              aria-label="Undo"
-            />
-            <Segment
-              icon={<Redo2 />}
-              title="Redo the change just undone"
-              disabled={disabled || !history.canRedo}
-              onClick={history.onRedo}
-              aria-label="Redo"
-            />
-          </SegmentedControl>
-        </Toolbar>
-      )}
       <Toolbar tone="white" aria-label="Drawing view">
         {/* What an app shows beyond the shared views, first in the bar - Photo's picture, its lines,
             both, side by side. */}
@@ -217,3 +187,20 @@ export function ZoomControls({ zoom, onZoom, canPaper = true, canDrawing, loupe,
 
 /** The class a bar holding ZoomControls sits in, so the loupe's switch shows red while it's out. */
 export const ZOOM_ROW = styles.row;
+
+/**
+ * Undo and redo, as a bar of their own at the foot of the toolbars down the left, just above Setup -
+ * in every app whose drawing changes (Studio, Photo; Plot only reads). They change the drawing, where
+ * the bar over the canvas only changes how it's looked at. The control's `actions` mode: undo and redo
+ * are things you do, never a choice one of which holds.
+ */
+export function HistoryToolbar({ canUndo, canRedo, onUndo, onRedo, disabled }: { canUndo: boolean; canRedo: boolean; onUndo: () => void; onRedo: () => void; disabled?: boolean }) {
+  return (
+    <Toolbar tone="white" orientation="vertical" aria-label="History">
+      <SegmentedControl size="sm" variant="dark" actions aria-label="History">
+        <Segment icon={<Undo2 />} title="Undo the last change" disabled={disabled || !canUndo} onClick={onUndo} aria-label="Undo" />
+        <Segment icon={<Redo2 />} title="Redo the change just undone" disabled={disabled || !canRedo} onClick={onRedo} aria-label="Redo" />
+      </SegmentedControl>
+    </Toolbar>
+  );
+}

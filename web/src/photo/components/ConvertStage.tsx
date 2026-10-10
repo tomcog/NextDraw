@@ -48,8 +48,6 @@ interface Props {
   onZoom: (zoom: Zoom) => void;
   loupe: boolean;
   onLoupe: (on: boolean) => void;
-  history: { canUndo: boolean; canRedo: boolean; onUndo: () => void; onRedo: () => void };
-  disabled?: boolean;
 }
 
 /**
@@ -57,7 +55,7 @@ interface Props {
  * zooms and the loupe that Studio and Plot show a drawing on. Photo's own views go first in the bar, before
  * the shared ones; side by side, a second canvas follows the first's zoom.
  */
-export function ConvertStage({ photo, parts, box, page, paperColor, model, ink, view, onView, show, onShow, zoom, onZoom, loupe, onLoupe, history, disabled }: Props) {
+export function ConvertStage({ photo, parts, box, page, paperColor, model, ink, view, onView, show, onShow, zoom, onZoom, loupe, onLoupe }: Props) {
   const read = usePhotoRead(photo.src);
   const w = box.x1 - box.x0;
   const h = box.y1 - box.y0;
@@ -95,7 +93,7 @@ export function ConvertStage({ photo, parts, box, page, paperColor, model, ink, 
       <Segment selected={show === "side"} onClick={() => onShow("side")} icon={<Columns2 />} aria-label="Side by side" title="Side by side: the picture on the left, the drawing on the right" />
     </SegmentedControl>
   );
-  const bar = { view, onView, zoom, onZoom, canDrawing: true, history, disabled, loupe, onLoupe, extras };
+  const bar = { view, onView, zoom, onZoom, canDrawing: true, loupe, onLoupe, extras };
 
   const pane = (body: ReactNode, first: boolean) => (
     <figure className={styles.pane}>

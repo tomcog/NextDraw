@@ -42,7 +42,7 @@ const shapeFor = (tool: Exclude<Tool, "select">, layerId: string, x: number, y: 
 };
 
 interface Props {
-  /** The shared bar over the page: history, how the drawing is drawn, the zooms and the loupe. */
+  /** The shared bar over the page: how the drawing is drawn, the zooms and the loupe. */
   bar: PreviewToolbarProps;
   page: Page;
   /** The paper's colour, as Plot draws it: the page is this colour and the inks blend with it. */

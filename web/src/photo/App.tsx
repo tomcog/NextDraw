@@ -8,7 +8,7 @@ import { SettingsSection } from "../shared/components/controls/SettingsSection";
 import { Section } from "../shared/components/controls/Section";
 import controls from "../shared/components/controls/controls.module.css";
 import { FileBrowser, type OpenResult } from "../shared/components/FileBrowser";
-import { SetupToolbar, type View } from "../shared/components/PreviewToolbar";
+import { HistoryToolbar, SetupToolbar, type View } from "../shared/components/PreviewToolbar";
 import { AppSwitch } from "../shared/components/AppSwitch";
 import { StatusBanner } from "../shared/components/StatusBanner";
 import { ThemeToggle } from "../shared/components/ThemeToggle";
@@ -132,6 +132,9 @@ export default function App() {
   // And the photo's own card, under it: turning, brightness and contrast, size on the page.
   const [infoCard, setInfoCard] = useState(() => load<boolean>("photo-info-card") ?? true);
   useEffect(() => remember("photo-info-card", infoCard), [infoCard]);
+  // And the effect's cards - its own and Layers - put away by clicking its button in the toolbar again.
+  const [effectCards, setEffectCards] = useState(() => load<boolean>("photo-effect-cards") ?? true);
+  useEffect(() => remember("photo-effect-cards", effectCards), [effectCards]);
 
   const [toolName, setToolName] = useState<string>(() => load<string>(TOOL_KEY) ?? "");
   useEffect(() => remember(TOOL_KEY, toolName), [toolName]);
@@ -638,6 +641,7 @@ export default function App() {
       onAll={setPhotoAll}
       estimates={estimates}
       infoCard={infoCard}
+      effectCards={effectCards}
       scale={(() => {
         const { b, fitW } = photoScale(chosen);
         return Math.round(((b.x1 - b.x0) / fitW) * 100);
@@ -713,7 +717,11 @@ export default function App() {
 
   // The toolbar's effect is the whole photo's. Silhouette has no tones or colours to split by, so a
   // split photo comes back together as one layer drawn that way; separations keep a plate each.
+  // Whether the rail has any card to show; with none, the stage takes its width.
+  const railOut = Boolean(setupOpen || fileCard || confirmNext || infoCard || (chosen?.photo && effectCards));
+
   const setEffect = (effect: Effect) => {
+    setEffectCards(true);
     const style = effect === "hatch" ? undefined : effect;
     if (effect === "silhouette" && chosen?.photo?.group && !chosen.photo.separation) splitPhoto(1, { style });
     else setPhotoOf({ style });
@@ -747,11 +755,12 @@ export default function App() {
       />
 
       {/* With every card put away the rail has nothing to show, and the stage takes its width. */}
-      <main className={styles.layout} data-rail={!setupOpen && !fileCard && !confirmNext && !infoCard && !chosen?.photo ? "none" : undefined}>
+      <main className={styles.layout} data-rail={railOut ? undefined : "none"}>
         <div className={styles.tools}>
           <AppSwitch current="photo" orientation="vertical" />
           <PanelToolbar fileCard={fileCard} onFileCard={() => setFileCard((on) => !on)} infoCard={infoCard} onInfoCard={() => setInfoCard((on) => !on)} />
-          <EffectToolbar effect={!setupOpen && chosen?.photo ? effectOf(chosen.photo) : undefined} onEffect={setEffect} disabled={setupOpen || !chosen?.photo || busy} />
+          <EffectToolbar effect={!setupOpen && chosen?.photo ? effectOf(chosen.photo) : undefined} onEffect={setEffect} onAgain={() => setEffectCards((on) => !on)} disabled={setupOpen || !chosen?.photo || busy} />
+          {!setupOpen && chosen?.photo && <HistoryToolbar canUndo={canUndo} canRedo={canRedo} onUndo={undo} onRedo={redo} disabled={busy} />}
           {setupToolbar}
         </div>
         <section className={styles.stage} aria-label={setupOpen ? "Calibration sheet" : "Image conversion"}>
@@ -778,8 +787,6 @@ export default function App() {
               onView={setView}
               show={convertView}
               onShow={setConvertView}
-              history={{ canUndo, canRedo, onUndo: undo, onRedo: redo }}
-              disabled={busy}
             />
           ) : (
             <>
@@ -803,7 +810,7 @@ export default function App() {
           )}
         </section>
 
-        {(setupOpen || fileCard || confirmNext || infoCard || chosen?.photo) && <div className={styles.side}>{setupOpen ? setupRail : mainRail}</div>}
+        {railOut && <div className={styles.side}>{setupOpen ? setupRail : mainRail}</div>}
       </main>
     </div>
   );

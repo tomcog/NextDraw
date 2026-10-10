@@ -15,7 +15,7 @@ import type { Info, PenColor, PlotterModel, Preset } from "../shared/lib/types";
 import { listOf } from "../shared/lib/format";
 import { lightness } from "../shared/lib/color";
 import { joinLayerName, labelAfter, splitLayerName } from "../shared/lib/ink";
-import { SetupToolbar, type View } from "../shared/components/PreviewToolbar";
+import { HistoryToolbar, SetupToolbar, type View } from "../shared/components/PreviewToolbar";
 import { StatusBanner } from "../shared/components/StatusBanner";
 import type { Zoom } from "../shared/components/BedCanvas";
 import { Canvas, type Tool } from "./components/Canvas";
@@ -1592,7 +1592,10 @@ export default function App() {
    />
 
    <main className={styles.layout}>
-    <div className={styles.tools}>{setupToolbar}</div>
+    <div className={styles.tools}>
+     {!setupOpen && <HistoryToolbar canUndo={canUndo} canRedo={canRedo} onUndo={undo} onRedo={redo} disabled={busy} />}
+     {setupToolbar}
+    </div>
     <section className={styles.stage} aria-label="Drawing page">
      <Canvas
       page={page}
@@ -1609,8 +1612,6 @@ export default function App() {
         onZoom: setZoom,
         canDrawing: shapes.length > 0,
         canPhoto: shapes.some((sh) => sh.kind === "photo"),
-        history: { canUndo, canRedo, onUndo: undo, onRedo: redo },
-        disabled: busy,
         loupe,
         onLoupe: setLoupe,
       }}

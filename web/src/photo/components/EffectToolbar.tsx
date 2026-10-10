@@ -24,10 +24,11 @@ export const effectOf = (photo: Photo): Effect => photo.style ?? "hatch";
 
 /**
  * Photo's left-hand toolbar: one button for each effect, the photo's own pressed. Choosing one draws
- * the whole photo - every layer - that way, and the rail shows that effect's cards. Glyphs only, as
+ * the whole photo - every layer - that way, and the rail shows that effect's cards; clicking the
+ * pressed one again puts its cards away, or brings them back, so the canvas can take their room. Glyphs only, as
  * a vertical Toolbar draws them; the names are in the tooltips and read out.
  */
-export function EffectToolbar({ effect, onEffect, disabled }: { effect?: Effect; onEffect: (effect: Effect) => void; disabled?: boolean }) {
+export function EffectToolbar({ effect, onEffect, onAgain, disabled }: { effect?: Effect; onEffect: (effect: Effect) => void; onAgain: () => void; disabled?: boolean }) {
   return (
     <Toolbar tone="white" orientation="vertical" aria-label="Effects">
       <SegmentedControl size="sm" aria-label="Effect">
@@ -36,9 +37,9 @@ export function EffectToolbar({ effect, onEffect, disabled }: { effect?: Effect;
             key={e.key}
             selected={e.key === effect}
             icon={e.icon}
-            title={`${e.label}: ${e.about}`}
+            title={e.key === effect ? `${e.label}: ${e.about}. Click again to show or hide its cards` : `${e.label}: ${e.about}`}
             disabled={disabled}
-            onClick={() => e.key !== effect && onEffect(e.key)}
+            onClick={() => (e.key === effect ? onAgain() : onEffect(e.key))}
           >
             {e.label}
           </Segment>
