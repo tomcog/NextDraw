@@ -43,7 +43,15 @@ export function Section({ title, action, children, collapsibleKey, defaultOpen =
   );
 
   return (
-    <fieldset className={styles.section} data-collapsed={collapsibleKey ? !open : undefined}>
+    <fieldset
+      className={styles.section}
+      data-collapsed={collapsibleKey ? !open : undefined}
+      // Folded, the whole section - and, for a card that is one section, the whole card - opens it:
+      // anywhere but a control of its own, such as a button in its heading row, which does its own thing.
+      onClick={collapsibleKey && !open ? (e) => {
+        if (!(e.target as Element).closest("button, a, input, select, textarea, label, [role='menu']")) toggle();
+      } : undefined}
+    >
       <legend className={styles.legend}>
         {(open || !actionWhenOpen ? action : closedAction) ? (
           <span className={styles.legendRow}>

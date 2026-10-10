@@ -362,11 +362,18 @@ export function PhotoCard({ shape, title, shapes, layers, busy, all, onAll, scal
                     {eachLayer("Angle, spacing, amplitude and wavelength")}
                   </>
                 ) : photo.style === "waves" ? (
-                  <div className={styles.fillRow}>
-                    <NumberField label="Angle" unit="°" min={-180} max={180} step={5} value={photo.angle} onChange={(angle) => actions.set({ angle })} />
-                    <NumberField label="Row spacing" unit="mm" min={0.2} max={20} step={0.25} value={photo.rowMm ?? WAVE_DEFAULTS.rowMm} onChange={(rowMm) => actions.set({ rowMm })} />
-                    <NumberField label="Wave length" unit="mm" min={0.2} max={20} step={0.1} value={photo.waveMm ?? WAVE_DEFAULTS.waveMm} onChange={(waveMm) => actions.set({ waveMm })} />
-                  </div>
+                  <>
+                    {/* As Hatching and Squiggle: the color mode first, then the layers' angles. */}
+                    {colourMode}
+                    {photo.group && bleed}
+                    {anglePresets}
+                    <div className={`${styles.fillRow} ${styles.oneRow}`}>
+                      {angleField}
+                      <NumberField label="Spacing mm" min={0.2} max={20} step={0.25} value={photo.rowMm ?? WAVE_DEFAULTS.rowMm} onChange={(rowMm) => actions.set({ rowMm })} />
+                      <NumberField label="Wavelength mm" min={0.2} max={20} step={0.1} value={photo.waveMm ?? WAVE_DEFAULTS.waveMm} onChange={(waveMm) => actions.set({ waveMm })} />
+                    </div>
+                    {eachLayer("Angle, spacing and wavelength")}
+                  </>
                 ) : (
                   <>
                     {/* The colour mode first: it changes everything under it. */}
@@ -403,7 +410,7 @@ export function PhotoCard({ shape, title, shapes, layers, busy, all, onAll, scal
               </Section>
             </div>
           </Card>
-          {splits && effect.key !== "hatch" && effect.key !== "squiggle" && (
+          {splits && effect.key !== "hatch" && effect.key !== "squiggle" && effect.key !== "waves" && (
             <Card variant="flat" className={styles.controls}>
               <div className={`${styles.cardBody} ${controls.cardSections}`}>
                 <Section title={photo.separation ? "Separation" : "Layers"} collapsibleKey="photo-layers">
