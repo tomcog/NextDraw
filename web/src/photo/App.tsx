@@ -9,6 +9,7 @@ import { Section } from "../shared/components/controls/Section";
 import controls from "../shared/components/controls/controls.module.css";
 import { FileBrowser, type OpenResult } from "../shared/components/FileBrowser";
 import { SetupToolbar } from "../shared/components/PreviewToolbar";
+import { AppSwitch } from "../shared/components/AppSwitch";
 import { StatusBanner } from "../shared/components/StatusBanner";
 import { ThemeToggle } from "../shared/components/ThemeToggle";
 import { api } from "../shared/lib/api";
@@ -35,6 +36,7 @@ import { photoActions } from "./lib/photoActions";
 import { predictPrint, type Prediction } from "./lib/predict";
 import { CalibrationSection } from "./components/CalibrationSection";
 import { ConvertStage, type ConvertView } from "./components/ConvertStage";
+import { EFFECTS, EffectToolbar, PanelToolbar, effectOf, type Effect } from "./components/EffectToolbar";
 import { PhotoCard } from "./components/PhotoCard";
 import { PhotoHeader } from "./components/PhotoHeader";
 import styles from "./App.module.css";
@@ -140,6 +142,13 @@ export default function App() {
   const [presets, setPresets] = useState<Preset[]>([]);
   const presetsRef = useRef(presets);
   presetsRef.current = presets;
+  // Whether the rail's top card - File, the conversion summary and Settings - is out. Out unless hidden.
+  const [fileCard, setFileCard] = useState(() => load<boolean>("photo-file-card") ?? true);
+  useEffect(() => remember("photo-file-card", fileCard), [fileCard]);
+  // And the photo's own card, under it: turning, brightness and contrast, size on the page.
+  const [infoCard, setInfoCard] = useState(() => load<boolean>("photo-info-card") ?? true);
+  useEffect(() => remember("photo-info-card", infoCard), [infoCard]);
+
   const [toolName, setToolName] = useState<string>(() => load<string>(TOOL_KEY) ?? "");
   useEffect(() => remember(TOOL_KEY, toolName), [toolName]);
   const presetsSeen = useRef<string | null>(null);
@@ -248,7 +257,7 @@ export default function App() {
   const convertStrokes = convertMarks.reduce((n, m) => n + (m?.strokes ?? 0), 0);
   const convertRead = convertMarks.length > 0 && convertMarks.every(Boolean);
   const convertLength = convertMarks.reduce((sum, m) => sum + (m ? drawnLength(m) : 0), 0);
-  const [convertView, setConvertView] = useState<ConvertView>("side");
+  const [convertView, setConvertView] = useState<ConvertView>("picture");
 
   // The predicted print: each layer's lines in the colour its pen really makes - as measured off a
   // calibration sheet when the tool has been, its palette colour standing in when it hasn't - on the
@@ -316,6 +325,8 @@ export default function App() {
   const [pendingPhotos, setPendingPhotos] = useState<File[] | null>(null);
   const startPhotos = (files: File[]) => {
     newDrawing();
+    // A new photo is first seen as it is, before any effect: the first view in the bar.
+    setConvertView("picture");
     file.setName(files.length > 1 ? stemWithoutPlate(files[0].name) : files[0].name.replace(/\.[^.]+$/, ""));
     setPendingPhotos(files);
   };
@@ -618,6 +629,7 @@ export default function App() {
       all={photoAll}
       onAll={setPhotoAll}
       estimates={estimates}
+      infoCard={infoCard}
       scale={(() => {
         const { b, fitW } = photoScale(chosen);
         return Math.round(((b.x1 - b.x0) / fitW) * 100);
@@ -646,53 +658,77 @@ export default function App() {
   ) : null;
 
   const convertLayer = chosen ? layers.find((l) => l.id === chosen.layerId) : undefined;
+  const photoInput = useRef<HTMLInputElement>(null);
   const mainRail = (
     <>
-      <Card variant="flat" className={styles.controls}>
-        <div className={`${styles.cardBody} ${controls.cardSections}`}>
-          <FileSection
-            name={file.name}
-            onName={file.setName}
-            saved={file.saved}
-            dirty={file.dirty}
-            hasShapes={shapes.length > 0}
-            busy={busy}
-            confirm={confirmBlock}
-            onOpen={() => setBrowsing("drawing")}
-            onOpenPhotos={(files) => files.length && ask({ kind: "photos", files })}
-            onNew={() => ask({ kind: "new" })}
-            onEditInStudio={editInStudio}
-            onSendToPlot={file.sendToPlot}
-            onSave={() => file.save()}
-          />
-          {chosen && (
-            <Section title="Image conversion">
-              <p className={controls.hint}>Working out how best to draw this picture. Scroll over it to zoom, drag to move, double-click to see all of it.</p>
-              <p className={controls.hint}>
-                {convertRead
-                  ? `${convertStrokes.toLocaleString()} ${convertStrokes === 1 ? "stroke" : "strokes"}, ${convertLength * 0.0254 >= 1 ? `${(convertLength * 0.0254).toFixed(1)} m` : `${Math.round(convertLength * 25.4)} mm`} of drawing${convertParts.length > 1 ? ` in ${convertParts.length} pens` : convertLayer ? `, in ${convertLayer.name}` : ""}.`
-                  : "Reading the photo…"}
-              </p>
-              <p className={controls.hint}>
-                {predicting || !prediction
-                  ? "Working out the predicted print…"
-                  : `Predicted print: ${prediction.score.toFixed(1)} ΔE from the photo, over 4 mm patches - lower is closer.`}
-                {tool && !measured && ` ${tool.name} isn’t measured yet, so its palette colours stand in for what its pens really make.`}
-              </p>
-            </Section>
-          )}
-          <SettingsSection collapsibleKey="photo-settings">
-            {paperSection}
-            {toolSection}
-          </SettingsSection>
-        </div>
-      </Card>
+      {/* Out while it's asking about unsaved work too, even put away: the question is asked in it. */}
+      {(fileCard || confirmNext) && (
+        <Card variant="flat" className={styles.controls}>
+          <div className={`${styles.cardBody} ${controls.cardSections}`}>
+            <FileSection
+              name={file.name}
+              onName={file.setName}
+              saved={file.saved}
+              dirty={file.dirty}
+              hasShapes={shapes.length > 0}
+              busy={busy}
+              confirm={confirmBlock}
+              onOpen={() => setBrowsing("drawing")}
+              onOpenPhotos={(files) => files.length && ask({ kind: "photos", files })}
+              onNew={() => ask({ kind: "new" })}
+              onEditInStudio={editInStudio}
+              onSendToPlot={file.sendToPlot}
+              onSave={() => file.save()}
+            />
+            {chosen && (
+              <Section title={`Image conversion: ${EFFECTS.find((e) => e.key === effectOf(chosen.photo!))!.label}`}>
+                <p className={controls.hint}>Working out how best to draw this picture. Scroll over it to zoom, drag to move, double-click to see all of it.</p>
+                <p className={controls.hint}>
+                  {convertRead
+                    ? `${convertStrokes.toLocaleString()} ${convertStrokes === 1 ? "stroke" : "strokes"}, ${convertLength * 0.0254 >= 1 ? `${(convertLength * 0.0254).toFixed(1)} m` : `${Math.round(convertLength * 25.4)} mm`} of drawing${convertParts.length > 1 ? ` in ${convertParts.length} pens` : convertLayer ? `, in ${convertLayer.name}` : ""}.`
+                    : "Reading the photo…"}
+                </p>
+                <p className={controls.hint}>
+                  {predicting || !prediction
+                    ? "Working out the predicted print…"
+                    : `Predicted print: ${prediction.score.toFixed(1)} ΔE from the photo, over 4 mm patches - lower is closer.`}
+                  {tool && !measured && ` ${tool.name} isn’t measured yet, so its palette colours stand in for what its pens really make.`}
+                </p>
+              </Section>
+            )}
+            <SettingsSection collapsibleKey="photo-settings">
+              {paperSection}
+              {toolSection}
+            </SettingsSection>
+          </div>
+        </Card>
+      )}
       {photoCard}
+      {/* The image card with no photo yet: the way to open one, where its settings will be. */}
+      {!chosen?.photo && infoCard && (
+        <Card variant="flat" className={styles.controls}>
+          <div className={`${styles.cardBody} ${controls.cardSections}`}>
+            <Section title="Image">
+              <p className={controls.hint}>No photo yet. Open one to turn it into lines: a new drawing, named after it.</p>
+              <Button size="sm" variant="secondary" disabled={busy} onClick={() => photoInput.current?.click()}>
+                Open a photo
+              </Button>
+            </Section>
+          </div>
+        </Card>
+      )}
     </>
   );
 
+  // The toolbar's effect is the whole photo's. Silhouette has no tones or colours to split by, so a
+  // split photo comes back together as one layer drawn that way; separations keep a plate each.
+  const setEffect = (effect: Effect) => {
+    const style = effect === "hatch" ? undefined : effect;
+    if (effect === "silhouette" && chosen?.photo?.group && !chosen.photo.separation) splitPhoto(1, { style });
+    else setPhotoOf({ style });
+  };
+
   const setupToolbar = <SetupToolbar open={setupOpen} onToggle={() => setSetupOpen((open) => !open)} />;
-  const photoInput = useRef<HTMLInputElement>(null);
 
   return (
     <div className={styles.app}>
@@ -718,7 +754,13 @@ export default function App() {
         }}
       />
 
-      <main className={styles.layout}>
+      {/* With every card put away the rail has nothing to show, and the stage takes its width. */}
+      <main className={styles.layout} data-rail={!setupOpen && !fileCard && !confirmNext && !infoCard && !chosen?.photo ? "none" : undefined}>
+        <div className={styles.tools}>
+          <AppSwitch current="photo" orientation="vertical" />
+          <PanelToolbar fileCard={fileCard} onFileCard={() => setFileCard((on) => !on)} infoCard={infoCard} onInfoCard={() => setInfoCard((on) => !on)} />
+          <EffectToolbar effect={!setupOpen && chosen?.photo ? effectOf(chosen.photo) : undefined} onEffect={setEffect} disabled={setupOpen || !chosen?.photo || busy} />
+        </div>
         <section className={styles.stage} aria-label={setupOpen ? "Calibration sheet" : "Image conversion"}>
           {!setupOpen && chosen?.photo && convertBox ? (
             <ConvertStage
@@ -729,7 +771,6 @@ export default function App() {
               view={convertView}
               onView={setConvertView}
               history={{ canUndo, canRedo, onUndo: undo, onRedo: redo }}
-              prediction={predicting ? null : prediction?.url ?? null}
               toolbar={setupToolbar}
               disabled={busy}
             />
@@ -756,7 +797,7 @@ export default function App() {
           )}
         </section>
 
-        <div className={styles.side}>{setupOpen ? setupRail : mainRail}</div>
+        {(setupOpen || fileCard || confirmNext || infoCard || chosen?.photo) && <div className={styles.side}>{setupOpen ? setupRail : mainRail}</div>}
       </main>
     </div>
   );

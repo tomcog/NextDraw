@@ -33,7 +33,7 @@
   min-height: 20rem;
 }
 
-.panes[data-view="over"] { grid-template-columns: 1fr; }
+.panes:not([data-view="side"]) { grid-template-columns: 1fr; }
 
 .pane {
   position: relative;
@@ -82,7 +82,6 @@
 }
 
 /* A grid point to a square, so zooming in shows the grid the style really worked on. */
-.mask { image-rendering: pixelated; }
 
 .reading {
   position: absolute;

@@ -1,6 +1,5 @@
 import { Logo, Tag } from "@tomcoggia/ui";
 import { Aperture } from "lucide-react";
-import { AppSwitch } from "../../shared/components/AppSwitch";
 import styles from "../../shared/components/Header.module.css";
 
 interface Props {
@@ -9,7 +8,8 @@ interface Props {
 }
 
 // Plot's header, with Photo's name, as Studio's is. The status says only what Plot's does - whether
-// the plotter is there - so the same place means the same thing in all three apps.
+// the plotter is there - so the same place means the same thing in all three apps. The way between
+// the apps isn't here, as it is in theirs: Photo has it at the top of its toolbars on the left.
 export function PhotoHeader({ plotterFound }: Props) {
   const text = plotterFound === null ? "Looking for the plotter…" : plotterFound ? "Plotter connected" : "No plotter";
   return (
@@ -25,7 +25,6 @@ export function PhotoHeader({ plotterFound }: Props) {
         <span className={styles.titleApp}>Photo</span>
       </h1>
       <span className={styles.tools}>
-        <AppSwitch current="photo" />
         <Tag className={styles.status} data-found={Boolean(plotterFound)}>
           <span className={styles.dot} aria-hidden="true" />
           {text}

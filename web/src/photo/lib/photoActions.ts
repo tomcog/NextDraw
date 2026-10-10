@@ -688,6 +688,8 @@ export function photoActions(ctx: PhotoContext) {
     if (patch.keyStrength !== undefined) whole.keyStrength = patch.keyStrength;
     if (patch.keyFrom !== undefined) whole.keyFrom = patch.keyFrom;
     if (patch.blackShare !== undefined) whole.blackShare = patch.blackShare;
+    // The effect is the whole photo's: chosen in the toolbar, every layer drawn the same way.
+    if ("style" in patch) whole.style = patch.style;
     // Set for all its layers: everything changed here goes to every one of them.
     const toAll = photoAll ? patch : whole;
     setShapes((list) => list.map((sh) => {

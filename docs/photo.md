@@ -44,9 +44,21 @@ get complicated, and it never needs Studio's tools for drawing and transforming 
   - The shared File card. Open a photo, or several separations, starts a new drawing named after it.
     Open a drawing opens one with a photo in it (anything else is Studio's to edit). Photo also has
     New, Save, Send to Plot and Edit in Studio, which saves and then opens the drawing in Studio.
-  - On the stage, Studio's conversion view: picture and lines side by side, overlay and mask views,
-    synced zoom, undo and redo. In the rail, the stroke and length count, Settings, and the photo's
-    card with hatching, tone bands, tone lines, colour and CMYK, fit and fill.
+  - On the stage, Studio's conversion view: Picture (the image alone, what a new photo opens in),
+    Lines (the drawing alone), Lines over picture, and Side by side; synced zoom, undo and redo.
+  - Down the left (2026-10-10), three vertical toolbars: the app switch; File and Image, which show
+    and hide the File card and the photo's card (with no photo, an Image card with Open a photo);
+    and one button per effect - Hatching, Tone lines, Squiggle, Outlines, Centerlines, Silhouette -
+    which sets the whole photo's effect. The rail shows the File card (the stroke and length count
+    under "Image conversion: <effect>", and Settings), the photo's card (turn, brightness and
+    contrast, fit and fill), a Layers card (value, colour and CMYK; hidden for Silhouette, which
+    brings a split photo back to one layer) and the effect's own card. With no cards out, the stage
+    takes the rail's width. The File card comes out while it asks about unsaved work.
+  - Squiggle (2026-10-10) is SquiggleDraw's effect (Gregg Wygonik's Processing sketch, public
+    domain) redone as a style: rows that swing higher and wave tighter where it's darker, smooth
+    curves through each crest and crossing, unbroken through white, optionally joined into one line.
+    The waves never get tighter than twice the tool's solid-fill spacing. `squiggle()` in
+    `shared/lib/drawing/photo.ts`; tests in `web/tests/squiggle.test.ts`.
   - Photo holds the whole drawing. Anything Studio added (crop marks, words) is kept and saved back.
     The drawing worked on last is picked up again (`photo-last-file`), and `/photo?open=<path>` opens
     a given one.

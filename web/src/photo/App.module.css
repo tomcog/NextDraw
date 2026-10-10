@@ -1,4 +1,5 @@
-/* Photo wears Studio's layout, which is Plot's: a left rail of cards, and a stage beside it. */
+/* Photo wears Studio's layout, which is Plot's: a left rail of cards, and a stage beside it - with,
+   further left, its own column for the toolbar of effects. */
 .app {
   min-height: 100vh;
   display: flex;
@@ -8,14 +9,19 @@
 .layout {
   flex: 1;
   display: grid;
-  grid-template-columns: 16.25rem minmax(0, 1fr);
+  grid-template-columns: auto 16.25rem minmax(0, 1fr);
   gap: 1.5rem 1.5rem;
   padding: 0 1.5rem 1.5rem;
   align-items: start;
 }
 
+/* No cards out: two columns, the toolbars and the stage. */
+.layout[data-rail="none"] {
+  grid-template-columns: auto minmax(0, 1fr);
+}
+
 .stage {
-  grid-column: 2;
+  grid-column: 3;
   grid-row: 1;
   position: sticky;
   top: 1rem;
@@ -60,8 +66,23 @@
   cursor: pointer;
 }
 
-.side {
+.layout[data-rail="none"] .stage {
+  grid-column: 2;
+}
+
+/* The effects, held in view while the rail scrolls, as the stage is. */
+.tools {
   grid-column: 1;
+  grid-row: 1;
+  position: sticky;
+  top: 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.side {
+  grid-column: 2;
   grid-row: 1;
   display: flex;
   flex-direction: column;
