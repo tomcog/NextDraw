@@ -4,7 +4,7 @@ import { RotateCcwSquare, RotateCwSquare } from "lucide-react";
 import { Section } from "../../shared/components/controls/Section";
 import { NumberField } from "../../shared/components/controls/NumberField";
 import controls from "../../shared/components/controls/controls.module.css";
-import { BLACK_SHARE, CENTER_DEFAULTS, KEY_FROM, MOST_LAYERS, MOST_PASSES, OUTLINE_DEFAULTS, PLATES, PLATE_AIMS, SILHOUETTE_DEFAULTS, WAVE_DEFAULTS, ANGLE_PRESETS, squiggleAmp, type AnglePreset, photoMarks, photoMode, type Photo, type Plate } from "../../shared/lib/drawing/photo";
+import { BLACK_SHARE, CENTER_DEFAULTS, KEY_FROM, MOST_LAYERS, MOST_PASSES, OUTLINE_DEFAULTS, PLATES, PLATE_AIMS, SILHOUETTE_DEFAULTS, WAVE_DEFAULTS, ANGLE_PRESETS, PLATE_SETS, plateSetOf, squiggleAmp, type AnglePreset, type PlateSet, photoMarks, photoMode, type Photo, type Plate } from "../../shared/lib/drawing/photo";
 import { boxOf, type Layer, type Shape } from "../../shared/lib/drawing/shapes";
 import styles from "../App.module.css";
 import { EFFECTS, effectOf } from "./EffectToolbar";
@@ -29,6 +29,8 @@ export interface PhotoActions {
   place: (how: "fit" | "fill", margin: number) => void;
   setMargin: (margin: number) => void;
   setScale: (percent: number) => void;
+  /** Split into a set of plates: CMYK, or CMYK with more inks. */
+  splitCmyk: (set: PlateSet) => void;
   /** Set the layers' angles: a preset newly chosen, or the whole set turned by so many degrees. */
   setAngles: (change: { preset?: AnglePreset; by?: number }) => void;
   /** Pick one of the photo's bands to set, and draw on its layer. */
@@ -98,9 +100,21 @@ export function PhotoCard({ shape, title, shapes, layers, busy, all, onAll, scal
             <Segment selected={photoMode(photo) === "colour"} title="Color: as many colors as you choose from the pen's palette, the ones that best match the photo" onClick={() => actions.switchMode("colour")}>Color</Segment>
           </SegmentedControl>
           {photoMode(photo) === "cmyk" ? (
-            // How much of the colours' shared grey the black plate takes over: more, and the darks are
-            // black; less, and they're the three colours laid over each other.
-            <NumberField label="Black" unit="%" min={0} max={100} step={5} value={Math.round((photo.blackShare ?? BLACK_SHARE) * 100)} onChange={(v) => actions.set({ blackShare: v / 100 })} />
+            <>
+              {/* Which plates: print's four, or CMYK with more inks for truer, brighter color. */}
+              <InputSelect
+                size="md"
+                label="Plates"
+                value={plateSetOf(photo.plates)}
+                title={PLATE_SETS.find((s) => s.key === plateSetOf(photo.plates))!.about}
+                onChange={(e) => actions.splitCmyk(e.target.value as PlateSet)}
+              >
+                {PLATE_SETS.map((s) => <option key={s.key} value={s.key}>{s.label}</option>)}
+              </InputSelect>
+              {/* How much of the colors' shared gray the black plate takes over: more, and the darks are
+                black; less, and they're the other inks laid over each other. */}
+              <NumberField label="Black" unit="%" min={0} max={100} step={5} value={Math.round((photo.blackShare ?? BLACK_SHARE) * 100)} onChange={(v) => actions.set({ blackShare: v / 100 })} />
+            </>
           ) : photo.ink ? (
             <>
               {/* How the pens are chosen: the ones that come nearest the photo as they really come

@@ -8,7 +8,7 @@ import { lightness } from "../../shared/lib/color";
 import type { PenColor, Preset } from "../../shared/lib/types";
 import {
   BAND_NAMES, LAYER_SETTINGS, MOST_LAYERS, PHOTO_DEFAULTS, PLATES, PLATE_AIMS, colourGroups, darkestOf, isColourful, matchPens, photoMode,
-  placeOnPage, plateNamed, platePens, presetAngle, readTones, hexLinear, linearHex, coverSteps, stemWithoutPlate, turnedCopy, turnedCrop, workingCopy, type AnglePreset, type Photo, type PhotoPart, type Plate,
+  placeOnPage, plateNamed, platePens, presetAngle, readTones, hexLinear, linearHex, coverSteps, stemWithoutPlate, turnedCopy, turnedCrop, workingCopy, type AnglePreset, type Photo, type PhotoPart, type Plate, type PlateSet, PLATE_SETS, plateSetOf,
 } from "../../shared/lib/drawing/photo";
 import { boxOf, newLayerId, newShapeId, type Layer, type Page, type Shape } from "../../shared/lib/drawing/shapes";
 import { samplePhoto, type Candidate } from "./choosePens";
@@ -291,18 +291,20 @@ export function photoActions(ctx: PhotoContext) {
     * magenta, yellow or black, each hatched at its screen angle, drawn across the whole photo and
     * blended on paper. Layers stack by their pens' lightness, lightest at the bottom.
     */
-  const splitPhotoCmyk = (extra: Partial<Photo> = {}) => {
+  const splitPhotoCmyk = (extra: Partial<Photo> = {}, set?: PlateSet) => {
     if (!chosen?.photo) return;
+    // The set asked for, or the one the photo is in now, or print's four.
+    const use = PLATE_SETS.find((s) => s.key === (set ?? (chosen.photo!.plate ? plateSetOf(chosen.photo!.plates) : "cmyk")))!;
     const pens = tool2?.palette ?? [];
-    if (pens.length < 4) {
-      setMessage({ text: `${tool2?.name ?? "This pen"} needs four colors in its palette to split a photo into CMYK`, ok: false });
+    if (pens.length < use.plates.length) {
+      setMessage({ text: `${tool2?.name ?? "This pen"} needs ${use.plates.length} colors in its palette to split a photo into ${use.label}`, ok: false });
       return;
     }
-    const matched = platePens(pens);
+    const matched = platePens(pens, use.plates);
     if (matched.some((p) => !p)) return;
     const plates = matched.map((p) => p!.color);
     const { name } = photoStem();
-    const parts = PLATES.map((plate, i) => ({ plate, pen: matched[i]! }))
+    const parts = use.plates.map((plate, i) => ({ plate, pen: matched[i]! }))
       .sort((a, b) => (lightness(b.pen.color) ?? 0) - (lightness(a.pen.color) ?? 0));
     rebuildPhoto(
       parts.map(({ plate, pen }) => ({
@@ -315,7 +317,7 @@ export function photoActions(ctx: PhotoContext) {
         },
       })),
       chosen.photo.group ?? newShapeId(),
-      `Split into CMYK: ${PLATES.map((p, i) => `${PLATE_AIMS[p].name} in ${matched[i]!.name}`).join(", ")}`,
+      `Split into ${use.label}: ${use.plates.map((p, i) => `${PLATE_AIMS[p].name} in ${matched[i]!.name}`).join(", ")}`,
     );
   };
 
@@ -728,6 +730,6 @@ export function photoActions(ctx: PhotoContext) {
 
   return {
     addPhoto, addSeparations, setSeparationPlate, switchPhotoMode, setKeyLayer, splitPhoto, splitPhotoByColor, splitPhotoBestFit, bestPens,
-    placePhoto, photoScale, setPhotoScale, setPhotoMargin, replacePhoto, turnPhoto, setPhotoOf, setAngles, photoStem,
+    placePhoto, photoScale, setPhotoScale, setPhotoMargin, replacePhoto, turnPhoto, setPhotoOf, setAngles, photoStem, splitPhotoCmyk,
   };
 }

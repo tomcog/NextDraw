@@ -214,8 +214,27 @@ export function placeOnPage(aspect: number, page: { w: number; h: number }, how:
 }
 
 /** The four plates of a CMYK split, in the order they're worked out. */
-export type Plate = "c" | "m" | "y" | "k";
+export type Plate = "c" | "m" | "y" | "k" | "o" | "g" | "r" | "v";
+/** Print's four plates: what separations made elsewhere are, and the first four of every plate set. */
 export const PLATES: Plate[] = ["c", "m", "y", "k"];
+
+/**
+ * The plate sets a photo can be separated into: CMYK, and CMYK with more inks for truer, brighter
+ * colour - Hexachrome's orange and green, today's extended gamut's orange, green and violet, and
+ * those with red too. Black is always fourth. More plates, fewer colours left to mixing.
+ */
+export type PlateSet = "cmyk" | "cmykog" | "cmykogv" | "cmykogrv";
+export const PLATE_SETS: { key: PlateSet; label: string; about: string; plates: Plate[] }[] = [
+  { key: "cmyk", label: "CMYK", about: "Print's four plates: cyan, magenta, yellow and black", plates: ["c", "m", "y", "k"] },
+  { key: "cmykog", label: "CMYK + OG", about: "Six plates, as Hexachrome printing: CMYK with orange and green", plates: ["c", "m", "y", "k", "o", "g"] },
+  { key: "cmykogv", label: "CMYK + OGV", about: "Seven plates, as today's extended-gamut printing: CMYK with orange, green and violet", plates: ["c", "m", "y", "k", "o", "g", "v"] },
+  { key: "cmykogrv", label: "CMYK + OGRV", about: "Eight plates: CMYK with orange, green, red and violet", plates: ["c", "m", "y", "k", "o", "g", "r", "v"] },
+];
+/** Which plate set a photo's plates are, by how many there are. */
+export const plateSetOf = (plates: unknown[] | undefined): PlateSet =>
+  PLATE_SETS.find((s) => s.plates.length === (plates?.length ?? 4))?.key ?? "cmyk";
+/** The plates, in order, of the set a photo's plates are. */
+export const platesOf = (plates: unknown[] | undefined): Plate[] => PLATE_SETS.find((s) => s.key === plateSetOf(plates))!.plates;
 
 /**
  * What each plate aims for - printing's own cyan, magenta, yellow and black, to find the nearest pen
@@ -227,6 +246,12 @@ export const PLATE_AIMS: Record<Plate, { name: string; color: string; angle: num
   m: { name: "Magenta", color: "#d6007a", angle: 75 },
   y: { name: "Yellow", color: "#ffe500", angle: 0 },
   k: { name: "Black", color: "#1a1a1a", angle: 45 },
+  // The extra plates, at angles between CMYK's - apart from them and from each other, hatching's own
+  // right-angle cross counted.
+  o: { name: "Orange", color: "#ff7a00", angle: 30 },
+  g: { name: "Green", color: "#00a650", angle: 60 },
+  r: { name: "Red", color: "#e4002b", angle: 7.5 },
+  v: { name: "Violet", color: "#5b2c8f", angle: 52.5 },
 };
 
 /** A colour's hue round the colour wheel (0-360), saturation and value (0-1). */
@@ -245,13 +270,15 @@ function hsv(hex: string): [number, number, number] {
  * match them, among pens with colour enough to count. Measured in a space where distance means
  * colour, a pale violet can come out nearer cyan than a real turquoise does; by hue, it doesn't.
  */
-export function platePens<P extends { color: string }>(palette: P[]): (P | undefined)[] {
-  const out: (P | undefined)[] = [undefined, undefined, undefined, undefined];
+export function platePens<P extends { color: string }>(palette: P[], plates: Plate[] = PLATES): (P | undefined)[] {
+  const out: (P | undefined)[] = plates.map(() => undefined);
   const used = new Set<P>();
+  const black = plates.indexOf("k");
   const darkest = [...palette].sort((a, b) => hsv(a.color)[2] - hsv(b.color)[2])[0];
-  if (darkest) { out[3] = darkest; used.add(darkest); }
+  if (darkest && black >= 0) { out[black] = darkest; used.add(darkest); }
   const pairs: { plate: number; pen: P; score: number }[] = [];
-  PLATES.slice(0, 3).forEach((plate, i) => {
+  plates.forEach((plate, i) => {
+    if (plate === "k") return;
     const [ah, as, av] = hsv(PLATE_AIMS[plate].color);
     for (const pen of palette) {
       const [h, sat, val] = hsv(pen.color);
@@ -1027,24 +1054,35 @@ function separationOf(tones: Tones, plates: string[], brightness: number, contra
   const w = Math.max(1, Math.round(tones.w * scale));
   const h = Math.max(1, Math.round(tones.h * scale));
   const inks = plates.map(densityOf);
-  const colours = inks.slice(0, 3);
+  // Black is the fourth plate; the colours are the rest, CMY first and any extra inks after.
+  const colours = inks.filter((_, i) => i !== 3);
   const black = inks[3];
   const maps = plates.map(() => new Float32Array(w * h));
-  const amounts = new Float64Array(3);
+  const amounts = new Float64Array(colours.length);
+  // With more inks than colour channels, any colour has many mixes. A small cost on each ink used
+  // makes the solver reach for the one ink nearest a colour - the orange pen for orange - rather than
+  // building it from several, as extended-gamut print does. Print's four have one mix: no cost.
+  const sparse = colours.length > 3 ? SPARSE_COST : 0;
+  // Many inks are slow to solve, so each colour is solved once: shades a quarter of a step apart in
+  // each channel share an answer, which is finer than hatching can show.
+  const solved = sparse ? new Map<number, Float32Array>() : null;
   for (let y = 0; y < h; y++) {
     const sy = Math.min(tones.h - 1, Math.round((y / Math.max(1, h - 1)) * (tones.h - 1)));
     for (let x = 0; x < w; x++) {
       const sx = Math.min(tones.w - 1, Math.round((x / Math.max(1, w - 1)) * (tones.w - 1)));
       const i = (sy * tones.w + sx) * 4;
-      const want = [density(adjust(tones.rgba[i])), density(adjust(tones.rgba[i + 1])), density(adjust(tones.rgba[i + 2]))];
-      // The grey every channel shares, in the black pen's own terms: as much black as fits in all three.
-      const grey = black ? Math.min(want[0] / Math.max(1e-3, black[0]), want[1] / Math.max(1e-3, black[1]), want[2] / Math.max(1e-3, black[2])) : 0;
-      const k = Math.min(1, Math.max(0, grey * blackShare));
-      const rest = black ? [want[0] - black[0] * k, want[1] - black[1] * k, want[2] - black[2] * k] : want;
-      solveInks(colours, rest, amounts);
       const at = y * w + x;
-      for (let n = 0; n < 3; n++) maps[n][at] = amounts[n];
+      const key = solved ? ((tones.rgba[i] >> 2) << 12) | ((tones.rgba[i + 1] >> 2) << 6) | (tones.rgba[i + 2] >> 2) : 0;
+      const known = solved?.get(key);
+      if (known) {
+        for (let n = 0; n < plates.length; n++) maps[n][at] = known[n];
+        continue;
+      }
+      const want = [density(adjust(tones.rgba[i])), density(adjust(tones.rgba[i + 1])), density(adjust(tones.rgba[i + 2]))];
+      const k = separatePixel(want, colours, black, blackShare, sparse, amounts);
+      for (let n = 0; n < colours.length; n++) maps[n < 3 ? n : n + 1][at] = amounts[n];
       maps[3][at] = k;
+      if (solved) solved.set(key, Float32Array.from(plates, (_, n) => maps[n][at]));
     }
   }
   const made = { w, h, maps };
@@ -1057,10 +1095,39 @@ function separationOf(tones: Tones, plates: string[], brightness: number, contra
  * The amounts of some inks, 0 to 1, whose densities added together come nearest `want` in all three
  * channels: a handful of passes over the inks, each set to what fits best given the others.
  */
-function solveInks(inks: [number, number, number][], want: number[], out: Float64Array) {
+/**
+ * One point of a separation: how much black (returned) and how much of each colour ink (`amounts`)
+ * lay over each other to come nearest the photo's densities there, `want`.
+ */
+function separatePixel(want: number[], colours: [number, number, number][], black: [number, number, number] | undefined, blackShare: number, sparse: number, amounts: Float64Array) {
+  // The grey every channel shares, in the black pen's own terms: as much black as fits in all three.
+  const grey = black ? Math.min(want[0] / Math.max(1e-3, black[0]), want[1] / Math.max(1e-3, black[1]), want[2] / Math.max(1e-3, black[2])) : 0;
+  const k = Math.min(1, Math.max(0, grey * blackShare));
+  const rest = black ? [want[0] - black[0] * k, want[1] - black[1] * k, want[2] - black[2] * k] : want;
+  solveInks(colours, rest, amounts, sparse);
+  return k;
+}
+
+/** How much of each plate's pen, in plate order, a colour takes: one point of a separation, for checking it. */
+export function plateAmounts(rgb: [number, number, number], plates: string[], blackShare = BLACK_SHARE): number[] {
+  const inks = plates.map(densityOf);
+  const colours = inks.filter((_, i) => i !== 3);
+  const amounts = new Float64Array(colours.length);
+  const k = separatePixel(rgb.map(density), colours, inks[3], blackShare, colours.length > 3 ? SPARSE_COST : 0, amounts);
+  return plates.map((_, i) => (i === 3 ? k : amounts[i < 3 ? i : i - 1]));
+}
+
+/** What each extra ink used costs the solver, in density: enough to prefer one ink to a mix of two. */
+const SPARSE_COST = 0.08;
+
+function solveInks(inks: [number, number, number][], want: number[], out: Float64Array, cost = 0) {
   out.fill(0);
   const residual = [want[0], want[1], want[2]];
-  for (let pass = 0; pass < 12; pass++) {
+  // Many inks pull against each other and take many passes to settle on the fewest that will do;
+  // a pass that changes nothing is the answer.
+  const passes = inks.length > 3 ? 600 : 12;
+  for (let pass = 0; pass < passes; pass++) {
+    let moved = 0;
     for (let k = 0; k < inks.length; k++) {
       const d = inks[k];
       const dd = d[0] * d[0] + d[1] * d[1] + d[2] * d[2];
@@ -1069,19 +1136,23 @@ function solveInks(inks: [number, number, number][], want: number[], out: Float6
       const r0 = residual[0] + d[0] * was;
       const r1 = residual[1] + d[1] * was;
       const r2 = residual[2] + d[2] * was;
-      const best = Math.min(1, Math.max(0, (r0 * d[0] + r1 * d[1] + r2 * d[2]) / dd));
+      // Each ink's best amount given the others, less what using it costs (half, as the cost is on
+      // the amount while the fit is squared).
+      const best = Math.min(1, Math.max(0, (r0 * d[0] + r1 * d[1] + r2 * d[2] - cost / 2) / dd));
+      moved = Math.max(moved, Math.abs(best - was));
       out[k] = best;
       residual[0] = r0 - d[0] * best;
       residual[1] = r1 - d[1] * best;
       residual[2] = r2 - d[2] * best;
     }
+    if (moved < 1e-5) break;
   }
 }
 
 /** A CMYK plate, read at a point of the photo (u and v, 0 to 1): -1 where it draws nothing, else how much. */
 function plateSampler(tones: Tones, photo: Photo) {
   const sep = separationOf(tones, photo.plates!, photo.brightness, photo.contrast, Math.min(1, Math.max(0, photo.blackShare ?? BLACK_SHARE)));
-  const map = sep.maps[PLATES.indexOf(photo.plate!)];
+  const map = sep.maps[platesOf(photo.plates).indexOf(photo.plate!)];
   return (u: number, v: number) => {
     const amount = map[Math.min(sep.h - 1, Math.round(v * (sep.h - 1))) * sep.w + Math.min(sep.w - 1, Math.round(u * (sep.w - 1)))];
     return amount > 0.02 ? amount : -1;
@@ -1152,7 +1223,7 @@ function toneSampler(tones: Tones, photo: Photo, w: number, h: number) {
   const [c0, c1, c2, c3] = photo.crop ?? [0, 0, 1, 1];
   // Split by colour: this layer draws its colour group's area, as much of its pen's ink there as
   // comes nearest the photo's colour - so a pale part of its area gets few lines.
-  if (photo.plate && photo.plates?.length === 4) {
+  if (photo.plate && (photo.plates?.length ?? 0) >= 4) {
     const sample = plateSampler(tones, photo);
     return {
       toneAt: (x: number, y: number) => {
@@ -1517,7 +1588,7 @@ function fieldOf(tones: Tones, photo: Photo, gw: number, gh: number, count: numb
   const [c0, c1, c2, c3] = photo.crop ?? [0, 0, 1, 1];
   const field = new Float32Array(gw * gh);
   const levels: number[] = [];
-  if (photo.plate && photo.plates?.length === 4) {
+  if (photo.plate && (photo.plates?.length ?? 0) >= 4) {
     // A plate: how much of its pen the photo needs, traced at levels spread across it like tone.
     const sample = plateSampler(tones, photo);
     for (let gy = 0; gy < gh; gy++) {
@@ -2397,7 +2468,7 @@ export function photoFromData(raw: Record<string, unknown>): Photo | null {
     ...(Number.isFinite(Number(raw.key_strength)) && raw.key_strength !== undefined ? { keyStrength: Number(raw.key_strength) } : {}),
     ...(Number.isFinite(Number(raw.key_from)) && raw.key_from !== undefined ? { keyFrom: Number(raw.key_from) } : {}),
     ...(typeof raw.separation === "string" ? { separation: raw.separation } : {}),
-    ...(typeof raw.plate === "string" && (PLATES as string[]).includes(raw.plate) ? { plate: raw.plate as Plate } : {}),
+    ...(typeof raw.plate === "string" && "cmykogrv".includes(raw.plate) && raw.plate.length === 1 ? { plate: raw.plate as Plate } : {}),
     ...(Array.isArray(raw.plates) && raw.plates.every((v) => typeof v === "string") ? { plates: raw.plates as string[] } : {}),
     ...(Number.isFinite(Number(raw.black_share)) && raw.black_share !== undefined ? { blackShare: Number(raw.black_share) } : {}),
     ...(Array.isArray(raw.region_inks) ? { regionInks: raw.region_inks.map((c) => (typeof c === "string" ? c : null)) } : {}),

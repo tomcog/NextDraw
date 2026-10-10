@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { photoMarks, presetAngle, readTones, squiggleAmp, type Photo } from "../src/shared/lib/drawing/photo";
+import { photoMarks, plateAmounts, presetAngle, readTones, squiggleAmp, type Photo } from "../src/shared/lib/drawing/photo";
 
 // A made-up photo, read without a browser: white on the left darkening to black on the right.
 const W = 200;
@@ -129,4 +129,40 @@ test("angle presets: classic is print's, cardinal the square, golden spread 137.
   assert.deepEqual(six("cardinal"), [0, 90, 45, 135, 22.5, 112.5]);
   assert.deepEqual(six("golden"), [0, 137.5, 95, 52.5, 10, 147.5]);
   assert.deepEqual((["c", "m", "y", "k"] as const).map((p) => presetAngle("classic", 0, p)), [15, 75, 0, 45]);
+});
+
+test("plate sets: an orange is drawn in the orange pen, not built from yellow and magenta", async () => {
+  // Plain colour pictures, read without a browser.
+  const solid = async (src: string, rgb: [number, number, number]) => {
+    const data = new Uint8ClampedArray(W * H * 4);
+    for (let i = 0; i < W * H; i++) data.set([...rgb, 255], i * 4);
+    (globalThis as Record<string, unknown>).document = { createElement: () => ({ getContext: () => ({ drawImage() {}, getImageData: () => ({ data }) }) }) };
+    await readTones(src);
+  };
+  // Pens near each plate's aim: cyan, magenta, yellow, black, orange, green.
+  const pens = ["#00a3e0", "#d6007a", "#ffe500", "#1a1a1a", "#ff7a00", "#00a650"];
+  const marks = (src: string, plates: string[], plate: string) =>
+    photoMarks(photo({ src, style: undefined, angle: 0, spacingMm: 0.5, levels: 4, plate: plate as Photo["plate"], plates, ink: plates[0] }), 4, 2)!.passes.filter(Boolean).length;
+  await solid("data:orange", [255, 122, 0]);
+  const cmyk = pens.slice(0, 4);
+  assert.ok(marks("data:orange", cmyk, "y") >= 2 && marks("data:orange", cmyk, "m") >= 1, "CMYK builds orange from yellow and magenta");
+  const six = pens;
+  const orange = marks("data:orange", six, "o");
+  const yellow = marks("data:orange", six, "y");
+  const magenta = marks("data:orange", six, "m");
+  assert.ok(orange >= 3, `orange plate ${orange} passes`);
+  assert.ok(yellow + magenta <= 1, `yellow ${yellow} and magenta ${magenta} passes beside it`);
+  await solid("data:green", [0, 166, 80]);
+  assert.ok(marks("data:green", six, "g") >= 3 && marks("data:green", six, "c") + marks("data:green", six, "y") <= 1, "green drawn in the green pen");
+});
+
+test("plate sets: with eight plates, orange and violet each come from their own pen", () => {
+  const pens = ["#00a3e0", "#d6007a", "#ffe500", "#1a1a1a", "#ff7a00", "#00a650", "#e4002b", "#5b2c8f"];
+  const [c, m, y, , o] = plateAmounts([255, 122, 0], pens);
+  assert.ok(o > 0.9 && c + m + y < 0.1, `orange: O ${o.toFixed(2)}, CMY ${(c + m + y).toFixed(2)}`);
+  const v = plateAmounts([100, 50, 150], pens);
+  assert.ok(v[7] > 0.5 && v[0] + v[1] < 0.1, `violet: V ${v[7].toFixed(2)}, C+M ${(v[0] + v[1]).toFixed(2)}`);
+  // Print's four keep their one mix: orange from magenta and yellow.
+  const four = plateAmounts([255, 122, 0], pens.slice(0, 4));
+  assert.ok(four[1] > 0.4 && four[2] > 0.4);
 });

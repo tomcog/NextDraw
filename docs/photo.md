@@ -63,7 +63,12 @@ get complicated, and it never needs Studio's tools for drawing and transforming 
     and makes those four the picked layer's. Squiggle's and Tone lines' cards are built the same way,
     from the same pieces (color mode, angle preset, each layer on its own); Outlines' too, without
     angles, since contours have no direction. Centerlines and Silhouette keep a Layers card.
-  - The photo's card is titled Image, with the photo's name under it, small. With no cards out, the stage takes the rail's width. The File card
+  - The photo's card is titled Image, with the photo's name under it, small.
+  - CMYK's Plates (2026-10-10): CMYK, CMYK + OG (Hexachrome), CMYK + OGV (extended gamut) and
+    CMYK + OGRV. The extra plates' pens are the palette's nearest by hue to orange, green, red and
+    violet; black is the darkest. The separation prefers the fewest inks for each color (a small
+    cost per ink in the solver), so an orange is drawn in the orange pen rather than yellow over
+    magenta; each color is solved once and shared. CMYK alone separates as before. With no cards out, the stage takes the rail's width. The File card
     comes out while it asks about unsaved work.
   - Unsaved work is kept in the browser (IndexedDB, `photo/lib/workInProgress.ts`) and put back after
     a reload; once saved it's dropped, and the last file reopens instead. Every Photo tab in a

@@ -273,7 +273,7 @@ export default function App() {
 
   const {
     addPhoto, addSeparations, setSeparationPlate, switchPhotoMode, setKeyLayer, splitPhoto, splitPhotoByColor, splitPhotoBestFit, bestPens,
-    placePhoto, photoScale, setPhotoScale, setPhotoMargin, replacePhoto, turnPhoto, setPhotoOf, setAngles, photoStem,
+    placePhoto, photoScale, setPhotoScale, setPhotoMargin, replacePhoto, turnPhoto, setPhotoOf, setAngles, photoStem, splitPhotoCmyk,
   } = photoActions({
     chosen, shapes, setShapes, layers, setLayers, active, setActiveLayer, page, tool,
     spacingMm: tool?.hatch?.spacing_mm ?? 1.5, all: photoAll, paper: paperColor, record, addShape, pick, setMessage, setBusy,
@@ -667,6 +667,7 @@ export default function App() {
         setMargin: setPhotoMargin,
         setScale: setPhotoScale,
         setAngles,
+        splitCmyk: (set) => splitPhotoCmyk({}, set),
         pickBand: (id, layerId) => {
           pick(id);
           setActiveLayer(layerId);
