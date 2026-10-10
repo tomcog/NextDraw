@@ -60,7 +60,9 @@ get complicated, and it never needs Studio's tools for drawing and transforming 
     Color) with that mode's settings, Bleed, an angle preset (Classic - print's screen angles,
     Cardinal, Golden spread) applied to every layer and to each new split, then Angle (turns the
     whole set), Spacing, Passes and Smoothing. "Set each layer on its own" shows the layer picker
-    and makes those four the picked layer's. With no cards out, the stage takes the rail's width. The File card
+    and makes those four the picked layer's. Squiggle's card is built the same way, from the same
+    pieces (color mode, angle preset, each layer on its own); the other effects keep a Layers card.
+  - The photo's card is titled Image, with the photo's name under it, small. With no cards out, the stage takes the rail's width. The File card
     comes out while it asks about unsaved work.
   - Unsaved work is kept in the browser (IndexedDB, `photo/lib/workInProgress.ts`) and put back after
     a reload; once saved it's dropped, and the last file reopens instead. Every Photo tab in a

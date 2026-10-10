@@ -23,7 +23,7 @@ import { loadFont, type StrokeFont } from "../shared/lib/drawing/font";
 import type { Fill } from "../shared/lib/drawing/hatch";
 import { parseDrawing } from "../shared/lib/drawing/parse";
 import { photoMarks, placeOnPage, stemWithoutPlate, type Photo } from "../shared/lib/drawing/photo";
-import { boxOf, newLayerId, shapeName, type Layer, type Page, type Shape } from "../shared/lib/drawing/shapes";
+import { boxOf, newLayerId, type Layer, type Page, type Shape } from "../shared/lib/drawing/shapes";
 import { buildSvg } from "../shared/lib/drawing/svg";
 import { fitText } from "../shared/lib/drawing/text";
 import { useDrawingFile } from "../shared/lib/drawing/useDrawingFile";
@@ -231,7 +231,6 @@ export default function App() {
   const picked = selected ? shapes.find((s) => s.id === selected && s.kind === "photo" && s.photo) ?? null : null;
   const chosen = picked ?? firstPhoto;
   const active = (chosen ? layers.find((l) => l.id === chosen.layerId) : undefined) ?? layers.find((l) => l.id === activeLayer) ?? layers[0];
-  const onActive = shapes.filter((sh) => sh.layerId === active?.id);
 
   // All of the photo's layers, bottom first, each in its pen: the lines it comes out as, together.
   const convertBox = chosen ? boxOf(chosen) : null;
@@ -274,7 +273,7 @@ export default function App() {
 
   const {
     addPhoto, addSeparations, setSeparationPlate, switchPhotoMode, setKeyLayer, splitPhoto, splitPhotoByColor, splitPhotoBestFit, bestPens,
-    placePhoto, photoScale, setPhotoScale, setPhotoMargin, replacePhoto, turnPhoto, setPhotoOf, setAngles,
+    placePhoto, photoScale, setPhotoScale, setPhotoMargin, replacePhoto, turnPhoto, setPhotoOf, setAngles, photoStem,
   } = photoActions({
     chosen, shapes, setShapes, layers, setLayers, active, setActiveLayer, page, tool,
     spacingMm: tool?.hatch?.spacing_mm ?? 1.5, all: photoAll, paper: paperColor, record, addShape, pick, setMessage, setBusy,
@@ -638,7 +637,8 @@ export default function App() {
   const photoCard = chosen?.photo ? (
     <PhotoCard
       shape={chosen as Shape & { photo: Photo }}
-      title={shapeName(chosen, onActive.indexOf(chosen))}
+      // The photo's own name, without the band or color a layer of it adds.
+      title={photoStem().name}
       shapes={shapes}
       layers={layers}
       busy={busy}

@@ -236,13 +236,44 @@ export function PhotoCard({ shape, title, shapes, layers, busy, all, onAll, scal
       })()}
     </>
   );
+  // The layers' angles, set apart by a preset so no two pens' lines lie the same way: shared by the
+  // effects that draw in rows or lines - Hatching and Squiggle.
+  const anglePresets = (
+    <InputSelect
+      size="md"
+      label="Angles"
+      value={photo.anglePreset ?? "classic"}
+      title={ANGLE_PRESETS.find((a) => a.key === (photo.anglePreset ?? "classic"))!.about}
+      onChange={(e) => actions.setAngles({ preset: e.target.value as AnglePreset })}
+    >
+      {ANGLE_PRESETS.map((a) => <option key={a.key} value={a.key}>{a.label}</option>)}
+    </InputSelect>
+  );
+  // This layer's angle. For the whole drawing, changing it turns every layer with it.
+  const angleField = (
+    <NumberField label="Angle" unit="°" min={-180} max={180} step={5} value={photo.angle} onChange={(angle) => (all && photo.group ? actions.setAngles({ by: angle - photo.angle }) : actions.set({ angle }))} />
+  );
+  // Rarely wanted: the effect's settings for one layer at a time, `which` saying which they are.
+  const eachLayer = (which: string) => (
+    <>
+      {photo.group && (
+        <Checkbox checked={!all} label="Set each layer on its own" onChange={(e) => onAll(!e.target.checked)} />
+      )}
+      {photo.group && !all && (
+        <>
+          {layerPicker}
+          <p className={styles.empty}>{which} above are this layer's alone. Pick another to set it.</p>
+        </>
+      )}
+    </>
+  );
   return (
     <>
       {infoCard && (
         <Card variant="flat" className={styles.controls}>
           <div className={`${styles.cardBody} ${controls.cardSections}`}>
             <Section
-              title={title}
+              title="Image"
               collapsibleKey="photo"
               action={
                 <span className={controls.headerTools}>
@@ -266,6 +297,8 @@ export function PhotoCard({ shape, title, shapes, layers, busy, all, onAll, scal
                 </span>
               }
             >
+              {/* The photo's name under the card's, small, as the File card says where a drawing is. */}
+              <p className={controls.fileWhere} title={title}>{title}</p>
               <div className={styles.fillRow}>
                 <NumberField label="Brightness" min={-100} max={100} step={5} value={photo.brightness} onChange={(brightness) => actions.set({ brightness })} />
                 <NumberField label="Contrast" min={-100} max={100} step={5} value={photo.contrast} onChange={(contrast) => actions.set({ contrast })} />
@@ -311,8 +344,12 @@ export function PhotoCard({ shape, title, shapes, layers, busy, all, onAll, scal
                   </div>
                 ) : photo.style === "squiggle" ? (
                   <>
+                    {/* As Hatching: the color mode first, then the layers' angles. */}
+                    {colourMode}
+                    {photo.group && bleed}
+                    {anglePresets}
                     <div className={styles.fillRow}>
-                      <NumberField label="Angle" unit="°" min={-180} max={180} step={5} value={photo.angle} onChange={(angle) => actions.set({ angle })} />
+                      {angleField}
                       <NumberField label="Spacing mm" min={0.2} max={20} step={0.25} value={photo.rowMm ?? WAVE_DEFAULTS.rowMm} onChange={(rowMm) => actions.set({ rowMm, squiggleAmpMm: squiggleAmp(photo), squiggleHeight: undefined })} />
                     </div>
                     {/* The waves themselves, apart from the rows: how far they swing at black, and how long one is there. */}
@@ -322,6 +359,7 @@ export function PhotoCard({ shape, title, shapes, layers, busy, all, onAll, scal
                     </div>
                     <Checkbox checked={Boolean(photo.squiggleJoin)} label="Join rows into one line" onChange={(e) => actions.set({ squiggleJoin: e.target.checked || undefined })} />
                     <Checkbox checked={Boolean(photo.squiggleLift)} label="Lift the pen where there's nothing to draw" onChange={(e) => actions.set({ squiggleLift: e.target.checked || undefined })} />
+                    {eachLayer("Angle, spacing, amplitude and wavelength")}
                   </>
                 ) : photo.style === "waves" ? (
                   <div className={styles.fillRow}>
@@ -334,19 +372,9 @@ export function PhotoCard({ shape, title, shapes, layers, busy, all, onAll, scal
                     {/* The colour mode first: it changes everything under it. */}
                     {colourMode}
                     {photo.group && bleed}
-                    {/* The layers' angles, set apart by a preset so no two pens' lines lie the same way. */}
-                    <InputSelect
-                      size="md"
-                      label="Angles"
-                      value={photo.anglePreset ?? "classic"}
-                      title={ANGLE_PRESETS.find((a) => a.key === (photo.anglePreset ?? "classic"))!.about}
-                      onChange={(e) => actions.setAngles({ preset: e.target.value as AnglePreset })}
-                    >
-                      {ANGLE_PRESETS.map((a) => <option key={a.key} value={a.key}>{a.label}</option>)}
-                    </InputSelect>
+                    {anglePresets}
                     <div className={`${styles.fillRow} ${styles.oneRow}`}>
-                      {/* This layer's angle. For the whole drawing, changing it turns every layer with it. */}
-                      <NumberField label="Angle" unit="°" min={-180} max={180} step={5} value={photo.angle} onChange={(angle) => (all && photo.group ? actions.setAngles({ by: angle - photo.angle }) : actions.set({ angle }))} />
+                      {angleField}
                       <NumberField label="Spacing mm" min={0.1} max={5} step={0.05} value={photo.spacingMm} onChange={(spacingMm) => actions.set({ spacingMm })} />
                       <NumberField label="Passes" min={1} max={MOST_PASSES} step={1} value={photo.levels} onChange={(levels) => actions.set({ levels })} />
                     </div>
@@ -354,16 +382,7 @@ export function PhotoCard({ shape, title, shapes, layers, busy, all, onAll, scal
                     <div className={styles.fillRow}>
                       <NumberField label="Smoothing mm" min={0} max={5} step={0.1} value={photo.hatchSmoothMm ?? 0} onChange={(v) => actions.set({ hatchSmoothMm: v > 0 ? v : undefined })} />
                     </div>
-                    {/* Rarely wanted: each layer's own angle, spacing, passes and smoothing. */}
-                    {photo.group && (
-                      <Checkbox checked={!all} label="Set each layer on its own" onChange={(e) => onAll(!e.target.checked)} />
-                    )}
-                    {photo.group && !all && (
-                      <>
-                        {layerPicker}
-                        <p className={styles.empty}>Angle, spacing, passes and smoothing above are this layer's alone. Pick another to set it.</p>
-                      </>
-                    )}
+                    {eachLayer("Angle, spacing, passes and smoothing")}
                   </>
                 )}
                 <p className={styles.empty}>
@@ -384,7 +403,7 @@ export function PhotoCard({ shape, title, shapes, layers, busy, all, onAll, scal
               </Section>
             </div>
           </Card>
-          {splits && effect.key !== "hatch" && (
+          {splits && effect.key !== "hatch" && effect.key !== "squiggle" && (
             <Card variant="flat" className={styles.controls}>
               <div className={`${styles.cardBody} ${controls.cardSections}`}>
                 <Section title={photo.separation ? "Separation" : "Layers"} collapsibleKey="photo-layers">
