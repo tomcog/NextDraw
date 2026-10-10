@@ -60,12 +60,13 @@ const LOUPE_MIN = 2;
 const LOUPE_MAX = 16;
 const LOUPE_STEP = 1.25; // per notch of a mouse wheel (100px of scrolling)
 
-// Margins around what's framed, in pads (7.5% of its longer side): a slim left one with just room
-// for the side dimension line, and a top one with room for the width line, its label, and the bar
+// Margins around what's framed, in pads (7.5% of its longer side): a left one exactly as wide as the
+// side dimension line needs - it stands 0.35 off the bed and its ticks reach 0.14 further, so their
+// ends sit on the canvas's left edge (Tom, 2026-10-10) - and a top one with room for the width line, its label, and the bar
 // of view controls that sits centred on that line. The bar is a fixed 32 tall while this margin is
 // a share of the drawing, so the two only clear each other if the line stands off the bed: at 0.3
 // a 32 bar came within 4px of the top edge and touched it as soon as you zoomed in.
-const LEFT = 0.7;
+const LEFT = 0.35 + 0.14;
 const TOP = 0.645;
 
 export function fit(box: Box) {

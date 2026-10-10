@@ -9,8 +9,8 @@
   flex: 1;
   display: grid;
   grid-template-columns: 16.25rem minmax(0, 1fr);
-  /* No gap across: the preview's own left margin (room for its side dimension line) is the space
-     between the cards and the page. The stage pulls 4px further in (12px of gap + 4px = 16px less). */
+  /* No gap across: the stage stands 16px off the cards itself, as Photo's does. The preview's left
+     margin is only as wide as its side dimension line, whose ticks touch the canvas's edge. */
   gap: 1.5rem 0;
   padding: 0 1.5rem 1.5rem;
   align-items: start;
@@ -18,7 +18,7 @@
 
 .stage {
   grid-column: 2;
-  margin-left: -4px;
+  margin-left: 1rem;
   grid-row: 1;
   position: sticky;
   top: 1rem;
@@ -78,6 +78,6 @@
 
 @media (max-width: 860px) {
   .layout { grid-template-columns: minmax(0, 1fr); padding-inline: 1rem; }
-  .stage { position: static; }
+  .stage { position: static; margin-left: 0; }
   .stage, .side { grid-column: auto; grid-row: auto; } /* one column: the preview first, then the controls */
 }
