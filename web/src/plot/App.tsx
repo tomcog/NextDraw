@@ -15,7 +15,7 @@ import { Hints } from "../shared/components/controls/Hints";
 import { Header } from "./components/Header";
 import { Bed, type Zoom } from "../shared/components/Bed";
 import { PaletteEditor } from "./components/PaletteEditor";
-import { PreviewToolbar, type View } from "../shared/components/PreviewToolbar";
+import { type View } from "../shared/components/PreviewToolbar";
 import { openInStudio } from "../shared/lib/apps";
 import { FileBrowser, type OpenResult } from "../shared/components/FileBrowser";
 import { MachinePanel } from "./components/MachinePanel";
@@ -1562,8 +1562,6 @@ export default function App() {
               />
             ) : (
             <Bed
-              loupe={loupe}
-              zoom={zoom}
               model={model}
               settings={settings}
               preview={preview}
@@ -1600,20 +1598,18 @@ export default function App() {
               plotFraction={plotFraction}
               // The same bar as Studio's, over the same bed: how the drawing is drawn and how close
               // the view sits, and while a plot has paths to show, how far it has got.
-              toolbarLeft={
-                <PreviewToolbar
-                  view={view}
-                  onView={setView}
-                  canProgress={status?.plot_paths ? true : undefined}
-                  zoom={zoom}
-                  onZoom={setZoomChoice}
-                  canPaper={settings.paper_w > 0 && settings.paper_h > 0}
-                  canDrawing={Boolean(fp)}
-                  working={updating && fp ? "Updating plot time…" : undefined}
-                  loupe={loupe}
-                  onLoupe={setLoupe}
-                />
-              }
+              bar={{
+                view,
+                onView: setView,
+                canProgress: status?.plot_paths ? true : undefined,
+                zoom,
+                onZoom: setZoomChoice,
+                canPaper: settings.paper_w > 0 && settings.paper_h > 0,
+                canDrawing: Boolean(fp),
+                working: updating && fp ? "Updating plot time…" : undefined,
+                loupe,
+                onLoupe: setLoupe,
+              }}
             />
             )}
             {!paletteOpen && hudOpen && (

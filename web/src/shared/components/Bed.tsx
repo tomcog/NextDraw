@@ -2,7 +2,9 @@ import { useLayoutEffect, useRef, useState } from "react";
 import type { PointerEvent as ReactPointerEvent, ReactNode } from "react";
 import styles from "./Bed.module.css";
 import { inkLayer } from "../lib/ink";
-import { BedCanvas, type Box, type Zoom } from "./BedCanvas";
+import { type Box, type Zoom } from "./BedCanvas";
+import { NextDrawCanvas } from "./NextDrawCanvas";
+import type { PreviewToolbarProps } from "./PreviewToolbar";
 import { MM, UNITS } from "../lib/constants";
 import { maxPlacement, minPlacement, type Footprint } from "../lib/geometry";
 import type { Preview } from "../lib/preview";
@@ -12,8 +14,7 @@ import type { Carriage, Placement, PlotterModel, Settings } from "../lib/types";
 export type { Zoom };
 
 interface Props {
-  zoom: Zoom;
-  loupe?: boolean; // a lens over the preview that follows the pointer, magnified (BedCanvas)
+  bar: PreviewToolbarProps; // the shared bar on the width line: views, zoom, loupe (NextDrawCanvas)
   model: PlotterModel | undefined;
   settings: Settings;
   preview: Preview | null;
@@ -30,7 +31,6 @@ interface Props {
   canDrag: boolean;
   onOpenBrowser: () => void;
   toolbar?: ReactNode; // sits on the width dimension line, at its right end
-  toolbarLeft?: ReactNode; // the same line, at its left end
   layerLooks: Record<string, { color: string | null; skipped: boolean; hidden: boolean }> | null;
   layerOrder?: string[]; // ids bottom-first: the order they plot, and so the order they stack
   inkOpacity?: number; // how solid the tool's ink is; strokes multiply, so crossings darken
@@ -330,9 +330,8 @@ export function Bed(props: Props) {
     : undefined;
 
   return (
-    <BedCanvas
-      loupe={props.loupe}
-      zoom={props.zoom}
+    <NextDrawCanvas
+      bar={props.bar}
       model={model}
       // With no drawing open the preview is the plotter's empty grid: no paper until there's a
       // drawing to put on it.
@@ -343,7 +342,6 @@ export function Bed(props: Props) {
       wrapClassName={styles.bedWrap}
       wrapData={{ "data-loaded": props.hasFile, "data-dragging-file": props.draggingFile }}
       toolbar={props.toolbar}
-      toolbarLeft={props.toolbarLeft}
       onPointerDown={onPointerDown}
       onPointerMove={onPointerMove}
       onPointerUp={onPointerUp}
@@ -385,6 +383,6 @@ export function Bed(props: Props) {
         </g>
       )}
       </>)}
-    </BedCanvas>
+    </NextDrawCanvas>
   );
 }

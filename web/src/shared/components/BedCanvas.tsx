@@ -22,7 +22,7 @@ export interface BedCanvasHandle {
   svg: () => SVGSVGElement | null;
 }
 
-interface Props {
+export interface BedCanvasProps {
   zoom: Zoom;
   model: PlotterModel | undefined;
   settings: Settings;
@@ -108,7 +108,7 @@ function DimLabel({ x, y, font, upright, children }: { x: number; y: number; fon
   );
 }
 
-export function BedCanvas(props: Props) {
+export function BedCanvas(props: BedCanvasProps) {
   const { model, settings: s, zoom, drawingBox } = props;
   const ownRef = useRef<SVGSVGElement>(null);
 

@@ -1,5 +1,6 @@
 import { Segment, SegmentedControl, Spinner, Toolbar } from "@tomcoggia/ui";
 import { Camera, Eye, EyeDashed, Grid3x3, ImageIcon, Redo2, Route, Search, Settings, StickyNote, Undo2 } from "lucide-react";
+import type { ReactNode } from "react";
 import type { Zoom } from "./Bed";
 import styles from "./PreviewToolbar.module.css";
 
@@ -9,7 +10,7 @@ import styles from "./PreviewToolbar.module.css";
  */
 export type View = "outline" | "preview" | "progress" | "photo";
 
-interface Props {
+export interface PreviewToolbarProps {
   view: View;
   onView: (view: View) => void;
   /** Plot only: offer the plot in progress as a third way to draw the drawing. Left out, it isn't offered. */
@@ -28,6 +29,8 @@ interface Props {
   onLoupe?: (on: boolean) => void;
   /** Something still being worked out about the view, said beside the bar with a spinner: Plot's plot time. */
   working?: string;
+  /** An app's own controls for the view, after the shared ones: Photo's picture, lines and side by side. */
+  extras?: ReactNode;
 }
 
 /**
@@ -48,7 +51,7 @@ interface Props {
  * choice one of which holds, so the track is a group of plain buttons rather than a radiogroup.
  * Nothing about it looks different.
  */
-export function PreviewToolbar({ view, onView, canProgress, canPhoto, zoom, onZoom, canPaper = true, canDrawing, history, disabled, working, loupe, onLoupe }: Props) {
+export function PreviewToolbar({ view, onView, canProgress, canPhoto, zoom, onZoom, canPaper = true, canDrawing, history, disabled, working, loupe, onLoupe, extras }: PreviewToolbarProps) {
   return (
     <span className={styles.row}>
       {history && (
@@ -110,47 +113,10 @@ export function PreviewToolbar({ view, onView, canProgress, canPhoto, zoom, onZo
           )}
         </SegmentedControl>
 
-        <SegmentedControl size="sm" variant="dark" aria-label="Zoom the preview">
-          <Segment
-            selected={zoom === "plotter"}
-            onClick={() => onZoom("plotter")}
-            icon={<Grid3x3 />}
-            title="Zoom out to the plotter's full drawing area"
-            aria-label="Plotter"
-          />
-          <Segment
-            selected={zoom === "paper"}
-            disabled={!canPaper}
-            onClick={() => onZoom("paper")}
-            icon={<StickyNote />}
-            title="Zoom to the paper"
-            aria-label="Paper"
-          />
-          <Segment
-            selected={zoom === "drawing"}
-            disabled={!canDrawing}
-            onClick={() => onZoom("drawing")}
-            icon={<ImageIcon />}
-            title="Zoom to the drawing"
-            aria-label="Drawing"
-          />
-        </SegmentedControl>
+        {/* What an app shows beyond the shared views - Photo's picture and its lines, side by side. */}
+        {extras}
 
-        {onLoupe && (
-          // A look, not a change: it sits with the zoom, as a switch of its own.
-          // A switch, so the track is a plain button rather than a radio: a radio group selects on
-          // focus, and a click would turn the loupe on and straight back off.
-          <SegmentedControl size="sm" variant="dark" actions aria-label="Loupe">
-            <Segment
-              aria-pressed={Boolean(loupe)}
-              className={loupe ? styles.on : undefined}
-              onClick={() => onLoupe(!loupe)}
-              icon={<Search />}
-              title={loupe ? "Put the loupe away" : "Loupe: a lens that follows the pointer for a close look at the lines. Click to pin it over one spot while you change settings; click the lens to let it follow again. Scroll to magnify more or less"}
-              aria-label="Loupe"
-            />
-          </SegmentedControl>
-        )}
+        <ZoomControls zoom={zoom} onZoom={onZoom} canPaper={canPaper} canDrawing={canDrawing} loupe={loupe} onLoupe={onLoupe} />
       </Toolbar>
       {working ? (
         <span className={styles.status} role="status">
@@ -163,14 +129,15 @@ export function PreviewToolbar({ view, onView, canProgress, canPhoto, zoom, onZo
 }
 
 /**
- * The way to Setup: a bar of its own at the far end of the width line, holding one switch. Set apart
+ * The way to Setup: a bar of its own, holding one switch - at the bottom of the app's toolbars down
+ * the left (stood upright), once at the far end of the width line. Set apart
  * from the view controls because it isn't a way of looking at the drawing but a different part of the
  * app - where the drawing tools are got ready - and pressed, like the loupe, while you're in it.
  */
-export function SetupToolbar({ open, onToggle }: { open: boolean; onToggle: () => void }) {
+export function SetupToolbar({ open, onToggle, orientation }: { open: boolean; onToggle: () => void; orientation?: "horizontal" | "vertical" }) {
   return (
     <span className={styles.row}>
-      <Toolbar tone="white" aria-label="Setup">
+      <Toolbar tone="white" orientation={orientation} aria-label="Setup">
         <SegmentedControl size="sm" variant="dark" actions aria-label="Setup">
           <Segment
             aria-pressed={open}
@@ -185,3 +152,67 @@ export function SetupToolbar({ open, onToggle }: { open: boolean; onToggle: () =
     </span>
   );
 }
+
+/**
+ * How close the view sits - the plotter's whole drawing area, the paper, or the drawing - and the
+ * loupe beside it, as a switch of its own. Shared by every app that looks at a drawing on the bed, in
+ * whatever bar it has: Studio's and Plot's here, Photo's over its conversion panes. Its loupe switch
+ * takes its red from the bar's row, so it goes inside a `.row` (ZOOM_ROW).
+ */
+export function ZoomControls({ zoom, onZoom, canPaper = true, canDrawing, loupe, onLoupe }: {
+  zoom: Zoom;
+  onZoom: (zoom: Zoom) => void;
+  canPaper?: boolean;
+  canDrawing: boolean;
+  loupe?: boolean;
+  onLoupe?: (on: boolean) => void;
+}) {
+  return (
+    <>
+      <SegmentedControl size="sm" variant="dark" aria-label="Zoom the preview">
+        <Segment
+          selected={zoom === "plotter"}
+          onClick={() => onZoom("plotter")}
+          icon={<Grid3x3 />}
+          title="Zoom out to the plotter's full drawing area"
+          aria-label="Plotter"
+        />
+        <Segment
+          selected={zoom === "paper"}
+          disabled={!canPaper}
+          onClick={() => onZoom("paper")}
+          icon={<StickyNote />}
+          title="Zoom to the paper"
+          aria-label="Paper"
+        />
+        <Segment
+          selected={zoom === "drawing"}
+          disabled={!canDrawing}
+          onClick={() => onZoom("drawing")}
+          icon={<ImageIcon />}
+          title="Zoom to the drawing"
+          aria-label="Drawing"
+        />
+      </SegmentedControl>
+
+      {onLoupe && (
+        // A look, not a change: it sits with the zoom, as a switch of its own.
+        // A switch, so the track is a plain button rather than a radio: a radio group selects on
+        // focus, and a click would turn the loupe on and straight back off.
+        <SegmentedControl size="sm" variant="dark" actions aria-label="Loupe">
+          <Segment
+            aria-pressed={Boolean(loupe)}
+            className={loupe ? styles.on : undefined}
+            onClick={() => onLoupe(!loupe)}
+            icon={<Search />}
+            title={loupe ? "Put the loupe away" : "Loupe: a lens that follows the pointer for a close look at the lines. Click to pin it over one spot while you change settings; click the lens to let it follow again. Scroll to magnify more or less"}
+            aria-label="Loupe"
+          />
+        </SegmentedControl>
+      )}
+    </>
+  );
+}
+
+/** The class a bar holding ZoomControls sits in, so the loupe's switch shows red while it's out. */
+export const ZOOM_ROW = styles.row;

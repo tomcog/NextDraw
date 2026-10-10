@@ -15,7 +15,7 @@ import type { Info, PenColor, PlotterModel, Preset } from "../shared/lib/types";
 import { listOf } from "../shared/lib/format";
 import { lightness } from "../shared/lib/color";
 import { joinLayerName, labelAfter, splitLayerName } from "../shared/lib/ink";
-import { PreviewToolbar, SetupToolbar, type View } from "../shared/components/PreviewToolbar";
+import { SetupToolbar, type View } from "../shared/components/PreviewToolbar";
 import { StatusBanner } from "../shared/components/StatusBanner";
 import type { Zoom } from "../shared/components/BedCanvas";
 import { Canvas, type Tool } from "./components/Canvas";
@@ -1359,11 +1359,13 @@ export default function App() {
   </Card>
  ) : null;
 
- // Setup takes the drawing's place while it's open.
+ // Setup takes the drawing's place while it's open. Its switch is at the bottom of the toolbars down
+ // the left, as in Photo.
  const setupToolbar = (
   <SetupToolbar
    open={setupOpen}
    onToggle={() => setSetupOpen((open) => !open)}
+   orientation="vertical"
   />
  );
 
@@ -1590,33 +1592,28 @@ export default function App() {
    />
 
    <main className={styles.layout}>
+    <div className={styles.tools}>{setupToolbar}</div>
     <section className={styles.stage} aria-label="Drawing page">
      <Canvas
-      loupe={loupe}
       page={page}
       paperColor={paperColor}
       shapes={shapes}
       fills={fills}
       model={model}
-      zoom={zoom}
       // One bar over the page for everything true of what is being looked at: what has just
-      // been done, how the drawing is drawn, and how close the view sits. It used to be two
-      // groups at opposite ends of the width line.
-      toolbar={setupToolbar}
-      toolbarLeft={(
-       <PreviewToolbar
-        view={view}
-        onView={setView}
-        zoom={zoom}
-        onZoom={setZoom}
-        canDrawing={shapes.length > 0}
-        canPhoto={shapes.some((sh) => sh.kind === "photo")}
-        history={{ canUndo, canRedo, onUndo: undo, onRedo: redo }}
-        disabled={busy}
-        loupe={loupe}
-        onLoupe={setLoupe}
-       />
-      )}
+      // been done, how the drawing is drawn, and how close the view sits - the shared canvas's.
+      bar={{
+        view,
+        onView: setView,
+        zoom,
+        onZoom: setZoom,
+        canDrawing: shapes.length > 0,
+        canPhoto: shapes.some((sh) => sh.kind === "photo"),
+        history: { canUndo, canRedo, onUndo: undo, onRedo: redo },
+        disabled: busy,
+        loupe,
+        onLoupe: setLoupe,
+      }}
       layers={layers}
       activeLayer={active?.id ?? ""}
       penWidthMm={penWidthMm}

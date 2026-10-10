@@ -12,7 +12,7 @@ import { showApp, type AppName } from "../lib/apps";
 export function AppSwitch({ current, orientation }: { current: AppName; orientation?: "horizontal" | "vertical" }) {
   return (
     <Toolbar tone="white" orientation={orientation} aria-label="Apps">
-      <SegmentedControl size="sm" aria-label="App">
+      <SegmentedControl size="sm" variant="dark" aria-label="App">
         <Segment
           selected={current === "photo"}
           icon={<Aperture />}

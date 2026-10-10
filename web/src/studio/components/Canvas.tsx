@@ -1,4 +1,4 @@
-import { memo, useMemo, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
+import { memo, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
 import {
   angleFromCenter, boxAround, boxOf, clampToPage, dragHandleTurned, handlePoints, isDegenerate,
   drawnNodes, moveBy, newShapeId, scaleInto, turnAround, turnAttr, turnGrip, CURSOR,
@@ -12,11 +12,12 @@ import { curveStrokes, pointsAttr, DEFAULT_CURVE, type CurveKind } from "../../s
 import { placementAttr, placements } from "../../shared/lib/drawing/repeat";
 import { textRuns, type StrokeFont } from "../../shared/lib/drawing/text";
 import type { Layer } from "../../shared/lib/drawing/shapes";
-import { BedCanvas, type BedCanvasHandle, type Box, type Zoom } from "../../shared/components/BedCanvas";
-import type { View } from "../../shared/components/PreviewToolbar";
+import { type BedCanvasHandle, type Box } from "../../shared/components/BedCanvas";
+import { NextDrawCanvas } from "../../shared/components/NextDrawCanvas";
+import { InkGroup, InkLayer } from "../../shared/components/Ink";
+import type { PreviewToolbarProps, View } from "../../shared/components/PreviewToolbar";
 import { DEFAULT_SETTINGS, UNITS } from "../../shared/lib/constants";
 import type { PlotterModel } from "../../shared/lib/types";
-import { inkLayer } from "../../shared/lib/ink";
 import styles from "./Canvas.module.css";
 
 /** Select picks shapes up; the rest draw. Without the distinction a shape covering the page would
@@ -41,8 +42,8 @@ const shapeFor = (tool: Exclude<Tool, "select">, layerId: string, x: number, y: 
 };
 
 interface Props {
-  /** A lens over the page that follows the pointer, magnified (BedCanvas). */
-  loupe?: boolean;
+  /** The shared bar over the page: history, how the drawing is drawn, the zooms and the loupe. */
+  bar: PreviewToolbarProps;
   page: Page;
   /** The paper's colour, as Plot draws it: the page is this colour and the inks blend with it. */
   paperColor: string;
@@ -50,10 +51,8 @@ interface Props {
   fills: Fill[];
   /** The plotter the drawing is for, so the page is shown on the bed it will be drawn on. */
   model: PlotterModel | undefined;
-  zoom: Zoom;
-  /** The right end of the width dimension line (the zoom presets), and the left end (Simulate). */
+  /** The right end of the width dimension line: the way to Setup. */
   toolbar?: ReactNode;
-  toolbarLeft?: ReactNode;
   /** The layers, which own the colours: everything on a layer draws in its one colour. */
   layers: Layer[];
   /** The layer new shapes are drawn onto. */
@@ -336,7 +335,7 @@ const LayerMarks = memo(function LayerMarks({ shapes, fills, fonts, photos }: { 
 // The page at true proportions, with a one-inch grid. It keeps the page's own proportions and is
 // sized to them (--canvas-aspect), so the drawing gets as large as the space allows - the same way
 // Plot's preview fills its column.
-export function Canvas({ loupe, page, paperColor, shapes, fills, layers, activeLayer, model, zoom, toolbar, toolbarLeft, fonts, font, snap, penWidthMm, inkOpacity, inkBuilds, inkOpaque = false, inkBuild, view, tool, selected, onSelect, onAdd, onUpdate, onUpdateMany, onEditStart }: Props) {
+export function Canvas({ bar, page, paperColor, shapes, fills, layers, activeLayer, model, toolbar, fonts, font, snap, penWidthMm, inkOpacity, inkBuilds, inkOpaque = false, inkBuild, view, tool, selected, onSelect, onAdd, onUpdate, onUpdateMany, onEditStart }: Props) {
   const bed = useRef<BedCanvasHandle>(null);
   const [drag, setDrag] = useState<Drag | null>(null);
   const pointer = useRef<number | null>(null);
@@ -638,15 +637,13 @@ export function Canvas({ loupe, page, paperColor, shapes, fills, layers, activeL
   // Far enough off the edge that the grip never sits on a corner handle, in the page's inches.
 
   return (
-    <BedCanvas
-      loupe={loupe}
-      zoom={zoom}
+    <NextDrawCanvas
+      bar={bar}
       model={model}
       settings={settings}
       drawingBox={drawingBox}
       handle={bed}
       toolbar={toolbar}
-      toolbarLeft={toolbarLeft}
       wrapClassName={styles.wrap}
       wrapData={{ "data-tool": tool, "data-drag": drag?.mode }}
       onPointerDown={onPointerDown}
@@ -678,18 +675,10 @@ export function Canvas({ loupe, page, paperColor, shapes, fills, layers, activeL
                 ))}
               </g>
             )}
-            {/* The ink: exactly what the pen will put on the paper, in the structure Plot's preview
-                uses, painted by the same rules in index.css. That's what makes a drawing look the
-                same in both apps rather than merely similar. Nothing in here is clickable - what you
-                grab is below, so how a mark is painted never changes what you can do to it. */}
-            <g
-              // Outline is the preview rules' hairline: one screen pixel whatever the zoom, flat, no
-              // blending - the paths themselves. Preview is the ink, at the pen's real width.
-              className={`pv-colored ${inkSim ? "pv-true-width" : "pv-hairline pv-flat"} ${styles.ink}`}
-              style={{ "--pen-art": String(penIn), "--ink-build-alpha": String(inkBuild) } as CSSProperties}
-            >
+            {/* The ink, shared with Photo (Ink.tsx). Nothing in here is clickable - what you grab is
+                below, so how a mark is painted never changes what you can do to it. */}
+            <InkGroup sim={inkSim} penIn={penIn} build={inkBuild} className={styles.ink}>
               {layers.map((layer) => {
-                const { base, buildPass } = inkLayer(layer.color, inkBuild, inkBuilds && !inkOpaque, inkSim);
                 const here = still.get(layer.id);
                 const moving = carried?.get(layer.id);
                 const marks = (
@@ -707,27 +696,23 @@ export function Canvas({ loupe, page, paperColor, shapes, fills, layers, activeL
                   </>
                 );
                 return (
-                  <g
+                  <InkLayer
                     key={layer.id}
                     id={layer.id}
-                    className="pv-layer"
-                    data-builds={String(inkBuilds && inkSim)}
-                    data-opaque={String(inkOpaque && inkSim)}
-                    data-hidden={layer.hidden ? "true" : undefined}
-                    data-skipped={layer.name.startsWith("%") ? "true" : undefined}
-                    style={{ "--layer-color": base, "--ink-opacity": String(inkOpacity) } as CSSProperties}
+                    color={layer.color}
+                    sim={inkSim}
+                    opacity={inkOpacity}
+                    build={inkBuild}
+                    builds={inkBuilds}
+                    opaque={inkOpaque}
+                    hidden={layer.hidden}
+                    skipped={layer.name.startsWith("%")}
                   >
                     {marks}
-                    {/* The second pass: the same marks again, multiplying, so a crossing darkens. */}
-                    {buildPass && (
-                      <g className="pv-build" style={{ "--layer-color": buildPass } as CSSProperties}>
-                        {marks}
-                      </g>
-                    )}
-                  </g>
+                  </InkLayer>
                 );
               })}
-            </g>
+            </InkGroup>
 
             {/* Interface: what you can see and grab that the pen will never draw. Outside the ink
                 group on purpose - the preview rules paint everything under them as ink, so a dashed
@@ -859,6 +844,6 @@ export function Canvas({ loupe, page, paperColor, shapes, fills, layers, activeL
           </g>
         );
       }}
-    </BedCanvas>
+    </NextDrawCanvas>
   );
 }
