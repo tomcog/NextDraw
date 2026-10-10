@@ -2,25 +2,26 @@
    home. Lifted out of Bed.module.css so Plot and Studio cannot drift apart - one set of margins, one
    text size, one look. Bed.module.css keeps what is Plot's alone. */
 
+/* Stacked under the cards on a narrow window, the canvas takes the plotter view's proportions
+   (--bed-aspect, set by BedCanvas). */
 .wrap {
   position: relative;
   width: 100%;
+  aspect-ratio: var(--bed-aspect, 1.4);
 }
 
-/* Beside the panel, the preview fits the window's height too: it's only as wide as lets the whole of
-   what's zoomed show without scrolling (5rem: the header above it and the page's bottom padding).
-   The collapsed sections under it are allowed to fall below the fold - they're rarely opened, and
-   scrolling to them costs less than the height they'd take off every preview.
-   Bed.tsx sets --bed-aspect to the preview's width over its height, which changes with the zoom, so
-   whatever is framed ends up as large as the space allows. */
+/* Beside the panel, the canvas fills the stage's width and the window's height (5rem: the header above
+   it and the page's bottom padding), and each zoom is fitted to that room. The collapsed sections under
+   it are allowed to fall below the fold - they're rarely opened, and scrolling to them costs less than
+   the height they'd take off every preview. */
 @media (min-width: 861px) {
-  .wrap { max-width: calc((100dvh - 5rem) * var(--bed-aspect, 1.4)); }
+  .wrap { aspect-ratio: auto; height: calc(100dvh - 5rem); }
 }
 
 .bed {
   display: block;
   width: 100%;
-  height: auto;
+  height: 100%;
   overflow: hidden; /* zoomed views crop to the preview */
 }
 

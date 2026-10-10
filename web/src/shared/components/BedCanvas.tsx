@@ -188,6 +188,20 @@ export function BedCanvas(props: BedCanvasProps) {
   // line's own middle: the bar grows and shrinks as its segments show their labels, and a label
   // centred on the whole line slides under it. Measured rather than assumed - the bar is the app's
   // to fill, and this file has no business knowing how wide that makes it.
+  // The room the canvas has: the stage's width and the window's height. Each zoom is fitted to it, so
+  // the canvas fills it whatever is framed and never changes size or moves when the zoom does.
+  const wrapRef = useRef<HTMLDivElement | null>(null);
+  const [room, setRoom] = useState({ w: 0, h: 0 });
+  useEffect(() => {
+    const wrap = wrapRef.current;
+    if (!wrap) return;
+    const measure = () => setRoom({ w: wrap.clientWidth, h: wrap.clientHeight });
+    measure();
+    const watch = new ResizeObserver(measure);
+    watch.observe(wrap);
+    return () => watch.disconnect();
+  }, [Boolean(model)]); // eslint-disable-line react-hooks/exhaustive-deps
+
   const toolsRef = useRef<HTMLDivElement | null>(null);
   const [widths, setWidths] = useState({ tools: 0, bed: 0 });
   useEffect(() => {
@@ -233,9 +247,16 @@ export function BedCanvas(props: BedCanvasProps) {
   // The plotter view. The dimension lines, their labels and the toolbar are measured against it, so
   // they stay the same size and sit in the same place whichever zoom is showing.
   const base = fit(travelBox);
-  // Each zoom keeps its own proportions and the canvas is sized to them (--bed-aspect, below), so
-  // what is framed grows to the largest it fits in the space beside the panel.
+  // The canvas fills the room it has, whatever the zoom, so it holds its size and place and only what's
+  // in it changes (Tom, 2026-10-10: a tall drawing zoomed to had shrunk the canvas and moved it; then,
+  // it should use the height as well as the width). What's framed is as large as the room allows; a
+  // frame narrower than the room grows to the right, a wider one downwards, so the dimension lines on
+  // the left and top stay beside what they measure. Until the room is measured, the plotter view's.
   const { vb } = fit(frame);
+  const baseAspect = base.vb[2] / base.vb[3];
+  const aspect = room.w > 0 && room.h > 0 ? room.w / room.h : baseAspect;
+  if (vb[2] / vb[3] < aspect) vb[2] = vb[3] * aspect;
+  else vb[3] = vb[2] / aspect;
   const viewBox = props.viewBoxOverride ?? vb.join(" ");
 
   // Where the dimension lines sit in the plotter view, carried into this view at the same screen spot.
@@ -273,7 +294,8 @@ export function BedCanvas(props: BedCanvasProps) {
   return (
     <div
       className={props.wrapClassName ? `${styles.wrap} ${props.wrapClassName}` : styles.wrap}
-      style={{ "--bed-aspect": vw / vh } as CSSProperties}
+      ref={wrapRef}
+      style={{ "--bed-aspect": baseAspect } as CSSProperties}
       {...props.wrapData}
     >
       <svg

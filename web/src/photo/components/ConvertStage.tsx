@@ -54,7 +54,7 @@ interface Props {
 
 /**
  * Image conversion: one photo on the paper, on the shared NextDraw canvas - the bed, the bar, the
- * zooms and the loupe that Studio and Plot show a drawing on. Photo's own views go in the bar after
+ * zooms and the loupe that Studio and Plot show a drawing on. Photo's own views go first in the bar, before
  * the shared ones; side by side, a second canvas follows the first's zoom.
  */
 export function ConvertStage({ photo, parts, box, page, paperColor, model, ink, view, onView, show, onShow, zoom, onZoom, loupe, onLoupe, history, disabled }: Props) {
@@ -86,7 +86,7 @@ export function ConvertStage({ photo, parts, box, page, paperColor, model, ink, 
     </InkGroup>
   );
 
-  // Photo's own views, after the shared Outline and Preview in the bar.
+  // Photo's own views, first in the bar, ahead of the shared Outline and Preview.
   const extras = (
     <SegmentedControl size="sm" variant="dark" aria-label="What the stage shows">
       <Segment selected={show === "picture"} onClick={() => onShow("picture")} icon={<Image />} aria-label="Picture" title="Picture: the image as it was opened, with no effect" />
