@@ -91,3 +91,8 @@ test("saving what was opened writes the same file again", () => {
   const again = (o: typeof back) => buildSvg(o.shapes, o.fills, o.layers, o.page, { paperSizeId: "letter", toolName: o.tool ?? "" });
   assert.equal(again(parseDrawing(again(back))), again(back));
 });
+
+test("layers are named in their id too, as Illustrator reads them", async () => {
+  const { layerIds } = await import("../src/shared/lib/drawing/svg");
+  assert.deepEqual(layerIds(["Yellow", "Lime Green", "neon yellow (024)", "Black", "Black", "3 colours", ""]), ["Yellow", "Lime_Green", "neon_yellow_024", "Black", "Black_2", "layer_3_colours", "layer_7"]);
+});

@@ -192,3 +192,15 @@ test("plate sets: a drawing with six plates opens with all six", async () => {
   assert.deepEqual(platesOf(["a", "b", "c", "d", "e", "f"]), ["c", "m", "y", "k", "o", "g"]);
   assert.deepEqual(platesOf(["a", "b", "c", "d"]), ["c", "m", "y", "k"]);
 });
+
+test("hatching: a smoothed plate waits for its own separation, rather than drawing nothing", async () => {
+  const { setSeparationRunner, solveSeparation, onSeparation } = await import("../src/shared/lib/drawing/photo");
+  await gradient("data:gradient");
+  setSeparationRunner(async (ask) => solveSeparation(ask));
+  const plates = ["#21a4de", "#f03295", "#f3e42b", "#231f20"];
+  const p = photo({ style: undefined, plate: "k", plates, ink: plates[3], hatchSmoothMm: 1, spacingMm: 0.5, levels: 4, penMm: 0.28 });
+  assert.equal(photoMarks(p, 4, 2), null, "not yet: its separation is being worked out");
+  await new Promise((r) => onSeparation(() => r(null)));
+  assert.ok(photoMarks(p, 4, 2)!.strokes > 0, "drawn once it's ready");
+  setSeparationRunner(null as never);
+});

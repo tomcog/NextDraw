@@ -301,6 +301,24 @@ export interface SaveOptions {
   toolName: string;
 }
 
+/**
+ * Each layer's id, from its name - "Lime Green" is Lime_Green, "neon yellow (024)" neon_yellow_024 -
+ * as an id may hold: no spaces or brackets, not starting with a digit. Two layers of one name are
+ * told apart by a number after it (Black, Black_2).
+ */
+export function layerIds(names: string[]): string[] {
+  const used = new Set<string>();
+  return names.map((name, i) => {
+    let id = name.trim().replace(/\s+/g, "_").replace(/[^A-Za-z0-9_.-]/g, "").replace(/_+/g, "_").replace(/^_|_$/g, "");
+    if (!id) id = `layer_${i + 1}`;
+    if (/^[0-9.-]/.test(id)) id = `layer_${id}`;
+    let unique = id;
+    for (let n = 2; used.has(unique); n++) unique = `${id}_${n}`;
+    used.add(unique);
+    return unique;
+  });
+}
+
 export function buildSvg(
   shapes: Shape[],
   fills: Fill[],
@@ -309,7 +327,9 @@ export function buildSvg(
   opts: SaveOptions,
 ): string {
   // One SVG layer per Studio layer, in the order they're stacked. A layer is one pen, so everything
-  // on it - outlines and hatching alike - carries that one colour.
+  // on it - outlines and hatching alike - carries that one colour. Its id is its name too: Inkscape,
+  // Plot and the driver name a layer by its label, but Illustrator names it by its id.
+  const ids = layerIds(layers.map((l) => l.name));
   const body = layers
     .map((layer, i) => {
       const mine = shapes.filter((sh) => sh.layerId === layer.id);
@@ -320,7 +340,7 @@ export function buildSvg(
         fillMarkup(shapes, myFills),
       ].filter(Boolean).join("\n");
       if (!inner) return "";
-      return `  <g inkscape:groupmode="layer" inkscape:label="${escapeAttr(layer.name)}" id="studio-layer-${i + 1}"
+      return `  <g inkscape:groupmode="layer" inkscape:label="${escapeAttr(layer.name)}" id="${escapeAttr(ids[i])}"
      fill="none" stroke="${escapeAttr(layer.color)}" stroke-width="${STROKE_IN}">
 ${inner}
   </g>

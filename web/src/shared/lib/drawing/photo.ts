@@ -661,8 +661,6 @@ const marksCache = new Map<string, PhotoMarks>();
 export function photoMarks(photo: Photo, w: number, h: number): PhotoMarks | null {
   const tones = photoTones(photo);
   if (!tones || w <= 0 || h <= 0) return null;
-  // A plate whose separation is still being worked out off the page: not yet, and not kept.
-  if (!separationReady(photo)) return null;
   const key = marksKey(photo, w, h);
   const known = marksCache.get(key);
   if (known) return known;
@@ -671,6 +669,10 @@ export function photoMarks(photo: Photo, w: number, h: number): PhotoMarks | nul
   const hatchTones = !photo.style && photo.hatchSmoothMm
     ? smoothedTones(photo.src, tones, (photo.hatchSmoothMm * tones.w * (c2 - c0)) / (w * 25.4))
     : tones;
+  // A plate whose separation - of the photo as this style reads it, smoothed or not - is still being
+  // worked out off the page: not yet, and not kept. Asked of the unsmoothed photo, a smoothed plate
+  // was drawn from a separation that wasn't there, came out empty, and stayed empty.
+  if (photo.plate && (photo.plates?.length ?? 0) >= 4 && !separationOf(photo.style ? tones : hatchTones, photo)) return null;
   const made = photo.style === "waves" ? waves(tones, photo, w, h)
     : photo.style === "squiggle" ? squiggle(tones, photo, w, h)
     : photo.style === "outlines" ? outlines(tones, photo, w, h)
