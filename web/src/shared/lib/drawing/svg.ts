@@ -4,7 +4,7 @@ import { textRuns, type StrokeFont } from "./text";
 import { placementAttr, placements } from "./repeat";
 import { hasCurves, pathData } from "./path";
 import { boxOf, drawnNodes, drawnRuns, groupsOf, pathRuns, pointsBox, turnAttr, type Layer, type Page, type Shape } from "./shapes";
-import { photoData, photoMarks, photoOrigin } from "./photo";
+import { photoData, photoMarksNow, photoOrigin } from "./photo";
 
 // The drawing Studio writes out. Two things matter to Plot at the other end:
 //
@@ -56,7 +56,8 @@ function shapeMarkup(s: Shape, fonts: Record<string, StrokeFont> = {}): string {
     // The hatching, one path per pass of lines, in the photo's own corner moved to where it sits.
     // In a group named after the photo, so reading the drawing back leaves the lines to be made
     // again from the photo rather than listing tens of thousands of them as shapes.
-    const marks = photoMarks(s.photo, b.x1 - b.x0, b.y1 - b.y0);
+    // Now, whatever the wait: a separation still being worked out off the page mustn't save as nothing.
+    const marks = photoMarksNow(s.photo, b.x1 - b.x0, b.y1 - b.y0);
     const paths = (marks?.passes ?? []).filter(Boolean).map((d) => `<path d="${escapeAttr(d)}"/>`).join("");
     const at = photoOrigin(s.photo, b.x0, b.y0);
     return `<g id="${PHOTO_GROUP_PREFIX}${escapeAttr(s.id)}" transform="translate(${num(at.x)} ${num(at.y)})">${paths}</g>`;

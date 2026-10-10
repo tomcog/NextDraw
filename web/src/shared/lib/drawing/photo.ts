@@ -248,7 +248,7 @@ export const PLATE_AIMS: Record<Plate, { name: string; color: string; angle: num
   k: { name: "Black", color: "#1a1a1a", angle: 45 },
   // The extra plates, at angles between CMYK's - apart from them and from each other, hatching's own
   // right-angle cross counted.
-  o: { name: "Orange", color: "#ff7a00", angle: 30 },
+  o: { name: "Orange", color: "#ff6a13", angle: 30 },
   g: { name: "Green", color: "#00a650", angle: 60 },
   r: { name: "Red", color: "#e4002b", angle: 7.5 },
   v: { name: "Violet", color: "#5b2c8f", angle: 52.5 },
@@ -270,7 +270,7 @@ function hsv(hex: string): [number, number, number] {
  * match them, among pens with colour enough to count. Measured in a space where distance means
  * colour, a pale violet can come out nearer cyan than a real turquoise does; by hue, it doesn't.
  */
-export function platePens<P extends { color: string }>(palette: P[], plates: Plate[] = PLATES): (P | undefined)[] {
+export function platePens<P extends { color: string }>(palette: P[], plates: Plate[] = PLATES, hatching = { penMm: 0.5, spacingMm: 1, levels: 4 }): (P | undefined)[] {
   const out: (P | undefined)[] = plates.map(() => undefined);
   const used = new Set<P>();
   const black = plates.indexOf("k");
@@ -292,6 +292,70 @@ export function platePens<P extends { color: string }>(palette: P[], plates: Pla
     if (out[plate] || used.has(pen)) continue;
     out[plate] = pen;
     used.add(pen);
+  }
+  // Then, plate by plate, whichever pen near its hue makes the hatching come nearest a range of photo
+  // colours: matching by hue alone takes a dark pen near the hue (a brown for orange, a wine for
+  // magenta) over a truer one a little further round, and the drawing comes out muddy.
+  return refinePlatePens(palette, plates, out, hatching);
+}
+
+/** Colours a photo is made of, to judge a set of plate pens by: skin, sky, leaves, shadow, and each hue. */
+const PEN_TEST_COLOURS: [number, number, number][] = [
+  [225, 170, 140], [190, 130, 100], [120, 75, 55], [120, 170, 220], [60, 110, 50], [200, 40, 40],
+  [240, 140, 40], [120, 60, 140], [128, 128, 128], [40, 30, 30], [240, 230, 180], [40, 130, 130],
+  [230, 90, 150], [40, 60, 140], [250, 210, 60], [150, 200, 120],
+];
+
+/**
+ * How near, on average in ΔE, hatching with these pens comes to the test colours - and to each plate's
+ * own colour, so a red plate is judged on drawing red as well as on everything else.
+ */
+function plateSetError(pens: number[][], steps: number[], plates: Plate[]): number {
+  const out = new Int8Array(pens.length);
+  const colours = [...PEN_TEST_COLOURS, ...plates.filter((p) => p !== "k").map((p) => {
+    const n = parseInt(PLATE_AIMS[p].color.slice(1), 16);
+    return [(n >> 16) & 255, (n >> 8) & 255, n & 255] as [number, number, number];
+  })];
+  let sum = 0;
+  for (const rgb of colours) {
+    const want = labOfLinear(rgb.map(linear));
+    choosePasses(want, pens, steps, BLACK_SHARE, out);
+    const got = labOfLinear(mixOf([1, 1, 1], pens, [...out].map((p) => steps[p]), false));
+    sum += Math.hypot(got[0] - want[0], got[1] - want[1], got[2] - want[2]);
+  }
+  return sum / colours.length;
+}
+
+function refinePlatePens<P extends { color: string }>(palette: P[], plates: Plate[], picked: (P | undefined)[], hatching: { penMm: number; spacingMm: number; levels: number }): (P | undefined)[] {
+  if (picked.some((p) => !p)) return picked;
+  const out = [...picked];
+  const steps = coverSteps(hatching.penMm, hatching.spacingMm, hatching.levels);
+  const pensOf = (list: (P | undefined)[]) => list.map((p) => hexLinear(p!.color));
+  let best = plateSetError(pensOf(out), steps, plates);
+  for (let round = 0; round < 2; round++) {
+    let better = false;
+    plates.forEach((plate, i) => {
+      if (plate === "k") return;
+      const ah = hsv(PLATE_AIMS[plate].color)[0];
+      for (const pen of palette) {
+        if (out.includes(pen)) continue;
+        const [h, sat] = hsv(pen.color);
+        // Only pens that are this plate's colour still - within 20° of its hue - so an orange plate
+        // stays orange, choosing among oranges: 30° and it drifts to whatever pen the test colours
+        // happen to like (a second yellow as the orange plate); 15° missed EnerGel's Lime Green,
+        // which draws green truer than its Green. And strong enough to be that colour, not a tint.
+        const off = (hue: number) => Math.min(Math.abs(h - hue), 360 - Math.abs(h - hue));
+        if (sat < 0.45 || off(ah) > 20) continue;
+        // And nearer this plate's hue than any other plate's in the set: a pink is magenta's, not
+        // red's, and a golden yellow is yellow's, not orange's.
+        if (plates.some((other) => other !== plate && other !== "k" && off(hsv(PLATE_AIMS[other].color)[0]) < off(ah))) continue;
+        const trial = [...out];
+        trial[i] = pen;
+        const e = plateSetError(pensOf(trial), steps, plates);
+        if (e < best - 1e-6) { best = e; out[i] = pen; better = true; }
+      }
+    });
+    if (!better) break;
   }
   return out;
 }
@@ -550,6 +614,8 @@ const marksCache = new Map<string, PhotoMarks>();
 export function photoMarks(photo: Photo, w: number, h: number): PhotoMarks | null {
   const tones = tonesOf(photo.src);
   if (!tones || w <= 0 || h <= 0) return null;
+  // A plate whose separation is still being worked out off the page: not yet, and not kept.
+  if (!separationReady(photo)) return null;
   const key = marksKey(photo, w, h);
   const known = marksCache.get(key);
   if (known) return known;
@@ -594,6 +660,8 @@ const MASK_EDGE = 600;
 export function photoMask(photo: Photo, w: number, h: number): PhotoMask | null {
   const tones = tonesOf(photo.src);
   if (!tones || w <= 0 || h <= 0) return null;
+  // A plate whose separation is still being worked out off the page: not yet, and not kept.
+  if (!separationReady(photo)) return null;
   const key = marksKey(photo, w, h);
   const known = maskCache.get(key);
   if (known) return known;
@@ -1045,113 +1113,195 @@ const separationCache = new Map<string, Separation>();
  * than nothing or more than solid. Worked out from the pens' own colours, not printing's, so the
  * blend is what these markers will actually make. Worked out small, and read at its nearest pixel.
  */
-function separationOf(tones: Tones, plates: string[], brightness: number, contrast: number, blackShare: number): Separation {
-  const key = [tones.w, tones.h, tones.blur ?? 0, tones.light[0], tones.light[tones.light.length >> 1], plates.join(","), brightness, contrast, blackShare].join("|");
+function separationOf(tones: Tones, photo: Photo): Separation | null {
+  const plates = photo.plates!;
+  const { brightness, contrast } = photo;
+  const blackShare = Math.min(1, Math.max(0, photo.blackShare ?? BLACK_SHARE));
+  // What the hatching can draw: how many passes, and how much paper each covers.
+  const levels = Math.min(MOST_PASSES, Math.max(1, Math.round(photo.levels)));
+  const penMm = photo.penMm ?? 0.5;
+  const spacingMm = photo.spacingMm;
+  const key = [tones.w, tones.h, tones.blur ?? 0, tones.light[0], tones.light[tones.light.length >> 1], plates.join(","), brightness, contrast, blackShare, levels, penMm, spacingMm].join("|");
   const known = separationCache.get(key);
   if (known) return known;
-  const adjust = adjuster(brightness, contrast);
+  const keep = (made: Separation) => {
+    if (separationCache.size > 6) separationCache.delete(separationCache.keys().next().value!);
+    separationCache.set(key, made);
+    return made;
+  };
+  // The photo at the size it's separated at, read at the nearest pixel: quick, so done here.
   const scale = Math.min(1, COVER_EDGE / Math.max(tones.w, tones.h));
   const w = Math.max(1, Math.round(tones.w * scale));
   const h = Math.max(1, Math.round(tones.h * scale));
-  const inks = plates.map(densityOf);
-  // Black is the fourth plate; the colours are the rest, CMY first and any extra inks after.
-  const colours = inks.filter((_, i) => i !== 3);
-  const black = inks[3];
-  const maps = plates.map(() => new Float32Array(w * h));
-  const amounts = new Float64Array(colours.length);
-  // With more inks than colour channels, any colour has many mixes. A small cost on each ink used
-  // makes the solver reach for the one ink nearest a colour - the orange pen for orange - rather than
-  // building it from several, as extended-gamut print does. Print's four have one mix: no cost.
-  const sparse = colours.length > 3 ? SPARSE_COST : 0;
-  // Many inks are slow to solve, so each colour is solved once: shades a quarter of a step apart in
-  // each channel share an answer, which is finer than hatching can show.
-  const solved = sparse ? new Map<number, Float32Array>() : null;
+  const rgb = new Uint8ClampedArray(w * h * 3);
   for (let y = 0; y < h; y++) {
     const sy = Math.min(tones.h - 1, Math.round((y / Math.max(1, h - 1)) * (tones.h - 1)));
     for (let x = 0; x < w; x++) {
       const sx = Math.min(tones.w - 1, Math.round((x / Math.max(1, w - 1)) * (tones.w - 1)));
       const i = (sy * tones.w + sx) * 4;
-      const at = y * w + x;
-      const key = solved ? ((tones.rgba[i] >> 2) << 12) | ((tones.rgba[i + 1] >> 2) << 6) | (tones.rgba[i + 2] >> 2) : 0;
-      const known = solved?.get(key);
-      if (known) {
-        for (let n = 0; n < plates.length; n++) maps[n][at] = known[n];
-        continue;
-      }
-      const want = [density(adjust(tones.rgba[i])), density(adjust(tones.rgba[i + 1])), density(adjust(tones.rgba[i + 2]))];
-      const k = separatePixel(want, colours, black, blackShare, sparse, amounts);
-      for (let n = 0; n < colours.length; n++) maps[n < 3 ? n : n + 1][at] = amounts[n];
-      maps[3][at] = k;
-      if (solved) solved.set(key, Float32Array.from(plates, (_, n) => maps[n][at]));
+      rgb.set([tones.rgba[i], tones.rgba[i + 1], tones.rgba[i + 2]], (y * w + x) * 3);
     }
   }
-  const made = { w, h, maps };
-  if (separationCache.size > 6) separationCache.delete(separationCache.keys().next().value!);
-  separationCache.set(key, made);
-  return made;
+  // More plates than print's four take a second or two to solve: off the page, when the app has said
+  // how, and until then there's nothing to draw yet. Print's four, or with no worker, here and now.
+  if (plates.length > 4 && separationRunner && !separateNow) {
+    if (!separating.has(key)) {
+      separating.add(key);
+      separationRunner({ rgb, w, h, plates, brightness, contrast, blackShare, levels, penMm, spacingMm })
+        .then((maps) => {
+          keep({ w, h, maps });
+          for (const heard of separationListeners) heard();
+        })
+        .catch(() => {})
+        .finally(() => separating.delete(key));
+    }
+    return null;
+  }
+  return keep({ w, h, maps: solveSeparation({ rgb, w, h, plates, brightness, contrast, blackShare, levels, penMm, spacingMm }) });
+}
+
+/** What a separation off the page is asked: the photo at its separating size, and how to separate it. */
+export interface SeparationRequest {
+  rgb: Uint8ClampedArray; w: number; h: number; plates: string[]; brightness: number; contrast: number; blackShare: number;
+  /** The hatching the plates are drawn in: passes, the pen's line width and the closest spacing, in mm. */
+  levels: number; penMm: number; spacingMm: number;
+}
+let separationRunner: ((ask: SeparationRequest) => Promise<Float32Array[]>) | null = null;
+// Set while lines are wanted at once, whatever the wait: when a drawing is written to a file.
+let separateNow = false;
+
+/** A photo's lines now, its separation worked out here if it isn't ready - for saving, which can't wait. */
+export function photoMarksNow(photo: Photo, w: number, h: number): PhotoMarks | null {
+  separateNow = true;
+  try {
+    return photoMarks(photo, w, h);
+  } finally {
+    separateNow = false;
+  }
+}
+const separating = new Set<string>();
+const separationListeners = new Set<() => void>();
+
+/** How the app solves separations off the page - a worker; without one they're solved where asked. */
+export function setSeparationRunner(run: (ask: SeparationRequest) => Promise<Float32Array[]>) {
+  separationRunner = run;
+}
+
+/** Be told when a separation solved off the page is ready, so its lines can be drawn. Returns the way to stop. */
+export function onSeparation(heard: () => void): () => void {
+  separationListeners.add(heard);
+  return () => separationListeners.delete(heard);
+}
+
+/** Whether a photo layer can be drawn yet: false while its plates are still being separated off the page. */
+export function separationReady(photo: Photo): boolean {
+  if (!photo.plate || (photo.plates?.length ?? 0) < 4) return true;
+  const tones = tonesOf(photo.src);
+  return Boolean(tones && separationOf(tones, photo));
 }
 
 /**
- * The amounts of some inks, 0 to 1, whose densities added together come nearest `want` in all three
- * channels: a handful of passes over the inks, each set to what fits best given the others.
+ * The slow half of a separation, as hatching draws it. A pen's ink is always full strength: what
+ * changes is how much of the paper its lines cover, and the lines mostly lie beside each other, or
+ * across where they cross. So for each colour of the photo, this chooses how many passes of each
+ * plate's pen - 0 to `levels`, each covering what coverSteps says for this pen and spacing - and
+ * works out what that comes out as on white paper (mixOf: each pen's lines over the paper and over
+ * the others'), keeping the choice that comes nearest the photo's colour in Lab. Fewer pens are
+ * preferred, and black over the colours for darkness as much as `blackShare` says. Each plate's map
+ * holds the tone its hatching draws exactly that many passes at. Pure, so a worker can run it.
  */
+export function solveSeparation({ rgb, w, h, plates, brightness, contrast, blackShare, levels, penMm, spacingMm }: SeparationRequest): Float32Array[] {
+  const adjust = adjuster(brightness, contrast);
+  const pens = plates.map(hexLinear);
+  const steps = coverSteps(penMm, spacingMm, levels);
+  const most = steps.length - 1;
+  const maps = plates.map(() => new Float32Array(w * h));
+  // Each colour solved once: shades an eighth of a step apart in each channel share an answer, finer
+  // than hatching's handful of passes can show.
+  const solved = new Map<number, Float32Array>();
+  const passes = new Int8Array(plates.length);
+  for (let at = 0; at < w * h; at++) {
+    const i = at * 3;
+    const key = ((rgb[i] >> 3) << 10) | ((rgb[i + 1] >> 3) << 5) | (rgb[i + 2] >> 3);
+    let tones = solved.get(key);
+    if (!tones) {
+      const want = labOfLinear([linear(adjust(rgb[i])), linear(adjust(rgb[i + 1])), linear(adjust(rgb[i + 2]))]);
+      choosePasses(want, pens, steps, blackShare, passes);
+      tones = Float32Array.from(passes, (p) => (p ? (p + 0.5) / (most + 1) : 0));
+      solved.set(key, tones);
+    }
+    for (let n = 0; n < plates.length; n++) maps[n][at] = tones[n];
+  }
+  return maps;
+}
+
+/** What each pen used costs, in ΔE: enough that a pen is only brought in where it really helps. */
+const PEN_COST = 1;
+/** What each pass costs, in ΔE: black's share of it goes to the colours, the rest to black. */
+const PASS_COST = 0.6;
+
 /**
- * One point of a separation: how much black (returned) and how much of each colour ink (`amounts`)
- * lay over each other to come nearest the photo's densities there, `want`.
+ * How many passes of each pen (`out`, in plate order, black fourth) come nearest a colour `want` in
+ * Lab: one pen at a time, trying each count with the others held, until nothing better is found.
  */
-function separatePixel(want: number[], colours: [number, number, number][], black: [number, number, number] | undefined, blackShare: number, sparse: number, amounts: Float64Array) {
-  // The grey every channel shares, in the black pen's own terms: as much black as fits in all three.
-  const grey = black ? Math.min(want[0] / Math.max(1e-3, black[0]), want[1] / Math.max(1e-3, black[1]), want[2] / Math.max(1e-3, black[2])) : 0;
-  const k = Math.min(1, Math.max(0, grey * blackShare));
-  const rest = black ? [want[0] - black[0] * k, want[1] - black[1] * k, want[2] - black[2] * k] : want;
-  solveInks(colours, rest, amounts, sparse);
-  return k;
-}
-
-/** How much of each plate's pen, in plate order, a colour takes: one point of a separation, for checking it. */
-export function plateAmounts(rgb: [number, number, number], plates: string[], blackShare = BLACK_SHARE): number[] {
-  const inks = plates.map(densityOf);
-  const colours = inks.filter((_, i) => i !== 3);
-  const amounts = new Float64Array(colours.length);
-  const k = separatePixel(rgb.map(density), colours, inks[3], blackShare, colours.length > 3 ? SPARSE_COST : 0, amounts);
-  return plates.map((_, i) => (i === 3 ? k : amounts[i < 3 ? i : i - 1]));
-}
-
-/** What each extra ink used costs the solver, in density: enough to prefer one ink to a mix of two. */
-const SPARSE_COST = 0.08;
-
-function solveInks(inks: [number, number, number][], want: number[], out: Float64Array, cost = 0) {
+function choosePasses(want: number[], pens: number[][], steps: number[], blackShare: number, out: Int8Array) {
   out.fill(0);
-  const residual = [want[0], want[1], want[2]];
-  // Many inks pull against each other and take many passes to settle on the fewest that will do;
-  // a pass that changes nothing is the answer.
-  const passes = inks.length > 3 ? 600 : 12;
-  for (let pass = 0; pass < passes; pass++) {
-    let moved = 0;
-    for (let k = 0; k < inks.length; k++) {
-      const d = inks[k];
-      const dd = d[0] * d[0] + d[1] * d[1] + d[2] * d[2];
-      if (dd < 1e-9) continue;
-      const was = out[k];
-      const r0 = residual[0] + d[0] * was;
-      const r1 = residual[1] + d[1] * was;
-      const r2 = residual[2] + d[2] * was;
-      // Each ink's best amount given the others, less what using it costs (half, as the cost is on
-      // the amount while the fit is squared).
-      const best = Math.min(1, Math.max(0, (r0 * d[0] + r1 * d[1] + r2 * d[2] - cost / 2) / dd));
-      moved = Math.max(moved, Math.abs(best - was));
-      out[k] = best;
-      residual[0] = r0 - d[0] * best;
-      residual[1] = r1 - d[1] * best;
-      residual[2] = r2 - d[2] * best;
+  const covers = new Array<number>(pens.length).fill(0);
+  const cost = (n: number, p: number) => (p ? PEN_COST + p * PASS_COST * (n === 3 ? 1 - blackShare : blackShare) * 2 : 0);
+  const score = () => {
+    const got = labOfLinear(mixOf([1, 1, 1], pens, covers, false));
+    let sum = Math.hypot(got[0] - want[0], got[1] - want[1], got[2] - want[2]);
+    for (let n = 0; n < out.length; n++) sum += cost(n, out[n]);
+    return sum;
+  };
+  // Start from the one pen, at its best count, that comes nearest on its own: from nothing, the first
+  // pens tried (cyan, magenta, yellow) settle an orange as yellow over magenta and the orange pen is
+  // never reached.
+  let best = score();
+  let start = -1;
+  let startPasses = 0;
+  for (let n = 0; n < pens.length; n++) {
+    for (let p = 1; p < steps.length; p++) {
+      out[n] = p;
+      covers[n] = steps[p];
+      const e = score();
+      if (e < best - 1e-6) { best = e; start = n; startPasses = p; }
     }
-    if (moved < 1e-5) break;
+    out[n] = 0;
+    covers[n] = 0;
   }
+  if (start >= 0) { out[start] = startPasses; covers[start] = steps[startPasses]; }
+  for (let round = 0; round < 8; round++) {
+    let better = false;
+    for (let n = 0; n < pens.length; n++) {
+      const was = out[n];
+      let keep = was;
+      for (let p = 0; p < steps.length; p++) {
+        if (p === was) continue;
+        out[n] = p;
+        covers[n] = steps[p];
+        const e = score();
+        if (e < best - 1e-6) { best = e; keep = p; better = true; }
+      }
+      out[n] = keep;
+      covers[n] = steps[keep];
+    }
+    if (!better) break;
+  }
+}
+
+/** How many passes of each plate's pen, in plate order, a colour is drawn with: one point of a separation, for checking it. */
+export function platePasses(rgb: [number, number, number], plates: string[], { levels = 6, penMm = 0.4, spacingMm = 1.2, blackShare = BLACK_SHARE } = {}): number[] {
+  const out = new Int8Array(plates.length);
+  choosePasses(labOfLinear(rgb.map(linear)), plates.map(hexLinear), coverSteps(penMm, spacingMm, levels), blackShare, out);
+  return [...out];
 }
 
 /** A CMYK plate, read at a point of the photo (u and v, 0 to 1): -1 where it draws nothing, else how much. */
 function plateSampler(tones: Tones, photo: Photo) {
-  const sep = separationOf(tones, photo.plates!, photo.brightness, photo.contrast, Math.min(1, Math.max(0, photo.blackShare ?? BLACK_SHARE)));
+  const sep = separationOf(tones, photo);
+  // Still being separated off the page: nothing yet (photoMarks waits for it rather than keep this).
+  if (!sep) return () => -1;
   const map = sep.maps[platesOf(photo.plates).indexOf(photo.plate!)];
   return (u: number, v: number) => {
     const amount = map[Math.min(sep.h - 1, Math.round(v * (sep.h - 1))) * sep.w + Math.min(sep.w - 1, Math.round(u * (sep.w - 1)))];

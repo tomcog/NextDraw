@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Button, Card, InputText } from "@tomcoggia/ui";
+// Separations into many plates are solved off the page (importing this turns it on).
+import "../shared/lib/drawing/separationWorker";
 import { Save, Send } from "lucide-react";
 import { DrawingToolSection } from "../shared/components/controls/DrawingToolSection";
 import { FileSection } from "../shared/components/controls/FileSection";
@@ -22,7 +24,7 @@ import { useHistory } from "../shared/lib/useHistory";
 import { loadFont, type StrokeFont } from "../shared/lib/drawing/font";
 import type { Fill } from "../shared/lib/drawing/hatch";
 import { parseDrawing } from "../shared/lib/drawing/parse";
-import { photoMarks, placeOnPage, stemWithoutPlate, type Photo } from "../shared/lib/drawing/photo";
+import { photoMarks, placeOnPage, plateSetOf, stemWithoutPlate, type Photo } from "../shared/lib/drawing/photo";
 import { boxOf, newLayerId, type Layer, type Page, type Shape } from "../shared/lib/drawing/shapes";
 import { buildSvg } from "../shared/lib/drawing/svg";
 import { fitText } from "../shared/lib/drawing/text";
@@ -273,7 +275,7 @@ export default function App() {
 
   const {
     addPhoto, addSeparations, setSeparationPlate, switchPhotoMode, setKeyLayer, splitPhoto, splitPhotoByColor, splitPhotoBestFit, bestPens,
-    placePhoto, photoScale, setPhotoScale, setPhotoMargin, replacePhoto, turnPhoto, setPhotoOf, setAngles, photoStem, splitPhotoCmyk,
+    placePhoto, photoScale, setPhotoScale, setPhotoMargin, replacePhoto, turnPhoto, setPhotoOf, setAngles, photoStem, splitPhotoCmyk, setPlatePen,
   } = photoActions({
     chosen, shapes, setShapes, layers, setLayers, active, setActiveLayer, page, tool,
     spacingMm: tool?.hatch?.spacing_mm ?? 1.5, all: photoAll, paper: paperColor, record, addShape, pick, setMessage, setBusy,
@@ -537,7 +539,26 @@ export default function App() {
       onColor={setPaperColor}
     />
   );
-  const toolSection = <DrawingToolSection tools={presets} value={toolName} onPick={setToolName} collapsibleKey="photo-pen" disabled={busy} />;
+  // A pen chosen by hand: the photo's colors are chosen again from its palette - each plate, or each
+  // color group - once the new pen is in place, so no layer is left in a color the pen doesn't have.
+  // Not when a drawing opens with its own pen: that keeps the colors it was saved with.
+  const penPicked = useRef(false);
+  const pickPen = (name: string) => {
+    if (name !== toolName) penPicked.current = true;
+    setToolName(name);
+  };
+  useEffect(() => {
+    if (!penPicked.current) return;
+    penPicked.current = false;
+    const photo = chosen?.photo;
+    if (!photo || photo.separation) return;
+    if (photo.plate && photo.plates) splitPhotoCmyk({}, plateSetOf(photo.plates));
+    else if (photo.ink && photo.regions) {
+      if (photo.fitPaper) splitPhotoBestFit(inks);
+      else splitPhotoByColor(inks);
+    }
+  }, [toolName]); // eslint-disable-line react-hooks/exhaustive-deps
+  const toolSection = <DrawingToolSection tools={presets} value={toolName} onPick={pickPen} collapsibleKey="photo-pen" disabled={busy} />;
 
   const confirmSheetBlock = confirmSheet && (
     <div className={styles.confirm} role="alertdialog" aria-label={typeof confirmSheet === "string" ? "Make a new sheet" : `Open ${confirmSheet.name}`}>
@@ -645,6 +666,8 @@ export default function App() {
       all={photoAll}
       onAll={setPhotoAll}
       estimates={estimates}
+      palette={tool?.palette ?? []}
+      penWidthMm={penWidthMm}
       infoCard={infoCard}
       effectCards={effectCards}
       scale={(() => {
@@ -668,6 +691,7 @@ export default function App() {
         setScale: setPhotoScale,
         setAngles,
         splitCmyk: (set) => splitPhotoCmyk({}, set),
+        setPlatePen,
         pickBand: (id, layerId) => {
           pick(id);
           setActiveLayer(layerId);

@@ -8,7 +8,7 @@ import { lightness } from "../../shared/lib/color";
 import type { PenColor, Preset } from "../../shared/lib/types";
 import {
   BAND_NAMES, LAYER_SETTINGS, MOST_LAYERS, PHOTO_DEFAULTS, PLATES, PLATE_AIMS, colourGroups, darkestOf, isColourful, matchPens, photoMode,
-  placeOnPage, plateNamed, platePens, presetAngle, readTones, hexLinear, linearHex, coverSteps, stemWithoutPlate, turnedCopy, turnedCrop, workingCopy, type AnglePreset, type Photo, type PhotoPart, type Plate, type PlateSet, PLATE_SETS, plateSetOf,
+  placeOnPage, plateNamed, platePens, presetAngle, readTones, hexLinear, linearHex, coverSteps, stemWithoutPlate, turnedCopy, turnedCrop, workingCopy, type AnglePreset, type Photo, type PhotoPart, type Plate, type PlateSet, PLATE_SETS, plateSetOf, platesOf,
 } from "../../shared/lib/drawing/photo";
 import { boxOf, newLayerId, newShapeId, type Layer, type Page, type Shape } from "../../shared/lib/drawing/shapes";
 import { samplePhoto, type Candidate } from "./choosePens";
@@ -300,7 +300,8 @@ export function photoActions(ctx: PhotoContext) {
       setMessage({ text: `${tool2?.name ?? "This pen"} needs ${use.plates.length} colors in its palette to split a photo into ${use.label}`, ok: false });
       return;
     }
-    const matched = platePens(pens, use.plates);
+    // Judged by how this pen's lines hatch at this photo's spacing and passes.
+    const matched = platePens(pens, use.plates, { penMm: tool2?.settings.pen_width ?? 0.5, spacingMm: chosen.photo.spacingMm, levels: chosen.photo.levels });
     if (matched.some((p) => !p)) return;
     const plates = matched.map((p) => p!.color);
     const { name } = photoStem();
@@ -313,7 +314,11 @@ export function photoActions(ctx: PhotoContext) {
         shapeName: `${name} ${pen.name}`,
         photo: {
           band: undefined, key: undefined, keyInk: undefined, regions: undefined, region: undefined, regionInks: undefined,
-          plate, plates, ink: pen.color, angle: PLATE_AIMS[plate].angle, ...extra,
+          plate, plates, ink: pen.color, angle: PLATE_AIMS[plate].angle,
+          // The pen's line width: with the spacing, how much paper each pass covers, which the
+          // separation works out its passes from.
+          penMm: tool2?.settings.pen_width ?? 0.5,
+          ...extra,
         },
       })),
       chosen.photo.group ?? newShapeId(),
@@ -703,6 +708,32 @@ export function photoActions(ctx: PhotoContext) {
     }));
   };
 
+  /**
+   * Draw one plate in another of the pen's colors: its layer is named and colored after it, and the
+   * photo is separated again - every plate's amounts depend on every pen in the set.
+   */
+  const setPlatePen = (plate: Plate, penName: string) => {
+    if (!chosen?.photo?.plates) return;
+    const pen = tool2?.palette?.find((p) => p.name === penName);
+    if (!pen) return;
+    const at = platesOf(chosen.photo.plates).indexOf(plate);
+    if (at < 0) return;
+    record();
+    const plates = [...chosen.photo.plates];
+    plates[at] = pen.color;
+    const group = chosen.photo.group;
+    const members = group ? shapes.filter((sh) => sh.photo?.group === group) : [chosen];
+    const onPlate = members.find((m) => m.photo?.plate === plate);
+    const { name } = photoStem();
+    setShapes((list) => list.map((sh) => {
+      if (!members.some((m) => m.id === sh.id)) return sh;
+      const own = sh.photo!.plate === plate;
+      return { ...sh, ...(own ? { name: `${name} ${pen.name}` } : {}), photo: { ...sh.photo!, plates, ...(own ? { ink: pen.color } : {}) } };
+    }));
+    if (onPlate) setLayers((list) => list.map((l) => (l.id === onPlate.layerId ? { ...l, name: pen.name, color: pen.color } : l)));
+    setMessage({ text: `${PLATE_AIMS[plate].name} in ${pen.name}`, ok: true });
+  };
+
   /** Change how the chosen photo is turned into lines. */
   const setPhotoOf = (patch: Partial<Photo>) => {
     if (!chosen?.photo) return;
@@ -730,6 +761,6 @@ export function photoActions(ctx: PhotoContext) {
 
   return {
     addPhoto, addSeparations, setSeparationPlate, switchPhotoMode, setKeyLayer, splitPhoto, splitPhotoByColor, splitPhotoBestFit, bestPens,
-    placePhoto, photoScale, setPhotoScale, setPhotoMargin, replacePhoto, turnPhoto, setPhotoOf, setAngles, photoStem, splitPhotoCmyk,
+    placePhoto, photoScale, setPhotoScale, setPhotoMargin, replacePhoto, turnPhoto, setPhotoOf, setAngles, photoStem, splitPhotoCmyk, setPlatePen,
   };
 }

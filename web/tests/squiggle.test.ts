@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { photoMarks, plateAmounts, presetAngle, readTones, squiggleAmp, type Photo } from "../src/shared/lib/drawing/photo";
+import { photoMarks, platePasses, presetAngle, readTones, squiggleAmp, type Photo } from "../src/shared/lib/drawing/photo";
 
 // A made-up photo, read without a browser: white on the left darkening to black on the right.
 const W = 200;
@@ -156,13 +156,16 @@ test("plate sets: an orange is drawn in the orange pen, not built from yellow an
   assert.ok(marks("data:green", six, "g") >= 3 && marks("data:green", six, "c") + marks("data:green", six, "y") <= 1, "green drawn in the green pen");
 });
 
-test("plate sets: with eight plates, orange and violet each come from their own pen", () => {
-  const pens = ["#00a3e0", "#d6007a", "#ffe500", "#1a1a1a", "#ff7a00", "#00a650", "#e4002b", "#5b2c8f"];
-  const [c, m, y, , o] = plateAmounts([255, 122, 0], pens);
-  assert.ok(o > 0.9 && c + m + y < 0.1, `orange: O ${o.toFixed(2)}, CMY ${(c + m + y).toFixed(2)}`);
-  const v = plateAmounts([100, 50, 150], pens);
-  assert.ok(v[7] > 0.5 && v[0] + v[1] < 0.1, `violet: V ${v[7].toFixed(2)}, C+M ${(v[0] + v[1]).toFixed(2)}`);
-  // Print's four keep their one mix: orange from magenta and yellow.
-  const four = plateAmounts([255, 122, 0], pens.slice(0, 4));
-  assert.ok(four[1] > 0.4 && four[2] > 0.4);
+test("plate sets: drawn as hatching, more plates come nearer the photo, and orange is drawn in orange", () => {
+  // As the hatching draws it: full-strength lines covering part of the paper, so many passes of a pen.
+  const pens = ["#00a3e0", "#d6007a", "#ffe500", "#1a1a1a", "#ff6a13", "#00a650", "#e4002b", "#5b2c8f"];
+  const orange = platePasses([240, 110, 30], pens);
+  assert.ok(orange[4] >= 4, `orange pen ${orange[4]} passes`);
+  assert.ok(orange[0] === 0 && orange[7] === 0, "no cyan or violet in an orange");
+  const violet = platePasses([95, 45, 145], pens);
+  assert.ok(violet[7] >= 3, `violet pen ${violet[7]} passes`);
+  // White paper is left alone; black is mostly the black pen.
+  assert.deepEqual(platePasses([255, 255, 255], pens), [0, 0, 0, 0, 0, 0, 0, 0]);
+  const black = platePasses([20, 20, 20], pens);
+  assert.ok(black[3] >= 4, `black pen ${black[3]} passes`);
 });

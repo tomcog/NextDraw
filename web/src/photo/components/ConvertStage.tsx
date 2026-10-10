@@ -1,6 +1,6 @@
 import { Segment, SegmentedControl } from "@tomcoggia/ui";
 import { Columns2, Image, Layers, Spline } from "lucide-react";
-import type { ReactNode } from "react";
+import { useId, type ReactNode } from "react";
 import type { Box, Zoom } from "../../shared/components/BedCanvas";
 import { InkGroup, InkLayer } from "../../shared/components/Ink";
 import { NextDrawCanvas } from "../../shared/components/NextDrawCanvas";
@@ -65,9 +65,25 @@ export function ConvertStage({ photo, parts, box, page, paperColor, model, ink, 
   const drawingBox: Box = [box.x0 * UNITS, box.y0 * UNITS, box.x1 * UNITS, box.y1 * UNITS];
 
   const [c0, c1, c2, c3] = photo.crop ?? [0, 0, 1, 1];
+  // The picture as the lines see it: brightness and contrast applied as the photo is read for them
+  // (each channel stretched about middle grey by the contrast, then lifted by the brightness).
+  const adjustId = `adjust-${useId().replace(/[^\w-]/g, "")}`;
+  const c = Math.max(-99, Math.min(99, photo.contrast)) / 100;
+  const gain = c >= 0 ? 1 / (1 - c) : 1 + c;
+  const shift = 0.5 - 0.5 * gain + photo.brightness / 200;
+  const adjusted = photo.brightness !== 0 || photo.contrast !== 0;
   const picture = (faded?: boolean) => (
     <svg x={box.x0} y={box.y0} width={w} height={h} viewBox={`${c0 * photo.width} ${c1 * photo.height} ${(c2 - c0) * photo.width} ${(c3 - c1) * photo.height}`} preserveAspectRatio="none" opacity={faded ? 0.3 : 1}>
-      <image href={photo.src} width={photo.width} height={photo.height} preserveAspectRatio="none" />
+      {adjusted && (
+        <filter id={adjustId} colorInterpolationFilters="sRGB">
+          <feComponentTransfer>
+            <feFuncR type="linear" slope={gain} intercept={shift} />
+            <feFuncG type="linear" slope={gain} intercept={shift} />
+            <feFuncB type="linear" slope={gain} intercept={shift} />
+          </feComponentTransfer>
+        </filter>
+      )}
+      <image href={photo.src} width={photo.width} height={photo.height} preserveAspectRatio="none" filter={adjusted ? `url(#${adjustId})` : undefined} />
     </svg>
   );
   const at = photoOrigin(photo, box.x0, box.y0);

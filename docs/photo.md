@@ -66,9 +66,17 @@ get complicated, and it never needs Studio's tools for drawing and transforming 
   - The photo's card is titled Image, with the photo's name under it, small.
   - CMYK's Plates (2026-10-10): CMYK, CMYK + OG (Hexachrome), CMYK + OGV (extended gamut) and
     CMYK + OGRV. The extra plates' pens are the palette's nearest by hue to orange, green, red and
-    violet; black is the darkest. The separation prefers the fewest inks for each color (a small
-    cost per ink in the solver), so an orange is drawn in the orange pen rather than yellow over
-    magenta; each color is solved once and shared. CMYK alone separates as before. With no cards out, the stage takes the rail's width. The File card
+    violet; black is the darkest - then, plate by plate, whichever pen within 15° of its hue makes
+    the hatching come nearest a set of photo colors. The separation is worked out as hatching draws
+    (2026-10-10): for each color, how many passes of each pen, simulating full-strength lines that
+    cover part of the paper (coverSteps for the pen width and spacing) over and beside each other
+    (mixOf), the nearest in Lab, fewer pens preferred and Black % weighting black against the
+    colors. Six or more plates are solved in a worker (separationWorker.ts); saving solves at once.
+    The automatic plate colors look within 20° of each plate's hue (and nearer it than any other
+    plate's); each plate also has a color menu, which separates again. Choosing another pen re-picks
+    the plate (or Color mode's) colors from its palette. The Hatching card notes when the spacing and
+    passes can't cover 70% of the paper, with a spacing that would. The canvas shows the picture with
+    the Image card's brightness and contrast. With no cards out, the stage takes the rail's width. The File card
     comes out while it asks about unsaved work.
   - Unsaved work is kept in the browser (IndexedDB, `photo/lib/workInProgress.ts`) and put back after
     a reload; once saved it's dropped, and the last file reopens instead. Every Photo tab in a

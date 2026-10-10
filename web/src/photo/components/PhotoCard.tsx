@@ -4,8 +4,9 @@ import { RotateCcwSquare, RotateCwSquare } from "lucide-react";
 import { Section } from "../../shared/components/controls/Section";
 import { NumberField } from "../../shared/components/controls/NumberField";
 import controls from "../../shared/components/controls/controls.module.css";
-import { BLACK_SHARE, CENTER_DEFAULTS, KEY_FROM, MOST_LAYERS, MOST_PASSES, OUTLINE_DEFAULTS, PLATES, PLATE_AIMS, SILHOUETTE_DEFAULTS, WAVE_DEFAULTS, ANGLE_PRESETS, PLATE_SETS, plateSetOf, squiggleAmp, type AnglePreset, type PlateSet, photoMarks, photoMode, type Photo, type Plate } from "../../shared/lib/drawing/photo";
+import { BLACK_SHARE, CENTER_DEFAULTS, KEY_FROM, MOST_LAYERS, MOST_PASSES, OUTLINE_DEFAULTS, PLATES, PLATE_AIMS, SILHOUETTE_DEFAULTS, WAVE_DEFAULTS, ANGLE_PRESETS, PLATE_SETS, coverSteps, plateSetOf, platesOf, squiggleAmp, type AnglePreset, type PlateSet, photoMarks, photoMode, type Photo, type Plate } from "../../shared/lib/drawing/photo";
 import { boxOf, type Layer, type Shape } from "../../shared/lib/drawing/shapes";
+import type { PenColor } from "../../shared/lib/types";
 import styles from "../App.module.css";
 import { EFFECTS, effectOf } from "./EffectToolbar";
 
@@ -29,6 +30,8 @@ export interface PhotoActions {
   place: (how: "fit" | "fill", margin: number) => void;
   setMargin: (margin: number) => void;
   setScale: (percent: number) => void;
+  /** Draw a plate in another of the pen's colors, by its name in the palette. */
+  setPlatePen: (plate: Plate, penName: string) => void;
   /** Split into a set of plates: CMYK, or CMYK with more inks. */
   splitCmyk: (set: PlateSet) => void;
   /** Set the layers' angles: a preset newly chosen, or the whole set turned by so many degrees. */
@@ -54,6 +57,10 @@ interface Props {
   actions: PhotoActions;
   /** Whether the photo's own card - turning, brightness and contrast, its size on the page - is out. */
   infoCard?: boolean;
+  /** The pen's line width, in mm: with the spacing, how much paper the lines can cover. */
+  penWidthMm?: number;
+  /** The pen's palette: the colors a plate can be drawn in. */
+  palette?: PenColor[];
   /** Whether the effect's cards - its own and Layers - are out. */
   effectCards?: boolean;
 }
@@ -62,7 +69,7 @@ interface Props {
  * The chosen photo's card - in the drawing's rail, and in image conversion's under its own: how it is
  * split into layers, sized to the page, and what each layer's lines are drawn as.
  */
-export function PhotoCard({ shape, title, shapes, layers, busy, all, onAll, scale, estimates, actions, infoCard = true, effectCards = true }: Props) {
+export function PhotoCard({ shape, title, shapes, layers, busy, all, onAll, scale, estimates, actions, penWidthMm = 0.5, palette = [], infoCard = true, effectCards = true }: Props) {
   const replaceInput = useRef<HTMLInputElement>(null);
   const photo = shape.photo;
   // How many inks a photo split by colour is in: its layers, not counting the key.
@@ -111,6 +118,24 @@ export function PhotoCard({ shape, title, shapes, layers, busy, all, onAll, scal
               >
                 {PLATE_SETS.map((s) => <option key={s.key} value={s.key}>{s.label}</option>)}
               </InputSelect>
+              {/* Each plate's color, from the pen's palette: chosen for it at the split, changed here.
+                The photo is separated again for the colors as they now are. */}
+              {photo.plates && palette.length > 0 && (
+                <div className={styles.fillRow}>
+                  {platesOf(photo.plates).map((plate, i) => (
+                    <InputSelect
+                      key={plate}
+                      size="md"
+                      label={PLATE_AIMS[plate].name}
+                      value={palette.find((p) => p.color.toLowerCase() === photo.plates![i]?.toLowerCase())?.name ?? ""}
+                      onChange={(e) => actions.setPlatePen(plate, e.target.value)}
+                    >
+                      {!palette.some((p) => p.color.toLowerCase() === photo.plates![i]?.toLowerCase()) && <option value="">Not in this palette</option>}
+                      {palette.map((p) => <option key={p.name} value={p.name}>{p.name}</option>)}
+                    </InputSelect>
+                  ))}
+                </div>
+              )}
               {/* How much of the colors' shared gray the black plate takes over: more, and the darks are
                 black; less, and they're the other inks laid over each other. */}
               <NumberField label="Black" unit="%" min={0} max={100} step={5} value={Math.round((photo.blackShare ?? BLACK_SHARE) * 100)} onChange={(v) => actions.set({ blackShare: v / 100 })} />
@@ -289,6 +314,9 @@ export function PhotoCard({ shape, title, shapes, layers, busy, all, onAll, scal
             <Section
               title="Image"
               collapsibleKey="photo"
+              // Folded, the row names the photo in place of its buttons, as the Pen card names its pen.
+              actionWhenOpen
+              closedAction={<span className={controls.toolInTitle} title={title}>{title}</span>}
               action={
                 <span className={controls.headerTools}>
                   {/* A quarter at a time, to stand the picture the way the paper does: the same
@@ -406,6 +434,21 @@ export function PhotoCard({ shape, title, shapes, layers, busy, all, onAll, scal
                       <NumberField label="Spacing mm" min={0.1} max={5} step={0.05} value={photo.spacingMm} onChange={(spacingMm) => actions.set({ spacingMm })} />
                       <NumberField label="Passes" min={1} max={MOST_PASSES} step={1} value={photo.levels} onChange={(levels) => actions.set({ levels })} />
                     </div>
+                    {/* When the lines can't cover enough of the paper for colors to reach full strength: by how
+                      much, and the spacing that would. */}
+                    {(() => {
+                      const pen = photo.penMm ?? penWidthMm;
+                      const fullest = (spacing: number) => { const steps = coverSteps(pen, spacing, photo.levels); return steps[steps.length - 1]; };
+                      const most = fullest(photo.spacingMm);
+                      if (most >= 0.7) return null;
+                      let enough = photo.spacingMm;
+                      while (enough > 0.1 && fullest(enough) < 0.85) enough = Math.round((enough - 0.05) * 100) / 100;
+                      return (
+                        <p className={styles.empty}>
+                          {`${photo.levels} ${photo.levels === 1 ? "pass" : "passes"} of a ${pen} mm line at ${photo.spacingMm} mm spacing cover at most ${Math.round(most * 100)}% of the paper, so colors stay paler than the photo's.${enough < photo.spacingMm ? ` About ${enough} mm spacing would let them reach full strength.` : ""}`}
+                        </p>
+                      );
+                    })()}
                     {/* The photo smoothed before it's hatched, so busy patches read as tone rather than dashes. */}
                     <div className={styles.fillRow}>
                       <NumberField label="Smoothing mm" min={0} max={5} step={0.1} value={photo.hatchSmoothMm ?? 0} onChange={(v) => actions.set({ hatchSmoothMm: v > 0 ? v : undefined })} />
