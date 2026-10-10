@@ -314,6 +314,8 @@ export function photoActions(ctx: PhotoContext) {
         shapeName: `${name} ${pen.name}`,
         photo: {
           band: undefined, key: undefined, keyInk: undefined, regions: undefined, region: undefined, regionInks: undefined,
+          // Best fit's own options don't carry over: fine steps would quietly replace the passes.
+          fitPaper: undefined, fitPairs: undefined, fineSteps: undefined,
           plate, plates, ink: pen.color, angle: PLATE_AIMS[plate].angle,
           // The pen's line width: with the spacing, how much paper each pass covers, which the
           // separation works out its passes from.
@@ -397,7 +399,7 @@ export function photoActions(ctx: PhotoContext) {
         layerName: n > 1 ? `${ink} ${words[i]}` : ink,
         layerColor: color,
         shapeName: n > 1 ? `${name} ${words[i]}` : name,
-        photo: { band: n > 1 ? [i / n, (i + 1) / n] as [number, number] : undefined, ink: undefined, regions: undefined, region: undefined, key: undefined, keyInk: undefined, regionInks: undefined, plate: undefined, plates: undefined, ...extra },
+        photo: { band: n > 1 ? [i / n, (i + 1) / n] as [number, number] : undefined, ink: undefined, regions: undefined, region: undefined, key: undefined, keyInk: undefined, regionInks: undefined, plate: undefined, plates: undefined, fitPaper: undefined, fitPairs: undefined, fineSteps: undefined, ...extra },
       })),
       n > 1 ? chosen.photo.group ?? newShapeId() : undefined,
       n > 1 ? `Split into ${n} tone layers` : "One layer, by value",
@@ -443,13 +445,13 @@ export function photoActions(ctx: PhotoContext) {
           layerName: pen.name,
           layerColor: pen.color,
           shapeName: `${name} ${pen.name}`,
-          photo: { band: undefined, key: undefined, plate: undefined, plates: undefined, fitPaper: undefined, penMm: undefined, ink: pen.color, regions: groups, region, regionInks, keyInk: withKey ? keyPen!.color : undefined, ...extra },
+          photo: { band: undefined, key: undefined, plate: undefined, plates: undefined, fitPaper: undefined, penMm: undefined, fitPairs: undefined, fineSteps: undefined, ink: pen.color, regions: groups, region, regionInks, keyInk: withKey ? keyPen!.color : undefined, ...extra },
         })),
         ...(withKey ? [{
           layerName: `${keyPen!.name} key`,
           layerColor: keyPen!.color,
           shapeName: `${name} ${keyPen!.name} key`,
-          photo: { band: undefined, key: true, plate: undefined, plates: undefined, fitPaper: undefined, penMm: undefined, ink: keyPen!.color, regions: groups, region: undefined, regionInks, keyInk: keyPen!.color, ...extra },
+          photo: { band: undefined, key: true, plate: undefined, plates: undefined, fitPaper: undefined, penMm: undefined, fitPairs: undefined, fineSteps: undefined, ink: keyPen!.color, regions: groups, region: undefined, regionInks, keyInk: keyPen!.color, ...extra },
         }] : []),
       ],
       parts.length + (withKey ? 1 : 0) > 1 ? chosen.photo.group ?? newShapeId() : undefined,

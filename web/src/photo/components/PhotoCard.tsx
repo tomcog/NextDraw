@@ -440,8 +440,12 @@ export function PhotoCard({ shape, title, shapes, layers, busy, all, onAll, scal
                     <div className={`${styles.fillRow} ${styles.oneRow}`}>
                       {angleField}
                       <NumberField label="Spacing mm" min={0.1} max={5} step={0.05} value={photo.spacingMm} onChange={(spacingMm) => actions.set({ spacingMm })} />
-                      <NumberField label="Passes" min={1} max={MOST_PASSES} step={1} value={photo.levels} onChange={(levels) => actions.set({ levels })} />
+                      {/* Fine steps sets its own steps, so there are no passes to choose. */}
+                      {!photo.fineSteps && <NumberField label="Passes" min={1} max={MOST_PASSES} step={1} value={photo.levels} onChange={(levels) => actions.set({ levels })} />}
                     </div>
+                    {photo.fineSteps && (
+                      <p className={styles.empty}>Fine steps is on, so lines come in one at a time in its own steps rather than in passes. Turn it off under Best fit to set the passes.</p>
+                    )}
                     {/* When the lines can't cover enough of the paper for colors to reach full strength: by how
                       much, and the spacing that would. */}
                     {(() => {
