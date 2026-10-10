@@ -17,6 +17,13 @@ type OnDisk = { shapes: Shape[]; fills: Fill[]; layers: Layer[]; page: Page; nam
 
 type Message = { text: string; ok: boolean; progress?: boolean };
 
+/**
+ * The file's side of a drawing as it stands: its name, where it was saved, where a first save goes,
+ * and what guards overwriting a file it only partly understood - what an app keeps alongside unsaved
+ * work so that, put back after a reload, it saves to the same place under the same rules.
+ */
+export type FileState = { name: string; saved: Saved; saveTo: string | null; foreign: number; openedAs: string | null };
+
 interface Options {
   shapes: Shape[];
   fills: Fill[];
@@ -31,6 +38,8 @@ interface Options {
   /** Where to remember the file being worked on, so the app can pick it up again when it next
    *  starts. Studio does; Photo, whose drawings are made fresh each time, leaves it out. */
   lastFileKey?: string;
+  /** Ask before leaving with unsaved work. Photo turns this off while its work is kept in the browser. */
+  holdOnLeave?: boolean;
 }
 
 /** Whether a Plot page is open in another tab of this browser: it answers when asked (see Plot's poll). */
@@ -56,7 +65,7 @@ function plotPageAnswers(): Promise<boolean> {
  * saving and sending it to Plot. Whoever opens or starts a drawing says so with opened, combined or
  * started, so the file's side of it follows; the drawing itself is the app's.
  */
-export function useDrawingFile({ shapes, fills, layers, page, sizeId, toolName, fonts, setBusy, setMessage, lastFileKey }: Options) {
+export function useDrawingFile({ shapes, fills, layers, page, sizeId, toolName, fonts, setBusy, setMessage, lastFileKey, holdOnLeave = true }: Options) {
   const rememberFile = (path: string | null) => {
     if (lastFileKey) remember(lastFileKey, path);
   };
@@ -98,11 +107,11 @@ export function useDrawingFile({ shapes, fills, layers, page, sizeId, toolName, 
   // Leaving with work that's only on screen - a reload, a closed tab, going to Plot where the browser
   // won't open a tab of its own - asks first, in the browser's own words.
   useEffect(() => {
-    if (!dirty || !shapes.length) return;
+    if (!dirty || !shapes.length || !holdOnLeave) return;
     const hold = (e: BeforeUnloadEvent) => e.preventDefault();
     window.addEventListener("beforeunload", hold);
     return () => window.removeEventListener("beforeunload", hold);
-  }, [dirty, shapes.length]);
+  }, [dirty, shapes.length, holdOnLeave]);
 
   // Called by whoever just read or wrote the file, with the very values that went to disk.
   const markClean = useCallback((written: OnDisk) => {
@@ -226,5 +235,20 @@ export function useDrawingFile({ shapes, fills, layers, page, sizeId, toolName, 
     }
   };
 
-  return { name, setName, saved, dirty, touch, opened, combined, started, save, sendToPlot };
+  /**
+   * Unsaved work put back after a reload: the file it belongs to, as it was, and - since none of it is
+   * on disk - all of it still to save.
+   */
+  const resumed = useCallback((state: FileState) => {
+    setName(state.name);
+    setSaved(state.saved);
+    setSaveTo(state.saveTo);
+    setForeign(state.foreign);
+    setOpenedAs(state.openedAs);
+    onDisk.current = null;
+    setDirty(true);
+  }, []);
+  const fileState: FileState = { name, saved, saveTo, foreign, openedAs };
+
+  return { name, setName, saved, dirty, touch, opened, combined, started, resumed, fileState, save, sendToPlot };
 }

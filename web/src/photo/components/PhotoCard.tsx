@@ -4,7 +4,7 @@ import { RotateCcwSquare, RotateCwSquare } from "lucide-react";
 import { Section } from "../../shared/components/controls/Section";
 import { NumberField } from "../../shared/components/controls/NumberField";
 import controls from "../../shared/components/controls/controls.module.css";
-import { BLACK_SHARE, CENTER_DEFAULTS, KEY_FROM, MOST_LAYERS, OUTLINE_DEFAULTS, PLATES, PLATE_AIMS, SILHOUETTE_DEFAULTS, SQUIGGLE_DEFAULTS, WAVE_DEFAULTS, photoMarks, photoMode, type Photo, type Plate } from "../../shared/lib/drawing/photo";
+import { BLACK_SHARE, CENTER_DEFAULTS, KEY_FROM, MOST_LAYERS, MOST_PASSES, OUTLINE_DEFAULTS, PLATES, PLATE_AIMS, SILHOUETTE_DEFAULTS, SQUIGGLE_DEFAULTS, WAVE_DEFAULTS, photoMarks, photoMode, type Photo, type Plate } from "../../shared/lib/drawing/photo";
 import { boxOf, type Layer, type Shape } from "../../shared/lib/drawing/shapes";
 import styles from "../App.module.css";
 import { EFFECTS, effectOf } from "./EffectToolbar";
@@ -115,6 +115,71 @@ export function PhotoCard({ shape, title, shapes, layers, busy, all, onAll, scal
           </div>
         </Card>
       )}
+      {/* The effect's card first in the photo's stack, its Layers under it. */}
+      <Card variant="flat" className={styles.controls}>
+        <div className={`${styles.cardBody} ${controls.cardSections}`}>
+          {/* The effect's own numbers, under its name: the toolbar on the left chooses which. */}
+          <Section title={effect.label}>
+            {photo.style === "silhouette" ? (
+              <div className={styles.fillRow}>
+                <NumberField label="Paper lighter than" unit="%" min={1} max={99} step={1} value={Math.round((photo.silhouetteFrom ?? SILHOUETTE_DEFAULTS.from) * 100)} onChange={(v) => actions.set({ silhouetteFrom: v / 100 })} />
+                <NumberField label="Smoothing" unit="mm" min={0} max={5} step={0.05} value={photo.silhouetteSmoothMm ?? SILHOUETTE_DEFAULTS.smoothMm} onChange={(silhouetteSmoothMm) => actions.set({ silhouetteSmoothMm })} />
+                <NumberField label="Smallest" unit="mm" min={0} max={50} step={0.5} value={photo.silhouetteSmallestMm ?? SILHOUETTE_DEFAULTS.smallestMm} onChange={(silhouetteSmallestMm) => actions.set({ silhouetteSmallestMm })} />
+              </div>
+            ) : photo.style === "centerlines" ? (
+              <div className={styles.fillRow}>
+                <NumberField label="Darker than" unit="%" min={1} max={99} step={5} value={Math.round((photo.centerFrom ?? CENTER_DEFAULTS.from) * 100)} onChange={(v) => actions.set({ centerFrom: v / 100 })} />
+                <NumberField label="Smoothing" unit="mm" min={0} max={5} step={0.05} value={photo.centerSmoothMm ?? CENTER_DEFAULTS.smoothMm} onChange={(centerSmoothMm) => actions.set({ centerSmoothMm })} />
+                <NumberField label="Shortest" unit="mm" min={0} max={20} step={0.25} value={photo.centerShortestMm ?? CENTER_DEFAULTS.shortestMm} onChange={(centerShortestMm) => actions.set({ centerShortestMm })} />
+              </div>
+            ) : photo.style === "outlines" ? (
+              <div className={styles.fillRow}>
+                <NumberField label="Lines" min={1} max={40} step={1} value={photo.contours ?? OUTLINE_DEFAULTS.contours} onChange={(contours) => actions.set({ contours })} />
+                <NumberField label="Smoothing" unit="mm" min={0} max={20} step={0.25} value={photo.smoothMm ?? OUTLINE_DEFAULTS.smoothMm} onChange={(smoothMm) => actions.set({ smoothMm })} />
+              </div>
+            ) : photo.style === "squiggle" ? (
+              <>
+                <div className={styles.fillRow}>
+                  <NumberField label="Angle" unit="°" min={-180} max={180} step={5} value={photo.angle} onChange={(angle) => actions.set({ angle })} />
+                  <NumberField label="Row spacing" unit="mm" min={0.2} max={20} step={0.25} value={photo.rowMm ?? WAVE_DEFAULTS.rowMm} onChange={(rowMm) => actions.set({ rowMm })} />
+                </div>
+                <div className={styles.fillRow}>
+                  <NumberField label="Wave height" unit="%" min={0} max={400} step={10} value={Math.round((photo.squiggleHeight ?? SQUIGGLE_DEFAULTS.height) * 100)} onChange={(v) => actions.set({ squiggleHeight: v / 100 })} />
+                  <NumberField label="Wave length" unit="mm" min={0.2} max={20} step={0.1} value={photo.waveMm ?? WAVE_DEFAULTS.waveMm} onChange={(waveMm) => actions.set({ waveMm })} />
+                </div>
+                <Checkbox checked={Boolean(photo.squiggleJoin)} label="Join rows into one line" onChange={(e) => actions.set({ squiggleJoin: e.target.checked || undefined })} />
+              </>
+            ) : photo.style === "waves" ? (
+              <div className={styles.fillRow}>
+                <NumberField label="Angle" unit="°" min={-180} max={180} step={5} value={photo.angle} onChange={(angle) => actions.set({ angle })} />
+                <NumberField label="Row spacing" unit="mm" min={0.2} max={20} step={0.25} value={photo.rowMm ?? WAVE_DEFAULTS.rowMm} onChange={(rowMm) => actions.set({ rowMm })} />
+                <NumberField label="Wave length" unit="mm" min={0.2} max={20} step={0.1} value={photo.waveMm ?? WAVE_DEFAULTS.waveMm} onChange={(waveMm) => actions.set({ waveMm })} />
+              </div>
+            ) : (
+              <div className={`${styles.fillRow} ${styles.oneRow}`}>
+                <NumberField label="Angle" unit="°" min={-180} max={180} step={5} value={photo.angle} onChange={(angle) => actions.set({ angle })} />
+                <NumberField label="Spacing mm" min={0.1} max={5} step={0.05} value={photo.spacingMm} onChange={(spacingMm) => actions.set({ spacingMm })} />
+                <NumberField label="Passes" min={1} max={MOST_PASSES} step={1} value={photo.levels} onChange={(levels) => actions.set({ levels })} />
+              </div>
+            )}
+            <p className={styles.empty}>
+              {marks
+                ? photo.style === "silhouette"
+                  ? `${marks.strokes.toLocaleString()} ${marks.strokes === 1 ? "loop" : "loops"}: the shape's outline${marks.strokes > 1 ? " and the holes in it" : ""}, where the picture meets white paper. Paper lighter than sets what counts as paper; Smallest drops specks and flecks.`
+                  : photo.style === "centerlines"
+                  ? `${marks.strokes.toLocaleString()} ${marks.strokes === 1 ? "line" : "lines"}${marks.circles ? `, ${marks.circles} of them ${marks.circles === 1 ? "a circle" : "circles"}` : ""}, each drawn once down the middle of a stroke in the picture${marks.widthMm ? ` (they're about ${marks.widthMm.toFixed(1)} mm wide there)` : ""}. Darker than sets what counts as a line; Shortest drops specks and whiskers.`
+                  : photo.style === "outlines"
+                  ? `${marks.strokes.toLocaleString()} contours, along the photo's edges and shapes. More lines follow finer changes of tone; more smoothing, only the big ones.`
+                  : photo.style === "squiggle"
+                  ? `${marks.strokes.toLocaleString()} ${marks.strokes === 1 ? "line" : "lines"}. Each row swings higher and waves tighter where the photo is darker, and runs on flat through white. Wave height 100% and neighbouring rows just meet.`
+                  : photo.style === "waves"
+                  ? `${marks.strokes.toLocaleString()} strokes. Each row waves harder and tighter where the photo is darker; white is left as paper.`
+                  : `${marks.strokes.toLocaleString()} strokes. The spacing starts at the tool’s solid-fill spacing; each pass adds lines where the photo is darker.`
+                : "Reading the photo…"}
+            </p>
+          </Section>
+        </div>
+      </Card>
       {splits && (
         <Card variant="flat" className={styles.controls}>
           <div className={`${styles.cardBody} ${controls.cardSections}`}>
@@ -287,70 +352,6 @@ export function PhotoCard({ shape, title, shapes, layers, busy, all, onAll, scal
           </div>
         </Card>
       )}
-      <Card variant="flat" className={styles.controls}>
-        <div className={`${styles.cardBody} ${controls.cardSections}`}>
-          {/* The effect's own numbers, under its name: the toolbar on the left chooses which. */}
-          <Section title={effect.label}>
-            {photo.style === "silhouette" ? (
-              <div className={styles.fillRow}>
-                <NumberField label="Paper lighter than" unit="%" min={1} max={99} step={1} value={Math.round((photo.silhouetteFrom ?? SILHOUETTE_DEFAULTS.from) * 100)} onChange={(v) => actions.set({ silhouetteFrom: v / 100 })} />
-                <NumberField label="Smoothing" unit="mm" min={0} max={5} step={0.05} value={photo.silhouetteSmoothMm ?? SILHOUETTE_DEFAULTS.smoothMm} onChange={(silhouetteSmoothMm) => actions.set({ silhouetteSmoothMm })} />
-                <NumberField label="Smallest" unit="mm" min={0} max={50} step={0.5} value={photo.silhouetteSmallestMm ?? SILHOUETTE_DEFAULTS.smallestMm} onChange={(silhouetteSmallestMm) => actions.set({ silhouetteSmallestMm })} />
-              </div>
-            ) : photo.style === "centerlines" ? (
-              <div className={styles.fillRow}>
-                <NumberField label="Darker than" unit="%" min={1} max={99} step={5} value={Math.round((photo.centerFrom ?? CENTER_DEFAULTS.from) * 100)} onChange={(v) => actions.set({ centerFrom: v / 100 })} />
-                <NumberField label="Smoothing" unit="mm" min={0} max={5} step={0.05} value={photo.centerSmoothMm ?? CENTER_DEFAULTS.smoothMm} onChange={(centerSmoothMm) => actions.set({ centerSmoothMm })} />
-                <NumberField label="Shortest" unit="mm" min={0} max={20} step={0.25} value={photo.centerShortestMm ?? CENTER_DEFAULTS.shortestMm} onChange={(centerShortestMm) => actions.set({ centerShortestMm })} />
-              </div>
-            ) : photo.style === "outlines" ? (
-              <div className={styles.fillRow}>
-                <NumberField label="Lines" min={1} max={40} step={1} value={photo.contours ?? OUTLINE_DEFAULTS.contours} onChange={(contours) => actions.set({ contours })} />
-                <NumberField label="Smoothing" unit="mm" min={0} max={20} step={0.25} value={photo.smoothMm ?? OUTLINE_DEFAULTS.smoothMm} onChange={(smoothMm) => actions.set({ smoothMm })} />
-              </div>
-            ) : photo.style === "squiggle" ? (
-              <>
-                <div className={styles.fillRow}>
-                  <NumberField label="Angle" unit="°" min={-180} max={180} step={5} value={photo.angle} onChange={(angle) => actions.set({ angle })} />
-                  <NumberField label="Row spacing" unit="mm" min={0.2} max={20} step={0.25} value={photo.rowMm ?? WAVE_DEFAULTS.rowMm} onChange={(rowMm) => actions.set({ rowMm })} />
-                </div>
-                <div className={styles.fillRow}>
-                  <NumberField label="Wave height" unit="%" min={0} max={400} step={10} value={Math.round((photo.squiggleHeight ?? SQUIGGLE_DEFAULTS.height) * 100)} onChange={(v) => actions.set({ squiggleHeight: v / 100 })} />
-                  <NumberField label="Wave length" unit="mm" min={0.2} max={20} step={0.1} value={photo.waveMm ?? WAVE_DEFAULTS.waveMm} onChange={(waveMm) => actions.set({ waveMm })} />
-                </div>
-                <Checkbox checked={Boolean(photo.squiggleJoin)} label="Join rows into one line" onChange={(e) => actions.set({ squiggleJoin: e.target.checked || undefined })} />
-              </>
-            ) : photo.style === "waves" ? (
-              <div className={styles.fillRow}>
-                <NumberField label="Angle" unit="°" min={-180} max={180} step={5} value={photo.angle} onChange={(angle) => actions.set({ angle })} />
-                <NumberField label="Row spacing" unit="mm" min={0.2} max={20} step={0.25} value={photo.rowMm ?? WAVE_DEFAULTS.rowMm} onChange={(rowMm) => actions.set({ rowMm })} />
-                <NumberField label="Wave length" unit="mm" min={0.2} max={20} step={0.1} value={photo.waveMm ?? WAVE_DEFAULTS.waveMm} onChange={(waveMm) => actions.set({ waveMm })} />
-              </div>
-            ) : (
-              <div className={styles.fillRow}>
-                <NumberField label="Angle" unit="°" min={-180} max={180} step={5} value={photo.angle} onChange={(angle) => actions.set({ angle })} />
-                <NumberField label="Closest lines" unit="mm" min={0.1} max={5} step={0.05} value={photo.spacingMm} onChange={(spacingMm) => actions.set({ spacingMm })} />
-                <NumberField label="Passes" min={1} max={4} step={1} value={photo.levels} onChange={(levels) => actions.set({ levels })} />
-              </div>
-            )}
-            <p className={styles.empty}>
-              {marks
-                ? photo.style === "silhouette"
-                  ? `${marks.strokes.toLocaleString()} ${marks.strokes === 1 ? "loop" : "loops"}: the shape's outline${marks.strokes > 1 ? " and the holes in it" : ""}, where the picture meets white paper. Paper lighter than sets what counts as paper; Smallest drops specks and flecks.`
-                  : photo.style === "centerlines"
-                  ? `${marks.strokes.toLocaleString()} ${marks.strokes === 1 ? "line" : "lines"}${marks.circles ? `, ${marks.circles} of them ${marks.circles === 1 ? "a circle" : "circles"}` : ""}, each drawn once down the middle of a stroke in the picture${marks.widthMm ? ` (they're about ${marks.widthMm.toFixed(1)} mm wide there)` : ""}. Darker than sets what counts as a line; Shortest drops specks and whiskers.`
-                  : photo.style === "outlines"
-                  ? `${marks.strokes.toLocaleString()} contours, along the photo's edges and shapes. More lines follow finer changes of tone; more smoothing, only the big ones.`
-                  : photo.style === "squiggle"
-                  ? `${marks.strokes.toLocaleString()} ${marks.strokes === 1 ? "line" : "lines"}. Each row swings higher and waves tighter where the photo is darker, and runs on flat through white. Wave height 100% and neighbouring rows just meet.`
-                  : photo.style === "waves"
-                  ? `${marks.strokes.toLocaleString()} strokes. Each row waves harder and tighter where the photo is darker; white is left as paper.`
-                  : `${marks.strokes.toLocaleString()} strokes. The closest lines start at the tool’s solid-fill spacing; each pass adds lines where the photo is darker.`
-                : "Reading the photo…"}
-            </p>
-          </Section>
-        </div>
-      </Card>
     </>
   );
 }

@@ -8,22 +8,22 @@ import { SettingsSection } from "../shared/components/controls/SettingsSection";
 import { Section } from "../shared/components/controls/Section";
 import controls from "../shared/components/controls/controls.module.css";
 import { FileBrowser, type OpenResult } from "../shared/components/FileBrowser";
-import { SetupToolbar } from "../shared/components/PreviewToolbar";
+import { SetupToolbar, type View } from "../shared/components/PreviewToolbar";
 import { AppSwitch } from "../shared/components/AppSwitch";
 import { StatusBanner } from "../shared/components/StatusBanner";
 import { ThemeToggle } from "../shared/components/ThemeToggle";
 import { api } from "../shared/lib/api";
 import { openInStudio } from "../shared/lib/apps";
-import { splitLayerName } from "../shared/lib/ink";
 import { PAPER_SIZES } from "../shared/lib/constants";
 import { load, save as remember } from "../shared/lib/storage";
-import type { Preset } from "../shared/lib/types";
+import type { Info, PlotterModel, Preset } from "../shared/lib/types";
+import type { Zoom } from "../shared/components/BedCanvas";
+import { DEFAULT_SETTINGS } from "../shared/lib/constants";
 import { useHistory } from "../shared/lib/useHistory";
 import { loadFont, type StrokeFont } from "../shared/lib/drawing/font";
 import type { Fill } from "../shared/lib/drawing/hatch";
 import { parseDrawing } from "../shared/lib/drawing/parse";
-import { flattenPath } from "../shared/lib/drawing/path";
-import { photoMarks, placeOnPage, stemWithoutPlate, type Photo, type PhotoMarks } from "../shared/lib/drawing/photo";
+import { photoMarks, placeOnPage, stemWithoutPlate, type Photo } from "../shared/lib/drawing/photo";
 import { boxOf, newLayerId, shapeName, type Layer, type Page, type Shape } from "../shared/lib/drawing/shapes";
 import { buildSvg } from "../shared/lib/drawing/svg";
 import { fitText } from "../shared/lib/drawing/text";
@@ -33,10 +33,10 @@ import { calibrationSheet } from "./lib/calibration";
 import { pairsSheet } from "./lib/penPairs";
 import { readCalibration, readingProblems, sheetLayout } from "./lib/calibrationRead";
 import { photoActions } from "./lib/photoActions";
-import { predictPrint, type Prediction } from "./lib/predict";
 import { CalibrationSection } from "./components/CalibrationSection";
 import { ConvertStage, type ConvertView } from "./components/ConvertStage";
-import { EFFECTS, EffectToolbar, PanelToolbar, effectOf, type Effect } from "./components/EffectToolbar";
+import { EffectToolbar, PanelToolbar, effectOf, type Effect } from "./components/EffectToolbar";
+import { dropWork, keepWork, loadWork, type Work } from "./lib/workInProgress";
 import { PhotoCard } from "./components/PhotoCard";
 import { PhotoHeader } from "./components/PhotoHeader";
 import styles from "./App.module.css";
@@ -84,22 +84,6 @@ function sheetPicture(svg: string, penWidthMm: number): string {
   doc.getElementById("studio-sources")?.remove();
   for (const el of doc.querySelectorAll("[stroke-width]")) el.setAttribute("stroke-width", String(penWidthMm / 25.4));
   return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(new XMLSerializer().serializeToString(doc))}`;
-}
-
-/**
- * How far the pen travels drawing a photo's lines, in inches. Worked out once for each set of lines:
- * the same lines come back as the same object from photoMarks' own cache.
- */
-const lengths = new WeakMap<PhotoMarks, number>();
-function drawnLength(marks: PhotoMarks) {
-  const known = lengths.get(marks);
-  if (known !== undefined) return known;
-  let length = 0;
-  for (const d of marks.passes) {
-    for (const run of flattenPath(d)) for (let i = 1; i < run.length; i++) length += Math.hypot(run[i].x - run[i - 1].x, run[i].y - run[i - 1].y);
-  }
-  lengths.set(marks, length);
-  return length;
 }
 
 /** What waits on the question about unsaved work: a new drawing, photos opened, or a file opened. */
@@ -205,7 +189,10 @@ export default function App() {
     }
   }, [shapes, fonts]);
 
-  const file = useDrawingFile({ shapes, fills, layers, page, sizeId, toolName, fonts, setBusy, setMessage, lastFileKey: LAST_FILE_KEY });
+  // Whether the unsaved work on screen is kept in the browser as it stands, so a reload loses nothing
+  // and needn't be asked about (see workInProgress.ts).
+  const [kept, setKept] = useState(false);
+  const file = useDrawingFile({ shapes, fills, layers, page, sizeId, toolName, fonts, setBusy, setMessage, lastFileKey: LAST_FILE_KEY, holdOnLeave: !kept });
 
   // Photos sized to the page follow it: a new paper size, or turning it, sizes them again.
   useEffect(() => {
@@ -254,43 +241,20 @@ export default function App() {
   );
   usePhotoRead(chosen?.photo?.src);
   const convertMarks = convertBox ? convertParts.map((part) => photoMarks(part.photo, convertBox.x1 - convertBox.x0, convertBox.y1 - convertBox.y0)) : [];
-  const convertStrokes = convertMarks.reduce((n, m) => n + (m?.strokes ?? 0), 0);
   const convertRead = convertMarks.length > 0 && convertMarks.every(Boolean);
-  const convertLength = convertMarks.reduce((sum, m) => sum + (m ? drawnLength(m) : 0), 0);
   const [convertView, setConvertView] = useState<ConvertView>("picture");
-
-  // The predicted print: each layer's lines in the colour its pen really makes - as measured off a
-  // calibration sheet when the tool has been, its palette colour standing in when it hasn't - on the
-  // paper chosen, and how close that comes to the photo. Worked out a moment after the last change.
-  const measured = Boolean(tool?.calibration);
-  const printLines = convertParts.map((part) => {
-    const pen = splitLayerName(part.name, tool?.palette ?? []).pen;
-    const pens = tool?.calibration?.pens ?? {};
-    return (pen && pens[pen]?.line) ?? (pen && tool?.palette?.find((p) => p.name === pen)?.color) ?? part.color;
-  });
-  const printKey = printLines.join(",");
-  const [prediction, setPrediction] = useState<Prediction | null>(null);
-  const [predicting, setPredicting] = useState(false);
+  // The bed the photo is shown on, and how close the view sits on it - Studio's and Plot's zooms and loupe.
+  const [model, setModel] = useState<PlotterModel | undefined>();
   useEffect(() => {
-    if (!chosen?.photo || !convertBox || !convertRead) {
-      setPrediction(null);
-      return;
-    }
-    setPredicting(true);
-    const timer = window.setTimeout(() => {
-      setPrediction(
-        predictPrint(
-          convertParts.map((part, k) => ({ photo: part.photo, line: printLines[k] })),
-          chosen.photo!,
-          convertBox.x1 - convertBox.x0,
-          convertBox.y1 - convertBox.y0,
-          { penWidthMm, paper: paperColor, measuredOn: tool?.calibration?.paper ?? "#ffffff", opaque: tool?.settings.ink_opaque === true },
-        ),
-      );
-      setPredicting(false);
-    }, 250);
-    return () => window.clearTimeout(timer);
-  }, [convertParts, convertRead, printKey, penWidthMm, paperColor, tool?.calibration?.paper, tool?.settings.ink_opaque]); // eslint-disable-line react-hooks/exhaustive-deps
+    api<Info>("/api/info")
+      .then((info) => setModel(info.models.find((m) => m.id === DEFAULT_SETTINGS.model) ?? info.models[0]))
+      .catch(() => {});
+  }, []);
+  // How the lines are drawn - Outline or Preview, as in Studio and Plot - and how close the view sits.
+  const [view, setView] = useState<View>("outline");
+  const [zoom, setZoom] = useState<Zoom>("paper");
+  const [loupe, setLoupe] = useState(false);
+
   // Whether a photo's settings go to the layer being set, or to all its layers at once.
   const [photoAll, setPhotoAll] = useState(false);
 
@@ -362,20 +326,64 @@ export default function App() {
     );
   }, [clearHistory, file]);
 
+  // Unsaved work kept from before a reload, put back as it was: the drawing, its file, the photo picked.
+  const resumeWork = useCallback((work: Work) => {
+    setPage(work.page);
+    setShapes(work.shapes);
+    setFills(work.fills);
+    setLayers(work.layers);
+    setActiveLayer(work.activeLayer);
+    setSelected(work.selected);
+    clearHistory();
+    file.resumed(work.file);
+  }, [clearHistory, file]);
+
   // On starting: a drawing handed over in the address - Studio's "Save and open in Photo" - or else
-  // the one worked on here last. The address is put back as it was, so reloading doesn't open it again.
+  // unsaved work kept from before a reload, or else the one worked on here last. The address is put
+  // back as it was, so reloading doesn't open it again. Until this has run, nothing is kept or dropped.
   const startedUp = useRef(false);
+  const workReady = useRef(false);
   useEffect(() => {
     if (startedUp.current) return;
     startedUp.current = true;
     const handed = new URLSearchParams(window.location.search).get("open");
     if (handed) window.history.replaceState(null, "", window.location.pathname);
-    const last = handed ?? load<string>(LAST_FILE_KEY);
-    if (!last) return;
-    api<OpenResult>(`/api/studio/read?path=${encodeURIComponent(last)}`)
-      .then(openDrawing)
-      .catch((err) => setMessage({ text: handed ? (err as Error).message : "Couldn’t reopen the last drawing. Use Open… to pick it up.", ok: false }));
-  }, [openDrawing]);
+    const openLast = () => {
+      workReady.current = true;
+      const last = handed ?? load<string>(LAST_FILE_KEY);
+      if (!last) return;
+      api<OpenResult>(`/api/studio/read?path=${encodeURIComponent(last)}`)
+        .then(openDrawing)
+        .catch((err) => setMessage({ text: handed ? (err as Error).message : "Couldn’t reopen the last drawing. Use Open… to pick it up.", ok: false }));
+    };
+    if (handed) return openLast();
+    loadWork()
+      .then((work) => {
+        if (!work?.shapes.length) return openLast();
+        resumeWork(work);
+        workReady.current = true;
+      })
+      .catch(openLast);
+  }, [openDrawing, resumeWork]);
+
+  // Keep the drawing in the browser while it has unsaved changes, a moment after each change; forget
+  // it once it's saved or started afresh. A write overtaken by a later change doesn't count as kept.
+  const keeping = useRef(0);
+  useEffect(() => {
+    if (!workReady.current) return;
+    const mine = ++keeping.current;
+    if (!file.dirty || !shapes.length) {
+      dropWork().catch(() => {});
+      return;
+    }
+    setKept(false);
+    const timer = window.setTimeout(() => {
+      keepWork({ shapes, fills, layers, page, file: file.fileState, activeLayer, selected })
+        .then(() => mine === keeping.current && setKept(true))
+        .catch(() => {});
+    }, 400);
+    return () => window.clearTimeout(timer);
+  }, [shapes, fills, layers, page, file.dirty, file.fileState.name, file.fileState.saved, activeLayer, selected]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Replacing a drawing with unsaved changes asks first, as Studio does.
   const [confirmNext, setConfirmNext] = useState<Next | null>(null);
@@ -657,7 +665,6 @@ export default function App() {
     />
   ) : null;
 
-  const convertLayer = chosen ? layers.find((l) => l.id === chosen.layerId) : undefined;
   const photoInput = useRef<HTMLInputElement>(null);
   const mainRail = (
     <>
@@ -680,22 +687,6 @@ export default function App() {
               onSendToPlot={file.sendToPlot}
               onSave={() => file.save()}
             />
-            {chosen && (
-              <Section title={`Image conversion: ${EFFECTS.find((e) => e.key === effectOf(chosen.photo!))!.label}`}>
-                <p className={controls.hint}>Working out how best to draw this picture. Scroll over it to zoom, drag to move, double-click to see all of it.</p>
-                <p className={controls.hint}>
-                  {convertRead
-                    ? `${convertStrokes.toLocaleString()} ${convertStrokes === 1 ? "stroke" : "strokes"}, ${convertLength * 0.0254 >= 1 ? `${(convertLength * 0.0254).toFixed(1)} m` : `${Math.round(convertLength * 25.4)} mm`} of drawing${convertParts.length > 1 ? ` in ${convertParts.length} pens` : convertLayer ? `, in ${convertLayer.name}` : ""}.`
-                    : "Reading the photo…"}
-                </p>
-                <p className={controls.hint}>
-                  {predicting || !prediction
-                    ? "Working out the predicted print…"
-                    : `Predicted print: ${prediction.score.toFixed(1)} ΔE from the photo, over 4 mm patches - lower is closer.`}
-                  {tool && !measured && ` ${tool.name} isn’t measured yet, so its palette colours stand in for what its pens really make.`}
-                </p>
-              </Section>
-            )}
             <SettingsSection collapsibleKey="photo-settings">
               {paperSection}
               {toolSection}
@@ -728,7 +719,8 @@ export default function App() {
     else setPhotoOf({ style });
   };
 
-  const setupToolbar = <SetupToolbar open={setupOpen} onToggle={() => setSetupOpen((open) => !open)} />;
+  // The way to Setup, at the bottom of the toolbars down the left.
+  const setupToolbar = <SetupToolbar open={setupOpen} onToggle={() => setSetupOpen((open) => !open)} orientation="vertical" />;
 
   return (
     <div className={styles.app}>
@@ -760,23 +752,37 @@ export default function App() {
           <AppSwitch current="photo" orientation="vertical" />
           <PanelToolbar fileCard={fileCard} onFileCard={() => setFileCard((on) => !on)} infoCard={infoCard} onInfoCard={() => setInfoCard((on) => !on)} />
           <EffectToolbar effect={!setupOpen && chosen?.photo ? effectOf(chosen.photo) : undefined} onEffect={setEffect} disabled={setupOpen || !chosen?.photo || busy} />
+          {setupToolbar}
         </div>
         <section className={styles.stage} aria-label={setupOpen ? "Calibration sheet" : "Image conversion"}>
           {!setupOpen && chosen?.photo && convertBox ? (
             <ConvertStage
               photo={chosen.photo}
-              w={convertBox.x1 - convertBox.x0}
-              h={convertBox.y1 - convertBox.y0}
+              box={convertBox}
+              page={page}
+              paperColor={paperColor}
+              model={model}
+              zoom={zoom}
+              onZoom={setZoom}
+              loupe={loupe}
+              onLoupe={setLoupe}
               parts={convertParts}
-              view={convertView}
-              onView={setConvertView}
+              ink={{
+                penWidthMm,
+                opacity: tool?.settings.ink_opacity ?? 1,
+                build: tool?.settings.ink_build ?? 1,
+                builds: tool?.settings.ink_builds !== false,
+                opaque: tool?.settings.ink_opaque === true,
+              }}
+              view={view}
+              onView={setView}
+              show={convertView}
+              onShow={setConvertView}
               history={{ canUndo, canRedo, onUndo: undo, onRedo: redo }}
-              toolbar={setupToolbar}
               disabled={busy}
             />
           ) : (
             <>
-              <div className={styles.stageBar}>{setupToolbar}</div>
               <div
                 className={styles.paper}
                 style={{ aspectRatio: setupOpen && sheet ? `${sheet.page.w} / ${sheet.page.h}` : `${page.w} / ${page.h}`, background: paperColor }}

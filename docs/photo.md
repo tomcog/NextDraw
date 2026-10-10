@@ -44,16 +44,22 @@ get complicated, and it never needs Studio's tools for drawing and transforming 
   - The shared File card. Open a photo, or several separations, starts a new drawing named after it.
     Open a drawing opens one with a photo in it (anything else is Studio's to edit). Photo also has
     New, Save, Send to Plot and Edit in Studio, which saves and then opens the drawing in Studio.
-  - On the stage, Studio's conversion view: Picture (the image alone, what a new photo opens in),
-    Lines (the drawing alone), Lines over picture, and Side by side; synced zoom, undo and redo.
-  - Down the left (2026-10-10), three vertical toolbars: the app switch; File and Image, which show
+  - The stage is the shared NextDraw canvas (`shared/components/NextDrawCanvas.tsx`), the one Studio
+    and Plot show a drawing on: the bed, the paper, the rulers and the one bar - undo and redo,
+    Outline and Preview (the lines drawn with Studio's ink, `Ink.tsx`), the zooms and the loupe.
+    After the shared views, Photo's own: Picture (the image alone, what a new photo opens in), Lines,
+    Lines over picture, and Side by side, where a second canvas follows the first's zoom.
+  - Down the left (2026-10-10), vertical toolbars: the app switch; File and Image, which show
     and hide the File card and the photo's card (with no photo, an Image card with Open a photo);
     and one button per effect - Hatching, Tone lines, Squiggle, Outlines, Centerlines, Silhouette -
-    which sets the whole photo's effect. The rail shows the File card (the stroke and length count
-    under "Image conversion: <effect>", and Settings), the photo's card (turn, brightness and
-    contrast, fit and fill), a Layers card (value, colour and CMYK; hidden for Silhouette, which
-    brings a split photo back to one layer) and the effect's own card. With no cards out, the stage
-    takes the rail's width. The File card comes out while it asks about unsaved work.
+    which sets the whole photo's effect; and Setup at the bottom. The rail shows the File card (with
+    Settings), the photo's card (turn, brightness and contrast, fit and fill), the effect's own card,
+    and a Layers card under it (value, colour and CMYK; hidden for Silhouette, which brings a split
+    photo back to one layer). With no cards out, the stage takes the rail's width. The File card
+    comes out while it asks about unsaved work.
+  - Unsaved work is kept in the browser (IndexedDB, `photo/lib/workInProgress.ts`) and put back after
+    a reload; once saved it's dropped, and the last file reopens instead. Every Photo tab in a
+    browser shares the one copy.
   - Squiggle (2026-10-10) is SquiggleDraw's effect (Gregg Wygonik's Processing sketch, public
     domain) redone as a style: rows that swing higher and wave tighter where it's darker, smooth
     curves through each crest and crossing, unbroken through white, optionally joined into one line.
