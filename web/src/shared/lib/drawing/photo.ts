@@ -317,9 +317,10 @@ function plateSetError(pens: number[][], steps: number[], plates: Plate[]): numb
     const n = parseInt(PLATE_AIMS[p].color.slice(1), 16);
     return [(n >> 16) & 255, (n >> 8) & 255, n & 255] as [number, number, number];
   })];
+  const reach = withinReach(pens, steps);
   let sum = 0;
   for (const rgb of colours) {
-    const want = labOfLinear(rgb.map(linear));
+    const want = reach(labOfLinear(rgb.map(linear)));
     // As the hatching will draw them: each pen's amount rounded to its nearest number of passes.
     const covers = chooseCovers(want, pens, steps, BLACK_SHARE, null).map((c) => {
       const tone = coverTone(c, steps);
@@ -1265,6 +1266,7 @@ export function solveSeparation({ rgb, w, h, plates, brightness, contrast, black
   const adjust = adjuster(brightness, contrast);
   const pens = plates.map(hexLinear);
   const steps = coverSteps(penMm, spacingMm, levels);
+  const reach = withinReach(pens, steps);
   const maps = plates.map(() => new Float32Array(w * h));
   // Each colour solved once - shades an eighth of a step apart in each channel share an answer - but
   // reached from wherever its first point was, so the answer it keeps is a neighbour's.
@@ -1279,7 +1281,7 @@ export function solveSeparation({ rgb, w, h, plates, brightness, contrast, black
       const at = y * w + x;
       const i = at * 3;
       const key = ((rgb[i] >> 3) << 10) | ((rgb[i + 1] >> 3) << 5) | (rgb[i + 2] >> 3);
-      const want = labOfLinear([linear(adjust(rgb[i])), linear(adjust(rgb[i + 1])), linear(adjust(rgb[i + 2]))]);
+      const want = reach(labOfLinear([linear(adjust(rgb[i])), linear(adjust(rgb[i + 1])), linear(adjust(rgb[i + 2]))]));
       let covers = solved.get(key);
       if (!covers) {
         const from: number[] | null = before && Math.hypot(want[0] - before.want[0], want[1] - before.want[1], want[2] - before.want[2]) < EDGE_DE ? before.covers : null;
@@ -1292,6 +1294,21 @@ export function solveSeparation({ rgb, w, h, plates, brightness, contrast, black
     }
   }
   return maps;
+}
+
+/**
+ * The photo's colours brought within what these pens can draw - black-point compensation, as print's
+ * colour management does it. Hatching covers only part of the paper, so the darkest it can draw (every
+ * pen at its most) is often a mid grey; matched exactly, everything darker than that goes to full ink
+ * and the photo's shadows, mid-tones and much of its light are drawn alike - flat. So the photo's
+ * black becomes the pens' darkest, white stays the paper, and every tone and colour between is
+ * spread in proportion. Returns the mapping, Lab to Lab.
+ */
+function withinReach(pens: number[][], steps: number[]): (lab: number[]) => number[] {
+  const most = steps[steps.length - 1];
+  const darkest = labOfLinear(mixOf([1, 1, 1], pens, pens.map(() => most), false))[0];
+  const k = Math.max(0, Math.min(1, (100 - darkest) / 100));
+  return ([L, a, b]) => [100 - (100 - L) * k, a * k, b * k];
 }
 
 /** How far apart two neighbouring colours are, in ΔE, before they count as an edge and are solved afresh. */
@@ -1372,7 +1389,8 @@ function chooseCovers(want: number[], pens: number[][], steps: number[], blackSh
 /** How many passes of each plate's pen, in plate order, a colour is drawn with: one point of a separation, for checking it. */
 export function platePasses(rgb: [number, number, number], plates: string[], { levels = 6, penMm = 0.4, spacingMm = 1.2, blackShare = BLACK_SHARE } = {}): number[] {
   const steps = coverSteps(penMm, spacingMm, levels);
-  const covers = chooseCovers(labOfLinear(rgb.map(linear)), plates.map(hexLinear), steps, blackShare, null);
+  const pens = plates.map(hexLinear);
+  const covers = chooseCovers(withinReach(pens, steps)(labOfLinear(rgb.map(linear))), pens, steps, blackShare, null);
   return covers.map((c) => {
     const tone = coverTone(c, steps);
     return tone ? Math.floor(tone * steps.length) : 0;

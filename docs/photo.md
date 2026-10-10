@@ -75,7 +75,10 @@ get complicated, and it never needs Studio's tools for drawing and transforming 
     (mixOf), nearest the photo in Lab with a small cost on ink and Black % weighting black against
     the colors; then the nearest number of passes. Each point starts from its neighbor's mix (afresh
     across an edge), so neighboring colors stay on the same mix rather than flipping between equally
-    near ones - which left 8-plate skin blotchy. Separations are solved in a worker
+    near ones - which left 8-plate skin blotchy. Before matching, the photo's range is scaled into
+    what the pens can reach (black-point compensation): its black becomes the darkest every pen at
+    its most coverage makes, white stays the paper - matched exactly, everything darker than that
+    went to full ink and drew flat. Separations are solved in a worker
     (separationWorker.ts); saving solves at once.
     The automatic plate colors look within 20° of each plate's hue (and nearer it than any other
     plate's); each plate also has a color menu, which separates again. Choosing another pen re-picks
