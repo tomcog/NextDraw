@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { photoMarks, platePasses, presetAngle, readTones, solveSeparation, squiggleAmp, type Photo } from "../src/shared/lib/drawing/photo";
+import { photoMarks, platePasses, presetAngle, readTones, solveSeparation, type Photo } from "../src/shared/lib/drawing/photo";
 
 // A made-up photo, read without a browser: white on the left darkening to black on the right.
 const W = 200;
@@ -23,13 +23,13 @@ const photo = (more: Partial<Photo>): Photo => ({
   style: "squiggle", rowMm: 5, waveMm: 2, ...more,
 });
 
-test("squiggle: one smooth line per row, unbroken through white", async () => {
+test("squiggle: SquiggleDraw's rows - its number of lines to the photo's height - each smooth and unbroken through white", async () => {
   await gradient("data:gradient");
   const w = 4;
   const h = 2;
-  const marks = photoMarks(photo({}), w, h)!;
-  const rows = Math.round(h / (5 / 25.4));
-  assert.equal(marks.strokes, rows);
+  // 100 pixels scaled up 3 times, 20 lines: a row every 15 of the sketch's pixels, 20 rows.
+  const marks = photoMarks(photo({ squiggleDraw: { lines: 20 } }), w, h)!;
+  assert.equal(marks.strokes, 20);
   const d = marks.passes[0];
   assert.ok(!d.includes("L"), "curves only");
   // Every row runs the full width: from the left edge to the right.
@@ -39,23 +39,52 @@ test("squiggle: one smooth line per row, unbroken through white", async () => {
   }
 });
 
-test("squiggle: joined rows are one line, and darker waves are taller", async () => {
+test("squiggle: connected ends make one line, more strength taller waves, and past the white point is flat", async () => {
   await gradient("data:gradient");
-  const joined = photoMarks(photo({ squiggleJoin: true }), 4, 2)!;
+  const joined = photoMarks(photo({ squiggleJoin: true, squiggleDraw: { lines: 20 } }), 4, 2)!;
   assert.equal(joined.strokes, 1);
-  const tall = photoMarks(photo({ squiggleAmpMm: 3 }), 4, 2)!;
-  const flat = photoMarks(photo({ squiggleAmpMm: 0 }), 4, 2)!;
   const ys = (d: string) => d.split(/[MC ]/).filter(Boolean).map(Number).filter((_, i) => i % 2 === 1);
   const spread = (d: string) => Math.max(...ys(d)) - Math.min(...ys(d));
-  assert.ok(spread(tall.passes[0]) > spread(flat.passes[0]));
+  const one = (more: object) => photoMarks(photo({ squiggleDraw: { lines: 10, ...more } }), 4, 2)!.passes[0].split("M")[3];
+  assert.ok(spread(one({ strength: 20 })) > spread(one({ strength: 5 })));
+  assert.ok(spread(one({ strength: 0 })) < 1e-6, "no strength, no swing");
+  // The photo darkens left to right; a white point of 0 counts it all as white.
+  assert.ok(spread(one({ white: 0 })) < 1e-6, "all past the white point: flat");
+});
+
+test("squiggle, the Inkscape way: a row per grid row, `freq` waves a cell, at most a quarter of 256 over the divisor in mm", async () => {
+  await gradient("data:gradient");
+  const ink = (more: object, extra: Partial<Photo> = {}) => photoMarks(photo({ squiggleVersion: "inkscape", squiggleInkscape: { rows: 10, cols: 12, ...more }, ...extra }), 4, 2)!;
+  const plain = ink({});
+  assert.equal(plain.strokes, 10);
+  // Each row: 11 cells of 2 waves, each wave two curves.
+  for (const run of plain.passes[0].split("M").filter(Boolean)) assert.equal(run.split("C").length - 1, 11 * 2 * 2);
+  assert.equal(ink({ path: "join" }).strokes, 1);
+  assert.equal(ink({ path: "bidi" }).strokes, 10);
+  // Amplitude 1 at black: 256 / 128 = 2 mm, the extension's quadratic control half of it either way, so
+  // the curve reaches a quarter, 0.5 mm. Written as cubics, the controls are two-thirds of the way: 2/3 mm.
+  const ys = (d: string) => d.split(/[MC ]/).filter(Boolean).map(Number).filter((_, i) => i % 2 === 1);
+  const row = (d: string) => d.split("M")[5];
+  const spread = (d: string) => Math.max(...ys(d)) - Math.min(...ys(d));
+  const one = spread(row(ink({ amp: 1 }).passes[0])) * 25.4;
+  assert.ok(one > 0.5 && one <= 4 / 3 + 0.01, `amplitude 1: controls spread ${one.toFixed(3)} mm`);
+  assert.ok(spread(row(ink({ amp: 3 }).passes[0])) > spread(row(ink({ amp: 1 }).passes[0])));
+  // Lifting leaves the white left edge bare - cell by cell, so cells finer than the white strip.
+  const firstX = (d: string) => Math.min(...d.split("M").filter(Boolean).map((r) => Number(r.split(/[C ]/).filter(Boolean)[0])));
+  assert.ok(firstX(ink({ cols: 100 }).passes[0]) < 0.01);
+  assert.ok(firstX(ink({ cols: 100 }, { squiggleLift: true }).passes[0]) > 0.01);
 });
 
 test("squiggle: no angle or row spacing throws, even where a run is a single point", async () => {
   await gradient("data:gradient");
-  for (let angle = -180; angle <= 180; angle += 5) for (const rowMm of [0.5, 2, 7]) {
+  for (let angle = -180; angle <= 180; angle += 5) for (const lines of [10, 60, 200]) {
     for (const band of [undefined, [0, 0.5], [0.5, 1]] as const) {
-      const m = photoMarks(photo({ angle, rowMm, squiggleJoin: angle % 10 === 0, ...(band ? { band: [band[0], band[1]] as [number, number] } : {}) }), 3, 2)!;
+      const m = photoMarks(photo({ angle, squiggleDraw: { lines }, squiggleJoin: angle % 10 === 0, ...(band ? { band: [band[0], band[1]] as [number, number] } : {}) }), 3, 2)!;
       assert.ok(!/NaN|Infinity/.test(m.passes[0]));
+      if (angle % 15 === 0) {
+        const k = photoMarks(photo({ angle, squiggleVersion: "inkscape", squiggleInkscape: { rows: Math.round(lines / 4), path: angle % 30 === 0 ? "join" : "uni" }, ...(band ? { band: [band[0], band[1]] as [number, number] } : {}) }), 3, 2)!;
+        assert.ok(!/NaN|Infinity/.test(k.passes[0]));
+      }
     }
   }
 });
@@ -91,32 +120,11 @@ test("hatching: smoothing turns a speckled patch into fewer, longer strokes", as
   assert.ok(smooth < raw / 2, `${raw} strokes unsmoothed, ${smooth} smoothed`);
 });
 
-test("squiggle: the amplitude is in mm, whatever the rows' spacing; old drawings keep theirs", async () => {
-  await gradient("data:gradient");
-  // How far the curve's points stray from their row's middle, in mm: a row starts on its middle.
-  const swing = (more: Partial<Photo>) => {
-    const d = photoMarks(photo({ angle: 0, waveMm: 2, ...more }), 4, 2)!.passes[0];
-    let most = 0;
-    for (const run of d.split("M").filter(Boolean)) {
-      const nums = run.split(/[C ]/).filter(Boolean).map(Number);
-      const middle = nums[1];
-      for (let i = 1; i < nums.length; i += 2) if ((i - 1) % 6 === 4 || i === 1) most = Math.max(most, Math.abs(nums[i] - middle));
-    }
-    return most * 25.4;
-  };
-  const narrow = swing({ rowMm: 2, squiggleAmpMm: 1 });
-  const wide = swing({ rowMm: 6, squiggleAmpMm: 1 });
-  assert.ok(Math.abs(narrow - wide) < 0.1, `${narrow.toFixed(2)} mm at 2 mm rows, ${wide.toFixed(2)} mm at 6 mm rows`);
-  assert.ok(narrow > 0.8 && narrow <= 1.01, `swings ${narrow.toFixed(2)} mm for 1 mm`);
-  // Saved before, as 150% of half a 2 mm row: 1.5 mm.
-  assert.equal(squiggleAmp({ squiggleHeight: 1.5, rowMm: 2 }), 1.5);
-});
-
 test("squiggle: lifting leaves white as paper, and still draws the darks", async () => {
   await gradient("data:gradient");
   const xs = (d: string) => d.split("M").filter(Boolean).map((run) => Number(run.split(/[C ]/).filter(Boolean)[0]));
-  const flat = photoMarks(photo({ angle: 0 }), 4, 2)!;
-  const lifted = photoMarks(photo({ angle: 0, squiggleLift: true }), 4, 2)!;
+  const flat = photoMarks(photo({ angle: 0, squiggleDraw: { lines: 20 } }), 4, 2)!;
+  const lifted = photoMarks(photo({ angle: 0, squiggleLift: true, squiggleDraw: { lines: 20 } }), 4, 2)!;
   // The left edge is white: unbroken rows start there; lifted ones start once there's tone.
   assert.ok(Math.min(...xs(flat.passes[0])) < 0.01);
   assert.ok(Math.min(...xs(lifted.passes[0])) > 0.01);

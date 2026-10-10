@@ -9,11 +9,12 @@ export type Effect = NonNullable<Photo["style"]>;
 /**
  * Every way Photo turns a picture into lines, in the order the toolbar stacks them: the tonal ones
  * first, then the ones that trace. Each has its name, its glyph and what it does, for the toolbar's
- * tooltips and the heading of its settings card.
+ * tooltips and the heading of its settings card. A retired effect still draws, and still has its
+ * card, for drawings saved with it, but has no button unless the photo is drawn that way.
  */
-export const EFFECTS: { key: Effect; label: string; icon: ReactNode; about: string }[] = [
+export const EFFECTS: { key: Effect; label: string; icon: ReactNode; about: string; retired?: boolean }[] = [
   { key: "hatch", label: "Hatching", icon: <Hash />, about: "Lines that cross and fill in as the photo darkens" },
-  { key: "waves", label: "Tone lines", icon: <AudioWaveform />, about: "One line along each row, waving harder and tighter where it's darker" },
+  { key: "waves", label: "Tone lines", icon: <AudioWaveform />, about: "One line along each row, waving harder and tighter where it's darker", retired: true }, // Squiggle, lifting in white, does it
   { key: "squiggle", label: "Squiggle", icon: <LineSquiggle />, about: "SquiggleDraw's smooth waves, unbroken through white, the rows joinable into one line" },
   { key: "outlines", label: "Outlines", icon: <FingerprintPattern />, about: "The photo traced as contour lines, following its edges and shapes" },
   { key: "centerlines", label: "Centerlines", icon: <Signature />, about: "Each dark stroke of a line drawing drawn once, down its middle, so a ring is one circle" },
@@ -32,7 +33,7 @@ export function EffectToolbar({ effect, onEffect, onAgain, disabled }: { effect?
   return (
     <Toolbar tone="white" orientation="vertical" aria-label="Effects">
       <SegmentedControl size="sm" aria-label="Effect">
-        {EFFECTS.map((e) => (
+        {EFFECTS.filter((e) => !e.retired || e.key === effect).map((e) => (
           <Segment
             key={e.key}
             selected={e.key === effect}

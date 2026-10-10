@@ -4,7 +4,7 @@ import { RotateCcwSquare, RotateCwSquare } from "lucide-react";
 import { Section } from "../../shared/components/controls/Section";
 import { NumberField } from "../../shared/components/controls/NumberField";
 import controls from "../../shared/components/controls/controls.module.css";
-import { BLACK_SHARE, CENTER_DEFAULTS, KEY_FROM, MOST_COLORS, MOST_LAYERS, MOST_PASSES, OUTLINE_DEFAULTS, PLATES, PLATE_AIMS, SILHOUETTE_DEFAULTS, WAVE_DEFAULTS, ANGLE_PRESETS, PLATE_SETS, coverSteps, plateSetOf, platesOf, squiggleAmp, type AnglePreset, type PlateSet, photoMarks, photoMode, type Photo, type Plate } from "../../shared/lib/drawing/photo";
+import { BLACK_SHARE, CENTER_DEFAULTS, KEY_FROM, MOST_COLORS, MOST_LAYERS, MOST_PASSES, OUTLINE_DEFAULTS, PLATES, PLATE_AIMS, SILHOUETTE_DEFAULTS, WAVE_DEFAULTS, ANGLE_PRESETS, PLATE_SETS, SQUIGGLE_DRAW, SQUIGGLE_INKSCAPE, SQUIGGLE_INKSCAPE_RANGES, SQUIGGLE_RANGES, coverSteps, plateSetOf, platesOf, squiggleDrawOf, squiggleInkscapeOf, type AnglePreset, type SquiggleDraw, type SquiggleInkscape, type PlateSet, photoMarks, photoMode, type Photo, type Plate } from "../../shared/lib/drawing/photo";
 import { boxOf, type Layer, type Shape } from "../../shared/lib/drawing/shapes";
 import type { PenColor } from "../../shared/lib/types";
 import styles from "../App.module.css";
@@ -295,6 +295,26 @@ export function PhotoCard({ shape, title, shapes, layers, busy, all, onAll, scal
   const angleField = (
     <NumberField label="Angle" unit="°" min={-180} max={180} step={5} value={photo.angle} onChange={(angle) => (all && photo.group ? actions.setAngles({ by: angle - photo.angle }) : actions.set({ angle }))} />
   );
+  // A SquiggleDraw control: set, it keeps only what differs from the sketch's default.
+  const setSquiggle = (change: Partial<SquiggleDraw>) => {
+    const next: Partial<SquiggleDraw> = { ...(photo.squiggleDraw ?? {}), ...change };
+    for (const key of Object.keys(next) as (keyof SquiggleDraw)[]) if (next[key] === SQUIGGLE_DRAW[key]) delete next[key];
+    actions.set({ squiggleDraw: Object.keys(next).length ? next : undefined });
+  };
+  const squiggleField = (key: keyof typeof SQUIGGLE_RANGES) => {
+    const r = SQUIGGLE_RANGES[key];
+    return <NumberField label={r.label} min={r.min} max={r.max} step={r.step} value={squiggleDrawOf(photo)[key]} onChange={(v) => setSquiggle({ [key]: v })} />;
+  };
+  // An Inkscape control likewise, over the extension's defaults.
+  const setInkscape = (change: Partial<SquiggleInkscape>) => {
+    const next: Partial<SquiggleInkscape> = { ...(photo.squiggleInkscape ?? {}), ...change };
+    for (const key of Object.keys(next) as (keyof SquiggleInkscape)[]) if (next[key] === SQUIGGLE_INKSCAPE[key]) delete next[key];
+    actions.set({ squiggleInkscape: Object.keys(next).length ? next : undefined });
+  };
+  const inkscapeField = (key: keyof typeof SQUIGGLE_INKSCAPE_RANGES) => {
+    const r = SQUIGGLE_INKSCAPE_RANGES[key];
+    return <NumberField label={r.label} min={r.min} max={r.max} step={r.step} value={squiggleInkscapeOf(photo)[key]} onChange={(v) => setInkscape({ [key]: v })} />;
+  };
   // Rarely wanted: the effect's settings for one layer at a time, `which` saying which they are.
   const eachLayer = (which: string) => (
     <>
@@ -402,18 +422,67 @@ export function PhotoCard({ shape, title, shapes, layers, busy, all, onAll, scal
                     {colourMode}
                     {photo.group && bleed}
                     {anglePresets}
-                    <div className={styles.fillRow}>
-                      {angleField}
-                      <NumberField label="Spacing mm" min={0.2} max={20} step={0.25} value={photo.rowMm ?? WAVE_DEFAULTS.rowMm} onChange={(rowMm) => actions.set({ rowMm, squiggleAmpMm: squiggleAmp(photo), squiggleHeight: undefined })} />
-                    </div>
-                    {/* The waves themselves, apart from the rows: how far they swing at black, and how long one is there. */}
-                    <div className={styles.fillRow}>
-                      <NumberField label="Amplitude mm" min={0} max={20} step={0.1} value={Math.round(squiggleAmp(photo) * 100) / 100} onChange={(squiggleAmpMm) => actions.set({ squiggleAmpMm, squiggleHeight: undefined })} />
-                      <NumberField label="Wavelength mm" min={0.2} max={20} step={0.1} value={photo.waveMm ?? WAVE_DEFAULTS.waveMm} onChange={(waveMm) => actions.set({ waveMm })} />
-                    </div>
-                    <Checkbox checked={Boolean(photo.squiggleJoin)} label="Join rows into one line" onChange={(e) => actions.set({ squiggleJoin: e.target.checked || undefined })} />
-                    <Checkbox checked={Boolean(photo.squiggleLift)} label="Lift the pen where there's nothing to draw" onChange={(e) => actions.set({ squiggleLift: e.target.checked || undefined })} />
-                    {eachLayer("Angle, spacing, amplitude and wavelength")}
+                    {/* Which SquiggleDraw: the Processing sketch, whose waves tighten in the darks, or the
+                      Inkscape extension's grid, whose waves keep their frequency and only grow. */}
+                    <SegmentedControl size="sm" variant="dark" aria-label="SquiggleDraw version">
+                      <Segment selected={photo.squiggleVersion !== "inkscape"} title="Processing: SquiggleDraw's sketch - waves taller and tighter where it's darker" onClick={() => actions.set({ squiggleVersion: undefined })}>Processing</Segment>
+                      <Segment selected={photo.squiggleVersion === "inkscape"} title="Inkscape: SquiggleDraw for Inkscape - a grid of cells, the same number of rounded waves in each, taller where it's darker" onClick={() => actions.set({ squiggleVersion: "inkscape" })}>Inkscape</Segment>
+                    </SegmentedControl>
+                    {photo.squiggleVersion === "inkscape" ? (
+                      <>
+                        {/* The extension's own controls, its names, ranges and numbers; the angle and lifting are Photo's. */}
+                        <div className={styles.fillRow}>
+                          {angleField}
+                          {inkscapeField("rows")}
+                        </div>
+                        <div className={styles.fillRow}>
+                          {inkscapeField("cols")}
+                          {inkscapeField("freq")}
+                        </div>
+                        <div className={styles.fillRow}>
+                          {inkscapeField("amp")}
+                          <InputSelect size="md" label="Path direction" value={squiggleInkscapeOf(photo).path} onChange={(e) => setInkscape({ path: e.target.value as SquiggleInkscape["path"] })}>
+                            <option value="uni">Left-to-Right</option>
+                            <option value="bidi">Back-and-Forth</option>
+                            <option value="join">Back-and-Forth with Joined Ends</option>
+                          </InputSelect>
+                        </div>
+                        <Checkbox checked={squiggleInkscapeOf(photo).invert} label="Invert colors" onChange={(e) => setInkscape({ invert: e.target.checked })} />
+                        <Checkbox checked={Boolean(photo.squiggleLift)} label="Lift the pen in white areas" onChange={(e) => actions.set({ squiggleLift: e.target.checked || undefined })} />
+                        <Button size="sm" variant="secondary" onClick={() => actions.set({ squiggleInkscape: undefined })}>Default</Button>
+                      </>
+                    ) : (
+                      <>
+                        {/* SquiggleDraw's own controls, its names, ranges and numbers, so a photo comes out as
+                          the sketch draws it; the angle, smoothness and lifting are Photo's, over it. */}
+                        <div className={styles.fillRow}>
+                          {angleField}
+                          {squiggleField("lines")}
+                        </div>
+                        <div className={styles.fillRow}>
+                          {squiggleField("strength")}
+                          {squiggleField("frequency")}
+                        </div>
+                        <div className={styles.fillRow}>
+                          {squiggleField("detail")}
+                          {squiggleField("lineWidth")}
+                        </div>
+                        <div className={styles.fillRow}>
+                          {squiggleField("black")}
+                          {squiggleField("white")}
+                        </div>
+                        <div className={styles.fillRow}>
+                          {squiggleField("scale")}
+                          {/* How round the waves are: 0 a zigzag, 100 as SquiggleDraw draws them, 200 broad round crests. */}
+                          <NumberField label="Smoothness" unit="%" min={0} max={200} step={10} value={Math.round((photo.squiggleSmooth ?? 1) * 100)} onChange={(v) => actions.set({ squiggleSmooth: v / 100 })} />
+                        </div>
+                        <Checkbox checked={squiggleDrawOf(photo).invert} label="Invert colors" onChange={(e) => setSquiggle({ invert: e.target.checked })} />
+                        <Checkbox checked={Boolean(photo.squiggleJoin)} label="Connect ends" onChange={(e) => actions.set({ squiggleJoin: e.target.checked || undefined })} />
+                        <Checkbox checked={Boolean(photo.squiggleLift)} label="Lift the pen in white areas" onChange={(e) => actions.set({ squiggleLift: e.target.checked || undefined })} />
+                        <Button size="sm" variant="secondary" onClick={() => actions.set({ squiggleDraw: undefined, squiggleSmooth: undefined, squiggleJoin: undefined })}>Default</Button>
+                      </>
+                    )}
+                    {eachLayer("These settings")}
                   </>
                 ) : photo.style === "waves" ? (
                   <>
@@ -474,7 +543,7 @@ export function PhotoCard({ shape, title, shapes, layers, busy, all, onAll, scal
                       : photo.style === "outlines"
                       ? `${marks.strokes.toLocaleString()} contours, along the photo's edges and shapes. More lines follow finer changes of tone; more smoothing, only the big ones.`
                       : photo.style === "squiggle"
-                      ? `${marks.strokes.toLocaleString()} ${marks.strokes === 1 ? "line" : "lines"}. Each row swings higher and waves tighter where the photo is darker${photo.squiggleLift ? ", and lifts off where there's nothing to draw" : ", and runs on flat through white"}. An amplitude of half the spacing and neighboring rows just meet.`
+                      ? `${marks.strokes.toLocaleString()} ${marks.strokes === 1 ? "line" : "lines"}. Each row swings higher and waves tighter where the photo is darker${photo.squiggleLift ? ", and lifts off where there's nothing to draw" : ", and runs on flat through white"}. As SquiggleDraw ${photo.squiggleVersion === "inkscape" ? "for Inkscape" : "in Processing"} draws it, with its controls and numbers.`
                       : photo.style === "waves"
                       ? `${marks.strokes.toLocaleString()} strokes. Each row waves harder and tighter where the photo is darker; white is left as paper.`
                       : `${marks.strokes.toLocaleString()} strokes. The spacing starts at the pen’s solid-fill spacing; each pass adds lines where the photo is darker.`
