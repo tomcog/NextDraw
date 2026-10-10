@@ -4,7 +4,7 @@ import { RotateCcwSquare, RotateCwSquare } from "lucide-react";
 import { Section } from "../../shared/components/controls/Section";
 import { NumberField } from "../../shared/components/controls/NumberField";
 import controls from "../../shared/components/controls/controls.module.css";
-import { BLACK_SHARE, CENTER_DEFAULTS, KEY_FROM, MOST_LAYERS, MOST_PASSES, OUTLINE_DEFAULTS, PLATES, PLATE_AIMS, SILHOUETTE_DEFAULTS, WAVE_DEFAULTS, ANGLE_PRESETS, PLATE_SETS, coverSteps, plateSetOf, platesOf, squiggleAmp, type AnglePreset, type PlateSet, photoMarks, photoMode, type Photo, type Plate } from "../../shared/lib/drawing/photo";
+import { BLACK_SHARE, CENTER_DEFAULTS, KEY_FROM, MOST_COLORS, MOST_LAYERS, MOST_PASSES, OUTLINE_DEFAULTS, PLATES, PLATE_AIMS, SILHOUETTE_DEFAULTS, WAVE_DEFAULTS, ANGLE_PRESETS, PLATE_SETS, coverSteps, plateSetOf, platesOf, squiggleAmp, type AnglePreset, type PlateSet, photoMarks, photoMode, type Photo, type Plate } from "../../shared/lib/drawing/photo";
 import { boxOf, type Layer, type Shape } from "../../shared/lib/drawing/shapes";
 import type { PenColor } from "../../shared/lib/types";
 import styles from "../App.module.css";
@@ -146,12 +146,17 @@ export function PhotoCard({ shape, title, shapes, layers, busy, all, onAll, scal
                 out on paper, or the nearest pen to each of the photo's own colour groups. */}
               <SegmentedControl size="sm" variant="dark" aria-label="Choose colors">
                 <Segment selected={Boolean(photo.fitPaper)} title="Best fit: the colors that, as they really come out on this paper, come nearest the photo between them" onClick={() => !photo.fitPaper && actions.splitBestFit(inks)}>Best fit</Segment>
-                <Segment selected={!photo.fitPaper} title="By groups: the photo's colors gathered into groups, each drawn in the palette color nearest it" onClick={() => photo.fitPaper && actions.splitByColor(inks)}>By groups</Segment>
+                <Segment selected={!photo.fitPaper} title="Photo's colors: the photo's own main colors, each drawn in the palette color nearest it" onClick={() => photo.fitPaper && actions.splitByColor(inks)}>Photo's colors</Segment>
               </SegmentedControl>
+              <p className={styles.empty}>
+                {photo.fitPaper
+                  ? "Tries combinations of your pens and keeps the set that, as they really come out on this paper, looks most like the photo."
+                  : "Finds the photo's main colors, as many as you ask for, and draws each area in the pen nearest its color. Quick, but it doesn't check how the pens look on paper."}
+              </p>
               <NumberField
                 label="Colors"
                 min={1}
-                max={MOST_LAYERS}
+                max={MOST_COLORS}
                 step={1}
                 value={inks}
                 onChange={photo.fitPaper ? actions.splitBestFit : actions.splitByColor}
@@ -165,15 +170,13 @@ export function PhotoCard({ shape, title, shapes, layers, busy, all, onAll, scal
                   onChange={(e) => actions.setPairs(e.target.checked)}
                 />
               )}
-              {photo.fitPaper && (
-                // Lines come in one at a time rather than a pass at once, so pale colours can be a
-                // few sparse lines rather than nothing or a third of the paper.
-                <Checkbox
-                  checked={Boolean(photo.fineSteps)}
-                  label="Fine steps, for pale colors"
-                  onChange={(e) => actions.setFine(e.target.checked)}
-                />
-              )}
+              {/* Lines come in one at a time rather than a pass at once, so pale colours can be a
+                few sparse lines rather than nothing or a third of the paper. Either way of choosing pens. */}
+              <Checkbox
+                checked={Boolean(photo.fineSteps)}
+                label="Fine steps, for pale colors"
+                onChange={(e) => actions.setFine(e.target.checked)}
+              />
               {photo.fitPaper && estimates && estimates.length > 0 && (
                 <p className={styles.empty}>
                   Best fit, as near as the colors come to the photo: {estimates.map((e) => `${e.pens} ${e.pens === 1 ? "color" : "colors"} ${e.err.toFixed(1)} ΔE`).join(", ")}. Lower is closer.
@@ -221,7 +224,7 @@ export function PhotoCard({ shape, title, shapes, layers, busy, all, onAll, scal
           .sort((a, b) => place(a) - place(b));
         // Bands by value are named for their tone; by colour, for their ink.
         // Each band by its layer: the number the Layers list gives it, and a dot in its ink - up
-        // to six of them, too many for words.
+        // to eight of them, too many for words.
         return (
           <SegmentedControl size="sm" variant="dark" aria-label="Band to set">
             {bands.map((band) => {
@@ -438,7 +441,7 @@ export function PhotoCard({ shape, title, shapes, layers, busy, all, onAll, scal
                       {!photo.fineSteps && <NumberField label="Passes" min={1} max={MOST_PASSES} step={1} value={photo.levels} onChange={(levels) => actions.set({ levels })} />}
                     </div>
                     {photo.fineSteps && (
-                      <p className={styles.empty}>Fine steps is on, so lines come in one at a time in its own steps rather than in passes. Turn it off under Best fit to set the passes.</p>
+                      <p className={styles.empty}>Fine steps is on, so lines come in one at a time in its own steps rather than in passes. Turn it off under Color to set the passes.</p>
                     )}
                     {/* When the lines can't cover enough of the paper for colors to reach full strength: by how
                       much, and the spacing that would. */}

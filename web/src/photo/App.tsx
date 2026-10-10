@@ -684,7 +684,7 @@ export default function App() {
         splitByColor: splitPhotoByColor,
         splitBestFit: (count) => splitPhotoBestFit(count),
         setPairs: (on) => splitPhotoBestFit(inks, {}, on),
-        setFine: (on) => splitPhotoBestFit(inks, {}, undefined, on),
+        setFine: (on) => (chosen?.photo?.fitPaper ? splitPhotoBestFit(inks, {}, undefined, on) : splitPhotoByColor(inks, { fineSteps: on || undefined })),
         setKeyLayer,
         place: placePhoto,
         setMargin: setPhotoMargin,

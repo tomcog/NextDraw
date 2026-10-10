@@ -7,7 +7,7 @@ import type { Dispatch, SetStateAction } from "react";
 import { lightness } from "../../shared/lib/color";
 import type { PenColor, Preset } from "../../shared/lib/types";
 import {
-  BAND_NAMES, LAYER_SETTINGS, MOST_LAYERS, PHOTO_DEFAULTS, PLATES, PLATE_AIMS, colourGroups, darkestOf, isColourful, matchPens, photoMode,
+  BAND_NAMES, LAYER_SETTINGS, MOST_COLORS, MOST_LAYERS, PHOTO_DEFAULTS, PLATES, PLATE_AIMS, colourGroups, isColourful, matchPens, photoMode,
   placeOnPage, plateNamed, platePens, presetAngle, readTones, hexLinear, linearHex, coverSteps, stemWithoutPlate, turnedCopy, turnedCrop, workingCopy, type AnglePreset, type Photo, type PhotoPart, type Plate, type PlateSet, PLATE_SETS, plateSetOf, platesOf,
 } from "../../shared/lib/drawing/photo";
 import { boxOf, newLayerId, newShapeId, type Layer, type Page, type Shape } from "../../shared/lib/drawing/shapes";
@@ -77,7 +77,8 @@ export function photoActions(ctx: PhotoContext) {
         const regionInks = groups.map((_, r) => matched[r]?.color ?? null);
         parts = parts.map((part) => ({ ...part, photo: { ...part.photo, regionInks, keyInk: key?.color } }));
       } else if (pens.length) {
-        const pen = matchPens([darkestOf(copy.src)], pens)[0];
+        // B&W starts in the palette's darkest pen - black, as a rule - whatever the photo's own darks.
+        const pen = darkestPen(pens);
         if (pen) parts = [{ pen, photo: {} }];
       }
       if (!parts.length) {
@@ -364,7 +365,7 @@ export function photoActions(ctx: PhotoContext) {
   /**
     * The photo's own name, and the ink a split by value draws in, without what an earlier split added:
     * the band word after a name, or the pen's name after a colour split's. From a colour split, the
-    * value split takes its darkest ink.
+    * value split starts in the palette's darkest pen, black as a rule, as a new B&W photo does.
     */
   const photoStem = () => {
     const words = /\s+(lightest|lighter|light|mid|dark|darker|darkest)$/i;
@@ -374,11 +375,12 @@ export function photoActions(ctx: PhotoContext) {
     let name = base?.name ?? "Photo";
     if (base?.photo?.ink && layer && name.endsWith(` ${layer.name}`)) name = name.slice(0, -layer.name.length - 1);
     else name = name.replace(words, "");
-    // From a colour split, the key's ink if it has one - the darkest - else its darkest colour's.
-    const place = (sh: Shape) => layers.findIndex((l) => l.id === sh.layerId);
-    const darkest = [...members].sort((a, b) => (a.photo?.key ? 1 : 0) - (b.photo?.key ? 1 : 0) || place(a) - place(b)).pop();
-    const inkLayer = base?.photo?.ink ? layers.find((l) => l.id === darkest?.layerId) : layer;
-    return { name, ink: (inkLayer?.name ?? "Black").replace(words, "").replace(/\s+key$/i, ""), color: inkLayer?.color ?? "#262626" };
+    // From a colour or CMYK split, the palette's darkest pen; from B&W, the pen its layer has now.
+    if (base?.photo?.ink) {
+      const pen = darkestPen(tool2?.palette ?? []);
+      return { name, ink: pen?.name ?? "Black", color: pen?.color ?? "#262626" };
+    }
+    return { name, ink: (layer?.name ?? "Black").replace(words, ""), color: layer?.color ?? "#262626" };
   };
 
   /**
@@ -420,7 +422,7 @@ export function photoActions(ctx: PhotoContext) {
       setMessage({ text: `${tool2?.name ?? "This pen"} has no palette of colors to split a photo into`, ok: false });
       return;
     }
-    const n = Math.min(MOST_LAYERS, Math.max(1, Math.round(count)));
+    const n = Math.min(MOST_COLORS, Math.max(1, Math.round(count)));
     const groups = colourGroups(chosen.photo.src, n, chosen.photo.brightness, chosen.photo.contrast, chosen.photo.saturation);
     const matched = matchPens(groups, pens);
     const parts = groups
@@ -438,6 +440,8 @@ export function photoActions(ctx: PhotoContext) {
     const oldKey = chosen.photo.group ? shapes.find((sh) => sh.photo?.group === chosen.photo!.group && sh.photo?.key) : undefined;
     const keyPen = oldKey ? { name: layers.find((l) => l.id === oldKey.layerId)?.name.replace(/\s+key$/i, "") ?? "Key", color: oldKey.photo!.ink! } : darkestPen(pens);
     const regionInks = groups.map((_, r) => matched[r]?.color ?? null);
+    // Fine steps stays as it was while the photo stays in Color; coming from B&W or CMYK, it starts off.
+    const fineSteps = photoMode(chosen.photo) === "colour" && chosen.photo.fineSteps ? true : undefined;
     const withKey = keyPen && (oldKey || photoMode(chosen.photo) !== "colour" || chosen.photo.keyInk !== undefined);
     rebuildPhoto(
       [
@@ -445,13 +449,13 @@ export function photoActions(ctx: PhotoContext) {
           layerName: pen.name,
           layerColor: pen.color,
           shapeName: `${name} ${pen.name}`,
-          photo: { band: undefined, key: undefined, plate: undefined, plates: undefined, fitPaper: undefined, penMm: undefined, fitPairs: undefined, fineSteps: undefined, ink: pen.color, regions: groups, region, regionInks, keyInk: withKey ? keyPen!.color : undefined, ...extra },
+          photo: { band: undefined, key: undefined, plate: undefined, plates: undefined, fitPaper: undefined, penMm: undefined, fitPairs: undefined, fineSteps, ink: pen.color, regions: groups, region, regionInks, keyInk: withKey ? keyPen!.color : undefined, ...extra },
         })),
         ...(withKey ? [{
           layerName: `${keyPen!.name} key`,
           layerColor: keyPen!.color,
           shapeName: `${name} ${keyPen!.name} key`,
-          photo: { band: undefined, key: true, plate: undefined, plates: undefined, fitPaper: undefined, penMm: undefined, fitPairs: undefined, fineSteps: undefined, ink: keyPen!.color, regions: groups, region: undefined, regionInks, keyInk: keyPen!.color, ...extra },
+          photo: { band: undefined, key: true, plate: undefined, plates: undefined, fitPaper: undefined, penMm: undefined, fitPairs: undefined, fineSteps, ink: keyPen!.color, regions: groups, region: undefined, regionInks, keyInk: keyPen!.color, ...extra },
         }] : []),
       ],
       parts.length + (withKey ? 1 : 0) > 1 ? chosen.photo.group ?? newShapeId() : undefined,
@@ -516,7 +520,7 @@ export function photoActions(ctx: PhotoContext) {
       setMessage({ text: `${tool2?.name ?? "This pen"} has no palette of colors to split a photo into`, ok: false });
       return;
     }
-    const n = Math.min(MOST_LAYERS, Math.max(1, Math.round(count)));
+    const n = Math.min(MOST_COLORS, Math.max(1, Math.round(count)));
     setBusy(true);
     setMessage({ text: "Choosing colors…", ok: true, progress: true });
     let best: Awaited<ReturnType<typeof bestPens>> = null;

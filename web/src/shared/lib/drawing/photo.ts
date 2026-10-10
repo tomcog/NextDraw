@@ -412,8 +412,11 @@ export const BAND_NAMES: Record<number, string[]> = {
   6: ["lightest", "lighter", "light", "dark", "darker", "darkest"],
 };
 
-/** The most layers a photo is split into, by tone or by ink. */
+/** The most tone layers a photo is split into. */
 export const MOST_LAYERS = 6;
+
+/** The most colors a photo is split into, by best fit or by the photo's own colors. */
+export const MOST_COLORS = 8;
 
 /** The longer side of the working copy, in pixels: enough for lines a pen width apart across a big sheet. */
 export const WORKING_EDGE = 1600;
