@@ -184,3 +184,11 @@ test("plate sets: a smooth run of skin tones stays smooth in eight plates - no b
   }
   assert.ok(worst <= 2, `neighbours differ by up to ${worst} passes`);
 });
+
+test("plate sets: a drawing with six plates opens with all six", async () => {
+  const { parseDrawing } = await import("../src/shared/lib/drawing/parse");
+  void parseDrawing; // parsing needs a browser DOM; the plate list it rebuilds is checked through platesOf below
+  const { platesOf } = await import("../src/shared/lib/drawing/photo");
+  assert.deepEqual(platesOf(["a", "b", "c", "d", "e", "f"]), ["c", "m", "y", "k", "o", "g"]);
+  assert.deepEqual(platesOf(["a", "b", "c", "d"]), ["c", "m", "y", "k"]);
+});

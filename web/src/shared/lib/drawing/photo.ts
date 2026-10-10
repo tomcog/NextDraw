@@ -1403,6 +1403,9 @@ function plateSampler(tones: Tones, photo: Photo) {
   // Still being separated off the page: nothing yet (photoMarks waits for it rather than keep this).
   if (!sep) return () => -1;
   const map = sep.maps[platesOf(photo.plates).indexOf(photo.plate!)];
+  // A plate the separation doesn't have - its list of plates out of step - draws nothing rather than
+  // stopping the whole app: a drawing opened with its extra plates dropped did once.
+  if (!map) return () => -1;
   return (u: number, v: number) => {
     const amount = map[Math.min(sep.h - 1, Math.round(v * (sep.h - 1))) * sep.w + Math.min(sep.w - 1, Math.round(u * (sep.w - 1)))];
     return amount > 0.02 ? amount : -1;
@@ -2760,6 +2763,8 @@ export const photoData = (p: Photo) => ({
   ...(p.ink ? { ink: p.ink, regions: p.regions, region: p.region } : {}),
   ...(p.fitPaper ? { fit_paper: p.fitPaper, pen_mm: p.penMm, ...(p.fitPairs ? { fit_pairs: true } : {}), ...(p.fitOpaque ? { fit_opaque: true } : {}) } : {}),
   ...(p.fineSteps ? { fine_steps: true } : {}),
+  // A plate's pen width: the separation works out its passes from it.
+  ...(p.plate && p.penMm !== undefined ? { pen_mm: p.penMm } : {}),
   ...(p.key ? { key: true } : {}),
   ...(p.modes ? { modes: p.modes } : {}),
   ...(p.keyInk ? { key_ink: p.keyInk } : {}),

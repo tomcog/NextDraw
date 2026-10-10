@@ -31,7 +31,7 @@ import { fontNames, loadFont, type StrokeFont } from "../shared/lib/drawing/font
 import { fitText } from "../shared/lib/drawing/text";
 import { type Repeat } from "../shared/lib/drawing/repeat";
 import { parseDrawing } from "../shared/lib/drawing/parse";
-import { PLATES, placeOnPage } from "../shared/lib/drawing/photo";
+import { platesOf, placeOnPage } from "../shared/lib/drawing/photo";
 import { useHistory } from "../shared/lib/useHistory";
 import { useDrawingFile } from "../shared/lib/drawing/useDrawingFile";
 import { bakedCopies, flattened, handOutFills, joined, markRuns, simplified, splitApart } from "./lib/shapeEdits";
@@ -250,7 +250,8 @@ export default function App() {
     const ink = colourOf(sh);
     if (sh.photo.plate) {
      // A CMYK plate: all four plates' pens, in plate order.
-     const plates = PLATES.map((p) => { const m = members.find((x) => x.photo?.plate === p); return m ? colourOf(m) : "#000000"; });
+     // Every plate of the photo's set - four, or six to eight with the extra inks.
+     const plates = platesOf(sh.photo.plates).map((p, i) => { const m = members.find((x) => x.photo?.plate === p); return m ? colourOf(m) : sh.photo!.plates?.[i] ?? "#000000"; });
      if (ink === sh.photo.ink && plates.join() === (sh.photo.plates ?? []).join()) return sh;
      changed = true;
      return { ...sh, photo: { ...sh.photo, ink, plates } };
