@@ -17,6 +17,8 @@ export interface Photo {
   brightness: number;
   /** -100 to 100: flatter or more contrasty. */
   contrast: number;
+  /** -100 to 100: greyer or more vivid - -100 grey, 100 twice as colourful. The lightness stays. Absent, 0. */
+  saturation?: number;
   /** Degrees: the direction of the first set of lines. The second crosses it at a right angle. */
   angle: number;
   /**
@@ -311,7 +313,6 @@ const PEN_TEST_COLOURS: [number, number, number][] = [
  * own colour, so a red plate is judged on drawing red as well as on everything else.
  */
 function plateSetError(pens: number[][], steps: number[], plates: Plate[]): number {
-  const out = new Int8Array(pens.length);
   const colours = [...PEN_TEST_COLOURS, ...plates.filter((p) => p !== "k").map((p) => {
     const n = parseInt(PLATE_AIMS[p].color.slice(1), 16);
     return [(n >> 16) & 255, (n >> 8) & 255, n & 255] as [number, number, number];
@@ -319,8 +320,12 @@ function plateSetError(pens: number[][], steps: number[], plates: Plate[]): numb
   let sum = 0;
   for (const rgb of colours) {
     const want = labOfLinear(rgb.map(linear));
-    choosePasses(want, pens, steps, BLACK_SHARE, out);
-    const got = labOfLinear(mixOf([1, 1, 1], pens, [...out].map((p) => steps[p]), false));
+    // As the hatching will draw them: each pen's amount rounded to its nearest number of passes.
+    const covers = chooseCovers(want, pens, steps, BLACK_SHARE, null).map((c) => {
+      const tone = coverTone(c, steps);
+      return tone ? steps[Math.floor(tone * steps.length)] : 0;
+    });
+    const got = labOfLinear(mixOf([1, 1, 1], pens, covers, false));
     sum += Math.hypot(got[0] - want[0], got[1] - want[1], got[2] - want[2]);
   }
   return sum / colours.length;
@@ -470,7 +475,48 @@ interface Tones {
   rgba: Uint8ClampedArray;
   /** A smoothed copy: how far, in pixels. Kept in what's worked out from it, so a copy and the photo never share an answer. */
   blur?: number;
+  /** A copy with its saturation changed, by how much (-100 to 100), kept in what's worked out from it likewise. */
+  sat?: number;
 }
+
+const saturatedCache = new Map<string, Tones>();
+
+/**
+ * The photo with its colours made greyer or more vivid, `sat` -100 to 100: each pixel's colour pushed
+ * toward or away from its own grey - the lightness the photo is read by - so a black and white reading
+ * of it is the same, and only its colours change. Worked out once for each photo and amount.
+ */
+function saturatedTones(src: string, tones: Tones, sat: number): Tones {
+  if (!sat) return tones;
+  const key = `${src.length}|${src.slice(-32)}|${sat}`;
+  const known = saturatedCache.get(key);
+  if (known) return known;
+  const k = 1 + Math.max(-100, Math.min(100, sat)) / 100;
+  const rgba = new Uint8ClampedArray(tones.rgba.length);
+  for (let i = 0; i < rgba.length; i += 4) {
+    const r = tones.rgba[i];
+    const g = tones.rgba[i + 1];
+    const b = tones.rgba[i + 2];
+    const grey = 0.2126 * r + 0.7152 * g + 0.0722 * b;
+    rgba[i] = grey + (r - grey) * k;
+    rgba[i + 1] = grey + (g - grey) * k;
+    rgba[i + 2] = grey + (b - grey) * k;
+    rgba[i + 3] = tones.rgba[i + 3];
+  }
+  const made = { ...tones, rgba, sat };
+  if (saturatedCache.size > 4) saturatedCache.delete(saturatedCache.keys().next().value!);
+  saturatedCache.set(key, made);
+  return made;
+}
+
+/** A photo's pixels with a saturation applied, for reading its colours: undefined until it's been read. */
+export const saturatedOf = (src: string, saturation: number) => photoTones({ src, saturation });
+
+/** A photo as its layers read it: its pixels, with its saturation applied. Undefined until it's been read. */
+const photoTones = (photo: Pick<Photo, "src" | "saturation">) => {
+  const tones = tonesOf(photo.src);
+  return tones && saturatedTones(photo.src, tones, photo.saturation ?? 0);
+};
 
 const smoothCache = new Map<string, Tones>();
 
@@ -481,7 +527,7 @@ const smoothCache = new Map<string, Tones>();
 function smoothedTones(src: string, tones: Tones, r: number): Tones {
   const k = Math.round(r * 2) / 2;
   if (k < 0.5) return tones;
-  const key = `${src.length}|${src.slice(-32)}|${k}`;
+  const key = `${src.length}|${src.slice(-32)}|${tones.sat ?? 0}|${k}`;
   const known = smoothCache.get(key);
   if (known) return known;
   const n = tones.w * tones.h;
@@ -494,7 +540,7 @@ function smoothedTones(src: string, tones: Tones, r: number): Tones {
     if (c < 3) blurGrid(channel, tones.w, tones.h, k);
     for (let i = 0; i < n; i++) rgba[i * 4 + c] = channel[i];
   }
-  const made = { w: tones.w, h: tones.h, light, rgba, blur: k };
+  const made = { w: tones.w, h: tones.h, light, rgba, blur: k, sat: tones.sat };
   if (smoothCache.size > 4) smoothCache.delete(smoothCache.keys().next().value!);
   smoothCache.set(key, made);
   return made;
@@ -612,7 +658,7 @@ const marksCache = new Map<string, PhotoMarks>();
  * size or new numbers draws them again.
  */
 export function photoMarks(photo: Photo, w: number, h: number): PhotoMarks | null {
-  const tones = tonesOf(photo.src);
+  const tones = photoTones(photo);
   if (!tones || w <= 0 || h <= 0) return null;
   // A plate whose separation is still being worked out off the page: not yet, and not kept.
   if (!separationReady(photo)) return null;
@@ -637,7 +683,7 @@ export function photoMarks(photo: Photo, w: number, h: number): PhotoMarks | nul
 
 /** Everything a photo's lines depend on, as one string: the same key, the same lines. */
 function marksKey(photo: Photo, w: number, h: number) {
-  return [photo.src.length, photo.src.slice(-32), w.toFixed(4), h.toFixed(4), photo.brightness, photo.contrast, photo.angle, photo.spacingMm, photo.levels, photo.hatchSmoothMm ?? "", photo.band?.join(",") ?? "", photo.crop?.join(",") ?? "", photo.bleed ?? 0, photo.style ?? "hatch", photo.rowMm ?? "", photo.waveMm ?? "", photo.squiggleAmpMm ?? "", photo.squiggleHeight ?? "", photo.squiggleJoin ? "join" : "", photo.squiggleLift ? "lift" : "", photo.ink ?? "", photo.regions?.join(",") ?? "", photo.region ?? "", photo.contours ?? "", photo.smoothMm ?? "", photo.key ? "key" : "", photo.keyInk ?? "", photo.regionInks?.join(",") ?? "", photo.keyStrength ?? "", photo.keyFrom ?? "", photo.plate ?? "", photo.plates?.join(",") ?? "", photo.blackShare ?? "", photo.centerFrom ?? "", photo.centerSmoothMm ?? "", photo.centerShortestMm ?? "", photo.silhouetteFrom ?? "", photo.silhouetteSmoothMm ?? "", photo.silhouetteSmallestMm ?? "", photo.fitPaper ?? "", photo.penMm ?? "", photo.fitPairs ? "pairs" : "", photo.fitOpaque ? "opaque" : "", photo.fineSteps ? "fine" : ""].join("|");
+  return [photo.src.length, photo.src.slice(-32), w.toFixed(4), h.toFixed(4), photo.brightness, photo.contrast, photo.saturation ?? 0, photo.angle, photo.spacingMm, photo.levels, photo.hatchSmoothMm ?? "", photo.band?.join(",") ?? "", photo.crop?.join(",") ?? "", photo.bleed ?? 0, photo.style ?? "hatch", photo.rowMm ?? "", photo.waveMm ?? "", photo.squiggleAmpMm ?? "", photo.squiggleHeight ?? "", photo.squiggleJoin ? "join" : "", photo.squiggleLift ? "lift" : "", photo.ink ?? "", photo.regions?.join(",") ?? "", photo.region ?? "", photo.contours ?? "", photo.smoothMm ?? "", photo.key ? "key" : "", photo.keyInk ?? "", photo.regionInks?.join(",") ?? "", photo.keyStrength ?? "", photo.keyFrom ?? "", photo.plate ?? "", photo.plates?.join(",") ?? "", photo.blackShare ?? "", photo.centerFrom ?? "", photo.centerSmoothMm ?? "", photo.centerShortestMm ?? "", photo.silhouetteFrom ?? "", photo.silhouetteSmoothMm ?? "", photo.silhouetteSmallestMm ?? "", photo.fitPaper ?? "", photo.penMm ?? "", photo.fitPairs ? "pairs" : "", photo.fitOpaque ? "opaque" : "", photo.fineSteps ? "fine" : ""].join("|");
 }
 
 /**
@@ -658,7 +704,7 @@ const maskCache = new Map<string, PhotoMask>();
 const MASK_EDGE = 600;
 
 export function photoMask(photo: Photo, w: number, h: number): PhotoMask | null {
-  const tones = tonesOf(photo.src);
+  const tones = photoTones(photo);
   if (!tones || w <= 0 || h <= 0) return null;
   // A plate whose separation is still being worked out off the page: not yet, and not kept.
   if (!separationReady(photo)) return null;
@@ -799,8 +845,8 @@ const isPaper = (c: number[]) => c[0] >= PAPER_LIGHTNESS && Math.hypot(c[1], c[2
  * of the photo's pixels, the way a painter mixes a limited palette from a scene: start from colours
  * far apart, then settle each group on the average of what's nearest it, a few times over.
  */
-export function colourGroups(src: string, count: number, brightness: number, contrast: number): string[] {
-  const tones = tonesOf(src);
+export function colourGroups(src: string, count: number, brightness: number, contrast: number, saturation = 0): string[] {
+  const tones = photoTones({ src, saturation });
   if (!tones) return [];
   const adjust = adjuster(brightness, contrast);
   const total = tones.w * tones.h;
@@ -1021,7 +1067,7 @@ const FINE_STEPS = FINE_ALONG.length + FINE_ACROSS.length;
  * photo there: a pen's area is wherever that colour uses it, and `menu` says how many passes.
  */
 function areasOf(tones: Tones, groups: string[], brightness: number, contrast: number, fit?: Fit): Areas {
-  const key = [tones.w, tones.h, tones.blur ?? 0, tones.light[0], tones.light[tones.light.length >> 1], groups.join(","), brightness, contrast, fit ? JSON.stringify(fit) : ""].join("|");
+  const key = [tones.w, tones.h, tones.blur ?? 0, tones.sat ?? 0, tones.light[0], tones.light[tones.light.length >> 1], groups.join(","), brightness, contrast, fit ? JSON.stringify(fit) : ""].join("|");
   const known = areasCache.get(key);
   if (known) return known;
   const adjust = adjuster(brightness, contrast);
@@ -1121,7 +1167,7 @@ function separationOf(tones: Tones, photo: Photo): Separation | null {
   const levels = Math.min(MOST_PASSES, Math.max(1, Math.round(photo.levels)));
   const penMm = photo.penMm ?? 0.5;
   const spacingMm = photo.spacingMm;
-  const key = [tones.w, tones.h, tones.blur ?? 0, tones.light[0], tones.light[tones.light.length >> 1], plates.join(","), brightness, contrast, blackShare, levels, penMm, spacingMm].join("|");
+  const key = [tones.w, tones.h, tones.blur ?? 0, tones.sat ?? 0, tones.light[0], tones.light[tones.light.length >> 1], plates.join(","), brightness, contrast, blackShare, levels, penMm, spacingMm].join("|");
   const known = separationCache.get(key);
   if (known) return known;
   const keep = (made: Separation) => {
@@ -1142,9 +1188,9 @@ function separationOf(tones: Tones, photo: Photo): Separation | null {
       rgb.set([tones.rgba[i], tones.rgba[i + 1], tones.rgba[i + 2]], (y * w + x) * 3);
     }
   }
-  // More plates than print's four take a second or two to solve: off the page, when the app has said
-  // how, and until then there's nothing to draw yet. Print's four, or with no worker, here and now.
-  if (plates.length > 4 && separationRunner && !separateNow) {
+  // A separation takes a moment to solve, so it's done off the page when the app has said how, and
+  // until then there's nothing to draw yet. With no worker, here and now.
+  if (separationRunner && !separateNow) {
     if (!separating.has(key)) {
       separating.add(key);
       separationRunner({ rgb, w, h, plates, brightness, contrast, blackShare, levels, penMm, spacingMm })
@@ -1196,105 +1242,141 @@ export function onSeparation(heard: () => void): () => void {
 /** Whether a photo layer can be drawn yet: false while its plates are still being separated off the page. */
 export function separationReady(photo: Photo): boolean {
   if (!photo.plate || (photo.plates?.length ?? 0) < 4) return true;
-  const tones = tonesOf(photo.src);
+  const tones = photoTones(photo);
   return Boolean(tones && separationOf(tones, photo));
 }
 
 /**
  * The slow half of a separation, as hatching draws it. A pen's ink is always full strength: what
  * changes is how much of the paper its lines cover, and the lines mostly lie beside each other, or
- * across where they cross. So for each colour of the photo, this chooses how many passes of each
- * plate's pen - 0 to `levels`, each covering what coverSteps says for this pen and spacing - and
- * works out what that comes out as on white paper (mixOf: each pen's lines over the paper and over
- * the others'), keeping the choice that comes nearest the photo's colour in Lab. Fewer pens are
- * preferred, and black over the colours for darkness as much as `blackShare` says. Each plate's map
- * holds the tone its hatching draws exactly that many passes at. Pure, so a worker can run it.
+ * across where they cross. So for each point of the photo this works out how much paper each plate's
+ * pen should cover - smoothly, from none to as much as its passes reach (coverSteps for this pen and
+ * spacing) - so that, laid over white paper and each other (mixOf), they come nearest the photo's
+ * colour in Lab, with a small cost on ink so none is spent where it doesn't help, black weighed
+ * against the colours by `blackShare`. Then each amount becomes the tone its hatching draws the
+ * nearest number of passes at.
+ *
+ * Several mixes of many pens can come about equally near a colour, and two nearly equal colours
+ * solved on their own can land on quite different ones - hard-edged blotches across a face. So each
+ * point starts from the mix of the point before it and only adjusts it, and neighbouring colours stay
+ * on the same mix; where the colour jumps - an edge - it's solved afresh. Pure, so a worker can run it.
  */
 export function solveSeparation({ rgb, w, h, plates, brightness, contrast, blackShare, levels, penMm, spacingMm }: SeparationRequest): Float32Array[] {
   const adjust = adjuster(brightness, contrast);
   const pens = plates.map(hexLinear);
   const steps = coverSteps(penMm, spacingMm, levels);
-  const most = steps.length - 1;
   const maps = plates.map(() => new Float32Array(w * h));
-  // Each colour solved once: shades an eighth of a step apart in each channel share an answer, finer
-  // than hatching's handful of passes can show.
+  // Each colour solved once - shades an eighth of a step apart in each channel share an answer - but
+  // reached from wherever its first point was, so the answer it keeps is a neighbour's.
   const solved = new Map<number, Float32Array>();
-  const passes = new Int8Array(plates.length);
-  for (let at = 0; at < w * h; at++) {
-    const i = at * 3;
-    const key = ((rgb[i] >> 3) << 10) | ((rgb[i + 1] >> 3) << 5) | (rgb[i + 2] >> 3);
-    let tones = solved.get(key);
-    if (!tones) {
+  let before: { want: number[]; covers: number[] } | null = null;
+  // Each row starts from the point above it, not from the far end of the row before.
+  let rowStart: { want: number[]; covers: number[] } | null = null;
+  const toTone = (cover: number) => coverTone(cover, steps);
+  for (let y = 0; y < h; y++) {
+    before = rowStart;
+    for (let x = 0; x < w; x++) {
+      const at = y * w + x;
+      const i = at * 3;
+      const key = ((rgb[i] >> 3) << 10) | ((rgb[i + 1] >> 3) << 5) | (rgb[i + 2] >> 3);
       const want = labOfLinear([linear(adjust(rgb[i])), linear(adjust(rgb[i + 1])), linear(adjust(rgb[i + 2]))]);
-      choosePasses(want, pens, steps, blackShare, passes);
-      tones = Float32Array.from(passes, (p) => (p ? (p + 0.5) / (most + 1) : 0));
-      solved.set(key, tones);
+      let covers = solved.get(key);
+      if (!covers) {
+        const from: number[] | null = before && Math.hypot(want[0] - before.want[0], want[1] - before.want[1], want[2] - before.want[2]) < EDGE_DE ? before.covers : null;
+        covers = Float32Array.from(chooseCovers(want, pens, steps, blackShare, from));
+        solved.set(key, covers);
+      }
+      before = { want, covers: [...covers] };
+      if (x === 0) rowStart = before;
+      for (let n = 0; n < plates.length; n++) maps[n][at] = toTone(covers[n]);
     }
-    for (let n = 0; n < plates.length; n++) maps[n][at] = tones[n];
   }
   return maps;
 }
 
-/** What each pen used costs, in ΔE: enough that a pen is only brought in where it really helps. */
-const PEN_COST = 1;
-/** What each pass costs, in ΔE: black's share of it goes to the colours, the rest to black. */
-const PASS_COST = 0.6;
+/** How far apart two neighbouring colours are, in ΔE, before they count as an edge and are solved afresh. */
+const EDGE_DE = 12;
+/** What ink costs, in ΔE per whole paper covered: a tie-breaker, so none is spent where it doesn't help. */
+const INK_COST = 1;
+
+/** The tone a plate's hatching draws the nearest number of passes to `cover` at: 0 for none. */
+function coverTone(cover: number, steps: number[]): number {
+  const most = steps.length - 1;
+  let p = 0;
+  while (p < most && steps[p + 1] <= cover) p++;
+  const passes = Math.min(most, Math.round(p + (p < most ? (cover - steps[p]) / (steps[p + 1] - steps[p]) : 0)));
+  return passes ? (passes + 0.5) / (most + 1) : 0;
+}
 
 /**
- * How many passes of each pen (`out`, in plate order, black fourth) come nearest a colour `want` in
- * Lab: one pen at a time, trying each count with the others held, until nothing better is found.
+ * How much paper each pen should cover (in plate order, black fourth) to come nearest a colour `want`
+ * in Lab: one pen at a time, its best amount found with the others held, until none moves. Started
+ * from `from` - a neighbour's mix - or, with none, from the one pen that comes nearest on its own:
+ * from nothing, the first pens tried (cyan, magenta, yellow) settle an orange as yellow over magenta
+ * and the orange pen is never reached.
  */
-function choosePasses(want: number[], pens: number[][], steps: number[], blackShare: number, out: Int8Array) {
-  out.fill(0);
-  const covers = new Array<number>(pens.length).fill(0);
-  const cost = (n: number, p: number) => (p ? PEN_COST + p * PASS_COST * (n === 3 ? 1 - blackShare : blackShare) * 2 : 0);
+function chooseCovers(want: number[], pens: number[][], steps: number[], blackShare: number, from: number[] | null): number[] {
+  const most = steps[steps.length - 1];
+  const covers = from ? [...from] : new Array<number>(pens.length).fill(0);
+  const weight = pens.map((_, n) => (n === 3 ? 1 - blackShare : blackShare) * 2 * INK_COST);
   const score = () => {
     const got = labOfLinear(mixOf([1, 1, 1], pens, covers, false));
     let sum = Math.hypot(got[0] - want[0], got[1] - want[1], got[2] - want[2]);
-    for (let n = 0; n < out.length; n++) sum += cost(n, out[n]);
+    for (let n = 0; n < covers.length; n++) sum += covers[n] * weight[n];
     return sum;
   };
-  // Start from the one pen, at its best count, that comes nearest on its own: from nothing, the first
-  // pens tried (cyan, magenta, yellow) settle an orange as yellow over magenta and the orange pen is
-  // never reached.
-  let best = score();
-  let start = -1;
-  let startPasses = 0;
-  for (let n = 0; n < pens.length; n++) {
-    for (let p = 1; p < steps.length; p++) {
-      out[n] = p;
-      covers[n] = steps[p];
-      const e = score();
-      if (e < best - 1e-6) { best = e; start = n; startPasses = p; }
-    }
-    out[n] = 0;
-    covers[n] = 0;
-  }
-  if (start >= 0) { out[start] = startPasses; covers[start] = steps[startPasses]; }
-  for (let round = 0; round < 8; round++) {
-    let better = false;
+  if (!from) {
+    let best = score();
+    let start = -1;
+    let amount = 0;
     for (let n = 0; n < pens.length; n++) {
-      const was = out[n];
-      let keep = was;
-      for (let p = 0; p < steps.length; p++) {
-        if (p === was) continue;
-        out[n] = p;
-        covers[n] = steps[p];
+      for (let k = 1; k <= 16; k++) {
+        covers[n] = (most * k) / 16;
         const e = score();
-        if (e < best - 1e-6) { best = e; keep = p; better = true; }
+        if (e < best) { best = e; start = n; amount = covers[n]; }
       }
-      out[n] = keep;
-      covers[n] = steps[keep];
+      covers[n] = 0;
     }
-    if (!better) break;
+    if (start >= 0) covers[start] = amount;
   }
+  for (let round = 0; round < 30; round++) {
+    let moved = 0;
+    for (let n = 0; n < pens.length; n++) {
+      const was = covers[n];
+      // The best amount for this pen, the others held: a golden-section search, then none if none is better.
+      let a = 0;
+      let b = most;
+      // Ten steps narrow it to under a hundredth of the range - finer than whole passes can show.
+      for (let it = 0; it < 10; it++) {
+        const x1 = b - 0.618 * (b - a);
+        const x2 = a + 0.618 * (b - a);
+        covers[n] = x1;
+        const f1 = score();
+        covers[n] = x2;
+        const f2 = score();
+        if (f1 < f2) b = x2;
+        else a = x1;
+      }
+      const found = (a + b) / 2;
+      covers[n] = found;
+      const withIt = score();
+      covers[n] = 0;
+      covers[n] = score() <= withIt ? 0 : found;
+      moved = Math.max(moved, Math.abs(covers[n] - was));
+    }
+    if (moved < 2e-3) break;
+  }
+  return covers;
 }
 
 /** How many passes of each plate's pen, in plate order, a colour is drawn with: one point of a separation, for checking it. */
 export function platePasses(rgb: [number, number, number], plates: string[], { levels = 6, penMm = 0.4, spacingMm = 1.2, blackShare = BLACK_SHARE } = {}): number[] {
-  const out = new Int8Array(plates.length);
-  choosePasses(labOfLinear(rgb.map(linear)), plates.map(hexLinear), coverSteps(penMm, spacingMm, levels), blackShare, out);
-  return [...out];
+  const steps = coverSteps(penMm, spacingMm, levels);
+  const covers = chooseCovers(labOfLinear(rgb.map(linear)), plates.map(hexLinear), steps, blackShare, null);
+  return covers.map((c) => {
+    const tone = coverTone(c, steps);
+    return tone ? Math.floor(tone * steps.length) : 0;
+  });
 }
 
 /** A CMYK plate, read at a point of the photo (u and v, 0 to 1): -1 where it draws nothing, else how much. */
@@ -2624,6 +2706,7 @@ export function photoFromData(raw: Record<string, unknown>): Photo | null {
     ...(Array.isArray(raw.region_inks) ? { regionInks: raw.region_inks.map((c) => (typeof c === "string" ? c : null)) } : {}),
     ...(Number.isFinite(Number(raw.row_mm)) && raw.row_mm !== undefined ? { rowMm: Number(raw.row_mm) } : {}),
     ...(Number.isFinite(Number(raw.wave_mm)) && raw.wave_mm !== undefined ? { waveMm: Number(raw.wave_mm) } : {}),
+    ...(Number.isFinite(Number(raw.saturation)) && raw.saturation !== undefined && Number(raw.saturation) !== 0 ? { saturation: Number(raw.saturation) } : {}),
     ...(Number.isFinite(Number(raw.hatch_smooth_mm)) && raw.hatch_smooth_mm !== undefined ? { hatchSmoothMm: Number(raw.hatch_smooth_mm) } : {}),
     ...(Number.isFinite(Number(raw.squiggle_amp_mm)) && raw.squiggle_amp_mm !== undefined ? { squiggleAmpMm: Number(raw.squiggle_amp_mm) } : {}),
     ...(Number.isFinite(Number(raw.squiggle_height)) && raw.squiggle_height !== undefined ? { squiggleHeight: Number(raw.squiggle_height) } : {}),
@@ -2672,6 +2755,7 @@ export const photoData = (p: Photo) => ({
   ...(p.rowMm !== undefined ? { row_mm: p.rowMm } : {}),
   ...(p.waveMm !== undefined ? { wave_mm: p.waveMm } : {}),
   ...(p.hatchSmoothMm ? { hatch_smooth_mm: p.hatchSmoothMm } : {}),
+  ...(p.saturation ? { saturation: p.saturation } : {}),
   ...(p.squiggleAmpMm !== undefined ? { squiggle_amp_mm: p.squiggleAmpMm } : {}),
   ...(p.squiggleHeight !== undefined ? { squiggle_height: p.squiggleHeight } : {}),
   ...(p.squiggleJoin ? { squiggle_join: true } : {}),

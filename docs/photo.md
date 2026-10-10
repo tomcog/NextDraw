@@ -63,15 +63,20 @@ get complicated, and it never needs Studio's tools for drawing and transforming 
     and makes those four the picked layer's. Squiggle's and Tone lines' cards are built the same way,
     from the same pieces (color mode, angle preset, each layer on its own); Outlines' too, without
     angles, since contours have no direction. Centerlines and Silhouette keep a Layers card.
-  - The photo's card is titled Image, with the photo's name under it, small.
+  - The photo's card is titled Image, with the photo's name under it, small; Brightness, Contrast
+    and Saturation are centered sliders (saturation is applied about each pixel's own gray, so B&W
+    is unaffected; the canvas picture shows all three).
   - CMYK's Plates (2026-10-10): CMYK, CMYK + OG (Hexachrome), CMYK + OGV (extended gamut) and
     CMYK + OGRV. The extra plates' pens are the palette's nearest by hue to orange, green, red and
     violet; black is the darkest - then, plate by plate, whichever pen within 15° of its hue makes
     the hatching come nearest a set of photo colors. The separation is worked out as hatching draws
-    (2026-10-10): for each color, how many passes of each pen, simulating full-strength lines that
-    cover part of the paper (coverSteps for the pen width and spacing) over and beside each other
-    (mixOf), the nearest in Lab, fewer pens preferred and Black % weighting black against the
-    colors. Six or more plates are solved in a worker (separationWorker.ts); saving solves at once.
+    (2026-10-10): for each point, how much paper each pen should cover, smoothly, simulating
+    full-strength lines (coverSteps for the pen width and spacing) over and beside each other
+    (mixOf), nearest the photo in Lab with a small cost on ink and Black % weighting black against
+    the colors; then the nearest number of passes. Each point starts from its neighbor's mix (afresh
+    across an edge), so neighboring colors stay on the same mix rather than flipping between equally
+    near ones - which left 8-plate skin blotchy. Separations are solved in a worker
+    (separationWorker.ts); saving solves at once.
     The automatic plate colors look within 20° of each plate's hue (and nearer it than any other
     plate's); each plate also has a color menu, which separates again. Choosing another pen re-picks
     the plate (or Color mode's) colors from its palette. The Hatching card notes when the spacing and

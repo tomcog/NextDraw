@@ -3,7 +3,7 @@ import { ButtonRound, LayerController, Segment, SegmentedControl } from "@tomcog
 import { Layers, LayersArrowUp, Link2, Link2Off, PenTool, RotateCcw } from "lucide-react";
 import styles from "./LayersSection.module.css";
 import { Section } from "../../../shared/components/controls/Section";
-import { Slider } from "./Slider";
+import { Slider } from "../../../shared/components/controls/Slider";
 import { PaletteMenu } from "../../../shared/components/controls/PaletteMenu";
 import type { LayerView, PenColor } from "../../../shared/lib/types";
 

@@ -3,6 +3,7 @@ import { Button, ButtonRound, Card, Checkbox, InputSelect, Segment, SegmentedCon
 import { RotateCcwSquare, RotateCwSquare } from "lucide-react";
 import { Section } from "../../shared/components/controls/Section";
 import { NumberField } from "../../shared/components/controls/NumberField";
+import { Slider } from "../../shared/components/controls/Slider";
 import controls from "../../shared/components/controls/controls.module.css";
 import { BLACK_SHARE, CENTER_DEFAULTS, KEY_FROM, MOST_LAYERS, MOST_PASSES, OUTLINE_DEFAULTS, PLATES, PLATE_AIMS, SILHOUETTE_DEFAULTS, WAVE_DEFAULTS, ANGLE_PRESETS, PLATE_SETS, coverSteps, plateSetOf, platesOf, squiggleAmp, type AnglePreset, type PlateSet, photoMarks, photoMode, type Photo, type Plate } from "../../shared/lib/drawing/photo";
 import { boxOf, type Layer, type Shape } from "../../shared/lib/drawing/shapes";
@@ -69,6 +70,9 @@ interface Props {
  * The chosen photo's card - in the drawing's rail, and in image conversion's under its own: how it is
  * split into layers, sized to the page, and what each layer's lines are drawn as.
  */
+/** A setting that goes both ways, as it reads beside a slider: "+20", "0", "-35". */
+const signed = (v: number) => (v > 0 ? `+${v}` : `${v}`);
+
 export function PhotoCard({ shape, title, shapes, layers, busy, all, onAll, scale, estimates, actions, penWidthMm = 0.5, palette = [], infoCard = true, effectCards = true }: Props) {
   const replaceInput = useRef<HTMLInputElement>(null);
   const photo = shape.photo;
@@ -341,9 +345,13 @@ export function PhotoCard({ shape, title, shapes, layers, busy, all, onAll, scal
             >
               {/* The photo's name under the card's, small, as the File card says where a drawing is. */}
               <p className={controls.fileWhere} title={title}>{title}</p>
+              {/* From -100 to 100, at rest in the middle: the photo as it is. */}
               <div className={styles.fillRow}>
-                <NumberField label="Brightness" min={-100} max={100} step={5} value={photo.brightness} onChange={(brightness) => actions.set({ brightness })} />
-                <NumberField label="Contrast" min={-100} max={100} step={5} value={photo.contrast} onChange={(contrast) => actions.set({ contrast })} />
+                <Slider label="Brightness" min={-100} max={100} step={5} value={photo.brightness} format={signed} centered onChange={(brightness) => actions.set({ brightness })} />
+                <Slider label="Contrast" min={-100} max={100} step={5} value={photo.contrast} format={signed} centered onChange={(contrast) => actions.set({ contrast })} />
+              </div>
+              <div className={styles.fillRow}>
+                <Slider label="Saturation" min={-100} max={100} step={5} value={photo.saturation ?? 0} format={signed} centered onChange={(v) => actions.set({ saturation: v || undefined })} />
               </div>
               {/* Sized to the page, inside the margin: the whole photo as large as it fits, or the page
                 filled and the photo cropped. Moved or sized by hand, it's neither. */}

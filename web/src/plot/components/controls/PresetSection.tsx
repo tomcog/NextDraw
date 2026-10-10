@@ -4,7 +4,7 @@ import { Button, ButtonRound, Checkbox, InputText } from "@tomcoggia/ui";
 import { CirclePlus, Palette, SlidersHorizontal, X } from "lucide-react";
 import styles from "../../../shared/components/controls/controls.module.css";
 import { DrawingToolSection } from "../../../shared/components/controls/DrawingToolSection";
-import { Slider } from "./Slider";
+import { Slider } from "../../../shared/components/controls/Slider";
 import type { Preset } from "../../../shared/lib/types";
 
 interface Props {

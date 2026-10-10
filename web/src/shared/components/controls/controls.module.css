@@ -446,13 +446,13 @@
 .slider input[type="range"]::-webkit-slider-runnable-track {
   height: 3px;
   border-radius: 2px;
-  background: linear-gradient(to right, var(--ui-action) var(--fill), var(--ui-surface-muted) var(--fill));
+  background: linear-gradient(to right, var(--ui-surface-muted) var(--from, 0%), var(--ui-action) var(--from, 0%), var(--ui-action) var(--fill), var(--ui-surface-muted) var(--fill));
 }
 
 .slider input[type="range"]::-moz-range-track {
   height: 3px;
   border-radius: 2px;
-  background: linear-gradient(to right, var(--ui-action) var(--fill), var(--ui-surface-muted) var(--fill));
+  background: linear-gradient(to right, var(--ui-surface-muted) var(--from, 0%), var(--ui-action) var(--from, 0%), var(--ui-action) var(--fill), var(--ui-surface-muted) var(--fill));
 }
 
 .slider input[type="range"]::-webkit-slider-thumb {

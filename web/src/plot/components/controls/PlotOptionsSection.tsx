@@ -1,5 +1,5 @@
 import { Checkbox, InputSelect, InputText } from "@tomcoggia/ui";
-import { Slider } from "./Slider";
+import { Slider } from "../../../shared/components/controls/Slider";
 import { LengthField } from "../../../shared/components/controls/LengthField";
 import styles from "../../../shared/components/controls/controls.module.css";
 import type { Settings } from "../../../shared/lib/types";

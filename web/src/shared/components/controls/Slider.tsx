@@ -1,6 +1,6 @@
 import { useEffect, useId, useState } from "react";
 import { InputText } from "@tomcoggia/ui";
-import styles from "../../../shared/components/controls/controls.module.css";
+import styles from "./controls.module.css";
 
 interface Props {
   label: string;
@@ -12,12 +12,18 @@ interface Props {
   /** Decimal places to keep. Whole numbers by default, which is what most of these settings are. */
   decimals?: number;
   disabled?: boolean;
+  /**
+   * A setting that goes both ways from a middle - brightness, contrast - whose track is coloured from
+   * the middle out to the dot, rather than from the left end. The middle is where the dot sits at rest.
+   */
+  centered?: boolean;
   onChange: (value: number) => void;
 }
 
-// A range slider with a number box. The component library has no slider, so the range is native,
-// styled with the library's tokens; the number box is the library's InputText.
-export function Slider({ label, value, min = 0, max = 100, step = 1, format, decimals = 0, disabled, onChange }: Props) {
+// Shared: a range slider with a number box (or, given `format`, its value beside the label). The
+// component library has no slider, so the range is native, styled with the library's tokens; the
+// number box is the library's InputText.
+export function Slider({ label, value, min = 0, max = 100, step = 1, format, decimals = 0, disabled, centered, onChange }: Props) {
   const id = useId();
   const [draft, setDraft] = useState(String(value));
   useEffect(() => setDraft(String(value)), [value]);
@@ -43,7 +49,13 @@ export function Slider({ label, value, min = 0, max = 100, step = 1, format, dec
         step={step}
         value={value}
         disabled={disabled}
-        style={{ ["--fill" as string]: `${((value - min) / (max - min)) * 100}%` }}
+        style={(() => {
+          const at = ((value - min) / (max - min)) * 100;
+          // Coloured from the left end to the dot, or - centered - from the middle to the dot.
+          return centered
+            ? { ["--from" as string]: `${Math.min(50, at)}%`, ["--fill" as string]: `${Math.max(50, at)}%` }
+            : { ["--fill" as string]: `${at}%` };
+        })()}
         onChange={(e) => onChange(Number(Number(e.target.value).toFixed(decimals)))}
       />
       {!format && <InputText

@@ -1,7 +1,7 @@
 import { Button } from "@tomcoggia/ui";
 import styles from "../../../shared/components/controls/controls.module.css";
 import { Section } from "../../../shared/components/controls/Section";
-import { Slider } from "./Slider";
+import { Slider } from "../../../shared/components/controls/Slider";
 import type { Settings } from "../../../shared/lib/types";
 
 interface Props {

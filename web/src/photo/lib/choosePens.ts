@@ -1,4 +1,4 @@
-import { fitMenu, hexLinear, labOfLinear, tonesOf } from "../../shared/lib/drawing/photo";
+import { fitMenu, hexLinear, labOfLinear, saturatedOf } from "../../shared/lib/drawing/photo";
 
 // Choosing a tool's pens for a photo by how they really come out on paper. The photo is sampled here,
 // on the page; the search itself runs in a worker (penSearch.worker.ts), so the page doesn't stop
@@ -49,8 +49,8 @@ const toLinear = (v: number) => {
  * The photo `src`, sampled, in CIELAB - three numbers to a pixel - as its brightness and contrast
  * make it, or null while it hasn't been read.
  */
-export function samplePhoto(src: string, brightness: number, contrast: number): Float32Array | null {
-  const tones = tonesOf(src);
+export function samplePhoto(src: string, brightness: number, contrast: number, saturation = 0): Float32Array | null {
+  const tones = saturatedOf(src, saturation);
   if (!tones) return null;
   const adjust = adjuster(brightness, contrast);
   const total = tones.w * tones.h;

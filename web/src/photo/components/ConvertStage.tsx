@@ -71,11 +71,14 @@ export function ConvertStage({ photo, parts, box, page, paperColor, model, ink, 
   const c = Math.max(-99, Math.min(99, photo.contrast)) / 100;
   const gain = c >= 0 ? 1 / (1 - c) : 1 + c;
   const shift = 0.5 - 0.5 * gain + photo.brightness / 200;
-  const adjusted = photo.brightness !== 0 || photo.contrast !== 0;
+  const saturate = 1 + (photo.saturation ?? 0) / 100;
+  const adjusted = photo.brightness !== 0 || photo.contrast !== 0 || saturate !== 1;
   const picture = (faded?: boolean) => (
     <svg x={box.x0} y={box.y0} width={w} height={h} viewBox={`${c0 * photo.width} ${c1 * photo.height} ${(c2 - c0) * photo.width} ${(c3 - c1) * photo.height}`} preserveAspectRatio="none" opacity={faded ? 0.3 : 1}>
       {adjusted && (
         <filter id={adjustId} colorInterpolationFilters="sRGB">
+          {/* Saturation first, about each pixel's own grey, as the photo is read for the lines. */}
+          <feColorMatrix type="saturate" values={String(saturate)} />
           <feComponentTransfer>
             <feFuncR type="linear" slope={gain} intercept={shift} />
             <feFuncG type="linear" slope={gain} intercept={shift} />

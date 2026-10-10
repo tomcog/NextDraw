@@ -419,7 +419,7 @@ export function photoActions(ctx: PhotoContext) {
       return;
     }
     const n = Math.min(MOST_LAYERS, Math.max(1, Math.round(count)));
-    const groups = colourGroups(chosen.photo.src, n, chosen.photo.brightness, chosen.photo.contrast);
+    const groups = colourGroups(chosen.photo.src, n, chosen.photo.brightness, chosen.photo.contrast, chosen.photo.saturation);
     const matched = matchPens(groups, pens);
     const parts = groups
       .map((hex, region) => ({ hex, region, pen: matched[region] }))
@@ -486,7 +486,7 @@ export function photoActions(ctx: PhotoContext) {
    */
   const bestPens = async (count: number, pairs: boolean, fine: boolean) => {
     if (!chosen?.photo) return null;
-    const pixels = samplePhoto(chosen.photo.src, chosen.photo.brightness, chosen.photo.contrast);
+    const pixels = samplePhoto(chosen.photo.src, chosen.photo.brightness, chosen.photo.contrast, chosen.photo.saturation);
     if (!pixels) return null;
     const { pens, list } = candidates();
     const choice = await searchPensOffPage(pixels, list, paper, count, fitSettings(pairs, fine));
@@ -744,6 +744,7 @@ export function photoActions(ctx: PhotoContext) {
     const whole: Partial<Photo> = {};
     if (patch.brightness !== undefined) whole.brightness = patch.brightness;
     if (patch.contrast !== undefined) whole.contrast = patch.contrast;
+    if ("saturation" in patch) whole.saturation = patch.saturation;
     if (patch.bleed !== undefined) whole.bleed = patch.bleed;
     if (patch.keyStrength !== undefined) whole.keyStrength = patch.keyStrength;
     if (patch.keyFrom !== undefined) whole.keyFrom = patch.keyFrom;

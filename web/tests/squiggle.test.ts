@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { photoMarks, platePasses, presetAngle, readTones, squiggleAmp, type Photo } from "../src/shared/lib/drawing/photo";
+import { photoMarks, platePasses, presetAngle, readTones, solveSeparation, squiggleAmp, type Photo } from "../src/shared/lib/drawing/photo";
 
 // A made-up photo, read without a browser: white on the left darkening to black on the right.
 const W = 200;
@@ -168,4 +168,19 @@ test("plate sets: drawn as hatching, more plates come nearer the photo, and oran
   assert.deepEqual(platePasses([255, 255, 255], pens), [0, 0, 0, 0, 0, 0, 0, 0]);
   const black = platePasses([20, 20, 20], pens);
   assert.ok(black[3] >= 4, `black pen ${black[3]} passes`);
+});
+
+test("plate sets: a smooth run of skin tones stays smooth in eight plates - no blotches", () => {
+  // A strip of skin tones, light to dark, separated as a photo would be.
+  const w = 120;
+  const rgb = new Uint8ClampedArray(w * 3);
+  for (let x = 0; x < w; x++) rgb.set([240 - x * 1.05, 195 - x * 1.05, 170 - x * 0.95], x * 3);
+  const plates = ["#21a4de", "#f03295", "#f3e42b", "#434444", "#fe824e", "#4cc25f", "#fe6b7e", "#8443c5"];
+  const maps = solveSeparation({ rgb, w, h: 1, plates, brightness: 0, contrast: 0, blackShare: 0.5, levels: 4, penMm: 0.28, spacingMm: 0.5 });
+  let worst = 0;
+  for (let x = 1; x < w; x++) {
+    const jump = maps.reduce((sum, m) => sum + Math.abs(Math.floor(m[x] * 5) - Math.floor(m[x - 1] * 5)), 0);
+    worst = Math.max(worst, jump);
+  }
+  assert.ok(worst <= 2, `neighbours differ by up to ${worst} passes`);
 });

@@ -1,6 +1,6 @@
 import { InputSelect } from "@tomcoggia/ui";
 import { Section } from "../../../shared/components/controls/Section";
-import { Slider } from "./Slider";
+import { Slider } from "../../../shared/components/controls/Slider";
 import type { Handling, Settings } from "../../../shared/lib/types";
 
 interface Props {
