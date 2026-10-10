@@ -27,6 +27,11 @@ export interface Photo {
    */
   levels: number;
   /**
+   * Hatching: how much the photo is smoothed before it's hatched, in mm on the page - so a busy
+   * patch (skin, hair, grain) reads as an even tone rather than a speckle of short dashes. Absent, none.
+   */
+  hatchSmoothMm?: number;
+  /**
    * What the tone is drawn as: hatching, lines crossing and filling in as it darkens; or tone lines,
    * one line along each row that waves harder and tighter where it's darker; or squiggles, the same
    * drawn the way SquiggleDraw draws it - smooth curves, unbroken through white, rows joinable into
@@ -60,13 +65,21 @@ export interface Photo {
   /** Tone lines: the length of one wave where the photo is darkest, in mm. Lighter tones stretch it. */
   waveMm?: number;
   /**
-   * Squiggle (after SquiggleDraw, 2026-10-10): how far the line swings at black, as a share of the
-   * row spacing - 1 and neighbouring rows' waves just meet, more and they overlap. Rows and wave
+   * Squiggle (after SquiggleDraw, 2026-10-10): how far the line swings either side of its row at
+   * black, in mm - whatever the rows' spacing, so the waves and the gap between rows are set apart.
+   * Half the spacing and neighbouring rows' waves just meet; more and they overlap. Rows and wave
    * length are tone lines' `rowMm` and `waveMm`.
    */
+  squiggleAmpMm?: number;
+  /** Squiggle, as first saved: the swing as a share of half the row spacing. Read for old drawings; squiggleAmpMm wins. */
   squiggleHeight?: number;
   /** Squiggle: each row turns round into the next, so the photo is one line wherever nothing breaks it. */
   squiggleJoin?: boolean;
+  /**
+   * Squiggle: lift the pen where this layer has nothing to draw - white, or none of its colour - rather
+   * than running on as a flat line, so bare paper stays bare. Off, rows are unbroken, as SquiggleDraw's.
+   */
+  squiggleLift?: boolean;
   /**
    * Split by colour: the photo's colours gathered into groups of similar colours, `regions`, each
    * the average colour of its group. This layer draws group number `region`'s area, in its pen, `ink`
@@ -281,7 +294,7 @@ export interface PhotoPart {
 
 /** The settings a layer of a photo keeps as its own, as opposed to the photo's: what a mode remembers. */
 export const LAYER_SETTINGS = [
-  "style", "angle", "spacingMm", "levels", "rowMm", "waveMm", "squiggleHeight", "squiggleJoin", "contours", "smoothMm", "centerFrom", "centerSmoothMm", "centerShortestMm", "silhouetteFrom", "silhouetteSmoothMm", "silhouetteSmallestMm", "offsetMm",
+  "style", "angle", "spacingMm", "levels", "hatchSmoothMm", "rowMm", "waveMm", "squiggleAmpMm", "squiggleHeight", "squiggleJoin", "squiggleLift", "contours", "smoothMm", "centerFrom", "centerSmoothMm", "centerShortestMm", "silhouetteFrom", "silhouetteSmoothMm", "silhouetteSmallestMm", "offsetMm",
   "band", "ink", "regions", "region", "key", "regionInks", "keyInk", "plate", "plates", "fitPaper", "penMm", "fitPairs", "fitOpaque", "fineSteps",
 ] as const;
 
@@ -308,8 +321,12 @@ export const MOST_PASSES = 6;
 /** What tone lines start from: rows a couple of millimetres apart, waves a millimetre long at black. */
 export const WAVE_DEFAULTS = { rowMm: 2, waveMm: 1 };
 
-/** What squiggles start from: SquiggleDraw's look, the waves at black half again as tall as a row is wide. */
-export const SQUIGGLE_DEFAULTS = { height: 1.5 };
+/** What squiggles start from: SquiggleDraw's look, waves at black swinging 1.5 mm, overlapping 2 mm rows. */
+export const SQUIGGLE_DEFAULTS = { ampMm: 1.5 };
+
+/** How far a squiggle swings at black, in mm: its own, or worked out from a share of the rows as first saved. */
+export const squiggleAmp = (photo: Pick<Photo, "squiggleAmpMm" | "squiggleHeight" | "rowMm">) =>
+  photo.squiggleAmpMm ?? (photo.squiggleHeight !== undefined ? (photo.squiggleHeight * (photo.rowMm ?? WAVE_DEFAULTS.rowMm)) / 2 : SQUIGGLE_DEFAULTS.ampMm);
 
 /** What outlines start from: a handful of contours, a millimetre's detail smoothed away. */
 export const OUTLINE_DEFAULTS = { contours: 6, smoothMm: 1 };
@@ -329,6 +346,36 @@ interface Tones {
   light: Float32Array;
   /** The pixels themselves, red, green, blue and alpha, for splitting by colour. */
   rgba: Uint8ClampedArray;
+  /** A smoothed copy: how far, in pixels. Kept in what's worked out from it, so a copy and the photo never share an answer. */
+  blur?: number;
+}
+
+const smoothCache = new Map<string, Tones>();
+
+/**
+ * The photo smoothed by `r` pixels - its lightness and its colours alike, so every way of splitting it
+ * sees the same smoothing. Worked out once for each photo and amount.
+ */
+function smoothedTones(src: string, tones: Tones, r: number): Tones {
+  const k = Math.round(r * 2) / 2;
+  if (k < 0.5) return tones;
+  const key = `${src.length}|${src.slice(-32)}|${k}`;
+  const known = smoothCache.get(key);
+  if (known) return known;
+  const n = tones.w * tones.h;
+  const light = Float32Array.from(tones.light);
+  blurGrid(light, tones.w, tones.h, k);
+  const rgba = new Uint8ClampedArray(tones.rgba.length);
+  const channel = new Float32Array(n);
+  for (let c = 0; c < 4; c++) {
+    for (let i = 0; i < n; i++) channel[i] = tones.rgba[i * 4 + c];
+    if (c < 3) blurGrid(channel, tones.w, tones.h, k);
+    for (let i = 0; i < n; i++) rgba[i * 4 + c] = channel[i];
+  }
+  const made = { w: tones.w, h: tones.h, light, rgba, blur: k };
+  if (smoothCache.size > 4) smoothCache.delete(smoothCache.keys().next().value!);
+  smoothCache.set(key, made);
+  return made;
 }
 
 const tonesCache = new Map<string, Tones>();
@@ -448,12 +495,17 @@ export function photoMarks(photo: Photo, w: number, h: number): PhotoMarks | nul
   const key = marksKey(photo, w, h);
   const known = marksCache.get(key);
   if (known) return known;
+  // Hatching smoothed first, by as many of the photo's pixels as the millimetres asked for on the page.
+  const [c0, , c2] = photo.crop ?? [0, 0, 1, 1];
+  const hatchTones = !photo.style && photo.hatchSmoothMm
+    ? smoothedTones(photo.src, tones, (photo.hatchSmoothMm * tones.w * (c2 - c0)) / (w * 25.4))
+    : tones;
   const made = photo.style === "waves" ? waves(tones, photo, w, h)
     : photo.style === "squiggle" ? squiggle(tones, photo, w, h)
     : photo.style === "outlines" ? outlines(tones, photo, w, h)
     : photo.style === "centerlines" ? centerlines(tones, photo, w, h)
     : photo.style === "silhouette" ? silhouette(tones, photo, w, h)
-    : hatch(tones, photo, w, h);
+    : hatch(hatchTones, photo, w, h);
   if (marksCache.size > 24) marksCache.delete(marksCache.keys().next().value!);
   marksCache.set(key, made);
   return made;
@@ -461,7 +513,7 @@ export function photoMarks(photo: Photo, w: number, h: number): PhotoMarks | nul
 
 /** Everything a photo's lines depend on, as one string: the same key, the same lines. */
 function marksKey(photo: Photo, w: number, h: number) {
-  return [photo.src.length, photo.src.slice(-32), w.toFixed(4), h.toFixed(4), photo.brightness, photo.contrast, photo.angle, photo.spacingMm, photo.levels, photo.band?.join(",") ?? "", photo.crop?.join(",") ?? "", photo.bleed ?? 0, photo.style ?? "hatch", photo.rowMm ?? "", photo.waveMm ?? "", photo.squiggleHeight ?? "", photo.squiggleJoin ? "join" : "", photo.ink ?? "", photo.regions?.join(",") ?? "", photo.region ?? "", photo.contours ?? "", photo.smoothMm ?? "", photo.key ? "key" : "", photo.keyInk ?? "", photo.regionInks?.join(",") ?? "", photo.keyStrength ?? "", photo.keyFrom ?? "", photo.plate ?? "", photo.plates?.join(",") ?? "", photo.blackShare ?? "", photo.centerFrom ?? "", photo.centerSmoothMm ?? "", photo.centerShortestMm ?? "", photo.silhouetteFrom ?? "", photo.silhouetteSmoothMm ?? "", photo.silhouetteSmallestMm ?? "", photo.fitPaper ?? "", photo.penMm ?? "", photo.fitPairs ? "pairs" : "", photo.fitOpaque ? "opaque" : "", photo.fineSteps ? "fine" : ""].join("|");
+  return [photo.src.length, photo.src.slice(-32), w.toFixed(4), h.toFixed(4), photo.brightness, photo.contrast, photo.angle, photo.spacingMm, photo.levels, photo.hatchSmoothMm ?? "", photo.band?.join(",") ?? "", photo.crop?.join(",") ?? "", photo.bleed ?? 0, photo.style ?? "hatch", photo.rowMm ?? "", photo.waveMm ?? "", photo.squiggleAmpMm ?? "", photo.squiggleHeight ?? "", photo.squiggleJoin ? "join" : "", photo.squiggleLift ? "lift" : "", photo.ink ?? "", photo.regions?.join(",") ?? "", photo.region ?? "", photo.contours ?? "", photo.smoothMm ?? "", photo.key ? "key" : "", photo.keyInk ?? "", photo.regionInks?.join(",") ?? "", photo.keyStrength ?? "", photo.keyFrom ?? "", photo.plate ?? "", photo.plates?.join(",") ?? "", photo.blackShare ?? "", photo.centerFrom ?? "", photo.centerSmoothMm ?? "", photo.centerShortestMm ?? "", photo.silhouetteFrom ?? "", photo.silhouetteSmoothMm ?? "", photo.silhouetteSmallestMm ?? "", photo.fitPaper ?? "", photo.penMm ?? "", photo.fitPairs ? "pairs" : "", photo.fitOpaque ? "opaque" : "", photo.fineSteps ? "fine" : ""].join("|");
 }
 
 /**
@@ -843,7 +895,7 @@ const FINE_STEPS = FINE_ALONG.length + FINE_ACROSS.length;
  * photo there: a pen's area is wherever that colour uses it, and `menu` says how many passes.
  */
 function areasOf(tones: Tones, groups: string[], brightness: number, contrast: number, fit?: Fit): Areas {
-  const key = [tones.w, tones.h, tones.light[0], tones.light[tones.light.length >> 1], groups.join(","), brightness, contrast, fit ? JSON.stringify(fit) : ""].join("|");
+  const key = [tones.w, tones.h, tones.blur ?? 0, tones.light[0], tones.light[tones.light.length >> 1], groups.join(","), brightness, contrast, fit ? JSON.stringify(fit) : ""].join("|");
   const known = areasCache.get(key);
   if (known) return known;
   const adjust = adjuster(brightness, contrast);
@@ -936,7 +988,7 @@ const separationCache = new Map<string, Separation>();
  * blend is what these markers will actually make. Worked out small, and read at its nearest pixel.
  */
 function separationOf(tones: Tones, plates: string[], brightness: number, contrast: number, blackShare: number): Separation {
-  const key = [tones.w, tones.h, tones.light[0], tones.light[tones.light.length >> 1], plates.join(","), brightness, contrast, blackShare].join("|");
+  const key = [tones.w, tones.h, tones.blur ?? 0, tones.light[0], tones.light[tones.light.length >> 1], plates.join(","), brightness, contrast, blackShare].join("|");
   const known = separationCache.get(key);
   if (known) return known;
   const adjust = adjuster(brightness, contrast);
@@ -1169,8 +1221,8 @@ function waves(tones: Tones, photo: Photo, w: number, h: number): PhotoMarks {
  * Tone as squiggles, after Gregg Wygonik's SquiggleDraw (public domain): one line along each row,
  * swinging higher and waving tighter the darker the photo is under it, both in step with the tone.
  * Unlike tone lines it doesn't lift through white - the line runs on flat - so a photo is a stack of
- * unbroken rows, or with `squiggleJoin` one line turning round at each end. It lifts only where this
- * layer has nothing to draw (another band's tone, another pen's colour).
+ * unbroken rows, or with `squiggleJoin` one line turning round at each end. It lifts where this layer
+ * has nothing to draw (another band's tone, another pen's colour), and with `squiggleLift` in white too.
  *
  * As SquiggleDraw does, a point goes only at each crest, trough and crossing of the middle, and
  * the points are joined as a smooth curve through them (Catmull-Rom, written as cubics): few points,
@@ -1181,7 +1233,7 @@ function squiggle(tones: Tones, photo: Photo, w: number, h: number): PhotoMarks 
   const row = Math.max(0.2, photo.rowMm ?? WAVE_DEFAULTS.rowMm) / 25.4;
   const tightest = Math.max(0.2, photo.waveMm ?? WAVE_DEFAULTS.waveMm) / 25.4;
   const shortest = Math.max(tightest, (2 * Math.max(0.05, photo.spacingMm)) / 25.4);
-  const swingAtBlack = (row / 2) * Math.max(0, photo.squiggleHeight ?? SQUIGGLE_DEFAULTS.height);
+  const swingAtBlack = Math.max(0, squiggleAmp(photo)) / 25.4;
   const { toneAt, fromWhite } = toneSampler(tones, photo, w, h);
   const rad = (photo.angle * Math.PI) / 180;
   const dx = Math.cos(rad);
@@ -1244,7 +1296,9 @@ function squiggle(tones: Tones, photo: Photo, w: number, h: number): PhotoMarks 
       const t = i === count ? b : a + along * i * step;
       const base = at(t, 0);
       const tone = toneAt(Math.min(w, Math.max(0, base.x)), Math.min(h, Math.max(0, base.y)));
-      if (tone < 0) {
+      // Nothing to draw here: outside this layer's band or colour, or - lifting - none of its tone at
+      // all. (A band above white keeps its lightest edge: that's tone it draws.)
+      if (tone < 0 || (photo.squiggleLift && fromWhite && tone < 0.03)) {
         if (run) {
           finish(run, lastT);
           runs.push(run);
@@ -2318,8 +2372,11 @@ export function photoFromData(raw: Record<string, unknown>): Photo | null {
     ...(Array.isArray(raw.region_inks) ? { regionInks: raw.region_inks.map((c) => (typeof c === "string" ? c : null)) } : {}),
     ...(Number.isFinite(Number(raw.row_mm)) && raw.row_mm !== undefined ? { rowMm: Number(raw.row_mm) } : {}),
     ...(Number.isFinite(Number(raw.wave_mm)) && raw.wave_mm !== undefined ? { waveMm: Number(raw.wave_mm) } : {}),
+    ...(Number.isFinite(Number(raw.hatch_smooth_mm)) && raw.hatch_smooth_mm !== undefined ? { hatchSmoothMm: Number(raw.hatch_smooth_mm) } : {}),
+    ...(Number.isFinite(Number(raw.squiggle_amp_mm)) && raw.squiggle_amp_mm !== undefined ? { squiggleAmpMm: Number(raw.squiggle_amp_mm) } : {}),
     ...(Number.isFinite(Number(raw.squiggle_height)) && raw.squiggle_height !== undefined ? { squiggleHeight: Number(raw.squiggle_height) } : {}),
     ...(raw.squiggle_join === true ? { squiggleJoin: true } : {}),
+    ...(raw.squiggle_lift === true ? { squiggleLift: true } : {}),
     ...(Number.isFinite(Number(raw.bleed)) && raw.bleed !== undefined ? { bleed: Number(raw.bleed) } : {}),
     ...(Number.isFinite(Number(raw.margin)) && raw.margin !== undefined ? { margin: Number(raw.margin) } : {}),
     ...(Array.isArray(raw.band) && raw.band.length === 2 && raw.band.every((v) => Number.isFinite(Number(v)))
@@ -2360,8 +2417,11 @@ export const photoData = (p: Photo) => ({
   ...(p.offsetMm && (p.offsetMm[0] || p.offsetMm[1]) ? { offset_mm: p.offsetMm } : {}),
   ...(p.rowMm !== undefined ? { row_mm: p.rowMm } : {}),
   ...(p.waveMm !== undefined ? { wave_mm: p.waveMm } : {}),
+  ...(p.hatchSmoothMm ? { hatch_smooth_mm: p.hatchSmoothMm } : {}),
+  ...(p.squiggleAmpMm !== undefined ? { squiggle_amp_mm: p.squiggleAmpMm } : {}),
   ...(p.squiggleHeight !== undefined ? { squiggle_height: p.squiggleHeight } : {}),
   ...(p.squiggleJoin ? { squiggle_join: true } : {}),
+  ...(p.squiggleLift ? { squiggle_lift: true } : {}),
   ...(p.bleed ? { bleed: p.bleed } : {}),
   ...(p.margin !== undefined ? { margin: p.margin } : {}),
 });

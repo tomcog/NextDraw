@@ -4,7 +4,7 @@ import { RotateCcwSquare, RotateCwSquare } from "lucide-react";
 import { Section } from "../../shared/components/controls/Section";
 import { NumberField } from "../../shared/components/controls/NumberField";
 import controls from "../../shared/components/controls/controls.module.css";
-import { BLACK_SHARE, CENTER_DEFAULTS, KEY_FROM, MOST_LAYERS, MOST_PASSES, OUTLINE_DEFAULTS, PLATES, PLATE_AIMS, SILHOUETTE_DEFAULTS, SQUIGGLE_DEFAULTS, WAVE_DEFAULTS, photoMarks, photoMode, type Photo, type Plate } from "../../shared/lib/drawing/photo";
+import { BLACK_SHARE, CENTER_DEFAULTS, KEY_FROM, MOST_LAYERS, MOST_PASSES, OUTLINE_DEFAULTS, PLATES, PLATE_AIMS, SILHOUETTE_DEFAULTS, WAVE_DEFAULTS, squiggleAmp, photoMarks, photoMode, type Photo, type Plate } from "../../shared/lib/drawing/photo";
 import { boxOf, type Layer, type Shape } from "../../shared/lib/drawing/shapes";
 import styles from "../App.module.css";
 import { EFFECTS, effectOf } from "./EffectToolbar";
@@ -141,13 +141,15 @@ export function PhotoCard({ shape, title, shapes, layers, busy, all, onAll, scal
               <>
                 <div className={styles.fillRow}>
                   <NumberField label="Angle" unit="°" min={-180} max={180} step={5} value={photo.angle} onChange={(angle) => actions.set({ angle })} />
-                  <NumberField label="Row spacing" unit="mm" min={0.2} max={20} step={0.25} value={photo.rowMm ?? WAVE_DEFAULTS.rowMm} onChange={(rowMm) => actions.set({ rowMm })} />
+                  <NumberField label="Spacing mm" min={0.2} max={20} step={0.25} value={photo.rowMm ?? WAVE_DEFAULTS.rowMm} onChange={(rowMm) => actions.set({ rowMm, squiggleAmpMm: squiggleAmp(photo), squiggleHeight: undefined })} />
                 </div>
+                {/* The waves themselves, apart from the rows: how far they swing at black, and how long one is there. */}
                 <div className={styles.fillRow}>
-                  <NumberField label="Wave height" unit="%" min={0} max={400} step={10} value={Math.round((photo.squiggleHeight ?? SQUIGGLE_DEFAULTS.height) * 100)} onChange={(v) => actions.set({ squiggleHeight: v / 100 })} />
-                  <NumberField label="Wave length" unit="mm" min={0.2} max={20} step={0.1} value={photo.waveMm ?? WAVE_DEFAULTS.waveMm} onChange={(waveMm) => actions.set({ waveMm })} />
+                  <NumberField label="Amplitude mm" min={0} max={20} step={0.1} value={Math.round(squiggleAmp(photo) * 100) / 100} onChange={(squiggleAmpMm) => actions.set({ squiggleAmpMm, squiggleHeight: undefined })} />
+                  <NumberField label="Wavelength mm" min={0.2} max={20} step={0.1} value={photo.waveMm ?? WAVE_DEFAULTS.waveMm} onChange={(waveMm) => actions.set({ waveMm })} />
                 </div>
                 <Checkbox checked={Boolean(photo.squiggleJoin)} label="Join rows into one line" onChange={(e) => actions.set({ squiggleJoin: e.target.checked || undefined })} />
+                <Checkbox checked={Boolean(photo.squiggleLift)} label="Lift the pen where there's nothing to draw" onChange={(e) => actions.set({ squiggleLift: e.target.checked || undefined })} />
               </>
             ) : photo.style === "waves" ? (
               <div className={styles.fillRow}>
@@ -156,11 +158,17 @@ export function PhotoCard({ shape, title, shapes, layers, busy, all, onAll, scal
                 <NumberField label="Wave length" unit="mm" min={0.2} max={20} step={0.1} value={photo.waveMm ?? WAVE_DEFAULTS.waveMm} onChange={(waveMm) => actions.set({ waveMm })} />
               </div>
             ) : (
-              <div className={`${styles.fillRow} ${styles.oneRow}`}>
-                <NumberField label="Angle" unit="°" min={-180} max={180} step={5} value={photo.angle} onChange={(angle) => actions.set({ angle })} />
-                <NumberField label="Spacing mm" min={0.1} max={5} step={0.05} value={photo.spacingMm} onChange={(spacingMm) => actions.set({ spacingMm })} />
-                <NumberField label="Passes" min={1} max={MOST_PASSES} step={1} value={photo.levels} onChange={(levels) => actions.set({ levels })} />
-              </div>
+              <>
+                <div className={`${styles.fillRow} ${styles.oneRow}`}>
+                  <NumberField label="Angle" unit="°" min={-180} max={180} step={5} value={photo.angle} onChange={(angle) => actions.set({ angle })} />
+                  <NumberField label="Spacing mm" min={0.1} max={5} step={0.05} value={photo.spacingMm} onChange={(spacingMm) => actions.set({ spacingMm })} />
+                  <NumberField label="Passes" min={1} max={MOST_PASSES} step={1} value={photo.levels} onChange={(levels) => actions.set({ levels })} />
+                </div>
+                {/* The photo smoothed before it's hatched, so busy patches read as tone rather than dashes. */}
+                <div className={styles.fillRow}>
+                  <NumberField label="Smoothing mm" min={0} max={5} step={0.1} value={photo.hatchSmoothMm ?? 0} onChange={(v) => actions.set({ hatchSmoothMm: v > 0 ? v : undefined })} />
+                </div>
+              </>
             )}
             <p className={styles.empty}>
               {marks
@@ -171,7 +179,7 @@ export function PhotoCard({ shape, title, shapes, layers, busy, all, onAll, scal
                   : photo.style === "outlines"
                   ? `${marks.strokes.toLocaleString()} contours, along the photo's edges and shapes. More lines follow finer changes of tone; more smoothing, only the big ones.`
                   : photo.style === "squiggle"
-                  ? `${marks.strokes.toLocaleString()} ${marks.strokes === 1 ? "line" : "lines"}. Each row swings higher and waves tighter where the photo is darker, and runs on flat through white. Wave height 100% and neighbouring rows just meet.`
+                  ? `${marks.strokes.toLocaleString()} ${marks.strokes === 1 ? "line" : "lines"}. Each row swings higher and waves tighter where the photo is darker${photo.squiggleLift ? ", and lifts off where there's nothing to draw" : ", and runs on flat through white"}. An amplitude of half the spacing and neighbouring rows just meet.`
                   : photo.style === "waves"
                   ? `${marks.strokes.toLocaleString()} strokes. Each row waves harder and tighter where the photo is darker; white is left as paper.`
                   : `${marks.strokes.toLocaleString()} strokes. The spacing starts at the tool’s solid-fill spacing; each pass adds lines where the photo is darker.`

@@ -62,8 +62,11 @@ get complicated, and it never needs Studio's tools for drawing and transforming 
     browser shares the one copy.
   - Squiggle (2026-10-10) is SquiggleDraw's effect (Gregg Wygonik's Processing sketch, public
     domain) redone as a style: rows that swing higher and wave tighter where it's darker, smooth
-    curves through each crest and crossing, unbroken through white, optionally joined into one line.
-    The waves never get tighter than twice the tool's solid-fill spacing. `squiggle()` in
+    curves through each crest and crossing, unbroken through white (or, with "Lift the pen", leaving
+    it as paper), optionally joined into one line. Amplitude and wavelength are in mm, apart from the
+    rows' spacing. The waves never get tighter than twice the tool's solid-fill spacing.
+  - Hatching has a Smoothing setting (mm on the page): the photo, colours too, is blurred before it's
+    hatched, so busy patches come out as tone rather than short dashes. `squiggle()` in
     `shared/lib/drawing/photo.ts`; tests in `web/tests/squiggle.test.ts`.
   - Photo holds the whole drawing. Anything Studio added (crop marks, words) is kept and saved back.
     The drawing worked on last is picked up again (`photo-last-file`), and `/photo?open=<path>` opens
