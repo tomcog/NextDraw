@@ -14,6 +14,11 @@ interface Props {
   label: string;
   /** Shown in the menu while nothing is chosen. */
   placeholder?: string;
+  /**
+   * Image: choosing no tool is a choice too, listed first under this name - the photo is then
+   * converted with general colors rather than a preset's.
+   */
+  none?: string;
   /** Plot: the chosen tool's settings have been changed from its preset. */
   changed?: boolean;
   /** Beside the menu, at the end of its row: Plot's button that takes the second tool away. */
@@ -31,7 +36,7 @@ interface Props {
  * and shows no row. The name of a tool is still the whole of it - the family is only how the menu is
  * grouped - so what is picked here is what a drawing, or a plot, records.
  */
-export function ToolPicker({ tools, value, onPick, label, placeholder, changed, action, disabled }: Props) {
+export function ToolPicker({ tools, value, onPick, label, placeholder, none, changed, action, disabled }: Props) {
   const familyOf = (t: Preset) => t.family ?? t.name;
   const families = tools.reduce<{ name: string; tips: Preset[] }[]>((list, t) => {
     const at = list.find((f) => f.name === familyOf(t));
@@ -67,17 +72,18 @@ export function ToolPicker({ tools, value, onPick, label, placeholder, changed, 
       label={label}
       hideLabel
       value={missing || family}
-      disabled={disabled || !tools.length}
+      disabled={disabled || (!tools.length && !none)}
       // Changing marker keeps the tip you were on where the new one has that tip too - a Fine is a
       // Fine - and otherwise takes its first.
       onChange={(e) => {
+        if (none && !e.target.value) return onPick("");
         const picked = families.find((f) => f.name === e.target.value)?.tips ?? [];
         const same = picked.find((t) => t.variant && t.variant === tool?.variant);
         const next = (same ?? picked[0])?.name;
         if (next) onPick(next);
       }}
     >
-      {!family && !missing && <option value="">{placeholder ?? "Choose a pen"}</option>}
+      {none ? <option value="">{none}</option> : !family && !missing && <option value="">{placeholder ?? "Choose a pen"}</option>}
       {missing && <option value={missing}>{`${missing} (not on this Mac)`}</option>}
       {families.map((f) => (
         <option key={f.name} value={f.name}>

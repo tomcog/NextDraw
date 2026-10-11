@@ -30,6 +30,8 @@ export interface PhotoActions {
   setScale: (percent: number) => void;
   /** Draw a plate in another of the pen's colors, by its name in the palette. */
   setPlatePen: (plate: Plate, penName: string) => void;
+  /** With no pen preset: draw the layer in hand in any color, from the picker. */
+  setColor: (color: string) => void;
   /** Split into a set of plates: CMYK, or CMYK with more inks. */
   splitCmyk: (set: PlateSet) => void;
   /** Set the layers' angles: a preset newly chosen, or the whole set turned by so many degrees. */
@@ -59,6 +61,8 @@ interface Props {
   penWidthMm?: number;
   /** The pen's palette: the colors a plate can be drawn in. */
   palette?: PenColor[];
+  /** No pen preset is chosen: the palette is general colors, and a layer can take any color at all. */
+  anyColor?: boolean;
   /** Whether the effect's cards - its own and Layers - are out. */
   effectCards?: boolean;
 }
@@ -67,7 +71,7 @@ interface Props {
  * The chosen photo's card - in the drawing's rail, and in image conversion's under its own: how it is
  * split into layers, sized to the page, and what each layer's lines are drawn as.
  */
-export function PhotoCard({ shape, title, shapes, layers, busy, all, onAll, scale, estimates, actions, penWidthMm = 0.5, palette = [], infoCard = true, effectCards = true }: Props) {
+export function PhotoCard({ shape, title, shapes, layers, busy, all, onAll, scale, estimates, actions, penWidthMm = 0.5, palette = [], anyColor = false, infoCard = true, effectCards = true }: Props) {
   const replaceInput = useRef<HTMLInputElement>(null);
   const photo = shape.photo;
   // How many inks a photo split by colour is in: its layers, not counting the key.
@@ -128,7 +132,7 @@ export function PhotoCard({ shape, title, shapes, layers, busy, all, onAll, scal
                       value={photo.plates![i] === PLATE_OFF ? PLATE_OFF : palette.find((p) => p.color.toLowerCase() === photo.plates![i]?.toLowerCase())?.name ?? ""}
                       onChange={(e) => actions.setPlatePen(plate, e.target.value)}
                     >
-                      {photo.plates![i] !== PLATE_OFF && !palette.some((p) => p.color.toLowerCase() === photo.plates![i]?.toLowerCase()) && <option value="">Not in this palette</option>}
+                      {photo.plates![i] !== PLATE_OFF && !palette.some((p) => p.color.toLowerCase() === photo.plates![i]?.toLowerCase()) && <option value="">{anyColor ? "Custom color" : "Not in this palette"}</option>}
                       {/* None leaves the channel out: the other plates make up the photo without it. */}
                       <option value={PLATE_OFF}>None</option>
                       {palette.map((p) => <option key={p.name} value={p.name}>{p.name}</option>)}
@@ -203,6 +207,18 @@ export function PhotoCard({ shape, title, shapes, layers, busy, all, onAll, scal
           )}
         </>
       )}
+      {/* No pen preset: the layer in hand can be any color at all - the paper card's own picker swatch. */}
+      {anyColor && (() => {
+        const layer = layers.find((l) => l.id === shape.layerId);
+        return (
+          <div className={controls.paperColors}>
+            <label className={controls.paperSwatch} title="Pick any color for this layer" style={{ background: layer?.color }}>
+              <input type="color" aria-label={`${layer?.name ?? "Layer"} color`} value={layer?.color ?? "#000000"} disabled={busy} onChange={(e) => actions.setColor(e.target.value)} />
+            </label>
+            <span className={controls.hint}>{`${layer?.name ?? "This layer"}: pick any color for it`}</span>
+          </div>
+        );
+      })()}
     </>
   );
   // Which layer the per-layer settings set: each by its number in the Layers list and a dot in its ink.

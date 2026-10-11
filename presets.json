@@ -684,21 +684,6 @@
     ]
   },
   {
-    "name": "Sharpie S-Gel",
-    "settings": {
-      "handling": 1,
-      "speed_pendown": 25,
-      "speed_penup": 50,
-      "accel": 50,
-      "pen_pos_down": 50,
-      "pen_pos_up": 100,
-      "pen_setup": 50,
-      "pen_rate_lower": 50,
-      "pen_rate_raise": 38
-    },
-    "plotter": "idraw"
-  },
-  {
     "name": "Stabilo point 88",
     "settings": {
       "handling": 1,

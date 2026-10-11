@@ -14,6 +14,8 @@ interface Props {
   /** Plot: the chosen tool's settings have been changed from its preset. */
   changed?: boolean;
   placeholder?: string;
+  /** Image: the name of the first entry, no tool at all - see ToolPicker. */
+  none?: string;
   /** What the heading names while folded, when it isn't just the tool: Plot's two tools, "EnerGel + Flair". */
   label?: string;
   /** Buttons at the end of the heading: Plot's tool setup and palette. */
@@ -32,8 +34,8 @@ interface Props {
  * and one-way switches, a second tool, Chill mode - is passed in by that app, and simply isn't there
  * in the other.
  */
-export function DrawingToolSection({ tools, value, onPick, collapsibleKey, disabled, changed, placeholder, label, action, inUse, under, children }: Props) {
-  const named = label ?? value;
+export function DrawingToolSection({ tools, value, onPick, collapsibleKey, disabled, changed, placeholder, none, label, action, inUse, under, children }: Props) {
+  const named = label ?? (value || none);
   return (
     <Section
       title="Pen"
@@ -50,6 +52,7 @@ export function DrawingToolSection({ tools, value, onPick, collapsibleKey, disab
           onPick={onPick}
           label="Pen"
           placeholder={placeholder}
+          none={none}
           changed={changed}
           disabled={disabled}
         />

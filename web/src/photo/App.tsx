@@ -33,6 +33,7 @@ import { PanelToolbar } from "../shared/components/PanelToolbar";
 import { dropWork, keepWork, loadWork, type Work } from "./lib/workInProgress";
 import { PhotoCard } from "./components/PhotoCard";
 import { PhotoHeader } from "./components/PhotoHeader";
+import { GENERAL_PEN } from "./lib/generalPen";
 import styles from "./App.module.css";
 
 // NextDraw Photo: a photo turned into lines for the tool's pens, saved as an ordinary layered drawing
@@ -47,7 +48,9 @@ const sizeIdOf = (page: Page) =>
 
 // This browser's choices, Photo's own: the tool and paper on the plotter for photos needn't be the
 // ones Studio was last drawing with. The drawing worked on last is picked up again on return.
-const TOOL_KEY = "photo-tool";
+// The pen starts at None - general colors, no preset - so this key is new with that choice, and
+// a pen remembered from before it doesn't stand in for it.
+const TOOL_KEY = "photo-pen-preset";
 const PAPER_COLOR_KEY = "photo-paper-color";
 const LAST_FILE_KEY = "photo-last-file";
 
@@ -139,7 +142,8 @@ export default function App() {
           if (cancelled || text === presetsSeen.current) return;
           presetsSeen.current = text;
           setPresets(list);
-          setToolName((current) => (list.some((t) => t.name === current) ? current : list[0]?.name ?? ""));
+          // None stays None; a pen that's gone falls back to it.
+          setToolName((current) => (list.some((t) => t.name === current) ? current : ""));
         })
         .catch(() => {});
     read();
@@ -149,8 +153,11 @@ export default function App() {
       window.clearInterval(timer);
     };
   }, [plotterOnUsb]);
-  const tool = presets.find((t) => t.name === toolName) ?? null;
-  const penWidthMm = tool?.settings.pen_width ?? 0.5;
+  // The preset chosen, or with None, the general pen: print's colors, any of which a layer can swap
+  // for a color of its own.
+  const preset = presets.find((t) => t.name === toolName) ?? null;
+  const tool = preset ?? GENERAL_PEN;
+  const penWidthMm = tool.settings.pen_width ?? 0.5;
 
   // ---- The photo drawing ----
 
@@ -260,7 +267,7 @@ export default function App() {
 
   const {
     addPhoto, addSeparations, setSeparationPlate, switchPhotoMode, setKeyLayer, splitPhoto, splitPhotoByColor, splitPhotoBestFit, bestPens,
-    placePhoto, photoScale, setPhotoScale, setPhotoMargin, replacePhoto, turnPhoto, setPhotoOf, setAngles, photoStem, splitPhotoCmyk, setPlatePen,
+    placePhoto, photoScale, setPhotoScale, setPhotoMargin, replacePhoto, turnPhoto, setPhotoOf, setAngles, photoStem, splitPhotoCmyk, setPlatePen, setLayerColor,
   } = photoActions({
     chosen, shapes, setShapes, layers, setLayers, active, setActiveLayer, page, tool,
     spacingMm: tool?.hatch?.spacing_mm ?? 1.5, all: photoAll, paper: paperColor, record, addShape, pick, setMessage, setBusy,
@@ -457,7 +464,7 @@ export default function App() {
       else splitPhotoByColor(inks);
     }
   }, [toolName]); // eslint-disable-line react-hooks/exhaustive-deps
-  const toolSection = <DrawingToolSection tools={presets} value={toolName} onPick={pickPen} collapsibleKey="photo-pen" disabled={busy} />;
+  const toolSection = <DrawingToolSection tools={presets} value={toolName} onPick={pickPen} none="None" collapsibleKey="photo-pen" disabled={busy} />;
 
   // Split by best fit: how near the best pens come to the photo, with one fewer and one more than it
   // has, so what another pen buys can be seen. An estimate from a sample of the photo's pixels, each
@@ -495,6 +502,7 @@ export default function App() {
       onAll={setPhotoAll}
       estimates={estimates}
       palette={tool?.palette ?? []}
+      anyColor={!preset}
       penWidthMm={penWidthMm}
       infoCard={infoCard}
       effectCards={effectCards}
@@ -519,6 +527,7 @@ export default function App() {
         setAngles,
         splitCmyk: (set) => splitPhotoCmyk({}, set),
         setPlatePen,
+        setColor: setLayerColor,
         pickBand: (id, layerId) => {
           pick(id);
           setActiveLayer(layerId);

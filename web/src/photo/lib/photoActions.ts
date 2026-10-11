@@ -42,6 +42,9 @@ export interface PhotoContext {
   setBusy: (busy: boolean) => void;
 }
 
+// The last color picked for a layer, and when: a drag through the picker is one step to undo.
+const colorStep = { layer: "", at: 0 };
+
 /** An angle turned by so many degrees, kept to a half turn - a line at 190° is the line at 10° - to a tenth. */
 const turnedBy = (angle: number, by: number) => Math.round(((((angle + by) % 180) + 180) % 180) * 10) / 10;
 
@@ -753,6 +756,41 @@ export function photoActions(ctx: PhotoContext) {
     setMessage({ text: `${PLATE_AIMS[plate].name} in ${pen.name}`, ok: true });
   };
 
+  /**
+   * With no pen preset: draw the chosen photo's layer in any color at all, from the picker. Its layer
+   * keeps its name; its ink - a plate's color, a colour group's, the key's - becomes this one, so a
+   * CMYK photo is separated again for it. A drag through the picker is one step to undo.
+   */
+  const setLayerColor = (color: string) => {
+    if (!chosen?.photo) return;
+    const now = Date.now();
+    if (colorStep.layer !== chosen.layerId || now - colorStep.at > 1500) record();
+    colorStep.layer = chosen.layerId;
+    colorStep.at = now;
+    const p = chosen.photo;
+    const was = (p.plate && p.plates ? p.plates[platesOf(p.plates).indexOf(p.plate)] : p.ink ?? p.keyInk)?.toLowerCase();
+    const plates = p.plate && p.plates ? p.plates.map((c, i) => (i === platesOf(p.plates!).indexOf(p.plate!) ? color : c)) : undefined;
+    const group = p.group;
+    setShapes((list) => list.map((sh) => {
+      const own = sh.id === chosen.id;
+      if (!own && !(group && sh.photo?.group === group)) return sh;
+      const q = sh.photo!;
+      return {
+        ...sh,
+        photo: {
+          ...q,
+          ...(plates ? { plates } : {}),
+          ...(own && q.ink ? { ink: color } : {}),
+          // The key's ink is every layer's to know, and so is each colour group's - but a group and the
+          // key in the same color are still two layers, so only the one in hand changes.
+          ...(p.key && was && q.keyInk?.toLowerCase() === was ? { keyInk: color } : {}),
+          ...(!p.key && was && q.regionInks ? { regionInks: q.regionInks.map((c, r) => (r === p.region && c?.toLowerCase() === was ? color : c)) } : {}),
+        },
+      };
+    }));
+    setLayers((list) => list.map((l) => (l.id === chosen.layerId ? { ...l, color } : l)));
+  };
+
   /** Change how the chosen photo is turned into lines. */
   const setPhotoOf = (patch: Partial<Photo>) => {
     if (!chosen?.photo) return;
@@ -781,6 +819,6 @@ export function photoActions(ctx: PhotoContext) {
 
   return {
     addPhoto, addSeparations, setSeparationPlate, switchPhotoMode, setKeyLayer, splitPhoto, splitPhotoByColor, splitPhotoBestFit, bestPens,
-    placePhoto, photoScale, setPhotoScale, setPhotoMargin, replacePhoto, turnPhoto, setPhotoOf, setAngles, photoStem, splitPhotoCmyk, setPlatePen,
+    placePhoto, photoScale, setPhotoScale, setPhotoMargin, replacePhoto, turnPhoto, setPhotoOf, setAngles, photoStem, splitPhotoCmyk, setPlatePen, setLayerColor,
   };
 }
