@@ -3,7 +3,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { drawnBox } from "../src/studio/lib/drawing";
 import type { Fill } from "../src/shared/lib/drawing/hatch";
-import { bakedCopies, flattened, handOutFills, joined, markRuns, simplified, splitApart } from "../src/studio/lib/shapeEdits";
+import { bakedCopies, flattened, handOutFills, joined, markRuns, pointCount, simplified, simplifyDrawing, splitApart } from "../src/studio/lib/shapeEdits";
 import { pathRuns, type Shape } from "../src/shared/lib/drawing/shapes";
 
 const shape = (over: Partial<Shape>): Shape => ({ id: "s", kind: "rect", x: 1, y: 1, x2: 3, y2: 2, layerId: "l", ...over });
@@ -94,4 +94,32 @@ test("simplifying drops the points a path doesn't need, and leaves alone one tha
   assert.equal(simpler.points?.length, 2);
   assert.equal(simpler.smooth, true);
   assert.equal(simplified({ ...straight, points: [{ x: 0, y: 0 }, { x: 1, y: 1 }] }, 0.001), null);
+});
+
+test("the Simplifier thins straight runs, joins ends that meet, drops specks, and leaves the rest", () => {
+  const off = { mergeShort: 0, straighten: 0, joinEnds: 0, dropTiny: 0 };
+  // A straight line walked in 101 points, then a second run starting where it ended, then a speck.
+  const line = Array.from({ length: 101 }, (_, i) => ({ x: i / 100, y: 0 }));
+  const on = { x: 1.001, y: 0 };
+  const path = shape({ kind: "path", runs: [line, [on, { x: 1, y: 1 }], [{ x: 3, y: 3 }, { x: 3.001, y: 3 }]] });
+  const words = shape({ id: "t", kind: "text", text: "hi" });
+  assert.equal(pointCount([path, words]), 105);
+
+  // All off: nothing changes.
+  assert.deepEqual(pathRuns(simplifyDrawing([path], () => true, off).shapes[0]), pathRuns(path));
+
+  const { shapes, gone } = simplifyDrawing([path, words], () => true, { mergeShort: 0.004, straighten: 0.002, joinEnds: 0.01, dropTiny: 0.01 });
+  assert.deepEqual(gone, []);
+  const runs = pathRuns(shapes[0]);
+  // The line is its two ends, carried on into the run that starts where it stopped; the speck is gone.
+  assert.equal(runs.length, 1);
+  assert.deepEqual(runs[0], [{ x: 0, y: 0 }, { x: 1, y: 0 }, { x: 1, y: 1 }]);
+  assert.equal(shapes[1], words); // a word is drawn from its letters, not its points
+
+  // A path with nothing but specks goes altogether; another layer's paths are left alone.
+  const speck = shape({ id: "p", kind: "path", points: [{ x: 0, y: 0 }, { x: 0.001, y: 0 }] });
+  const other = shape({ id: "q", kind: "path", layerId: "m", points: [{ x: 0, y: 0 }, { x: 0.001, y: 0 }] });
+  const r = simplifyDrawing([speck, other], (s) => s.layerId === "l", { ...off, dropTiny: 0.01 });
+  assert.deepEqual(r.gone, ["p"]);
+  assert.deepEqual(r.shapes, [other]);
 });

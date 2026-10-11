@@ -1,5 +1,5 @@
 import { Segment, SegmentedControl, Toolbar } from "@tomcoggia/ui";
-import { AudioWaveform, Circle, LoaderPinwheel, Minus, MousePointer2, Pentagon, Rainbow, Shell, Signal, Square, Star, Type } from "lucide-react";
+import { AudioWaveform, Circle, LoaderPinwheel, Minus, MousePointer2, Pentagon, Rainbow, Shell, Signal, Spline, Square, Star, Type } from "lucide-react";
 import type { Tool } from "../Canvas";
 
 const TOOLS: { kind: Tool; label: string; hint: string; icon: JSX.Element }[] = [
@@ -21,21 +21,28 @@ const TOOLS: { kind: Tool; label: string; hint: string; icon: JSX.Element }[] = 
 interface Props {
   tool: Tool;
   onTool: (tool: Tool) => void;
+  /** The Simplifier is the tool in hand: its card is out, and the page picks as Select does. */
+  simplifying: boolean;
+  onSimplify: () => void;
 }
 
 /**
  * The shapes that can be drawn, a glyph each in a vertical toolbar of their own at the left, as Photo's
  * effects are: the one pressed is what a drag on the page makes. The names are in the tooltips and read out.
  */
-export function ToolPicker({ tool, onTool }: Props) {
+export function ToolPicker({ tool, onTool, simplifying, onSimplify }: Props) {
   return (
     <Toolbar tone="white" orientation="vertical" aria-label="What to draw">
       <SegmentedControl size="sm" aria-label="Tool">
         {TOOLS.map((t) => (
-          <Segment key={t.kind} selected={tool === t.kind} icon={t.icon} title={t.hint} onClick={() => onTool(t.kind)}>
+          <Segment key={t.kind} selected={!simplifying && tool === t.kind} icon={t.icon} title={t.hint} onClick={() => onTool(t.kind)}>
             {t.label}
           </Segment>
         ))}
+        {/* Not a shape to draw but a tool all the same: it works on what's drawn, from its card. */}
+        <Segment selected={simplifying} icon={<Spline />} title="Simplifier: fewer points in the drawing's paths, set from its card" onClick={onSimplify}>
+          Simplifier
+        </Segment>
       </SegmentedControl>
     </Toolbar>
   );

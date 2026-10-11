@@ -215,3 +215,70 @@ export function splitApart(shape: Shape): Shape[] {
     };
   });
 }
+
+/** The Simplifier's settings, each in inches; 0 leaves that step out. */
+export interface Simplify {
+  /** Points closer than this to the last one kept are dropped. */
+  mergeShort: number;
+  /** Points within this of the line their neighbours make are dropped (Douglas-Peucker). */
+  straighten: number;
+  /** A run that starts within this of where the one before it ended carries on from it, pen down. */
+  joinEnds: number;
+  /** A run whose longest side is under this is taken out. */
+  dropTiny: number;
+}
+
+/** How many points a shape's paths hold: what the Simplifier counts, before and after. */
+export const pointCount = (shapes: Shape[]) =>
+  shapes.reduce((n, s) => (s.kind === "path" ? n + pathRuns(s).reduce((m, r) => m + r.length, 0) : n), 0);
+
+const near = (a: Point, b: Point, d: number) => Math.hypot(a.x - b.x, a.y - b.y) < d;
+
+/** A straight-line run with each point closer than `d` to the last one kept left out; the ends stay. */
+function mergeShort(run: Node[], d: number): Node[] {
+  if (d <= 0 || run.length < 3) return run;
+  const out = [run[0]];
+  for (let i = 1; i < run.length - 1; i++) if (!near(run[i], out[out.length - 1], d)) out.push(run[i]);
+  const last = run[run.length - 1];
+  // The end is where the line goes to, so it stays; the point before it goes if it's too close.
+  if (out.length > 1 && near(out[out.length - 1], last, d)) out.pop();
+  out.push(last);
+  return out;
+}
+
+/**
+ * The Simplifier, over a drawing: every path on these layers with points it doesn't need taken out,
+ * its runs joined where one starts where the last ended, and the specks dropped. Only runs of straight
+ * lines are thinned - a run with curve handles already draws with few points - and only paths: a
+ * photo, a word or a curve is drawn from its numbers, not its points. Runs are never turned round, so a
+ * pen that may only be pulled still draws each one the way it went. A path with nothing left goes.
+ */
+export function simplifyDrawing(shapes: Shape[], onLayer: (s: Shape) => boolean, opts: Simplify): { shapes: Shape[]; gone: string[] } {
+  const gone: string[] = [];
+  const out = shapes.flatMap((s) => {
+    if (s.kind !== "path" || !onLayer(s)) return [s];
+    const straight = (r: Node[]) => r.every((n) => !n.in && !n.out);
+    let runs = pathRuns(s).map((r) => (straight(r) ? simplifyRun(mergeShort(r, opts.mergeShort), opts.straighten) as Node[] : r));
+    if (opts.joinEnds > 0 && runs.length > 1) {
+      const joined: Node[][] = [runs[0]];
+      for (const r of runs.slice(1)) {
+        const prev = joined[joined.length - 1];
+        if (near(prev[prev.length - 1], r[0], opts.joinEnds)) joined[joined.length - 1] = [...prev, ...r.slice(1)];
+        else joined.push(r);
+      }
+      runs = joined;
+    }
+    if (opts.dropTiny > 0) runs = runs.filter((r) => { const b = pointsBox(r); return Math.max(b.x1 - b.x0, b.y1 - b.y0) >= opts.dropTiny; });
+    runs = runs.filter((r) => r.length > 1);
+    if (!runs.length) {
+      gone.push(s.id);
+      return [];
+    }
+    // The box follows the points that are left - unless the path is turned: it turns about the box's
+    // middle, and a box that moved would move the drawing.
+    const b = pointsBox(runs.flat());
+    const box = s.rotation ? {} : { x: b.x0, y: b.y0, x2: b.x1, y2: b.y1 };
+    return [{ ...s, ...(s.runs ? { runs } : { points: runs[0] }), ...box }];
+  });
+  return { shapes: out, gone };
+}

@@ -35,7 +35,7 @@ import { parseDrawing } from "../shared/lib/drawing/parse";
 import { platesOf, placeOnPage } from "../shared/lib/drawing/photo";
 import { useHistory } from "../shared/lib/useHistory";
 import { useDrawingFile } from "../shared/lib/drawing/useDrawingFile";
-import { bakedCopies, flattened, handOutFills, joined, markRuns, simplified, splitApart } from "./lib/shapeEdits";
+import { bakedCopies, flattened, handOutFills, joined, markRuns, pointCount, simplified, simplifyDrawing, splitApart } from "./lib/shapeEdits";
 import { PaletteMenu } from "../shared/components/controls/PaletteMenu";
 import { Hints } from "../shared/components/controls/Hints";
 import { RowMenu } from "./components/controls/RowMenu";
@@ -46,6 +46,7 @@ import { SelectionCard } from "./components/panels/SelectionCard";
 import { FillPanel } from "./components/panels/FillPanel";
 import { FileSection } from "../shared/components/controls/FileSection";
 import { GridSection } from "./components/panels/GridSection";
+import { SIMPLIFIER_START, SimplifierSection, type SimplifierState } from "./components/panels/SimplifierSection";
 import { ToolPicker } from "./components/panels/ToolPicker";
 import { LayersSection, type AlignEdge } from "./components/panels/LayersSection";
 import { boxAround, boxOf, clampToPage, groupLabel, groupsOf, moveBy, newGroupId, newLayerId, newShapeId, resizeTo, shapeName, turnAround, withWholeGroups, type Layer, type Page, type Shape } from "../shared/lib/drawing/shapes";
@@ -219,6 +220,13 @@ export default function App() {
  useEffect(() => remember("studio-pen-card", penCard), [penCard]);
  const [gridCard, setGridCard] = useState(() => load<boolean>("studio-grid-card") ?? true);
  useEffect(() => remember("studio-grid-card", gridCard), [gridCard]);
+ // The Simplifier as the tool in hand, its card out. Put down each time the page opens, as a tool is.
+ const [simplifierCard, setSimplifierCard] = useState(false);
+ // The Simplifier's settings, in mm on the paper, and whether it works on the whole drawing or one layer.
+ // Which simplifications are ticked and how far each reaches, until Simplify keeps them and clears it.
+ const [simplifier, setSimplifier] = useState<SimplifierState>(SIMPLIFIER_START);
+ const [simplifyScope, setSimplifyScope] = useState<"drawing" | "layer">(() => load<"drawing" | "layer">("studio-simplifier-scope") ?? "drawing");
+ useEffect(() => remember("studio-simplifier-scope", simplifyScope), [simplifyScope]);
  const sizeId = useMemo(() => {
   const match = SIZES.find(
    (s) =>
@@ -546,6 +554,7 @@ export default function App() {
    const el = document.activeElement;
    if (el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement || (el as HTMLElement)?.isContentEditable) return;
    setTool(picked);
+   setSimplifierCard(false); // another tool taken up puts the Simplifier down
   };
   window.addEventListener("keydown", onKey);
   return () => window.removeEventListener("keydown", onKey);
@@ -1037,6 +1046,38 @@ export default function App() {
   setShapes((list) => list.map((s) => (s.id === id ? simpler : s)));
   setPanel(null); // asked for, done, and out of the way again
  };
+
+ /**
+  * The Simplifier over the drawing, or the layer being drawn on, worked out while its card is out so
+  * the card can say how many points go before anything changes.
+  */
+ const simplifierRun = (list: Shape[]) => {
+  const inches = (k: keyof SimplifierState["on"]) => (simplifier.on[k] ? simplifier.mm[k] / 25.4 : 0);
+  const opts = { mergeShort: inches("mergeShort"), straighten: inches("straighten"), joinEnds: inches("joinEnds"), dropTiny: inches("dropTiny") };
+  const onLayer = (s: Shape) => simplifyScope === "drawing" || s.layerId === activeLayer;
+  return { ...simplifyDrawing(list, onLayer, opts), before: pointCount(list.filter(onLayer)) };
+ };
+ const simplifierPreview = useMemo(() => {
+  if (!simplifierCard) return null;
+  const run = simplifierRun(shapes);
+  return { ...run, after: pointCount(run.shapes.filter((s) => simplifyScope === "drawing" || s.layerId === activeLayer)) };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+ }, [simplifierCard, shapes, simplifier, simplifyScope, activeLayer]);
+ const applySimplifier = () => {
+  if (!simplifierPreview) return;
+  const { shapes: simpler, gone } = simplifierPreview;
+  record();
+  setShapes(simpler);
+  if (gone.length) {
+   setFills((list) => list.filter((f) => !gone.includes(f.shapeId)));
+   setSelected((ids) => ids.filter((id) => !gone.includes(id)));
+  }
+  setSimplifier(SIMPLIFIER_START); // kept, and the card is clear for the next go
+ };
+ // While anything is ticked, the page shows the drawing simplified, and takes no edits: a shape dragged
+ // there would be written back simplified, and kept without Simplify being pressed.
+ const simplifierShowing = Boolean(simplifierCard && simplifierPreview && Object.values(simplifier.on).some(Boolean));
+ const keepAsIs = () => {};
 
  /** Take a joined shape apart again: each run becomes a shape of its own. */
  const splitShape = (id: string) => {
@@ -1615,7 +1656,21 @@ export default function App() {
        { key: "grid", on: gridCard, toggle: () => setGridCard((on) => !on) },
       ]}
      />
-     {!setupOpen && <ToolPicker tool={tool} onTool={setTool} />}
+     {!setupOpen && (
+      <ToolPicker
+       tool={tool}
+       onTool={(t) => {
+        setTool(t);
+        setSimplifierCard(false);
+       }}
+       simplifying={simplifierCard}
+       // Picked, the page picks shapes as Select does; picked again, it's put down for Select.
+       onSimplify={() => {
+        setTool("select");
+        setSimplifierCard((on) => !on);
+       }}
+      />
+     )}
      {!setupOpen && <HistoryToolbar canUndo={canUndo} canRedo={canRedo} onUndo={undo} onRedo={redo} disabled={busy} />}
      {setupToolbar}
     </div>
@@ -1623,7 +1678,7 @@ export default function App() {
      <Canvas
       page={page}
       paperColor={paperColor}
-      shapes={shapes}
+      shapes={simplifierShowing ? simplifierPreview!.shapes : shapes}
       fills={fills}
       model={model}
       // One bar over the page for everything true of what is being looked at: what has just
@@ -1652,10 +1707,10 @@ export default function App() {
       snap={snapping ? snapStep : 0}
       selected={selected}
       onSelect={selectOnCanvas}
-      onUpdateMany={updateShapes}
-      onAdd={addShape}
-      onUpdate={updateShape}
-      onEditStart={record}
+      onUpdateMany={simplifierShowing ? keepAsIs : updateShapes}
+      onAdd={simplifierShowing ? keepAsIs : addShape}
+      onUpdate={simplifierShowing ? keepAsIs : updateShape}
+      onEditStart={simplifierShowing ? keepAsIs : record}
      />
     </section>
 
@@ -1708,6 +1763,24 @@ export default function App() {
      <Card variant="flat" className={styles.controls}>
       <div className={`${styles.cardBody} ${controls.cardSections}`}>
        <GridSection snapping={snapping} onSnapping={setSnapping} step={snapStep} onStep={setSnapStep} />
+      </div>
+     </Card>
+     )}
+     {simplifierCard && simplifierPreview && (
+     <Card variant="flat" className={styles.controls}>
+      <div className={`${styles.cardBody} ${controls.cardSections}`}>
+       <SimplifierSection
+        value={simplifier}
+        onChange={setSimplifier}
+        scope={simplifyScope}
+        onScope={setSimplifyScope}
+        layerName={active?.name ?? "this layer"}
+        before={simplifierPreview.before}
+        after={simplifierPreview.after}
+        removed={simplifierPreview.gone.length}
+        busy={busy}
+        onApply={applySimplifier}
+       />
       </div>
      </Card>
      )}
