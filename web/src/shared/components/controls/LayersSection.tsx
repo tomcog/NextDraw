@@ -1,12 +1,12 @@
 import { useRef, type ReactNode } from "react";
 import { ButtonRound, LayerController } from "@tomcoggia/ui";
 import { EllipsisVertical, LayersArrowUp, Plus } from "lucide-react";
-import { Section } from "../../../shared/components/controls/Section";
-import { isPalettePen, labelAfter, LABEL_SEPARATOR } from "../../../shared/lib/ink";
-import type { Preset } from "../../../shared/lib/types";
+import { Section } from "./Section";
+import { isPalettePen, labelAfter, LABEL_SEPARATOR } from "../../lib/ink";
+import type { Preset } from "../../lib/types";
 import { useRowDrag } from "../../lib/useRowDrag";
-import type { Layer } from "../../../shared/lib/drawing/shapes";
-import styles from "../../App.module.css";
+import type { Layer } from "../../lib/drawing/shapes";
+import styles from "./LayersSection.module.css";
 
 
 interface Props {
@@ -24,32 +24,40 @@ interface Props {
   /** The layer whose pen menu is open, and whose row menu is, if any. */
   colorMenuId: string | undefined;
   rowMenuId: string | undefined;
-  /** The layer whose name is open for typing into, if any. */
-  renaming: string | null;
+  /** The layer whose name is open for typing into, if any. Studio's: Image doesn't rename. */
+  renaming?: string | null;
   /** The pen of the layer being renamed, which stays: only the label after it is typed. Null when
    *  the layer names no pen, and the whole name is typed. */
   renamePen?: string | null;
   onSort: () => void;
-  onAdd: () => void;
+  /** Studio: one more layer. Image's layers are the image's, made by splitting it. */
+  onAdd?: () => void;
   /** Target this layer alone, or with `add` put it in with the others or take it out. */
   onSwitch: (id: string, add?: boolean) => void;
   onVisible: (id: string, visible: boolean) => void;
   onColorMenu: (id: string, anchor: HTMLElement) => void;
-  onRowMenu: (id: string, anchor: HTMLElement) => void;
-  onRenameType: (id: string, name: string) => void;
+  /** Studio: duplicate, merge, rename or delete a layer, from the menu at the end of its row. */
+  onRowMenu?: (id: string, anchor: HTMLElement) => void;
+  onRenameType?: (id: string, name: string) => void;
   /** Escape: put back the name it had before. */
-  onRenameCancel: (id: string) => void;
+  onRenameCancel?: (id: string) => void;
   /** The name field left: keep what was typed. */
-  onRenameDone: (id: string) => void;
+  onRenameDone?: (id: string) => void;
   /** A drag to restack is starting: somewhere to take an undo snapshot. */
   onRestackStart: () => void;
   /** Move a layer to a new place in the stack, `to` counted bottom first like `layers`. */
   onRestack: (id: string, to: number) => void;
+  /** Under which the card's folding is remembered. */
+  collapsibleKey?: string;
+  /** What the row's name tells a hover it does. */
+  nameTitle?: string;
+  /** What the layers draw: "draw on" in Studio, "set" in Image. */
+  verb?: string;
 }
 
 /**
- * The layers, top first: picking the one to draw on, its pen, hiding, renaming and restacking - and
- * the active layer lined up with another or turned, as one.
+ * Shared: the layers, top first, in Studio and Image - picking the one to work on, its pen, hiding and
+ * restacking; in Studio also adding, renaming and each row's menu, which it passes in.
  */
 export function LayersSection(props: Props) {
   const { layers, busy, tool, renaming } = props;
@@ -69,7 +77,7 @@ export function LayersSection(props: Props) {
   return (
     <Section
       title="Layers"
-      collapsibleKey="layers"
+      collapsibleKey={props.collapsibleKey ?? "layers"}
       action={
         <span className={styles.headerTools}>
           {layers.length > 1 && (
@@ -77,8 +85,10 @@ export function LayersSection(props: Props) {
               title="Sort by darkness: the lightest color is layer 1 and drawn first, with darker colors over it"
               disabled={busy} onClick={props.onSort} />
           )}
-          <ButtonRound size="sm" icon={<Plus />} aria-label="Add a layer"
-            title="Add a layer: one more color to draw with" disabled={busy} onClick={props.onAdd} />
+          {props.onAdd && (
+            <ButtonRound size="sm" icon={<Plus />} aria-label="Add a layer"
+              title="Add a layer: one more color to draw with" disabled={busy} onClick={props.onAdd} />
+          )}
         </span>
       }
     >
@@ -101,7 +111,7 @@ export function LayersSection(props: Props) {
               <LayerController
                 // A group of its own per row, as the paths' are: several layers can be targeted at
                 // once, and a browser only ever lets one radio of a group be on.
-                name={`studio-layer-${layer.id}`}
+                name={`layer-${layer.id}`}
                 // The layer being drawn on is marked with the target, as Plot marks the one to print.
                 // (A "print" row's printed mark needs `printed`, which Studio never passes.)
                 purpose="print"
@@ -126,7 +136,7 @@ export function LayersSection(props: Props) {
                 // in with the targeted ones or takes it out. The name, below, targets it alone.
                 onChange={() => {}}
                 onClick={() => props.onSwitch(layer.id, true)}
-                aria-label={`Draw on layer ${at + 1}, ${layer.name}`}
+                aria-label={`${props.verb ?? "Draw on"} layer ${at + 1}, ${layer.name}`}
                 label={renaming === layer.id ? (
                   <span className={styles.shapeLabel}>
                   {/* The pen stays as it is, in front of the field: it's what says which pen to
@@ -141,10 +151,10 @@ export function LayersSection(props: Props) {
                     autoFocus
                     disabled={busy}
                     onFocus={(e) => e.currentTarget.select()}
-                    onChange={(e) => props.onRenameType(layer.id, e.target.value)}
-                    onBlur={() => props.onRenameDone(layer.id)}
+                    onChange={(e) => props.onRenameType?.(layer.id, e.target.value)}
+                    onBlur={() => props.onRenameDone?.(layer.id)}
                     onKeyDown={(e) => {
-                      if (e.key === "Escape") props.onRenameCancel(layer.id);
+                      if (e.key === "Escape") props.onRenameCancel?.(layer.id);
                       if (e.key === "Enter" || e.key === "Escape") e.currentTarget.blur();
                     }}
                   />
@@ -157,7 +167,7 @@ export function LayersSection(props: Props) {
                     className={props.targets.has(layer.id)
                       ? `${styles.shapeName} ${styles.shapeNameOn}`
                       : styles.shapeName}
-                    title="Click to target this layer alone; Shift-click to target it with the others"
+                    title={props.nameTitle ?? "Click to target this layer alone; Shift-click to target it with the others"}
                     onClick={(e) => props.onSwitch(layer.id, e.shiftKey)}
                   >
                     {layer.name}
@@ -170,13 +180,15 @@ export function LayersSection(props: Props) {
                   onPointerDown: (e) => start(e, layer.id),
                 }}
               />
-              <ButtonRound size="sm" variant="tertiary" icon={<EllipsisVertical />}
-                aria-label={`More for layer ${layer.name}`}
-                aria-haspopup="menu"
-                aria-expanded={props.rowMenuId === layer.id}
-                title="Duplicate, merge or delete this layer"
-                disabled={busy}
-                onClick={(e) => props.onRowMenu(layer.id, e.currentTarget)} />
+              {props.onRowMenu && (
+                <ButtonRound size="sm" variant="tertiary" icon={<EllipsisVertical />}
+                  aria-label={`More for layer ${layer.name}`}
+                  aria-haspopup="menu"
+                  aria-expanded={props.rowMenuId === layer.id}
+                  title="Duplicate, merge or delete this layer"
+                  disabled={busy}
+                  onClick={(e) => props.onRowMenu?.(layer.id, e.currentTarget)} />
+              )}
             </li>
           );
         })}

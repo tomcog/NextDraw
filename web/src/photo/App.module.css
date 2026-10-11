@@ -125,6 +125,12 @@
 
 .fillRow > * { flex: 1 1 4.5rem; min-width: 4.5rem; }
 
+/* A CMYK plate's color swatch and its menu, side by side: the swatch level with the menu's line,
+   above the label under it. */
+.plateCell { display: flex; align-items: flex-start; gap: 0.5rem; }
+.plateCell > label:first-child { flex: none; margin-top: 0.5rem; }
+.plateCell > :last-child { flex: 1; min-width: 0; }
+
 /* A row kept to one line however narrow the card: its fields share the width. */
 .oneRow { flex-wrap: nowrap; }
 .oneRow > * { min-width: 0; }
@@ -146,3 +152,14 @@
   vertical-align: middle;
 }
 
+
+/* The color picker a layer's "any color" opens: put by its swatch, so the system picker opens there. */
+.hiddenPicker {
+  position: fixed;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  border: 0;
+  opacity: 0;
+  pointer-events: none;
+}

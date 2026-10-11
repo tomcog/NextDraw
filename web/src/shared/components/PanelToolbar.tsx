@@ -1,14 +1,15 @@
 import { Segment, SegmentedControl, Toolbar } from "@tomcoggia/ui";
-import { Grid3x3, Image, Pen, Save, StickyNote } from "lucide-react";
+import { Grid3x3, Image, Layers2, Pen, Save, StickyNote } from "lucide-react";
 import bar from "./PreviewToolbar.module.css";
 
-/** The rail's cards the toolbar shows and hides, in the order they stack. Grid is Studio's, Image Image's. */
+/** The rail's cards the toolbar shows and hides, in the order they stack. Grid is Studio's; Image and Layers Image's (Studio's Layers switch is with its tools). */
 const PANELS = {
   file: { label: "File", icon: <Save />, what: "the File card" },
   paper: { label: "Paper", icon: <StickyNote />, what: "the Paper card: what the drawing is plotted on" },
   pen: { label: "Pen", icon: <Pen />, what: "the Pen card: what the drawing is plotted with" },
   grid: { label: "Grid", icon: <Grid3x3 />, what: "the Grid card: what shapes snap to" },
   image: { label: "Image", icon: <Image />, what: "the image's card" },
+  layers: { label: "Layers", icon: <Layers2 />, what: "the Layers card: the image's layers, their colors and order" },
 };
 
 export type Panel = keyof typeof PANELS;

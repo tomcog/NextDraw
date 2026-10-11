@@ -13,6 +13,7 @@ import {
 import { boxOf, newLayerId, newShapeId, type Layer, type Page, type Shape } from "../../shared/lib/drawing/shapes";
 import { samplePhoto, type Candidate } from "./choosePens";
 import { searchPensOffPage } from "./penSearch";
+import { folderOf } from "./separationFolder";
 
 export interface PhotoContext {
   /** The one shape picked, if one is. */
@@ -156,7 +157,7 @@ export function photoActions(ctx: PhotoContext) {
       const [first] = copies;
       const margin = 0.5;
       const { crop, ...box } = placeOnPage(first.copy.width / first.copy.height, page, "fit", margin);
-      const stem = stemWithoutPlate(first.file.name, pens);
+      const stem = stemWithoutPlate(first.file.name, pens, folderOf(first.file));
       const group = copies.length > 1 ? newShapeId() : undefined;
       const parts = copies.map(({ file, copy }, i) => {
         const plate = plates[i];
@@ -206,25 +207,6 @@ export function photoActions(ctx: PhotoContext) {
     } catch (err) {
       setMessage({ text: (err as Error).message, ok: false });
     }
-  };
-
-  /**
-    * Which plate the chosen separation is: its name, its screen angle, and its layer's pen - the
-    * palette's nearest to that plate, if the tool has four pens.
-    */
-  const setSeparationPlate = (plate: Plate | "other") => {
-    if (!chosen?.photo?.separation) return;
-    const pens = tool2?.palette ?? [];
-    const pen = plate !== "other" ? platePens(pens, [plate])[0] : undefined;
-    const was = chosen.photo.separation;
-    const wasPlate = Object.values(PLATE_AIMS).some((aim) => aim.name === was);
-    const separation = plate === "other" ? (wasPlate ? "Color" : was) : PLATE_AIMS[plate].name;
-    const name = chosen.name?.endsWith(` ${was}`) ? chosen.name.slice(0, -was.length - 1) : chosen.name ?? "Image";
-    record();
-    setShapes((list) => list.map((sh) => (sh.id === chosen.id
-      ? { ...sh, name: `${name} ${separation}`, photo: { ...sh.photo!, separation, ...(plate !== "other" ? { angle: PLATE_AIMS[plate].angle } : {}) } }
-      : sh)));
-    if (pen) setLayers((list) => list.map((l) => (l.id === chosen.layerId ? { ...l, name: pen.name, color: pen.color } : l)));
   };
 
   /**
@@ -402,6 +384,9 @@ export function photoActions(ctx: PhotoContext) {
     // and the pen's: take the pen off, as often as it was put on.
     if ((base?.photo?.ink || base?.photo?.side) && layer) {
       while (name.endsWith(` ${layer.name}`)) name = name.slice(0, -layer.name.length - 1);
+    } else if (base?.photo?.separation && name.endsWith(` ${base.photo.separation}`)) {
+      // A separation is named for its plate after the image's name: "Portrait Yellow".
+      name = name.slice(0, -base.photo.separation.length - 1);
     } else name = name.replace(words, "");
     // From a colour or CMYK split, or one around the paper, the palette's darkest pen; from B&W, the
     // pen its layer has now.
@@ -851,22 +836,35 @@ export function photoActions(ctx: PhotoContext) {
   };
 
   /**
-   * With no pen preset: draw the chosen photo's layer in any color at all, from the picker. Its layer
-   * keeps its name; its ink - a plate's color, a colour group's, the key's - becomes this one, so a
+   * With no pen preset: draw the chosen photo's layer - or, given a plate, that plate's layer - in any
+   * color at all, from the picker. Its layer keeps its name; its ink - a plate's color, a colour group's, the key's - becomes this one, so a
    * CMYK photo is separated again for it. A drag through the picker is one step to undo.
    */
-  const setLayerColor = (color: string) => {
-    if (!chosen?.photo) return;
+  const setLayerColor = (color: string, plate?: Plate, layerId?: string, name?: string) => {
+    // A CMYK plate's swatch colors that plate's layer, and the Layers card's any layer, whichever
+    // layer is in hand. A palette pen picked there names the layer too.
+    const ours = (sh: Shape) => sh.kind === "photo" && Boolean(sh.photo) && (chosen?.photo?.group ? sh.photo?.group === chosen.photo.group : sh.id === chosen?.id);
+    const target = plate ? shapes.find((sh) => ours(sh) && sh.photo?.plate === plate) ?? chosen
+      : layerId ? shapes.find((sh) => ours(sh) && sh.layerId === layerId)
+      : chosen;
+    if (!target?.photo) {
+      // A layer with none of this image on it - one Studio added: its color and name alone.
+      if (layerId) {
+        record();
+        setLayers((list) => list.map((l) => (l.id === layerId ? { ...l, color, ...(name ? { name } : {}) } : l)));
+      }
+      return;
+    }
     const now = Date.now();
-    if (colorStep.layer !== chosen.layerId || now - colorStep.at > 1500) record();
-    colorStep.layer = chosen.layerId;
+    if (colorStep.layer !== target.layerId || now - colorStep.at > 1500) record();
+    colorStep.layer = target.layerId;
     colorStep.at = now;
-    const p = chosen.photo;
+    const p = target.photo;
     const was = (p.plate && p.plates ? p.plates[platesOf(p.plates).indexOf(p.plate)] : p.ink ?? p.keyInk)?.toLowerCase();
     const plates = p.plate && p.plates ? p.plates.map((c, i) => (i === platesOf(p.plates!).indexOf(p.plate!) ? color : c)) : undefined;
     const group = p.group;
     setShapes((list) => list.map((sh) => {
-      const own = sh.id === chosen.id;
+      const own = sh.id === target.id;
       if (!own && !(group && sh.photo?.group === group)) return sh;
       const q = sh.photo!;
       return {
@@ -882,7 +880,7 @@ export function photoActions(ctx: PhotoContext) {
         },
       };
     }));
-    setLayers((list) => list.map((l) => (l.id === chosen.layerId ? { ...l, color } : l)));
+    setLayers((list) => list.map((l) => (l.id === target.layerId ? { ...l, color, ...(name ? { name } : {}) } : l)));
   };
 
   /** Change how the chosen photo is turned into lines. */
@@ -912,7 +910,7 @@ export function photoActions(ctx: PhotoContext) {
   };
 
   return {
-    addPhoto, addSeparations, setSeparationPlate, switchPhotoMode, setKeyLayer, splitPhoto, splitPhotoByColor, splitPhotoBestFit, bestPens,
+    addPhoto, addSeparations, switchPhotoMode, setKeyLayer, splitPhoto, splitPhotoByColor, splitPhotoBestFit, bestPens,
     placePhoto, photoScale, setPhotoScale, setPhotoMargin, replacePhoto, turnPhoto, setPhotoOf, setAngles, photoStem, splitPhotoCmyk, setPlatePen, setLayerColor,
     splitAroundPaper, setPaperTone,
   };

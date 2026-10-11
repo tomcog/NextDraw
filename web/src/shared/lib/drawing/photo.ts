@@ -471,14 +471,16 @@ export const plateNamed = (name: string): Plate | undefined => inkNamed(name)?.p
 /**
  * A separation file's name without its ink, for naming the drawing they make together: "Portrait_Cyan"
  * and "portrait-cyan-channel" are both "Portrait". The ink's word goes, and the words that say a file
- * is a separation - channel, plate, separation, layer - with it.
+ * is a separation - channel, plate, separation, layer - with it. A name that is nothing but its ink
+ * gives `fallback` - its folder's name - when there is one.
  */
-export const stemWithoutPlate = (name: string, pens: { name: string }[] = []) => {
+export const stemWithoutPlate = (name: string, pens: { name: string }[] = [], fallback = "") => {
   const bare = name.replace(/\.[^.]+$/, "");
   const inks = [...PLATE_WORDS.map(([w]) => w), ...pens.map((p) => p.name.toLowerCase()), "c", "m", "y", "k", "channel", "plate", "separation", "sep", "layer"];
   const words = bare.replace(/([a-z])([A-Z])/g, "$1 $2").split(/[\s_\-.()]+/).filter(Boolean);
   const kept = words.filter((w) => !inks.includes(w.toLowerCase()));
-  return kept.join(" ").trim() || bare;
+  // A file named for its ink alone - "cyan.png" - leaves nothing: the folder it came from, if known.
+  return kept.join(" ").trim() || fallback || bare;
 };
 
 /** How much of the colours' shared grey goes to the black plate unless set: half, as print often does. */

@@ -1,0 +1,83 @@
+/* The Layers card, the same in Studio and Image. */
+
+/* The card's actions, laid out like Plot's Layers card header. */
+.headerTools {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+/* Layers: the library's own row, with a menu after it. */
+.layerList {
+  /* The target on the layer being drawn on is black, as Plot's is: the library's hook for it. */
+  --ui-layer-controller-target-color: var(--ui-text-default);
+  position: relative; /* rows measure their offsetTop against the list */
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.125rem;
+}
+
+.layerRow {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  border-radius: 4px;
+}
+
+/* The row being carried: lifted above the ones sliding out of its way. The shadow is only there
+   while it's held, so the list settles flat as soon as it's dropped. */
+.layerRow[data-dragging="true"] {
+  z-index: 2;
+  box-shadow: var(--ui-shadow-float-2);
+  cursor: grabbing;
+}
+
+.layerList:has(> [data-dragging="true"]) { user-select: none; }
+
+.layerRow > :first-child { flex: 1; min-width: 0; }
+
+/* The row's own name holds the width. Both the lead and the label inside it are the library's,
+   which sizes them to their words. */
+.layerRow [class*="lead"],
+.layerRow [class*="label"] { flex: 1; min-width: 0; }
+
+.shapeLabel {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.5rem;
+  width: 100%;
+  min-width: 0;
+}
+
+/* A field that reads as the name until it is typed into. */
+.shapeName {
+  flex: 1 1 auto;
+  min-width: 2.5rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  border: 0;
+  padding: 0;
+  background: none;
+  font: inherit;
+  color: inherit;
+}
+
+.shapeName:focus { outline: none; }
+
+span.shapeName { cursor: pointer; }
+
+/* While it is being typed into it says so, rather than looking like the text it replaces. */
+.shapeNameEdit {
+  border-bottom: 1px solid var(--ui-text-muted);
+  color: var(--ui-text-default);
+}
+
+/* The layer being worked on, in the colour of the target beside it - the same token the library's
+   row marks its pick with, so the two are one colour. */
+.shapeNameOn { color: var(--ui-layer-controller-target-color, var(--ui-safety)); }

@@ -44,10 +44,11 @@ import { TextCard } from "./components/panels/TextCard";
 import { SelectionCard } from "./components/panels/SelectionCard";
 import { FillPanel } from "./components/panels/FillPanel";
 import { FileSection } from "../shared/components/controls/FileSection";
+import { FileToolbar } from "../shared/components/FileToolbar";
 import { GridSection } from "./components/panels/GridSection";
 import { SIMPLIFIER_START, SimplifierSection, type SimplifierState } from "./components/panels/SimplifierSection";
 import { ToolPicker } from "./components/panels/ToolPicker";
-import { LayersSection } from "./components/panels/LayersSection";
+import { LayersSection } from "../shared/components/controls/LayersSection";
 import { boxAround, boxOf, clampToPage, groupLabel, groupsOf, moveBy, newGroupId, newLayerId, newShapeId, resizeTo, shapeName, turnAround, withWholeGroups, type Layer, type Page, type Shape } from "../shared/lib/drawing/shapes";
 import { buildSvg, svgForMarks } from "../shared/lib/drawing/svg";
 import { drawnMiddle, fitToPage, reshapeDrawing, runsOffPage, turnDrawingLeft } from "./lib/drawing";
@@ -1672,6 +1673,26 @@ export default function App() {
    <main className={styles.layout}>
     <div className={styles.tools}>
      <AppSwitch current="studio" orientation="vertical" />
+     {/* What's done with whole drawings, opening down: the File card keeps Save. */}
+     <FileToolbar
+      busy={busy}
+      hasShapes={shapes.length > 0}
+      onOpen={() => {
+       setBrowserAdds(false);
+       setBrowserOpen(true);
+      }}
+      onAddLayer={() => {
+       setBrowserAdds(true);
+       setBrowserOpen(true);
+      }}
+      onNew={() => startNew()}
+      onSendToPlot={sendToPlot}
+      // Only where there's an image to bake: a drawing of plain paths is its own snapshot.
+      onSnapshot={shapes.some((sh) => sh.kind === "photo") ? async () => {
+       const res = await takeSnapshot();
+       if (res) setSnapped({ name: res.name.replace(/\.svg$/i, ""), path: res.path });
+      } : undefined}
+     />
      <PanelToolbar
       cards={[
        { key: "file", on: fileCard, toggle: () => setFileCard((on) => !on) },
@@ -1753,21 +1774,6 @@ export default function App() {
         hasShapes={shapes.length > 0}
         busy={busy}
         confirm={confirmNewBlock}
-        onOpen={() => {
-         setBrowserAdds(false);
-         setBrowserOpen(true);
-        }}
-        onAddLayer={() => {
-         setBrowserAdds(true);
-         setBrowserOpen(true);
-        }}
-        onNew={() => startNew()}
-        onSendToPlot={sendToPlot}
-        // Only where there's an image to bake: a drawing of plain paths is its own snapshot.
-        onSnapshot={shapes.some((sh) => sh.kind === "photo") ? async () => {
-         const res = await takeSnapshot();
-         if (res) setSnapped({ name: res.name.replace(/\.svg$/i, ""), path: res.path });
-        } : undefined}
         onSave={save}
        />
 

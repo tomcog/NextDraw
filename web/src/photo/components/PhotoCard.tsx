@@ -5,18 +5,15 @@ import { Section } from "../../shared/components/controls/Section";
 import { NumberField } from "../../shared/components/controls/NumberField";
 import controls from "../../shared/components/controls/controls.module.css";
 import { BLACK_SHARE, CENTER_DEFAULTS, KEY_FROM, MOST_COLORS, MOST_LAYERS, MOST_SIDE_LAYERS, MOST_PASSES, paperToneOf, OUTLINE_DEFAULTS, PLATE_AIMS, PLATE_OFF, SILHOUETTE_DEFAULTS, STREAM_DEFAULTS, ONE_LINE_DEFAULTS, ONE_LINE_MOST, HILBERT_DEFAULTS, WAVE_DEFAULTS, ANGLE_PRESETS, PLATE_SETS, SQUIGGLE_DRAW, SQUIGGLE_INKSCAPE, SQUIGGLE_INKSCAPE_RANGES, SQUIGGLE_RANGES, coverSteps, plateSetOf, platesOf, squiggleDrawOf, squiggleInkscapeOf, type AnglePreset, type SquiggleDraw, type SquiggleInkscape, type PlateSet, photoMarks, photoMode, type Photo, type Plate } from "../../shared/lib/drawing/photo";
-import { boxOf, type Layer, type Shape } from "../../shared/lib/drawing/shapes";
+import { boxOf, type Shape } from "../../shared/lib/drawing/shapes";
 import type { PenColor } from "../../shared/lib/types";
 import styles from "../App.module.css";
-
-const ALL_PLATES = Object.keys(PLATE_AIMS) as Plate[];
 import { EFFECTS, effectOf } from "./EffectToolbar";
 
 /** What the card does to the photo. Each acts on the chosen photo, and on all its layers where it should. */
 export interface PhotoActions {
   turn: (quarter: 1 | -1) => void;
   replace: (file: File | undefined) => void;
-  setPlate: (plate: Plate | "other") => void;
   switchMode: (to: "value" | "colour" | "cmyk") => void;
   /** Change settings of the photo - this layer's, or every layer's when "All layers" is on. */
   set: (patch: Partial<Photo>) => void;
@@ -36,8 +33,8 @@ export interface PhotoActions {
   splitAround: (dark: number, light: number) => void;
   /** Which of the picture's tones a photo split around the paper leaves bare, as darkness from and to. */
   setPaperTone: (tone: [number, number]) => void;
-  /** With no pen preset: draw the layer in hand in any color, from the picker. */
-  setColor: (color: string) => void;
+  /** With no pen preset: draw the layer in hand - or a CMYK plate's layer - in any color, from the picker. */
+  setColor: (color: string, plate?: Plate) => void;
   /** Split into a set of plates: CMYK, or CMYK with more inks. */
   splitCmyk: (set: PlateSet) => void;
   /** Set the layers' angles: a preset newly chosen, or the whole set turned by so many degrees. */
@@ -51,7 +48,6 @@ interface Props {
   shape: Shape & { photo: Photo };
   title: string;
   shapes: Shape[];
-  layers: Layer[];
   busy: boolean;
   /** Whether the settings go to all the photo's layers at once. */
   all: boolean;
@@ -77,7 +73,7 @@ interface Props {
  * The chosen photo's card - in the drawing's rail, and in image conversion's under its own: how it is
  * split into layers, sized to the page, and what each layer's lines are drawn as.
  */
-export function PhotoCard({ shape, title, shapes, layers, busy, all, onAll, scale, estimates, actions, penWidthMm = 0.5, palette = [], anyColor = false, infoCard = true, effectCards = true }: Props) {
+export function PhotoCard({ shape, title, shapes, busy, all, onAll, scale, estimates, actions, penWidthMm = 0.5, palette = [], anyColor = false, infoCard = true, effectCards = true }: Props) {
   const replaceInput = useRef<HTMLInputElement>(null);
   const photo = shape.photo;
   // How many inks a photo split by colour is in: its layers, not counting the key.
@@ -94,19 +90,9 @@ export function PhotoCard({ shape, title, shapes, layers, busy, all, onAll, scal
     <>
       {photo.separation ? (
         // Separations made elsewhere: each layer is its own picture, so there's nothing to split.
-        // Which plate this one is sets its name, its screen angle and its pen.
+        // Which plate each is, and its pen, came from its file's name; its color is its swatch's.
         <>
-          <InputSelect
-            size="md"
-            label="Plate"
-            value={ALL_PLATES.find((p) => PLATE_AIMS[p].name === photo.separation) ?? "other"}
-            onChange={(e) => actions.setPlate(e.target.value as Plate | "other")}
-          >
-            {/* CMYK, then the extra inks a separation can be for. */}
-            {ALL_PLATES.map((p) => <option key={p} value={p}>{PLATE_AIMS[p].name}</option>)}
-            <option value="other">{ALL_PLATES.some((p) => PLATE_AIMS[p].name === photo.separation) ? "Another color" : photo.separation}</option>
-          </InputSelect>
-          <p className={styles.empty}>A separation: this layer draws its own grayscale picture, more of its color where it's darker. Replace swaps this plate alone.</p>
+          <p className={styles.empty}>A separation: this layer draws its own grayscale picture, more of its color where it's darker. Pick a layer in the Layers card to see its picture and set it; Replace swaps that plate alone.</p>
         </>
       ) : (
         <>
@@ -131,7 +117,8 @@ export function PhotoCard({ shape, title, shapes, layers, busy, all, onAll, scal
                 The photo is separated again for the colors as they now are. */}
               {photo.plates && palette.length > 0 && (
                 <div className={styles.fillRow}>
-                  {platesOf(photo.plates).map((plate, i) => (
+                  {platesOf(photo.plates).map((plate, i) => {
+                    const select = (
                     <InputSelect
                       key={plate}
                       size="md"
@@ -139,12 +126,25 @@ export function PhotoCard({ shape, title, shapes, layers, busy, all, onAll, scal
                       value={photo.plates![i] === PLATE_OFF ? PLATE_OFF : palette.find((p) => p.color.toLowerCase() === photo.plates![i]?.toLowerCase())?.name ?? ""}
                       onChange={(e) => actions.setPlatePen(plate, e.target.value)}
                     >
-                      {photo.plates![i] !== PLATE_OFF && !palette.some((p) => p.color.toLowerCase() === photo.plates![i]?.toLowerCase()) && <option value="">{anyColor ? "Custom color" : "Not in this palette"}</option>}
+                      {photo.plates![i] !== PLATE_OFF && !palette.some((p) => p.color.toLowerCase() === photo.plates![i]?.toLowerCase()) && <option value="">{anyColor ? "Custom" : "Not in this palette"}</option>}
                       {/* None leaves the channel out: the other plates make up the photo without it. */}
                       <option value={PLATE_OFF}>None</option>
                       {palette.map((p) => <option key={p.name} value={p.name}>{p.name}</option>)}
                     </InputSelect>
-                  ))}
+                    );
+                    // No pen preset: any color for the plate, from the swatch in front of its menu - the
+                    // paper card's own picker swatch. Not for a plate left out.
+                    if (!anyColor || photo.plates![i] === PLATE_OFF) return select;
+                    const color = photo.plates![i];
+                    return (
+                      <div key={plate} className={styles.plateCell}>
+                        <label className={controls.paperSwatch} title={`Pick any color for the ${PLATE_AIMS[plate].name.toLowerCase()} plate`} style={{ background: color }}>
+                          <input type="color" aria-label={`${PLATE_AIMS[plate].name} plate color`} value={color} disabled={busy} onChange={(e) => actions.setColor(e.target.value, plate)} />
+                        </label>
+                        {select}
+                      </div>
+                    );
+                  })}
                 </div>
               )}
               {/* How much of the colors' shared gray the black plate takes over: more, and the darks are
@@ -244,54 +244,6 @@ export function PhotoCard({ shape, title, shapes, layers, busy, all, onAll, scal
           )}
         </>
       )}
-      {/* No pen preset: the layer in hand can be any color at all - the paper card's own picker swatch. */}
-      {anyColor && (() => {
-        const layer = layers.find((l) => l.id === shape.layerId);
-        return (
-          <div className={controls.paperColors}>
-            <label className={controls.paperSwatch} title="Pick any color for this layer" style={{ background: layer?.color }}>
-              <input type="color" aria-label={`${layer?.name ?? "Layer"} color`} value={layer?.color ?? "#000000"} disabled={busy} onChange={(e) => actions.setColor(e.target.value)} />
-            </label>
-            <span className={controls.hint}>{`${layer?.name ?? "This layer"}: pick any color for it`}</span>
-          </div>
-        );
-      })()}
-    </>
-  );
-  // Which layer the per-layer settings set: each by its number in the Layers list and a dot in its ink.
-  const layerPicker = (
-    <>
-      {photo.group && (() => {
-        // In the order of their layers, bottom first: the same order as the numbers in the
-        // Layers list, lightest ink on the left once the layers are sorted by darkness.
-        const place = (sh: Shape) => layers.findIndex((l) => l.id === sh.layerId);
-        const bands = shapes
-          .filter((sh) => sh.photo?.group === photo.group)
-          .sort((a, b) => place(a) - place(b));
-        // Bands by value are named for their tone; by colour, for their ink.
-        // Each band by its layer: the number the Layers list gives it, and a dot in its ink - up
-        // to eight of them, too many for words.
-        return (
-          <SegmentedControl size="sm" variant="dark" aria-label="Band to set">
-            {bands.map((band) => {
-              const at = layers.findIndex((l) => l.id === band.layerId);
-              const layer = layers[at];
-              return (
-                <Segment
-                  key={band.id}
-                  selected={band.id === shape.id}
-                  aria-label={`Layer ${at + 1}, ${layer?.name ?? ""}`}
-                  title={`Layer ${at + 1}, ${layer?.name ?? ""}: its lines`}
-                  onClick={() => actions.pickBand(band.id, band.layerId)}
-                >
-                  <span className={styles.bandDot} style={{ background: layer?.color }} aria-hidden="true" />
-                  {at + 1}
-                </Segment>
-              );
-            })}
-          </SegmentedControl>
-        );
-      })()}
     </>
   );
   // How far the layers reach into each other where they meet: the whole photo's.
@@ -378,10 +330,7 @@ export function PhotoCard({ shape, title, shapes, layers, busy, all, onAll, scal
         <Checkbox checked={!all} label="Set each layer on its own" onChange={(e) => onAll(!e.target.checked)} />
       )}
       {photo.group && !all && (
-        <>
-          {layerPicker}
-          <p className={styles.empty}>{which} above are this layer's alone. Pick another to set it.</p>
-        </>
+        <p className={styles.empty}>{which} above are this layer's alone. Pick another in the Layers card to set it.</p>
       )}
     </>
   );
@@ -687,7 +636,7 @@ export function PhotoCard({ shape, title, shapes, layers, busy, all, onAll, scal
           {splits && effect.key !== "hatch" && effect.key !== "squiggle" && effect.key !== "waves" && effect.key !== "streamlines" && effect.key !== "oneline" && effect.key !== "hilbert" && effect.key !== "outlines" && (
             <Card variant="flat" className={styles.controls}>
               <div className={`${styles.cardBody} ${controls.cardSections}`}>
-                <Section title={photo.separation ? "Separation" : "Layers"} collapsibleKey="photo-layers">
+                <Section title={photo.separation ? "Separation" : "Split"} collapsibleKey="photo-layers">
                   {/* How many layers the photo is split into by tone. Each band layer has its own settings
                     below; the photo's picture, brightness and contrast are what the bands are cut from. */}
                   {/* By value: read as black and white, split into tone bands. By colour: split into groups
@@ -704,7 +653,6 @@ export function PhotoCard({ shape, title, shapes, layers, busy, all, onAll, scal
                       <Segment selected={all} title="The settings below go to all the image's layers at once" onClick={() => onAll(true)}>All layers</Segment>
                     </SegmentedControl>
                   )}
-                  {layerPicker}
                   {bleed}
                 </Section>
               </div>

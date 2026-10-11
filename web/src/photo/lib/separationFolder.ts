@@ -19,3 +19,9 @@ export function separationFiles(files: File[], pens: PenColor[]): { use: File[];
   const use = named.length ? named : images;
   return { use, skipped: images.filter((f) => !use.includes(f)).map((f) => f.name) };
 }
+
+/** The folder a file was picked from, when it came in a folder: what a drawing of its separations is named, if their names say nothing else. */
+export const folderOf = (file: File) => {
+  const parts = (file.webkitRelativePath || "").split("/");
+  return parts.length > 1 ? parts[parts.length - 2] : "";
+};

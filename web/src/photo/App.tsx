@@ -4,6 +4,7 @@ import { Button, Card } from "@tomcoggia/ui";
 import "../shared/lib/drawing/separationWorker";
 import { DrawingToolSection } from "../shared/components/controls/DrawingToolSection";
 import { FileSection } from "../shared/components/controls/FileSection";
+import { FileToolbar } from "../shared/components/FileToolbar";
 import { PaperSection } from "../shared/components/controls/PaperSection";
 import { Section } from "../shared/components/controls/Section";
 import controls from "../shared/components/controls/controls.module.css";
@@ -30,11 +31,14 @@ import { photoActions } from "./lib/photoActions";
 import { ConvertStage, type ConvertView } from "./components/ConvertStage";
 import { EffectToolbar, effectOf, type Effect } from "./components/EffectToolbar";
 import { PanelToolbar } from "../shared/components/PanelToolbar";
+import { LayersSection } from "../shared/components/controls/LayersSection";
+import { PaletteMenu } from "../shared/components/controls/PaletteMenu";
+import { lightness } from "../shared/lib/color";
 import { dropWork, keepWork, loadWork, type Work } from "./lib/workInProgress";
 import { PhotoCard } from "./components/PhotoCard";
 import { PhotoHeader } from "./components/PhotoHeader";
 import { GENERAL_PEN } from "./lib/generalPen";
-import { separationFiles } from "./lib/separationFolder";
+import { folderOf, separationFiles } from "./lib/separationFolder";
 import styles from "./App.module.css";
 
 // NextDraw Photo: a photo turned into lines for the tool's pens, saved as an ordinary layered drawing
@@ -130,6 +134,9 @@ export default function App() {
   // And the effect's cards - its own and Layers - put away by clicking its button in the toolbar again.
   const [effectCards, setEffectCards] = useState(() => load<boolean>("photo-effect-cards") ?? true);
   useEffect(() => remember("photo-effect-cards", effectCards), [effectCards]);
+  // And the Layers card, last: the image's layers, which one is being set, their colors and order.
+  const [layersCard, setLayersCard] = useState(() => load<boolean>("photo-layers-card") ?? true);
+  useEffect(() => remember("photo-layers-card", layersCard), [layersCard]);
 
   const [toolName, setToolName] = useState<string>(() => load<string>(TOOL_KEY) ?? "");
   useEffect(() => remember(TOOL_KEY, toolName), [toolName]);
@@ -234,7 +241,8 @@ export default function App() {
       chosen
         ? layers.flatMap((l) =>
             shapes
-              .filter((sh) => sh.layerId === l.id && sh.kind === "photo" && sh.photo && (sh.id === chosen.id || (chosen.photo!.group && sh.photo.group === chosen.photo!.group)))
+              // A layer hidden in the Layers card is left out of the lines, so the rest can be judged without it.
+              .filter((sh) => !l.hidden && sh.layerId === l.id && sh.kind === "photo" && sh.photo && (sh.id === chosen.id || (chosen.photo!.group && sh.photo.group === chosen.photo!.group)))
               .map((sh) => ({ photo: sh.photo!, color: l.color, name: l.name })),
           )
         : [],
@@ -267,7 +275,7 @@ export default function App() {
   }, [record, pick]);
 
   const {
-    addPhoto, addSeparations, setSeparationPlate, switchPhotoMode, setKeyLayer, splitPhoto, splitPhotoByColor, splitPhotoBestFit, bestPens,
+    addPhoto, addSeparations, switchPhotoMode, setKeyLayer, splitPhoto, splitPhotoByColor, splitPhotoBestFit, bestPens,
     placePhoto, photoScale, setPhotoScale, setPhotoMargin, replacePhoto, turnPhoto, setPhotoOf, setAngles, photoStem, splitPhotoCmyk, setPlatePen, setLayerColor,
     splitAroundPaper, setPaperTone,
   } = photoActions({
@@ -294,7 +302,7 @@ export default function App() {
     newDrawing();
     // A new photo is first seen as it is, before any effect: the first view in the bar.
     setConvertView("picture");
-    file.setName(files.length > 1 || skipped.length ? stemWithoutPlate(files[0].name, tool.palette) : files[0].name.replace(/\.[^.]+$/, ""));
+    file.setName(files.length > 1 || skipped.length ? stemWithoutPlate(files[0].name, tool.palette, folderOf(files[0])) : files[0].name.replace(/\.[^.]+$/, ""));
     setPendingPhotos({ files, skipped });
   };
   useEffect(() => {
@@ -503,7 +511,6 @@ export default function App() {
       // The photo's own name, without the band or color a layer of it adds.
       title={photoStem().name}
       shapes={shapes}
-      layers={layers}
       busy={busy}
       all={photoAll}
       onAll={setPhotoAll}
@@ -520,7 +527,6 @@ export default function App() {
       actions={{
         turn: turnPhoto,
         replace: replacePhoto,
-        setPlate: setSeparationPlate,
         switchMode: switchPhotoMode,
         set: setPhotoOf,
         split: splitPhoto,
@@ -545,6 +551,64 @@ export default function App() {
     />
   ) : null;
 
+  // The Layers card: the image's layers top first, the one being set ringed. Clicking one sets it;
+  // its swatch opens the pen's colors (any color, with no preset); the eye hides it from the lines;
+  // dragging restacks, which is the order they plot in - and with opaque ink, which shows on top.
+  const [colorMenu, setColorMenu] = useState<{ id: string; anchor: HTMLElement } | null>(null);
+  const colorInput = useRef<HTMLInputElement>(null);
+  const [customFor, setCustomFor] = useState<string | null>(null);
+  const pickCustomColor = (id: string, near: HTMLElement) => {
+    setCustomFor(id);
+    const input = colorInput.current;
+    if (!input) return;
+    // The picker opens where its input is, so the input goes to the layer's swatch first.
+    const at = near.getBoundingClientRect();
+    input.style.left = `${at.left}px`;
+    input.style.top = `${at.bottom}px`;
+    input.value = layers.find((l) => l.id === id)?.color ?? "#808080";
+    input.click();
+  };
+  const pickLayer = (id: string) => {
+    const group = chosen?.photo?.group;
+    const on = shapes.find((sh) => sh.layerId === id && sh.kind === "photo" && sh.photo && (group ? sh.photo.group === group : sh.id === chosen?.id));
+    if (on) pick(on.id);
+    setActiveLayer(id);
+  };
+  const layersSection = chosen?.photo && layersCard ? (
+    <Card variant="flat" className={styles.controls}>
+      <div className={`${styles.cardBody} ${controls.cardSections}`}>
+        <LayersSection
+          collapsibleKey="photo-layer-list"
+          verb="Set"
+          nameTitle="Click to set this layer: the effect's per-layer settings change it"
+          layers={layers}
+          active={active}
+          targets={new Set(active ? [active.id] : [])}
+          tool={preset}
+          busy={busy}
+          colorMenuId={colorMenu?.id}
+          rowMenuId={undefined}
+          onSort={() => {
+            record();
+            // Lightest at the bottom, drawn first, darker over it.
+            setLayers((list) => [...list].sort((a, b) => (lightness(b.color) ?? 0) - (lightness(a.color) ?? 0)));
+          }}
+          onSwitch={(id) => pickLayer(id)}
+          onVisible={(id, visible) => setLayers((list) => list.map((l) => (l.id === id ? { ...l, hidden: !visible } : l)))}
+          onColorMenu={(id, anchor) => setColorMenu((open) => (open?.id === id ? null : { id, anchor }))}
+          onRestackStart={record}
+          onRestack={(id, to) => setLayers((list) => {
+            const from = list.findIndex((l) => l.id === id);
+            if (from < 0 || from === to) return list;
+            const next = [...list];
+            next.splice(to, 0, next.splice(from, 1)[0]);
+            return next;
+          })}
+        />
+      </div>
+    </Card>
+  ) : null;
+
   const photoInput = useRef<HTMLInputElement>(null);
   const mainRail = (
     <>
@@ -561,20 +625,6 @@ export default function App() {
               hasShapes={shapes.length > 0}
               busy={busy}
               confirm={confirmBlock}
-              onOpen={() => setBrowsing("drawing")}
-              onOpenPhotos={(files) => files.length && ask({ kind: "photos", files })}
-              onOpenFolder={(files) => {
-                const { use, skipped } = separationFiles(files, tool.palette ?? []);
-                if (use.length) ask({ kind: "photos", files: use, skipped });
-                else setMessage({ text: "There are no images in that folder", ok: false });
-              }}
-              onNew={() => ask({ kind: "new" })}
-              onEditInStudio={editInStudio}
-              onSendToPlot={file.sendToPlot}
-              onSnapshot={async () => {
-                const res = await file.snapshot();
-                if (res) setSnapped({ name: res.name.replace(/\.svg$/i, ""), path: res.path });
-              }}
               onSave={() => file.save()}
             />
           </div>
@@ -592,6 +642,7 @@ export default function App() {
         </Card>
       )}
       {photoCard}
+      {layersSection}
       {/* The image card with no photo yet: the way to open one, where its settings will be. */}
       {!chosen?.photo && infoCard && (
         <Card variant="flat" className={styles.controls}>
@@ -611,7 +662,7 @@ export default function App() {
   // The toolbar's effect is the whole photo's. Silhouette has no tones or colours to split by, so a
   // split photo comes back together as one layer drawn that way; separations keep a plate each.
   // Whether the rail has any card to show; with none, the stage takes its width.
-  const railOut = Boolean(fileCard || paperCard || penCard || confirmNext || infoCard || (chosen?.photo && effectCards));
+  const railOut = Boolean(fileCard || paperCard || penCard || confirmNext || infoCard || (chosen?.photo && (effectCards || layersCard)));
 
   const setEffect = (effect: Effect) => {
     setEffectCards(true);
@@ -632,6 +683,31 @@ export default function App() {
         onOpened={(res) => ask({ kind: "open", res })}
       />
       <PhotoHeader plotterFound={plotterFound} />
+      {/* A layer's colors, from its swatch in the Layers card: the pen's, and any color besides. */}
+      {colorMenu && (
+        <PaletteMenu
+          anchor={colorMenu.anchor}
+          palette={tool.palette ?? []}
+          current={layers.find((l) => l.id === colorMenu.id)?.color ?? null}
+          onPick={(pen) => {
+            setLayerColor(pen.color, undefined, colorMenu.id, pen.name);
+            setColorMenu(null);
+          }}
+          onCustom={() => {
+            pickCustomColor(colorMenu.id, colorMenu.anchor);
+            setColorMenu(null);
+          }}
+          onClose={() => setColorMenu(null)}
+        />
+      )}
+      <input
+        ref={colorInput}
+        type="color"
+        className={styles.hiddenPicker}
+        tabIndex={-1}
+        aria-hidden
+        onChange={(e) => customFor && setLayerColor(e.target.value.toLowerCase(), undefined, customFor)}
+      />
       <input
         ref={photoInput}
         type="file"
@@ -649,12 +725,32 @@ export default function App() {
       <main className={styles.layout} data-rail={railOut ? undefined : "none"}>
         <div className={styles.tools}>
           <AppSwitch current="photo" orientation="vertical" />
+          {/* What's done with whole drawings, opening down: the File card keeps Save. */}
+          <FileToolbar
+      busy={busy}
+            hasShapes={shapes.length > 0}
+            onOpen={() => setBrowsing("drawing")}
+            onOpenPhotos={(files) => files.length && ask({ kind: "photos", files })}
+            onOpenFolder={(files) => {
+              const { use, skipped } = separationFiles(files, tool.palette ?? []);
+              if (use.length) ask({ kind: "photos", files: use, skipped });
+              else setMessage({ text: "There are no images in that folder", ok: false });
+            }}
+            onNew={() => ask({ kind: "new" })}
+            onEditInStudio={editInStudio}
+            onSendToPlot={file.sendToPlot}
+            onSnapshot={async () => {
+              const res = await file.snapshot();
+              if (res) setSnapped({ name: res.name.replace(/\.svg$/i, ""), path: res.path });
+            }}
+          />
           <PanelToolbar
             cards={[
               { key: "file", on: fileCard, toggle: () => setFileCard((on) => !on) },
               { key: "paper", on: paperCard, toggle: () => setPaperCard((on) => !on) },
               { key: "pen", on: penCard, toggle: () => setPenCard((on) => !on) },
               { key: "image", on: infoCard, toggle: () => setInfoCard((on) => !on) },
+              { key: "layers", on: layersCard, toggle: () => setLayersCard((on) => !on) },
             ]}
           />
           <EffectToolbar effect={chosen?.photo ? effectOf(chosen.photo) : undefined} onEffect={setEffect} onAgain={() => setEffectCards((on) => !on)} disabled={!chosen?.photo || busy} />
@@ -679,6 +775,7 @@ export default function App() {
                 build: tool?.settings.ink_build ?? 1,
                 builds: tool?.settings.ink_builds !== false,
                 opaque: tool?.settings.ink_opaque === true,
+                noPreset: !preset,
               }}
               view={view}
               onView={setView}
