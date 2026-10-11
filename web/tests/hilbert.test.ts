@@ -65,3 +65,41 @@ test("hilbert: a picture that isn't square is still one line, inside it; lifting
   const xs = points(lifted.passes[0]).map((p) => p[0]);
   assert.ok(Math.min(...xs) > 1.5, "nothing drawn on the light side");
 });
+
+test("hilbert: Peano is one line of right-angle steps inside the picture; rounding curves the corners; blend keeps it one line", async () => {
+  await gradient("data:hil");
+  for (const [w, h] of [[3, 3], [5, 2], [2, 5]]) {
+    const marks = photoMarks(photo({ hilbertCurve: "peano" }), w, h)!;
+    assert.equal(marks.strokes, 1, `peano ${w}x${h}`);
+    const pts = points(marks.passes[0]);
+    for (const [x, y] of pts) assert.ok(x >= 0 && x <= w && y >= 0 && y <= h);
+    for (let i = 1; i < pts.length; i++) {
+      const dx = Math.abs(pts[i][0] - pts[i - 1][0]);
+      const dy = Math.abs(pts[i][1] - pts[i - 1][1]);
+      assert.ok(dx < 1e-6 || dy < 1e-6 || Math.hypot(dx, dy) < 0.4, "steps run across or down");
+    }
+  }
+  const rounded = photoMarks(photo({ hilbertRound: 1 }), 3, 3)!.passes[0];
+  assert.ok(rounded.includes("Q"), "rounded corners are curves");
+  const blended = photoMarks(photo({ hilbertBlend: 1 }), 3, 3)!;
+  assert.equal(blended.strokes, 1);
+  assert.notEqual(blended.passes[0], photoMarks(photo(), 3, 3)!.passes[0]);
+});
+
+test("hilbert: turned, the curve stays on the picture and its steps run at the angle", async () => {
+  await gradient("data:hil");
+  const marks = photoMarks(photo({ hilbertAngle: 45 }), 3, 3)!;
+  const runs = marks.passes[0].split("M").filter(Boolean).map((r) => r.split("L").map((p) => p.split(" ").map(Number)));
+  let diagonal = 0;
+  let total = 0;
+  for (const pts of runs) {
+    for (const [x, y] of pts) assert.ok(x >= -1e-6 && x <= 3 + 1e-6 && y >= -1e-6 && y <= 3 + 1e-6);
+    for (let i = 1; i < pts.length; i++) {
+      const dx = Math.abs(pts[i][0] - pts[i - 1][0]);
+      const dy = Math.abs(pts[i][1] - pts[i - 1][1]);
+      total++;
+      if (Math.abs(dx - dy) < 2e-4) diagonal++;
+    }
+  }
+  assert.ok(diagonal / total > 0.85, `steps at 45°: ${(diagonal / total).toFixed(2)}`);
+});

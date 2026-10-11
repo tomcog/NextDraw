@@ -462,8 +462,20 @@ export function PhotoCard({ shape, title, shapes, layers, busy, all, onAll, scal
                       {/* How big the curve's squares get in the lightest parts, so they still meander. */}
                       <NumberField label="Coarsest mm" min={0.5} max={50} step={0.5} value={photo.hilbertCoarsestMm ?? HILBERT_DEFAULTS.coarsestMm} onChange={(hilbertCoarsestMm) => actions.set({ hilbertCoarsestMm })} />
                     </div>
+                    {/* Which curve: Hilbert's, folding each square in four, or Peano's, in nine - a woven look, with bigger steps of tone that Blend softens. */}
+                    <SegmentedControl size="sm" variant="dark" aria-label="Curve">
+                      <Segment selected={photo.hilbertCurve !== "peano"} title="Hilbert: each square folds into four - bold steps of tone" onClick={() => actions.set({ hilbertCurve: undefined })}>Hilbert</Segment>
+                      <Segment selected={photo.hilbertCurve === "peano"} title="Peano: each square folds into nine - a woven, back-and-forth texture with bigger steps of tone; best with Blend" onClick={() => actions.set({ hilbertCurve: "peano" })}>Peano</Segment>
+                    </SegmentedControl>
+                    <div className={styles.fillRow}>
+                      {/* 0, square corners - a circuit board; 100, every turn a curve - a worm. */}
+                      <NumberField label="Rounding" unit="%" min={0} max={100} step={10} value={Math.round((photo.hilbertRound ?? 0) * 100)} onChange={(v) => actions.set({ hilbertRound: v > 0 ? v / 100 : undefined })} />
+                      {/* 0, hard steps of tone; 100, neighbouring steps mixed where the tone falls between them. */}
+                      <NumberField label="Blend" unit="%" min={0} max={100} step={10} value={Math.round((photo.hilbertBlend ?? 0) * 100)} onChange={(v) => actions.set({ hilbertBlend: v > 0 ? v / 100 : undefined })} />
+                      <NumberField label="Angle" unit="°" min={-180} max={180} step={15} value={photo.hilbertAngle ?? 0} onChange={(v) => actions.set({ hilbertAngle: v || undefined })} />
+                    </div>
                     <Checkbox checked={Boolean(photo.hilbertLift)} label="Lift the pen in white areas" onChange={(e) => actions.set({ hilbertLift: e.target.checked || undefined })} />
-                    {eachLayer("Spacing, coarsest and lift")}
+                    {eachLayer("These settings")}
                   </>
                 ) : photo.style === "outlines" ? (
                   <>
@@ -601,7 +613,7 @@ export function PhotoCard({ shape, title, shapes, layers, busy, all, onAll, scal
                       : photo.style === "oneline"
                       ? `${marks.strokes === 1 ? "One line" : `${marks.strokes.toLocaleString()} lines`} through ${(marks.dots ?? 0).toLocaleString()} dots, ${((marks.lengthMm ?? 0) / 1000).toFixed(1)} m of drawing. The dots are thicker where the image is darker, so the line winds tighter there.${marks.strokes > 1 ? " The pen lifts over jumps longer than Lift over." : ""}`
                       : photo.style === "hilbert"
-                      ? `${marks.strokes === 1 ? "One line" : `${marks.strokes.toLocaleString()} lines`}, ${((marks.lengthMm ?? 0) / 1000).toFixed(1)} m of drawing, folding finer where the image is darker: from Coarsest in the lightest parts down to Spacing in the blacks, halving at each step.${photo.hilbertLift ? " The pen lifts where there's nothing to draw." : ""}`
+                      ? `${marks.strokes === 1 ? "One line" : `${marks.strokes.toLocaleString()} lines`}, ${((marks.lengthMm ?? 0) / 1000).toFixed(1)} m of drawing, folding finer where the image is darker: from Coarsest in the lightest parts down to Spacing in the blacks, ${photo.hilbertCurve === "peano" ? "a third" : "halving"} at each step.${photo.hilbertLift ? " The pen lifts where there's nothing to draw." : ""}`
                       : photo.style === "outlines"
                       ? `${marks.strokes.toLocaleString()} contours, along the image's edges and shapes. More lines follow finer changes of tone; more smoothing, only the big ones.`
                       : photo.style === "squiggle"

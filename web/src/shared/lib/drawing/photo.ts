@@ -52,6 +52,14 @@ export interface Photo {
   hilbertCoarsestMm?: number;
   /** Hilbert curve: lift the pen where this layer has nothing to draw, rather than meandering on through white. */
   hilbertLift?: boolean;
+  /** Hilbert curve: which curve - Hilbert's, folding in four, or Peano's, in nine (bigger steps of tone, a woven look). Absent, Hilbert. */
+  hilbertCurve?: "hilbert" | "peano";
+  /** Hilbert curve: how round its corners are, 0 to 1 - 1 every turn a curve. Absent, square. */
+  hilbertRound?: number;
+  /** Hilbert curve: how much the steps of tone are blended, 0 to 1. Absent, hard steps. */
+  hilbertBlend?: number;
+  /** Hilbert curve: the whole curve turned, in degrees. Absent, square to the picture. */
+  hilbertAngle?: number;
   /** One line: how many dots the line is drawn through. More, a finer picture and a longer line. */
   lineDots?: number;
   /** One line: lift the pen over jumps longer than this, in mm, so white stays paper. Absent or 0, never. */
@@ -438,7 +446,7 @@ export interface PhotoPart {
 
 /** The settings a layer of a photo keeps as its own, as opposed to the photo's: what a mode remembers. */
 export const LAYER_SETTINGS = [
-  "style", "angle", "spacingMm", "levels", "hatchSmoothMm", "rowMm", "waveMm", "squiggleAmpMm", "squiggleHeight", "squiggleJoin", "squiggleLift", "squiggleSmooth", "squiggleDraw", "squiggleVersion", "squiggleInkscape", "squiggleAngle", "contours", "smoothMm", "centerFrom", "centerSmoothMm", "centerShortestMm", "silhouetteFrom", "silhouetteSmoothMm", "silhouetteSmallestMm", "streamWidestMm", "streamPasses", "streamFlowMm", "lineDots", "lineLiftMm", "lineCurve", "lineAngle", "lineBias", "lineGrain", "lineContrast", "hilbertCoarsestMm", "hilbertLift", "offsetMm",
+  "style", "angle", "spacingMm", "levels", "hatchSmoothMm", "rowMm", "waveMm", "squiggleAmpMm", "squiggleHeight", "squiggleJoin", "squiggleLift", "squiggleSmooth", "squiggleDraw", "squiggleVersion", "squiggleInkscape", "squiggleAngle", "contours", "smoothMm", "centerFrom", "centerSmoothMm", "centerShortestMm", "silhouetteFrom", "silhouetteSmoothMm", "silhouetteSmallestMm", "streamWidestMm", "streamPasses", "streamFlowMm", "lineDots", "lineLiftMm", "lineCurve", "lineAngle", "lineBias", "lineGrain", "lineContrast", "hilbertCoarsestMm", "hilbertLift", "hilbertCurve", "hilbertRound", "hilbertBlend", "hilbertAngle", "offsetMm",
   "band", "ink", "regions", "region", "key", "regionInks", "keyInk", "plate", "plates", "fitPaper", "penMm", "fitPairs", "fitOpaque",
 ] as const;
 
@@ -804,7 +812,7 @@ export function photoMarks(photo: Photo, w: number, h: number): PhotoMarks | nul
 
 /** Everything a photo's lines depend on, as one string: the same key, the same lines. */
 function marksKey(photo: Photo, w: number, h: number) {
-  return [photo.src.length, photo.src.slice(-32), w.toFixed(4), h.toFixed(4), photo.brightness, photo.contrast, photo.saturation ?? 0, photo.angle, photo.spacingMm, photo.levels, photo.hatchSmoothMm ?? "", photo.band?.join(",") ?? "", photo.crop?.join(",") ?? "", photo.bleed ?? 0, photo.style ?? "hatch", photo.rowMm ?? "", photo.waveMm ?? "", photo.squiggleAmpMm ?? "", photo.squiggleHeight ?? "", photo.squiggleJoin ? "join" : "", photo.squiggleLift ? "lift" : "", photo.squiggleSmooth ?? "", JSON.stringify(photo.squiggleDraw ?? {}), photo.squiggleVersion ?? "", JSON.stringify(photo.squiggleInkscape ?? {}), photo.squiggleAngle ?? "", photo.ink ?? "", photo.regions?.join(",") ?? "", photo.region ?? "", photo.contours ?? "", photo.smoothMm ?? "", photo.key ? "key" : "", photo.keyInk ?? "", photo.regionInks?.join(",") ?? "", photo.keyStrength ?? "", photo.keyFrom ?? "", photo.plate ?? "", photo.plates?.join(",") ?? "", photo.blackShare ?? "", photo.centerFrom ?? "", photo.centerSmoothMm ?? "", photo.centerShortestMm ?? "", photo.silhouetteFrom ?? "", photo.silhouetteSmoothMm ?? "", photo.silhouetteSmallestMm ?? "", photo.fitPaper ?? "", photo.penMm ?? "", photo.fitPairs ? "pairs" : "", photo.fitOpaque ? "opaque" : "", photo.streamWidestMm ?? "", photo.streamPasses ?? "", photo.streamFlowMm ?? "", photo.lineDots ?? "", photo.lineLiftMm ?? "", photo.lineCurve ?? "", photo.lineAngle ?? "", photo.lineBias ?? "", photo.lineGrain ?? "", photo.lineContrast ?? "", photo.hilbertCoarsestMm ?? "", photo.hilbertLift ? "hlift" : ""].join("|");
+  return [photo.src.length, photo.src.slice(-32), w.toFixed(4), h.toFixed(4), photo.brightness, photo.contrast, photo.saturation ?? 0, photo.angle, photo.spacingMm, photo.levels, photo.hatchSmoothMm ?? "", photo.band?.join(",") ?? "", photo.crop?.join(",") ?? "", photo.bleed ?? 0, photo.style ?? "hatch", photo.rowMm ?? "", photo.waveMm ?? "", photo.squiggleAmpMm ?? "", photo.squiggleHeight ?? "", photo.squiggleJoin ? "join" : "", photo.squiggleLift ? "lift" : "", photo.squiggleSmooth ?? "", JSON.stringify(photo.squiggleDraw ?? {}), photo.squiggleVersion ?? "", JSON.stringify(photo.squiggleInkscape ?? {}), photo.squiggleAngle ?? "", photo.ink ?? "", photo.regions?.join(",") ?? "", photo.region ?? "", photo.contours ?? "", photo.smoothMm ?? "", photo.key ? "key" : "", photo.keyInk ?? "", photo.regionInks?.join(",") ?? "", photo.keyStrength ?? "", photo.keyFrom ?? "", photo.plate ?? "", photo.plates?.join(",") ?? "", photo.blackShare ?? "", photo.centerFrom ?? "", photo.centerSmoothMm ?? "", photo.centerShortestMm ?? "", photo.silhouetteFrom ?? "", photo.silhouetteSmoothMm ?? "", photo.silhouetteSmallestMm ?? "", photo.fitPaper ?? "", photo.penMm ?? "", photo.fitPairs ? "pairs" : "", photo.fitOpaque ? "opaque" : "", photo.streamWidestMm ?? "", photo.streamPasses ?? "", photo.streamFlowMm ?? "", photo.lineDots ?? "", photo.lineLiftMm ?? "", photo.lineCurve ?? "", photo.lineAngle ?? "", photo.lineBias ?? "", photo.lineGrain ?? "", photo.lineContrast ?? "", photo.hilbertCoarsestMm ?? "", photo.hilbertLift ? "hlift" : "", photo.hilbertCurve ?? "", photo.hilbertRound ?? "", photo.hilbertBlend ?? "", photo.hilbertAngle ?? ""].join("|");
 }
 
 /**
@@ -3027,15 +3035,26 @@ function hatch(tones: Tones, photo: Photo, w: number, h: number): PhotoMarks {
  * Coarsest, so light areas still meander gently. The tone shows in steps, each fold halving the
  * square: that stepped, mechanical halftone is the look. A picture that isn't square is a row of
  * near-square tiles, each curve ending where the next begins, so it is one line - broken only, if
- * asked, where there's nothing to draw.
+ * asked, where there's nothing to draw, or where a turned curve runs off the picture and back.
+ *
+ * Or a Peano curve, which folds each square into nine and runs corner to opposite corner: a woven,
+ * back-and-forth texture, with fewer and bigger steps of tone - each three times as dense as the
+ * last - so it's at its best blended. Its corners can be rounded; its steps of tone blended, each square
+ * folding or not by chance in proportion to how far its tone lies between two steps; and the whole
+ * curve turned.
  */
 function hilbert(tones: Tones, photo: Photo, w: number, h: number): PhotoMarks {
   const spacing = Math.max(0.05, photo.spacingMm) / 25.4;
   const coarsest = Math.max(spacing, (photo.hilbertCoarsestMm ?? HILBERT_DEFAULTS.coarsestMm) / 25.4);
   const lift = Boolean(photo.hilbertLift);
+  const peano = photo.hilbertCurve === "peano";
+  // Each fold divides a square's side by this.
+  const split = peano ? 3 : 2;
+  const round = Math.min(1, Math.max(0, photo.hilbertRound ?? 0));
+  const blend = Math.min(1, Math.max(0, photo.hilbertBlend ?? 0));
   const { toneAt } = toneSampler(tones, photo, w, h, true);
 
-  // The darkness, summed across and down, so any square's average is four look-ups.
+  // The darkness, summed across and down, so any box's average is four look-ups.
   const gw = Math.max(4, Math.round((HILBERT_EDGE * w) / Math.max(w, h)));
   const gh = Math.max(4, Math.round((HILBERT_EDGE * h) / Math.max(w, h)));
   const sum = new Float64Array((gw + 1) * (gh + 1));
@@ -3048,13 +3067,22 @@ function hilbert(tones: Tones, photo: Photo, w: number, h: number): PhotoMarks {
     }
   }
   const at = (x: number, y: number) => sum[y * (gw + 1) + x];
-  // The average darkness over a box in inches - for a box smaller than a grid square, the square it's in.
+  // The average darkness over the part of a box, in inches, that's on the picture: none if it's all
+  // off it. For a box smaller than a grid square, the square it's in.
   const toneOver = (x0: number, y0: number, x1: number, y1: number) => {
-    const a = Math.max(0, Math.min(gw - 1, Math.floor((Math.min(x0, x1) / w) * gw)));
-    const b = Math.max(0, Math.min(gh - 1, Math.floor((Math.min(y0, y1) / h) * gh)));
-    const c = Math.max(a + 1, Math.min(gw, Math.ceil((Math.max(x0, x1) / w) * gw)));
-    const d = Math.max(b + 1, Math.min(gh, Math.ceil((Math.max(y0, y1) / h) * gh)));
+    if (x1 < 0 || y1 < 0 || x0 > w || y0 > h) return 0;
+    const a = Math.max(0, Math.min(gw - 1, Math.floor((x0 / w) * gw)));
+    const b = Math.max(0, Math.min(gh - 1, Math.floor((y0 / h) * gh)));
+    const c = Math.max(a + 1, Math.min(gw, Math.ceil((x1 / w) * gw)));
+    const d = Math.max(b + 1, Math.min(gh, Math.ceil((y1 / h) * gh)));
     return (at(c, d) - at(a, d) - at(c, b) + at(a, b)) / ((c - a) * (d - b));
+  };
+  // A number from 0 to 1 that's always the same for the same square, for blending its fold.
+  const chance = (x: number, y: number, side: number) => {
+    let k = Math.imul(Math.round(x * 4096), 0x27d4eb2d) ^ Math.imul(Math.round(y * 4096), 0x165667b1) ^ Math.imul(Math.round(side * 65536), 0x9e3779b1);
+    k = Math.imul(k ^ (k >>> 15), 0x85ebca6b);
+    k = Math.imul(k ^ (k >>> 13), 0xc2b2ae35);
+    return ((k ^ (k >>> 16)) >>> 0) / 4294967296;
   };
 
   const n = (v: number) => Number(v.toFixed(4));
@@ -3074,52 +3102,108 @@ function hilbert(tones: Tones, photo: Photo, w: number, h: number): PhotoMarks {
       }
       kept.push(piece[piece.length - 1]);
       for (let i = 1; i < kept.length; i++) length += Math.hypot(kept[i][0] - kept[i - 1][0], kept[i][1] - kept[i - 1][1]);
-      parts.push(`M${kept.map(([x, y]) => `${n(x)} ${n(y)}`).join("L")}`);
+      let d = `M${n(kept[0][0])} ${n(kept[0][1])}`;
+      if (round > 0) {
+        // Rounded: each corner cut back along both its legs, by up to half the shorter, and the gap
+        // bridged by a curve with the corner as its handle.
+        for (let i = 1; i < kept.length - 1; i++) {
+          const [ax, ay] = kept[i - 1];
+          const [px, py] = kept[i];
+          const [bx, by] = kept[i + 1];
+          const la = Math.hypot(px - ax, py - ay);
+          const lb = Math.hypot(bx - px, by - py);
+          const r = (round * Math.min(la, lb)) / 2;
+          d += `L${n(px + ((ax - px) * r) / la)} ${n(py + ((ay - py) * r) / la)}Q${n(px)} ${n(py)} ${n(px + ((bx - px) * r) / lb)} ${n(py + ((by - py) * r) / lb)}`;
+        }
+        const last = kept[kept.length - 1];
+        d += `L${n(last[0])} ${n(last[1])}`;
+      } else {
+        for (let i = 1; i < kept.length; i++) d += `L${n(kept[i][0])} ${n(kept[i][1])}`;
+      }
+      parts.push(d);
       strokes++;
     }
     piece = [];
   };
-  // One square of the curve: at (x0, y0), `i` the way it travels, `j` across - halved and turned
-  // into four smaller squares, in the curve's order, until it's fine enough for its tone.
+  // One square of the curve, at (x0, y0), `i` the way it travels and `j` across: folded into smaller
+  // squares, in the curve's order, until it's fine enough for its tone, then a point at its middle.
   const fold = (x0: number, y0: number, ix: number, iy: number, jx: number, jy: number) => {
     const side = Math.max(Math.hypot(ix, iy), Math.hypot(jx, jy));
-    const tone = toneOver(x0, y0, x0 + ix + jx, y0 + iy + jy);
+    const xs = [x0, x0 + ix, x0 + jx, x0 + ix + jx];
+    const ys = [y0, y0 + iy, y0 + jy, y0 + iy + jy];
+    const tone = toneOver(Math.min(...xs), Math.min(...ys), Math.max(...xs), Math.max(...ys));
     const wanted = tone > 0 ? spacing / tone : Infinity;
-    // Each fold halves the square, so the tone comes in steps; each square takes the step nearest the
-    // size it wants - rounded at the half-way point on that doubling scale, √2 - rather than always
-    // the finer, which put everything darker than about 40% on the finest step. The finest is within
-    // √2 of the spacing.
-    if (side / 2 >= spacing / Math.SQRT2 && (side > coarsest || side > wanted * Math.SQRT2)) {
-      const [hix, hiy, hjx, hjy] = [ix / 2, iy / 2, jx / 2, jy / 2];
-      fold(x0, y0, hjx, hjy, hix, hiy);
-      fold(x0 + hjx, y0 + hjy, hix, hiy, hjx, hjy);
-      fold(x0 + hjx + hix, y0 + hjy + hiy, hix, hiy, hjx, hjy);
-      fold(x0 + hjx + ix, y0 + hjy + iy, -hjx, -hjy, -hix, -hiy);
+    // How many folds short of the size its tone wants this square is, on the curve's own scale: past
+    // one half it folds, so each takes the nearest step. Blended, the half-way mark moves square by
+    // square, by chance, so between two steps the squares take each in proportion and the bands
+    // between steps soften into a mix. The finest step is within a half-step of the spacing.
+    const short = Math.log(side / wanted) / Math.log(split);
+    const mark = 0.5 + blend * (chance(x0 + (ix + jx) / 2, y0 + (iy + jy) / 2, side) - 0.5);
+    if (side / split >= spacing / Math.sqrt(split) && (side > coarsest || short > mark)) {
+      if (peano) {
+        // Nine squares, column by column along `i`, up the first, down the second, up the third;
+        // each turned so it starts where the last ended - mirrored along `i` in the middle row,
+        // across `j` in the middle column.
+        const [tix, tiy, tjx, tjy] = [ix / 3, iy / 3, jx / 3, jy / 3];
+        for (let c = 0; c < 3; c++) {
+          for (let k = 0; k < 3; k++) {
+            const r = c === 1 ? 2 - k : k;
+            const flipI = r === 1;
+            const flipJ = c === 1;
+            const ox = x0 + c * tix + r * tjx + (flipI ? tix : 0) + (flipJ ? tjx : 0);
+            const oy = y0 + c * tiy + r * tjy + (flipI ? tiy : 0) + (flipJ ? tjy : 0);
+            fold(ox, oy, flipI ? -tix : tix, flipI ? -tiy : tiy, flipJ ? -tjx : tjx, flipJ ? -tjy : tjy);
+          }
+        }
+      } else {
+        const [hix, hiy, hjx, hjy] = [ix / 2, iy / 2, jx / 2, jy / 2];
+        fold(x0, y0, hjx, hjy, hix, hiy);
+        fold(x0 + hjx, y0 + hjy, hix, hiy, hjx, hjy);
+        fold(x0 + hjx + hix, y0 + hjy + hiy, hix, hiy, hjx, hjy);
+        fold(x0 + hjx + ix, y0 + hjy + iy, -hjx, -hjy, -hix, -hiy);
+      }
       return;
     }
     const cx = x0 + (ix + jx) / 2;
     const cy = y0 + (iy + jy) / 2;
-    // Lifting, and nothing to draw here: the pen comes up.
-    if (lift && tone <= 0.01) {
+    // Off the picture - a turned curve's corners - or, lifting, nothing to draw: the pen comes up.
+    if (cx < 0 || cx > w || cy < 0 || cy > h || (lift && tone <= 0.01)) {
       close();
       return;
     }
     piece.push([cx, cy]);
   };
-  // A row of tiles along the picture's long side, as many as divide it into near-squares - each
-  // between half and fully as long as it is wide, so the picture is covered exactly and nothing hangs
-  // off it. Each curve runs from its tile's first corner along `i` to the next tile's first corner.
-  const across = w >= h;
-  const count = Math.max(1, Math.ceil(Math.max(w, h) / Math.min(w, h) - 1e-9));
-  const along = Math.max(w, h) / count;
+  // The curve turned: worked out on axes `u` and `v` at its angle, over the box that holds the
+  // picture at that angle. A row of tiles along that box's long side, as many as divide it into
+  // near-squares, so it's covered exactly. A Hilbert tile runs from its first corner along `i` to
+  // the next tile's first corner; a Peano tile runs to its opposite corner, so every other one is
+  // flipped across to start there.
+  const rad = ((photo.hilbertAngle ?? 0) * Math.PI) / 180;
+  const [ux, uy] = [Math.cos(rad), Math.sin(rad)];
+  const [vx, vy] = [-uy, ux];
+  const us = [0, w * ux, h * uy, w * ux + h * uy];
+  const vs = [0, w * vx, h * vy, w * vx + h * vy];
+  const [u0, u1, v0, v1] = [Math.min(...us), Math.max(...us), Math.min(...vs), Math.max(...vs)];
+  const lu = u1 - u0;
+  const lv = v1 - v0;
+  const across = lu >= lv;
+  const count = Math.max(1, Math.ceil(Math.max(lu, lv) / Math.min(lu, lv) - 1e-9));
+  const along = Math.max(lu, lv) / count;
+  // A point on the page from its place on the turned axes.
+  const page = (u: number, v: number) => [u * ux + v * vx, u * uy + v * vy];
   for (let k = 0; k < count; k++) {
-    if (across) fold(k * along, 0, along, 0, 0, h);
-    else fold(0, k * along, 0, along, w, 0);
+    const flip = peano && k % 2 === 1;
+    if (across) {
+      const [ox, oy] = page(u0 + k * along, flip ? v1 : v0);
+      fold(ox, oy, along * ux, along * uy, (flip ? -lv : lv) * vx, (flip ? -lv : lv) * vy);
+    } else {
+      const [ox, oy] = page(flip ? u1 : u0, v0 + k * along);
+      fold(ox, oy, along * vx, along * vy, (flip ? -lu : lu) * ux, (flip ? -lu : lu) * uy);
+    }
   }
   close();
   return { passes: [parts.join("")], strokes, lengthMm: length * 25.4 };
 }
-
 
 // ---------- One line ----------
 
@@ -3779,6 +3863,10 @@ export function photoFromData(raw: Record<string, unknown>): Photo | null {
     ...(Number.isFinite(Number(raw.silhouette_smallest_mm)) && raw.silhouette_smallest_mm !== undefined ? { silhouetteSmallestMm: Number(raw.silhouette_smallest_mm) } : {}),
     ...(Number.isFinite(Number(raw.hilbert_coarsest_mm)) && raw.hilbert_coarsest_mm !== undefined ? { hilbertCoarsestMm: Number(raw.hilbert_coarsest_mm) } : {}),
     ...(raw.hilbert_lift === true ? { hilbertLift: true } : {}),
+    ...(raw.hilbert_curve === "peano" ? { hilbertCurve: "peano" as const } : {}),
+    ...(Number.isFinite(Number(raw.hilbert_round)) && raw.hilbert_round !== undefined ? { hilbertRound: Number(raw.hilbert_round) } : {}),
+    ...(Number.isFinite(Number(raw.hilbert_blend)) && raw.hilbert_blend !== undefined ? { hilbertBlend: Number(raw.hilbert_blend) } : {}),
+    ...(Number.isFinite(Number(raw.hilbert_angle)) && raw.hilbert_angle !== undefined ? { hilbertAngle: Number(raw.hilbert_angle) } : {}),
     ...Object.fromEntries((["line_curve", "line_angle", "line_bias", "line_grain", "line_contrast"] as const)
       .filter((k) => raw[k] !== undefined && Number.isFinite(Number(raw[k])))
       .map((k) => [{ line_curve: "lineCurve", line_angle: "lineAngle", line_bias: "lineBias", line_grain: "lineGrain", line_contrast: "lineContrast" }[k], Number(raw[k])])),
@@ -3849,6 +3937,10 @@ export const photoData = (p: Photo) => ({
   ...(p.silhouetteSmallestMm !== undefined ? { silhouette_smallest_mm: p.silhouetteSmallestMm } : {}),
   ...(p.hilbertCoarsestMm !== undefined ? { hilbert_coarsest_mm: p.hilbertCoarsestMm } : {}),
   ...(p.hilbertLift ? { hilbert_lift: true } : {}),
+  ...(p.hilbertCurve === "peano" ? { hilbert_curve: "peano" } : {}),
+  ...(p.hilbertRound ? { hilbert_round: p.hilbertRound } : {}),
+  ...(p.hilbertBlend ? { hilbert_blend: p.hilbertBlend } : {}),
+  ...(p.hilbertAngle ? { hilbert_angle: p.hilbertAngle } : {}),
   ...(p.lineDots !== undefined ? { line_dots: p.lineDots } : {}),
   ...(p.lineCurve ? { line_curve: p.lineCurve } : {}),
   ...(p.lineAngle ? { line_angle: p.lineAngle } : {}),
