@@ -26,7 +26,7 @@ export interface PreviewToolbarProps {
   onLoupe?: (on: boolean) => void;
   /** Something still being worked out about the view, said beside the bar with a spinner: Plot's plot time. */
   working?: string;
-  /** An app's own controls for the view, ahead of the shared ones: Photo's picture, lines and side by side. */
+  /** An app's own controls for the view, in their own bar ahead of the shared one: Photo's picture, lines and side by side. */
   extras?: ReactNode;
 }
 
@@ -46,10 +46,14 @@ export interface PreviewToolbarProps {
 export function PreviewToolbar({ view, onView, canProgress, canPhoto, zoom, onZoom, canPaper = true, canDrawing, working, loupe, onLoupe, extras }: PreviewToolbarProps) {
   return (
     <span className={styles.row}>
+      {/* What an app shows beyond the shared views, in a bar of its own ahead of the shared one -
+          Photo's picture, its lines, both, side by side - so the shared bar is the same in every app. */}
+      {extras && (
+        <Toolbar tone="white" aria-label="App view">
+          {extras}
+        </Toolbar>
+      )}
       <Toolbar tone="white" aria-label="Drawing view">
-        {/* What an app shows beyond the shared views, first in the bar - Photo's picture, its lines,
-            both, side by side. */}
-        {extras}
         <SegmentedControl size="sm" variant="dark" aria-label="How the drawing is drawn">
           <Segment
             selected={view === "outline"}
