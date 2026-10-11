@@ -1,10 +1,10 @@
 import { Segment, SegmentedControl, Toolbar } from "@tomcoggia/ui";
-import { FileText, Grid3x3, Image, Pen, StickyNote } from "lucide-react";
+import { Grid3x3, Image, Pen, Save, StickyNote } from "lucide-react";
 import bar from "./PreviewToolbar.module.css";
 
 /** The rail's cards the toolbar shows and hides, in the order they stack. Grid is Studio's, Image Image's. */
 const PANELS = {
-  file: { label: "File", icon: <FileText />, what: "the File card" },
+  file: { label: "File", icon: <Save />, what: "the File card" },
   paper: { label: "Paper", icon: <StickyNote />, what: "the Paper card: what the drawing is plotted on" },
   pen: { label: "Pen", icon: <Pen />, what: "the Pen card: what the drawing is plotted with" },
   grid: { label: "Grid", icon: <Grid3x3 />, what: "the Grid card: what shapes snap to" },

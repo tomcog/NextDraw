@@ -1,6 +1,6 @@
 import { useRef, useState } from "react";
 import { ButtonRound, LayerController, Segment, SegmentedControl } from "@tomcoggia/ui";
-import { Layers, LayersArrowUp, Link2, Link2Off, PenTool, RotateCcw } from "lucide-react";
+import { Layers, LayersArrowUp, Link2, Link2Off, RotateCcw, Waypoints } from "lucide-react";
 import styles from "./LayersSection.module.css";
 import { Section } from "../../../shared/components/controls/Section";
 import { Slider } from "../../../shared/components/controls/Slider";
@@ -25,6 +25,10 @@ interface Props {
   printed: string[]; // ids of layers plotted to the end this session
   disabled: boolean;
   onTarget: (id: string) => void;
+  /** Plot the chosen layer: the same as the Plot button over the rail. Null while it can't plot. */
+  onPlot: (() => void) | null;
+  /** What the Plot button says, for the row's own button's tooltip. */
+  plotLabel: string;
   onVisible: (id: string, visible: boolean) => void;
   /** The pens of the layer's drawing tool; empty means the dot opens the system color picker. */
   paletteFor: (id: string) => PenColor[];
@@ -49,7 +53,7 @@ interface Props {
 //
 // No grip on a row, either: the order is the drawing's. A grip that can be grabbed and does nothing
 // reads as a broken drag rather than as an absent feature.
-export function LayersSection({ mode, onMode, layers, target, linksOf, onLink, onUnlink, printing, hatchSpacing, onHatch, printed, disabled, onTarget, onVisible, paletteFor, toolFor, onColor, onSort, onResetPrinted }: Props) {
+export function LayersSection({ mode, onMode, layers, target, linksOf, onLink, onUnlink, printing, hatchSpacing, onHatch, printed, disabled, onTarget, onPlot, plotLabel, onVisible, paletteFor, toolFor, onColor, onSort, onResetPrinted }: Props) {
   // A tool with no palette still lets a layer be recolored: the dot opens the system color picker.
   const pickerRef = useRef<HTMLInputElement>(null);
   const [picking, setPicking] = useState<LayerView | null>(null);
@@ -108,7 +112,7 @@ export function LayersSection({ mode, onMode, layers, target, linksOf, onLink, o
             and this is a different question - how much of the drawing to show. */}
         <SegmentedControl size="sm" aria-label="Layers view">
           <Segment selected={mode === "preview"} onClick={() => onMode("preview")} icon={<Layers />} aria-label="Whole drawing" title="Whole drawing: every layer, and which ones to leave out" />
-          <Segment selected={mode === "work"} onClick={() => onMode("work")} icon={<PenTool />} aria-label="Layer by layer" title="Layer by layer: only the layer to print is drawn" />
+          <Segment selected={mode === "work"} onClick={() => onMode("work")} icon={<Waypoints />} aria-label="Layer by layer" title="Layer by layer: only the layer to print is drawn" />
         </SegmentedControl>
         </span>
       }
@@ -134,6 +138,7 @@ export function LayersSection({ mode, onMode, layers, target, linksOf, onLink, o
           const uppermost = partners.every((l) => !rows.includes(l) || rows.indexOf(l) > rows.indexOf(layer));
           return (
             <li key={layer.id} className={styles.row} data-skipped={layer.skipped} data-linked={place}>
+              <span className={styles.slat}>
               <LayerController
                 number={i + 1}
                 color={layer.color ?? "transparent"}
@@ -185,6 +190,21 @@ export function LayersSection({ mode, onMode, layers, target, linksOf, onLink, o
                 label={layer.name}
                 hideHandle
               />
+              {/* Layer by layer, the row chosen to print carries the Plot button's own job, at its end:
+                  Plot's mark, in red. */}
+              {mode === "work" && isTop && run.includes(target ?? "") && (
+                <ButtonRound
+                  size="sm"
+                  variant="tertiary"
+                  icon={<Waypoints />}
+                  className={`${styles.plotHere} ${styles.linkOn}`}
+                  aria-label={plotLabel}
+                  title={plotLabel}
+                  disabled={!onPlot}
+                  onClick={() => onPlot?.()}
+                />
+              )}
+              </span>
               {partners.length > 0 && isTop && uppermost ? (
                 // Linking takes in every layer in the pen; unlinking undoes the whole link. The glyph is
                 // what a click does: a whole link to link them, and once they're linked, a broken one in

@@ -218,10 +218,28 @@ def no_stale_api(response):
     return response
 
 
-# Layers that finished plotting since the drawing was loaded (ids). In memory only: "printed this
-# session" clears when another drawing is opened or the app restarts.
-printed_layers = set()
+# Layers that finished plotting since the drawing was loaded (ids). Kept on disk beside the jobs, so a
+# restart doesn't wipe what has gone on the paper; cleared when another drawing is opened, or by hand.
+PRINTED_FILE = JOBS / "printed-layers.json"
 printed_lock = threading.Lock()
+
+
+def read_printed():
+    try:
+        return set(json.loads(PRINTED_FILE.read_text()))
+    except (OSError, ValueError, TypeError):
+        return set()
+
+
+def write_printed():
+    """Called holding printed_lock."""
+    try:
+        PRINTED_FILE.write_text(json.dumps(sorted(printed_layers)))
+    except OSError:
+        pass  # the marks still hold until the app restarts
+
+
+printed_layers = read_printed()
 
 # Whether the last plot ended by being stopped. A stop leaves the motors on and the step count
 # true, so going home from there is a straight walk back - not the homing sweep, which exists for a
@@ -254,6 +272,7 @@ drawing_saved = None
 def forget_printed():
     with printed_lock:
         printed_layers.clear()
+        write_printed()
 
 
 def mark_printed(layer_ids):
@@ -266,6 +285,7 @@ def mark_printed(layer_ids):
         return
     with printed_lock:
         printed_layers.update(i for i in ids if i)
+        write_printed()
 
 
 class Job:

@@ -1532,6 +1532,10 @@ export default function App() {
       window.removeEventListener("drop", drop);
     };
   }, []);
+  // The Plot button's, and the chosen layer's own button's in the Layers card, Layer by layer.
+  const canPlot = !busy && Boolean(fileName) && Boolean(preview) && onBed && plotterReady && !needsLayerChoice && !nothingShown;
+  const plotLabel = !plotterReady ? "No plotter connected" : nothingShown ? "Show a layer to plot" : needsLayerChoice ? "Choose a layer to plot" : printTarget && plotLayerId ? `Plot ${layerNumber(printTarget.id)} · ${printTarget.name}${printIds.length > 1 ? ` · ${printIds.length} layers` : ""}` : "Plot";
+
   return (
     <div className={styles.app}>
       <StatusBanner message={heldBanner} />
@@ -1719,8 +1723,8 @@ export default function App() {
             message={actionMessage}
             plotting={plotting}
             stopping={status?.state === "stopping" || status?.state === "returning"}
-            canPlot={!busy && Boolean(fileName) && Boolean(preview) && onBed && plotterReady && !needsLayerChoice && !nothingShown}
-            plotLabel={!plotterReady ? "Connect the plotter" : nothingShown ? "Show a layer to plot" : needsLayerChoice ? "Choose a layer to plot" : printTarget && plotLayerId ? `Plot ${layerNumber(printTarget.id)} · ${printTarget.name}${printIds.length > 1 ? ` · ${printIds.length} layers` : ""}` : "Plot"}
+            canPlot={canPlot}
+            plotLabel={plotLabel}
             preparing={status?.state === "preparing"}
             resume={resume}
             confirmation={confirmation}
@@ -1849,6 +1853,8 @@ export default function App() {
                   onHatch={setLayersHatch}
                   printed={status?.printed_layers ?? []}
                   onTarget={setPrintLayer}
+                  onPlot={canPlot ? startPlot : null}
+                  plotLabel={plotLabel}
                   onVisible={setLayerVisible}
                   paletteFor={paletteFor}
                   toolFor={(id) => (usesSecond(id) ? secondPreset : active)?.name ?? "this pen"}
