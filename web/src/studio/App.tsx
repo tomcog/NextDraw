@@ -10,7 +10,7 @@ import { FileBrowser, type CombineResult, type OpenResult } from "../shared/comp
 import { Section } from "../shared/components/controls/Section";
 import controls from "../shared/components/controls/controls.module.css";
 import { api } from "../shared/lib/api";
-import { openInPhoto } from "../shared/lib/apps";
+import { openInPhoto, STUDIO_CHANNEL } from "../shared/lib/apps";
 import { load, save as remember } from "../shared/lib/storage";
 import { DEFAULT_SETTINGS, PAPER_SIZES } from "../shared/lib/constants";
 import type { Info, PenColor, PlotterModel, Preset } from "../shared/lib/types";
@@ -728,6 +728,33 @@ export default function App() {
   return () => {
    cancelled = true;
   };
+ }, [openDrawing]);
+
+ // A drawing handed over from another app's "Open in Studio" while this page is open: opened here,
+ // unless what's here has changes not saved - then it says so and keeps them, rather than losing work
+ // to a click in another tab.
+ const unsavedRef = useRef(false);
+ unsavedRef.current = dirty && shapes.length > 0;
+ useEffect(() => {
+  if (!("BroadcastChannel" in window)) return;
+  const channel = new BroadcastChannel(STUDIO_CHANNEL);
+  channel.onmessage = async (e) => {
+   if (e.data?.type !== "open-in-studio" || typeof e.data.path !== "string") return;
+   channel.postMessage({ type: "studio-here" });
+   const path: string = e.data.path;
+   const file = path.slice(path.lastIndexOf("/") + 1);
+   if (unsavedRef.current) {
+    setMessage({ text: `${file} was sent here to open, but this drawing has changes not saved. Save it, then send ${file} again.`, ok: false });
+    return;
+   }
+   try {
+    const res = await api<OpenResult>(`/api/studio/read?path=${encodeURIComponent(path)}`);
+    openDrawing(res, (n) => `Opened ${res.name} - ${n} ${n === 1 ? "path" : "paths"}`);
+   } catch (err) {
+    setMessage({ text: (err as Error).message, ok: false });
+   }
+  };
+  return () => channel.close();
  }, [openDrawing]);
 
  // Whether a plotter is on USB, and which, for the header and the tool list - asked now and then,

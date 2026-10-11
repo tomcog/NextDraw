@@ -1,40 +1,35 @@
-import { useRef, type ReactNode } from "react";
+import { useRef } from "react";
 import { Button } from "@tomcoggia/ui";
-import { Section } from "../../shared/components/controls/Section";
-import controls from "../../shared/components/controls/controls.module.css";
-import { listOf } from "../../shared/lib/format";
-import type { Preset } from "../../shared/lib/types";
-import { CALIBRATION_COVERS } from "../lib/calibration";
-import styles from "../App.module.css";
+import { Section } from "../../../shared/components/controls/Section";
+import controls from "../../../shared/components/controls/controls.module.css";
+import { listOf } from "../../../shared/lib/format";
+import type { Preset } from "../../../shared/lib/types";
+import { CALIBRATION_COVERS } from "../../../shared/lib/calibration/sheet";
+import styles from "./CalibrationSection.module.css";
 
 interface Props {
-  /** The drawing tool being calibrated, and its name as chosen. */
+  /** The drawing tool being calibrated: the one chosen in the Pen card. */
   tool: Preset | null;
-  toolName: string;
   busy: boolean;
-  /** Whether a calibration sheet is open, and whether it is of this tool's pens. */
+  /** Whether the drawing open in Plot is a calibration sheet, and whether it is of this tool's pens. */
   sheetOpen: boolean;
   sheetIsTool: boolean;
   /** Pens on the open sheet that aren't this tool's. */
   strangers: string[];
+  /** Make a sheet of every pen at four strengths: saved to the Drawings folder and opened here. */
   onNewSheet: () => void;
   /** Make a sheet of the tool's pens two at a time, hatched over each other. */
   onNewPairs: () => void;
-  /** Open a sheet saved before, to read a photo of it. */
-  onOpenSheet: () => void;
-  /** The sheet in hand: its name, Save and Send to Plot. Left out while there is none. */
-  sheetFile?: ReactNode;
   onReadPhoto: (file: File | undefined) => void;
-  /** The question asked before a new drawing replaces one with unsaved work, when it's being asked. */
-  confirm: ReactNode;
 }
 
 /**
  * Setup's calibration: a sheet of every pen at four strengths, plotted and photographed, read back as
- * each pen really comes out - and what was measured, pen by pen. Moved from Studio's Setup on
- * 2026-10-06; the sheet is shown on Photo's stage rather than opened as a drawing.
+ * each pen really comes out - and what was measured, pen by pen. Moved from Studio to Photo on
+ * 2026-10-06 and to Plot on 2026-10-10, with the rest of what's done to a tool's preset: here the sheet
+ * is made, saved and opened as the drawing to plot, and read back where it was plotted.
  */
-export function CalibrationSection({ tool, toolName, busy, sheetOpen, sheetIsTool, strangers, onNewSheet, onNewPairs, onOpenSheet, sheetFile, onReadPhoto, confirm }: Props) {
+export function CalibrationSection({ tool, busy, sheetOpen, sheetIsTool, strangers, onNewSheet, onNewPairs, onReadPhoto }: Props) {
   const input = useRef<HTMLInputElement>(null);
   const calibrated = tool?.calibration;
   return (
@@ -44,7 +39,7 @@ export function CalibrationSection({ tool, toolName, busy, sheetOpen, sheetIsToo
       action={<span className={controls.toolInTitle}>{calibrated ? `Measured ${calibrated.measured}` : "Not measured"}</span>}
     >
       <p className={controls.hint}>
-        1. Make the sheet: every {tool?.name ?? "pen"} color at four strengths, on this paper. Save it and plot it on the paper you’ll use.
+        1. Make the sheet: every {tool?.name ?? "pen"} color at four strengths, on this paper. It’s saved to your Drawings folder and opened here, ready to plot.
       </p>
       <Button
         size="sm"
@@ -55,19 +50,14 @@ export function CalibrationSection({ tool, toolName, busy, sheetOpen, sheetIsToo
       >
         New calibration sheet
       </Button>
-      {confirm}
-      {sheetFile}
       <p className={controls.hint}>
-        2. Photograph the plotted sheet flat and evenly lit, with the whole sheet in view, and read it in with its sheet made or opened here.
+        2. Photograph the plotted sheet flat and evenly lit, with the whole sheet in view, and read it in while the sheet is the drawing open here.
       </p>
-      <Button size="sm" variant="secondary" disabled={busy} onClick={onOpenSheet}>
-        Open a sheet
-      </Button>
       <Button
         size="sm"
         variant="secondary"
         disabled={busy || !sheetIsTool}
-        title={!sheetOpen ? "Make or open the calibration sheet first" : !sheetIsTool ? `This sheet isn’t of ${toolName || "this pen"}’s colors: choose the pen it was made for` : undefined}
+        title={!sheetOpen ? "Open the calibration sheet first" : !sheetIsTool ? `This sheet isn’t of ${tool?.name ?? "this pen"}’s colors: choose the pen it was made for` : undefined}
         onClick={() => input.current?.click()}
       >
         Read an image of the sheet

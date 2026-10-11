@@ -1,8 +1,8 @@
-import { lightness } from "../../shared/lib/color";
-import { joinLayerName } from "../../shared/lib/ink";
-import type { PenColor, Preset } from "../../shared/lib/types";
-import { newFillId, type Fill } from "../../shared/lib/drawing/hatch";
-import { newLayerId, newShapeId, type Layer, type Page, type Shape } from "../../shared/lib/drawing/shapes";
+import { lightness } from "../color";
+import { joinLayerName } from "../ink";
+import type { PenColor, Preset } from "../types";
+import { newFillId, type Fill } from "../drawing/hatch";
+import { newLayerId, newShapeId, type Layer, type Page, type Shape } from "../drawing/shapes";
 
 // A calibration sheet: every pen of a drawing tool, hatched at a few densities, on the paper it will
 // be used on. Photographed back in, it tells Studio what each pen really looks like there - at full

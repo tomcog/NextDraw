@@ -1,18 +1,16 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Button, Card, InputText } from "@tomcoggia/ui";
+import { Button, Card } from "@tomcoggia/ui";
 // Separations into many plates are solved off the page (importing this turns it on).
 import "../shared/lib/drawing/separationWorker";
-import { Save, Send } from "lucide-react";
 import { DrawingToolSection } from "../shared/components/controls/DrawingToolSection";
 import { FileSection } from "../shared/components/controls/FileSection";
 import { PaperSection } from "../shared/components/controls/PaperSection";
 import { Section } from "../shared/components/controls/Section";
 import controls from "../shared/components/controls/controls.module.css";
 import { FileBrowser, type OpenResult } from "../shared/components/FileBrowser";
-import { HistoryToolbar, SetupToolbar, type View } from "../shared/components/PreviewToolbar";
+import { HistoryToolbar, type View } from "../shared/components/PreviewToolbar";
 import { AppSwitch } from "../shared/components/AppSwitch";
 import { StatusBanner } from "../shared/components/StatusBanner";
-import { ThemeToggle } from "../shared/components/ThemeToggle";
 import { api } from "../shared/lib/api";
 import { openInStudio } from "../shared/lib/apps";
 import { PAPER_SIZES } from "../shared/lib/constants";
@@ -26,15 +24,9 @@ import type { Fill } from "../shared/lib/drawing/hatch";
 import { parseDrawing } from "../shared/lib/drawing/parse";
 import { photoMarks, placeOnPage, plateSetOf, stemWithoutPlate, type Photo } from "../shared/lib/drawing/photo";
 import { boxOf, newLayerId, type Layer, type Page, type Shape } from "../shared/lib/drawing/shapes";
-import { buildSvg } from "../shared/lib/drawing/svg";
-import { fitText } from "../shared/lib/drawing/text";
 import { useDrawingFile } from "../shared/lib/drawing/useDrawingFile";
 import { usePhotoRead } from "../shared/lib/drawing/usePhotoRead";
-import { calibrationSheet } from "./lib/calibration";
-import { pairsSheet } from "./lib/penPairs";
-import { readCalibration, readingProblems, sheetLayout } from "./lib/calibrationRead";
 import { photoActions } from "./lib/photoActions";
-import { CalibrationSection } from "./components/CalibrationSection";
 import { ConvertStage, type ConvertView } from "./components/ConvertStage";
 import { EffectToolbar, effectOf, type Effect } from "./components/EffectToolbar";
 import { PanelToolbar } from "../shared/components/PanelToolbar";
@@ -59,34 +51,11 @@ const TOOL_KEY = "photo-tool";
 const PAPER_COLOR_KEY = "photo-paper-color";
 const LAST_FILE_KEY = "photo-last-file";
 
-// The words on a calibration sheet, in the font every sheet so far has been made in.
-const SHEET_FONT = "EMSOsmotron";
+const NO_SHAPES: Shape[] = [];
+const NO_FILLS: Fill[] = [];
 
 // A new drawing's one layer, as in Studio: a photo put in is matched to the tool's pens from there.
 const firstLayer = (): Layer => ({ id: newLayerId(), name: "Black", color: "#262626" });
-
-/** A calibration or pen pairs sheet: an ordinary drawing, made or opened here. */
-interface Sheet {
-  shapes: Shape[];
-  fills: Fill[];
-  layers: Layer[];
-  page: Page;
-}
-
-const NO_SHAPES: Shape[] = [];
-const NO_FILLS: Fill[] = [];
-const NO_LAYERS: Layer[] = [];
-
-/**
- * The sheet as the stage shows it: the file that will be saved, its lines drawn at the pen's width,
- * without the unplotted layer of shapes the hatching was made from.
- */
-function sheetPicture(svg: string, penWidthMm: number): string {
-  const doc = new DOMParser().parseFromString(svg, "image/svg+xml");
-  doc.getElementById("studio-sources")?.remove();
-  for (const el of doc.querySelectorAll("[stroke-width]")) el.setAttribute("stroke-width", String(penWidthMm / 25.4));
-  return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(new XMLSerializer().serializeToString(doc))}`;
-}
 
 /** What waits on the question about unsaved work: a new drawing, photos opened, or a file opened. */
 type Next = { kind: "new" } | { kind: "photos"; files: File[] } | { kind: "open"; res: OpenResult };
@@ -190,7 +159,7 @@ export default function App() {
   // The stroke fonts any words in the drawing are in - Studio's, kept when it's saved again.
   const [fonts, setFonts] = useState<Record<string, StrokeFont>>({});
   useEffect(() => {
-    const wanted = new Set([SHEET_FONT, ...shapes.map((s) => s.font ?? "")].filter(Boolean));
+    const wanted = new Set(shapes.map((s) => s.font ?? "").filter(Boolean));
     for (const name of wanted) {
       if (fonts[name]) continue;
       loadFont(name)
@@ -429,99 +398,13 @@ export default function App() {
 
   const editInStudio = async () => {
     const where = file.dirty || !file.saved ? await file.save() : file.saved;
-    if (where) openInStudio(where.path);
+    if (where && !(await openInStudio(where.path))) setMessage({ text: "The browser didn’t open Studio’s tab: allow pop-ups for this page.", ok: false });
   };
-
-  // ---- Setup: calibration ----
-
-  const [setupOpen, setSetupOpen] = useState(false);
-  const sheetFont = fonts[SHEET_FONT] ?? null;
-  const sheetFonts = useMemo(() => {
-    const loaded: Record<string, StrokeFont> = {};
-    if (sheetFont) loaded[SHEET_FONT] = sheetFont;
-    return loaded;
-  }, [sheetFont]);
-
-  const [sheet, setSheet] = useState<Sheet | null>(null);
-  const sheetFile = useDrawingFile({
-    shapes: sheet?.shapes ?? NO_SHAPES,
-    fills: sheet?.fills ?? NO_FILLS,
-    layers: sheet?.layers ?? NO_LAYERS,
-    page: sheet?.page ?? page,
-    sizeId: sizeIdOf(sheet?.page ?? page),
-    toolName,
-    fonts: sheetFonts,
-    setBusy,
-    setMessage,
-  });
-
-  // A new sheet, or one opened, replaces one with unsaved changes only after asking.
-  type NextSheet = "calibration" | "pairs" | OpenResult;
-  const [confirmSheet, setConfirmSheet] = useState<NextSheet | null>(null);
-  const makeSheet = (kind: "calibration" | "pairs") => {
-    setConfirmSheet(null);
-    if (!tool || !sheetFont) return;
-    const made = kind === "calibration" ? calibrationSheet(tool, page, SHEET_FONT) : pairsSheet(tool, page, SHEET_FONT);
-    if ("error" in made) {
-      setMessage({ text: made.error, ok: false });
-      return;
-    }
-    setSheet({ shapes: made.shapes.map((sh) => (sh.kind === "text" ? fitText(sh, sheetFont) : sh)), fills: made.fills, layers: made.layers, page });
-    sheetFile.started(`${tool.name} ${kind === "calibration" ? "calibration" : "color pairs"}`); // a new sheet to be saved and plotted
-    setMessage({ text: "", ok: true });
-  };
-  const openSheet = (res: OpenResult) => {
-    setConfirmSheet(null);
-    const drawing = parseDrawing(res.svg ?? "");
-    if (!sheetLayout(drawing.shapes)) {
-      setMessage({ text: `${res.name} isn’t a calibration sheet: it has no corner marks and named patches.`, ok: false });
-      return;
-    }
-    setSheet({ shapes: drawing.shapes, fills: drawing.fills, layers: drawing.layers, page: drawing.page });
-    sheetFile.opened(res, drawing);
-    if (drawing.tool && presets.some((t) => t.name === drawing.tool)) setToolName(drawing.tool);
-    setMessage({ text: "", ok: true });
-  };
-  const goOnSheet = (next: NextSheet) => (typeof next === "string" ? makeSheet(next) : openSheet(next));
-  const askSheet = (next: NextSheet) => (sheet && sheetFile.dirty ? setConfirmSheet(next) : goOnSheet(next));
-
-  // A photo of the plotted sheet, read back into the tool's preset: each pen as it really came out.
-  // Only into the tool the sheet is of: one marker's colours read into another would overwrite them.
-  const layout = useMemo(() => (sheet ? sheetLayout(sheet.shapes) : null), [sheet]);
-  const sheetPens = useMemo(() => [...new Set(layout?.patches.map((p) => p.pen) ?? [])], [layout]);
-  const strangers = sheetPens.filter((pen) => !(tool?.palette ?? []).some((p) => p.name === pen));
-  const sheetIsTool = Boolean(layout && tool && sheetPens.length && !strangers.length);
-  const readSheetPhoto = async (photo: File | undefined) => {
-    if (!photo || !layout || !tool || !sheetIsTool) return;
-    setBusy(true);
-    setMessage({ text: `Reading ${photo.name}…`, ok: true, progress: true });
-    try {
-      const calibration = await readCalibration(photo, layout, paperColor);
-      const res = await api<{ presets: Preset[] }>(`/api/presets/${encodeURIComponent(tool.name)}/calibration`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(calibration),
-      });
-      setPresets(res.presets);
-      const problems = readingProblems(calibration);
-      const count = Object.keys(calibration.pens).length;
-      setMessage(problems.length ? { text: `Read ${count} colors, but ${problems.join(" ")}`, ok: false } : { text: `Read ${count} colors into ${tool.name}`, ok: true });
-    } catch (err) {
-      setMessage({ text: (err as Error).message, ok: false });
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const sheetImage = useMemo(
-    () => (sheet ? sheetPicture(buildSvg(sheet.shapes, sheet.fills, sheet.layers, sheet.page, { paperSizeId: sizeIdOf(sheet.page), toolName, fonts: sheetFonts }), penWidthMm) : null),
-    [sheet, toolName, sheetFonts, penWidthMm],
-  );
 
   // ---- The rail ----
 
-  // One file browser, for whichever is being opened: a photo drawing, or a calibration sheet.
-  const [browsing, setBrowsing] = useState<"drawing" | "sheet" | null>(null);
+  // The file browser, open to pick a drawing.
+  const [browsing, setBrowsing] = useState<"drawing" | null>(null);
 
   const paperSection = (
     <PaperSection
@@ -560,77 +443,6 @@ export default function App() {
     }
   }, [toolName]); // eslint-disable-line react-hooks/exhaustive-deps
   const toolSection = <DrawingToolSection tools={presets} value={toolName} onPick={pickPen} collapsibleKey="photo-pen" disabled={busy} />;
-
-  const confirmSheetBlock = confirmSheet && (
-    <div className={styles.confirm} role="alertdialog" aria-label={typeof confirmSheet === "string" ? "Make a new sheet" : `Open ${confirmSheet.name}`}>
-      <p>{sheetFile.saved ? `“${sheetFile.name}” has` : "This sheet has"} changes that aren’t saved.</p>
-      <div className={styles.actions}>
-        <Button
-          size="sm"
-          disabled={busy}
-          onClick={async () => {
-            if (await sheetFile.save()) goOnSheet(confirmSheet);
-          }}
-        >
-          {typeof confirmSheet === "string" ? "Save, then make new" : `Save, then open ${confirmSheet.name}`}
-        </Button>
-        <Button size="sm" tone="danger" variant="secondary" onClick={() => goOnSheet(confirmSheet)}>
-          {typeof confirmSheet === "string" ? "Discard and make new" : `Discard and open ${confirmSheet.name}`}
-        </Button>
-        <Button size="sm" variant="tertiary" onClick={() => setConfirmSheet(null)}>
-          Keep this sheet
-        </Button>
-      </div>
-    </div>
-  );
-
-  // The sheet in hand: what it's called and where it is, saving it, and sending it to Plot.
-  const sheetControls = sheet && (
-    <>
-      <InputText size="md" label="Sheet name" hideLabel value={sheetFile.name} disabled={busy} onChange={(e) => sheetFile.setName(e.target.value)} />
-      <p className={controls.fileWhere} title={sheetFile.saved?.path ?? undefined}>
-        {sheetFile.saved ? sheetFile.saved.folder : "Not saved yet"}
-      </p>
-      <div className={styles.actions}>
-        <Button size="sm" icon={<Save />} disabled={busy || !sheetFile.dirty} onClick={() => sheetFile.save()}>
-          Save
-        </Button>
-        <Button size="sm" variant="secondary" icon={<Send />} disabled={busy} onClick={sheetFile.sendToPlot}>
-          Send to Plot
-        </Button>
-      </div>
-    </>
-  );
-
-  // Setup: getting the drawing tools ready - calibrating their pens on the paper chosen here.
-  const setupRail = (
-    <Card variant="flat" className={styles.controls}>
-      <div className={`${styles.cardBody} ${controls.cardSections}`}>
-        <Section title="Setup">
-          <p className={controls.hint}>Getting the pens ready. The image stays as it is; the gear goes back to it.</p>
-        </Section>
-        {paperSection}
-        {toolSection}
-        <CalibrationSection
-          tool={tool}
-          toolName={toolName}
-          busy={busy || !sheetFont}
-          sheetOpen={Boolean(layout)}
-          sheetIsTool={sheetIsTool}
-          strangers={strangers}
-          onNewSheet={() => askSheet("calibration")}
-          onNewPairs={() => askSheet("pairs")}
-          onOpenSheet={() => setBrowsing("sheet")}
-          sheetFile={sheetControls}
-          onReadPhoto={readSheetPhoto}
-          confirm={confirmSheetBlock}
-        />
-        <Section title="Appearance" action={<ThemeToggle />}>
-          <p className={controls.hint}>Light or dark. Plot and Studio follow the same choice.</p>
-        </Section>
-      </div>
-    </Card>
-  );
 
   // Split by best fit: how near the best pens come to the photo, with one fewer and one more than it
   // has, so what another pen buys can be seen. An estimate from a sample of the photo's pixels, each
@@ -756,7 +568,7 @@ export default function App() {
   // The toolbar's effect is the whole photo's. Silhouette has no tones or colours to split by, so a
   // split photo comes back together as one layer drawn that way; separations keep a plate each.
   // Whether the rail has any card to show; with none, the stage takes its width.
-  const railOut = Boolean(setupOpen || fileCard || paperCard || penCard || confirmNext || infoCard || (chosen?.photo && effectCards));
+  const railOut = Boolean(fileCard || paperCard || penCard || confirmNext || infoCard || (chosen?.photo && effectCards));
 
   const setEffect = (effect: Effect) => {
     setEffectCards(true);
@@ -765,8 +577,6 @@ export default function App() {
     else setPhotoOf({ style });
   };
 
-  // The way to Setup, at the bottom of the toolbars down the left.
-  const setupToolbar = <SetupToolbar open={setupOpen} onToggle={() => setSetupOpen((open) => !open)} orientation="vertical" />;
 
   return (
     <div className={styles.app}>
@@ -776,7 +586,7 @@ export default function App() {
         open={browsing !== null}
         endpoint="/api/studio/read"
         onClose={() => setBrowsing(null)}
-        onOpened={(res) => (browsing === "sheet" ? askSheet(res) : ask({ kind: "open", res }))}
+        onOpened={(res) => ask({ kind: "open", res })}
       />
       <PhotoHeader plotterFound={plotterFound} />
       <input
@@ -804,12 +614,11 @@ export default function App() {
               { key: "image", on: infoCard, toggle: () => setInfoCard((on) => !on) },
             ]}
           />
-          <EffectToolbar effect={!setupOpen && chosen?.photo ? effectOf(chosen.photo) : undefined} onEffect={setEffect} onAgain={() => setEffectCards((on) => !on)} disabled={setupOpen || !chosen?.photo || busy} />
-          {!setupOpen && chosen?.photo && <HistoryToolbar canUndo={canUndo} canRedo={canRedo} onUndo={undo} onRedo={redo} disabled={busy} />}
-          {setupToolbar}
+          <EffectToolbar effect={chosen?.photo ? effectOf(chosen.photo) : undefined} onEffect={setEffect} onAgain={() => setEffectCards((on) => !on)} disabled={!chosen?.photo || busy} />
+          {chosen?.photo && <HistoryToolbar canUndo={canUndo} canRedo={canRedo} onUndo={undo} onRedo={redo} disabled={busy} />}
         </div>
-        <section className={styles.stage} aria-label={setupOpen ? "Calibration sheet" : "Image conversion"}>
-          {!setupOpen && chosen?.photo && convertBox ? (
+        <section className={styles.stage} aria-label="Image conversion">
+          {chosen?.photo && convertBox ? (
             <ConvertStage
               photo={chosen.photo}
               box={convertBox}
@@ -837,25 +646,17 @@ export default function App() {
             <>
               <div
                 className={styles.paper}
-                style={{ aspectRatio: setupOpen && sheet ? `${sheet.page.w} / ${sheet.page.h}` : `${page.w} / ${page.h}`, background: paperColor }}
+                style={{ aspectRatio: `${page.w} / ${page.h}`, background: paperColor }}
               >
-                {setupOpen ? (
-                  sheetImage ? (
-                    <img className={styles.sheet} src={sheetImage} alt={sheetFile.name} />
-                  ) : (
-                    <p className={styles.stageEmpty}>Make or open a sheet to see it here</p>
-                  )
-                ) : (
-                  <button type="button" className={styles.stageEmpty} onClick={() => photoInput.current?.click()}>
-                    Open an image to start
-                  </button>
-                )}
+                <button type="button" className={styles.stageEmpty} onClick={() => photoInput.current?.click()}>
+                  Open an image to start
+                </button>
               </div>
             </>
           )}
         </section>
 
-        {railOut && <div className={styles.side}>{setupOpen ? setupRail : mainRail}</div>}
+        {railOut && <div className={styles.side}>{mainRail}</div>}
       </main>
     </div>
   );

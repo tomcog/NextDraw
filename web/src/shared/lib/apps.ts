@@ -37,12 +37,45 @@ export function showApp(app: AppName) {
   tab.focus();
 }
 
+// The channel a Studio page listens on for drawings handed to it by the other apps.
+export const STUDIO_CHANNEL = "nextdraw-studio-open";
+
 /**
- * Studio, on a drawing: always a new tab, since one already open could hold work not yet saved.
+ * Studio, on a drawing, in Studio's own tab - never this one. A Studio page already open is asked to
+ * take it, and brought forward; it opens the drawing unless its own has changes not saved, when it
+ * says so and keeps them. With no Studio page open, one opens in a tab of its own. False when the
+ * browser wouldn't open one: the page that asked stays as it is and can say so.
  */
-export function openInStudio(path: string) {
-  const url = `${APP_URL.studio}?open=${encodeURIComponent(path)}`;
-  if (!window.open(url, "_blank")) window.location.href = url;
+export async function openInStudio(path: string): Promise<boolean> {
+  const answered = "BroadcastChannel" in window && await new Promise<boolean>((resolve) => {
+    const channel = new BroadcastChannel(STUDIO_CHANNEL);
+    const done = (yes: boolean) => {
+      window.clearTimeout(timer);
+      channel.close();
+      resolve(yes);
+    };
+    const timer = window.setTimeout(() => done(false), 600);
+    channel.onmessage = (e) => {
+      if (e.data?.type === "studio-here") done(true);
+    };
+    channel.postMessage({ type: "open-in-studio", path });
+  });
+  if (answered) {
+    // Found by its name and only brought forward: the page in it isn't loaded again. A browser that
+    // doesn't link the two tabs hands back a new, blank one instead: closed again, the drawing is
+    // already open in Studio's.
+    const tab = window.open("", APP_WINDOW.studio);
+    try {
+      if (tab?.location.href === "about:blank") tab.close();
+      else tab?.focus();
+    } catch {
+      tab?.focus();
+    }
+    return true;
+  }
+  const tab = window.open(`${APP_URL.studio}?open=${encodeURIComponent(path)}`, APP_WINDOW.studio);
+  tab?.focus();
+  return Boolean(tab);
 }
 
 /**

@@ -1,6 +1,6 @@
-import type { Calibration } from "../../shared/lib/types";
-import { CALIBRATION_COVERS } from "./calibration";
-import { boxOf, type Shape } from "../../shared/lib/drawing/shapes";
+import type { Calibration } from "../types";
+import { CALIBRATION_COVERS } from "./sheet";
+import { boxOf, type Shape } from "../drawing/shapes";
 
 // Reading a calibration sheet back from a photo of it. The sheet's corner marks are found in the
 // photo, which lines the sheet up with the picture however the camera was held; then the middle of

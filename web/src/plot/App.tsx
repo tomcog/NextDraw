@@ -15,7 +15,16 @@ import { Hints } from "../shared/components/controls/Hints";
 import { Header } from "./components/Header";
 import { Bed, type Zoom } from "../shared/components/Bed";
 import { PaletteEditor } from "./components/PaletteEditor";
-import { type View } from "../shared/components/PreviewToolbar";
+import { SetupToolbar, type View } from "../shared/components/PreviewToolbar";
+import { ThemeToggle } from "../shared/components/ThemeToggle";
+import { CalibrationSection } from "./components/controls/CalibrationSection";
+import { calibrationSheet } from "../shared/lib/calibration/sheet";
+import { pairsSheet } from "../shared/lib/calibration/pairs";
+import { readCalibration, readingProblems, sheetLayout, type SheetLayout } from "../shared/lib/calibration/read";
+import { loadFont } from "../shared/lib/drawing/font";
+import { fitText } from "../shared/lib/drawing/text";
+import { buildSvg } from "../shared/lib/drawing/svg";
+import { parseDrawing } from "../shared/lib/drawing/parse";
 import { openInStudio } from "../shared/lib/apps";
 import { FileBrowser, type OpenResult } from "../shared/components/FileBrowser";
 import { MachinePanel } from "./components/MachinePanel";
@@ -37,6 +46,9 @@ import { SpeedSection } from "./components/controls/SpeedSection";
 import { PlotOptionsSection } from "./components/controls/PlotOptionsSection";
 import { PlotterSection } from "./components/controls/PlotterSection";
 import { ActionBar } from "./components/controls/ActionBar";
+
+// The words on a calibration sheet, in the font every sheet so far has been made in.
+const SHEET_FONT = "EMSOsmotron";
 
 // Settings that change what the NextDraw software's dry run reports.
 const ESTIMATE_KEYS: (keyof Settings)[] = [
@@ -1207,6 +1219,92 @@ export default function App() {
   /* ---------- Presets ---------- */
 
   const active = presets.find((p) => p.name === activePreset);
+
+  // A drawing opened in Studio's own tab; this one stays on Plot, and says so if the browser won't.
+  const openStudio = async (path: string) => {
+    if (!(await openInStudio(path))) setLocalMessage({ text: "The browser didn’t open Studio’s tab: allow pop-ups for this page.", tone: "error" });
+  };
+
+  /* ---------- Setup: calibrating the pens ---------- */
+
+  // Setup, from the gear at the foot of the toolbars: what's done to a tool's preset beyond its
+  // settings - its calibration sheets, made and read back - and the look of the apps. Moved here
+  // from Image on 2026-10-10, as Setup is Plot's.
+  const [setupOpen, setSetupOpen] = useState(false);
+  // The drawing open here, when it's a calibration sheet: where its patches are, to read a photo of
+  // it. Read from the file only while Setup is out - Plot doesn't parse drawings otherwise.
+  const [sheetLayoutNow, setSheetLayoutNow] = useState<SheetLayout | null>(null);
+  useEffect(() => {
+    const path = status?.file_path;
+    if (!setupOpen || !path) {
+      setSheetLayoutNow(null);
+      return;
+    }
+    let stale = false;
+    api<{ svg?: string }>(`/api/studio/read?path=${encodeURIComponent(path)}`)
+      .then((res) => !stale && setSheetLayoutNow(res.svg ? sheetLayout(parseDrawing(res.svg).shapes) : null))
+      .catch(() => !stale && setSheetLayoutNow(null));
+    return () => {
+      stale = true;
+    };
+  }, [setupOpen, status?.file_path, drawingVersion]);
+  const sheetPens = useMemo(() => [...new Set(sheetLayoutNow?.patches.map((p) => p.pen) ?? [])], [sheetLayoutNow]);
+  const strangers = sheetPens.filter((pen) => !(active?.palette ?? []).some((p) => p.name === pen));
+  const sheetIsTool = Boolean(sheetLayoutNow && active && sheetPens.length && !strangers.length);
+
+  // A sheet of the tool's pens - every one at four strengths, or two at a time over each other - on
+  // the paper chosen here, saved to the Drawings folder and opened as the drawing to plot.
+  const [sheetBusy, setSheetBusy] = useState(false);
+  const makeSheet = async (kind: "calibration" | "pairs") => {
+    if (!active) return;
+    const page = { w: settings.paper_w / 25.4, h: settings.paper_h / 25.4 };
+    const made = kind === "calibration" ? calibrationSheet(active, page, SHEET_FONT) : pairsSheet(active, page, SHEET_FONT);
+    if ("error" in made) {
+      setLocalMessage({ text: made.error, tone: "error" });
+      return;
+    }
+    setSheetBusy(true);
+    try {
+      const font = await loadFont(SHEET_FONT);
+      const shapes = made.shapes.map((sh) => (sh.kind === "text" ? fitText(sh, font) : sh));
+      const sizeId = PAPER_SIZES.find((p) => p.id === settings.paper_size)?.id ?? "custom";
+      const svg = buildSvg(shapes, made.fills, made.layers, page, { paperSizeId: sizeId, toolName: active.name, fonts: { [SHEET_FONT]: font } });
+      const saved = await postJSON<{ name: string; path: string; folder: string }>("/api/studio/save", {
+        name: `${active.name} ${kind === "calibration" ? "calibration" : "color pairs"}`,
+        svg,
+      });
+      onOpened(await postJSON<OpenResult>("/api/open", { path: saved.path }));
+      setLocalMessage({ text: `Saved to ${saved.folder} and opened, ready to plot.`, tone: "ok" });
+    } catch (err) {
+      setLocalMessage({ text: (err as Error).message, tone: "error" });
+    } finally {
+      setSheetBusy(false);
+    }
+  };
+
+  // A photo of the plotted sheet, read back into the tool's preset: each pen as it really came out.
+  // Only into the tool the sheet is of: one marker's colours read into another would overwrite them.
+  const readSheetPhoto = async (photo: File | undefined) => {
+    if (!photo || !sheetLayoutNow || !active || !sheetIsTool) return;
+    setSheetBusy(true);
+    setLocalMessage({ text: `Reading ${photo.name}…`, tone: "ok" });
+    try {
+      const calibration = await readCalibration(photo, sheetLayoutNow, settings.paper_color);
+      const res = await api<{ presets: Preset[] }>(`/api/presets/${encodeURIComponent(active.name)}/calibration`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(calibration),
+      });
+      setPresets(res.presets);
+      const problems = readingProblems(calibration);
+      const count = Object.keys(calibration.pens).length;
+      setLocalMessage(problems.length ? { text: `Read ${count} colors, but ${problems.join(" ")}`, tone: "error" } : { text: `Read ${count} colors into ${active.name}`, tone: "ok" });
+    } catch (err) {
+      setLocalMessage({ text: (err as Error).message, tone: "error" });
+    } finally {
+      setSheetBusy(false);
+    }
+  };
   const presetChanged = Boolean(
     active && !PRESET_FIELDS.every((k) => !(k in active.settings) || Math.abs(Number(active.settings[k]) - Number(settings[k] ?? active.settings[k])) < 0.05),
   );
@@ -1569,6 +1667,8 @@ export default function App() {
               { key: "pen", on: penCard, toggle: () => setPenCard((on) => !on) },
             ]}
           />
+          {/* Setup's way in, at the foot of the toolbars, as it was in Studio and Image. */}
+          <SetupToolbar open={setupOpen} onToggle={() => setSetupOpen((open) => !open)} orientation="vertical" />
         </div>
         <section className={styles.stage} aria-label={paletteOpen ? "Pen colors" : "Drawing preview"}>
           <div className={styles.bedArea}>
@@ -1759,14 +1859,14 @@ export default function App() {
                 onTrim={trimPage}
                 onRotate={(turn) => setRotation((r) => (((r + turn * 90) % 360) + 360) % 360)}
                 // Only a drawing that lives in a folder: an uploaded copy has nowhere for Studio to read it from.
-                onEditInStudio={status?.file_path ? () => openInStudio(status.file_path!) : undefined}
+                onEditInStudio={status?.file_path ? () => openStudio(status.file_path!) : undefined}
               />
               {shownMisfits && (
                 <div className={styles.misfits} role="status">
                   <p>
                     {`${listOf(shownMisfits.files)} ${shownMisfits.files.length === 1 ? "isn’t" : "aren’t"} on a page the size of the first file’s, so ${shownMisfits.files.length === 1 ? "it" : "they"} may not line up.`}
                   </p>
-                  <Button size="sm" variant="secondary" onClick={() => openInStudio(shownMisfits.path)}>
+                  <Button size="sm" variant="secondary" onClick={() => openStudio(shownMisfits.path)}>
                     Line up in Studio
                   </Button>
                 </div>
@@ -1776,7 +1876,8 @@ export default function App() {
           )}
           {/* The same Paper and Pen cards as Studio's; the units, and the plotting-only rows of the
               pen card, are Plot's alone. */}
-          {fileName && paperCard && (
+          {/* Out with no drawing open too while Setup is, to choose what a sheet is made on and with. */}
+          {(fileName || setupOpen) && paperCard && (
           <Card variant="flat" className={styles.controls}>
             <div className={`${styles.cardBody} ${controls.cardSections}`}>
                 <PaperSection
@@ -1797,7 +1898,7 @@ export default function App() {
             </div>
           </Card>
           )}
-          {fileName && penCard && (
+          {(fileName || setupOpen) && penCard && (
           <Card variant="flat" className={styles.controls}>
             <div className={`${styles.cardBody} ${controls.cardSections}`}>
                 <PresetSection
@@ -1832,6 +1933,28 @@ export default function App() {
                   onSave={savePreset}
                   onDelete={deletePreset}
                 />
+            </div>
+          </Card>
+          )}
+          {setupOpen && (
+          <Card variant="flat" className={styles.controls}>
+            <div className={`${styles.cardBody} ${controls.cardSections}`}>
+              <Section title="Setup">
+                <p className={controls.hint}>Getting the pens ready, for the pen and paper chosen above. The gear puts this away.</p>
+              </Section>
+              <CalibrationSection
+                tool={active ?? null}
+                busy={busy || sheetBusy}
+                sheetOpen={Boolean(sheetLayoutNow)}
+                sheetIsTool={sheetIsTool}
+                strangers={strangers}
+                onNewSheet={() => makeSheet("calibration")}
+                onNewPairs={() => makeSheet("pairs")}
+                onReadPhoto={readSheetPhoto}
+              />
+              <Section title="Appearance" action={<ThemeToggle />}>
+                <p className={controls.hint}>Light or dark. Studio and Image follow the same choice.</p>
+              </Section>
             </div>
           </Card>
           )}

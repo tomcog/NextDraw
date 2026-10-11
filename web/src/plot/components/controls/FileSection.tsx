@@ -65,6 +65,11 @@ export function FileSection({
       // one is open, and open another.
       action={
         <span className={styles.headerTools}>
+          {/* The way to Studio with this drawing, as Studio's Send is the way here: Studio's nib, as
+              its name in the header carries. Opened in Studio's own tab; this one stays on Plot. */}
+          {onEditInStudio && (
+            <ButtonRound size="sm" icon={<PenTool />} aria-label="Open in Studio" title="Open in Studio, in Studio's own tab" disabled={busy} onClick={onEditInStudio} />
+          )}
           {fileName && (
             <ButtonRound
               size="sm"
@@ -157,11 +162,6 @@ export function FileSection({
           />
           <ButtonRound size="sm" icon={<RotateCcwSquare />} aria-label="Turn the drawing left" title="Turn the drawing 90° left" disabled={busy} onClick={() => onRotate(-1)} />
           <ButtonRound size="sm" icon={<RotateCwSquare />} aria-label="Turn the drawing right" title="Turn the drawing 90° right" disabled={busy} onClick={() => onRotate(1)} />
-          {/* The way back to Studio with this drawing, as Studio's Send is the way here: Studio's
-              nib, as its name in the header carries. A tab of its own, so no open Studio is touched. */}
-          {onEditInStudio && (
-            <ButtonRound size="sm" icon={<PenTool />} aria-label="Edit in Studio" title="Edit this drawing in Studio, in a tab of its own" onClick={onEditInStudio} />
-          )}
         </div>
       )}
     </Section>
