@@ -198,7 +198,7 @@ export function photoActions(ctx: PhotoContext) {
     const was = chosen.photo.separation;
     const wasPlate = PLATES.some((p) => PLATE_AIMS[p].name === was);
     const separation = plate === "other" ? (wasPlate ? "Color" : was) : PLATE_AIMS[plate].name;
-    const name = chosen.name?.endsWith(` ${was}`) ? chosen.name.slice(0, -was.length - 1) : chosen.name ?? "Photo";
+    const name = chosen.name?.endsWith(` ${was}`) ? chosen.name.slice(0, -was.length - 1) : chosen.name ?? "Image";
     record();
     setShapes((list) => list.map((sh) => (sh.id === chosen.id
       ? { ...sh, name: `${name} ${separation}`, photo: { ...sh.photo!, separation, ...(plate !== "other" ? { angle: PLATE_AIMS[plate].angle } : {}) } }
@@ -257,7 +257,7 @@ export function photoActions(ctx: PhotoContext) {
     return [...members].sort((a, b) => place(a) - place(b)).map((m) => {
       const layer = layers.find((l) => l.id === m.layerId);
       const own = Object.fromEntries(LAYER_SETTINGS.map((k) => [k, m.photo![k]]));
-      return { layerName: layer?.name ?? "Black", layerColor: layer?.color ?? "#262626", shapeName: m.name ?? "Photo", photo: own };
+      return { layerName: layer?.name ?? "Black", layerColor: layer?.color ?? "#262626", shapeName: m.name ?? "Image", photo: own };
     });
   };
 
@@ -298,7 +298,7 @@ export function photoActions(ctx: PhotoContext) {
     const use = PLATE_SETS.find((s) => s.key === (set ?? (chosen.photo!.plate ? plateSetOf(chosen.photo!.plates) : "cmyk")))!;
     const pens = tool2?.palette ?? [];
     if (pens.length < use.plates.length) {
-      setMessage({ text: `${tool2?.name ?? "This pen"} needs ${use.plates.length} colors in its palette to split a photo into ${use.label}`, ok: false });
+      setMessage({ text: `${tool2?.name ?? "This pen"} needs ${use.plates.length} colors in its palette to split an image into ${use.label}`, ok: false });
       return;
     }
     // Judged by how this pen's lines hatch at this photo's spacing and passes.
@@ -372,7 +372,7 @@ export function photoActions(ctx: PhotoContext) {
     const members = chosen?.photo?.group ? shapes.filter((sh) => sh.photo?.group === chosen.photo!.group) : chosen ? [chosen] : [];
     const base = members[0];
     const layer = layers.find((l) => l.id === base?.layerId);
-    let name = base?.name ?? "Photo";
+    let name = base?.name ?? "Image";
     if (base?.photo?.ink && layer && name.endsWith(` ${layer.name}`)) name = name.slice(0, -layer.name.length - 1);
     else name = name.replace(words, "");
     // From a colour or CMYK split, the palette's darkest pen; from B&W, the pen its layer has now.
@@ -419,7 +419,7 @@ export function photoActions(ctx: PhotoContext) {
     if (!chosen?.photo) return;
     const pens = tool2?.palette ?? [];
     if (!pens.length) {
-      setMessage({ text: `${tool2?.name ?? "This pen"} has no palette of colors to split a photo into`, ok: false });
+      setMessage({ text: `${tool2?.name ?? "This pen"} has no palette of colors to split an image into`, ok: false });
       return;
     }
     const n = Math.min(MOST_COLORS, Math.max(1, Math.round(count)));
@@ -432,7 +432,7 @@ export function photoActions(ctx: PhotoContext) {
       // lighter or darker than the group's colour, and the layers go down in the pens.
       .sort((a, b) => (lightness(b.pen.color) ?? 0) - (lightness(a.pen.color) ?? 0));
     if (!parts.length) {
-      setMessage({ text: "There's no color in this photo to split, only paper", ok: false });
+      setMessage({ text: "There's no color in this image to split, only paper", ok: false });
       return;
     }
     const { name } = photoStem();
@@ -514,7 +514,7 @@ export function photoActions(ctx: PhotoContext) {
   ) => {
     if (!chosen?.photo) return;
     if (!tool2?.palette?.length) {
-      setMessage({ text: `${tool2?.name ?? "This pen"} has no palette of colors to split a photo into`, ok: false });
+      setMessage({ text: `${tool2?.name ?? "This pen"} has no palette of colors to split an image into`, ok: false });
       return;
     }
     const n = Math.min(MOST_COLORS, Math.max(1, Math.round(count)));
@@ -530,7 +530,7 @@ export function photoActions(ctx: PhotoContext) {
       setBusy(false);
     }
     if (!best) {
-      setMessage({ text: "The photo is still being read: try again in a moment", ok: false });
+      setMessage({ text: "The image is still being read: try again in a moment", ok: false });
       return;
     }
     const regions = best.pens.map((p) => p.onPaper);
@@ -552,7 +552,7 @@ export function photoActions(ctx: PhotoContext) {
         },
       })),
       parts.length > 1 ? chosen.photo.group ?? newShapeId() : undefined,
-      `Best ${parts.length === 1 ? "color" : `${parts.length} colors`} for this photo on this paper${pairs ? ", in pairs where that comes nearer" : ""}: ${parts.map((p) => p.pen.name).join(", ")}`,
+      `Best ${parts.length === 1 ? "color" : `${parts.length} colors`} for this image on this paper${pairs ? ", in pairs where that comes nearer" : ""}: ${parts.map((p) => p.pen.name).join(", ")}`,
     );
   };
 
@@ -645,7 +645,7 @@ export function photoActions(ctx: PhotoContext) {
       setShapes((list) => list.map((sh) => (sh.id === chosen.id || (group && sh.photo?.group === group)
         ? { ...sh, ...box, photo: { ...sh.photo!, src: copy.src, width: copy.width, height: copy.height, crop } }
         : sh)));
-      setMessage({ text: `Replaced the photo with ${file.name}, keeping its settings`, ok: true });
+      setMessage({ text: `Replaced the image with ${file.name}, keeping its settings`, ok: true });
     } catch (err) {
       setMessage({ text: (err as Error).message, ok: false });
     }
@@ -688,7 +688,7 @@ export function photoActions(ctx: PhotoContext) {
       const ids = new Set(members.map((sh) => sh.id));
       setShapes((list) => list.map((sh) => (ids.has(sh.id) ? { ...sh, ...box, photo: { ...sh.photo!, ...turned.get(sh.photo!.src)!, crop } } : sh)));
     } catch (err) {
-      setMessage({ text: `Couldn’t turn the photo: ${(err as Error).message}`, ok: false });
+      setMessage({ text: `Couldn’t turn the image: ${(err as Error).message}`, ok: false });
     }
   };
 

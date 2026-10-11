@@ -36,7 +36,8 @@ import { readCalibration, readingProblems, sheetLayout } from "./lib/calibration
 import { photoActions } from "./lib/photoActions";
 import { CalibrationSection } from "./components/CalibrationSection";
 import { ConvertStage, type ConvertView } from "./components/ConvertStage";
-import { EffectToolbar, PanelToolbar, effectOf, type Effect } from "./components/EffectToolbar";
+import { EffectToolbar, effectOf, type Effect } from "./components/EffectToolbar";
+import { PanelToolbar } from "../shared/components/PanelToolbar";
 import { dropWork, keepWork, loadWork, type Work } from "./lib/workInProgress";
 import { PhotoCard } from "./components/PhotoCard";
 import { PhotoHeader } from "./components/PhotoHeader";
@@ -315,7 +316,7 @@ export default function App() {
   const openDrawing = useCallback((res: OpenResult) => {
     const drawing = parseDrawing(res.svg ?? "");
     if (!drawing.shapes.some((s) => s.kind === "photo")) {
-      setMessage({ text: `${res.name} has no photo in it. Studio is where it’s edited.`, ok: false });
+      setMessage({ text: `${res.name} has no image in it. Studio is where it’s edited.`, ok: false });
       return;
     }
     setPage(drawing.page);
@@ -606,7 +607,7 @@ export default function App() {
     <Card variant="flat" className={styles.controls}>
       <div className={`${styles.cardBody} ${controls.cardSections}`}>
         <Section title="Setup">
-          <p className={controls.hint}>Getting the pens ready. The photo stays as it is; the gear goes back to it.</p>
+          <p className={controls.hint}>Getting the pens ready. The image stays as it is; the gear goes back to it.</p>
         </Section>
         {paperSection}
         {toolSection}
@@ -741,9 +742,9 @@ export default function App() {
         <Card variant="flat" className={styles.controls}>
           <div className={`${styles.cardBody} ${controls.cardSections}`}>
             <Section title="Image">
-              <p className={controls.hint}>No photo yet. Open one to turn it into lines: a new drawing, named after it.</p>
+              <p className={controls.hint}>No image yet. Open one to turn it into lines: a new drawing, named after it.</p>
               <Button size="sm" variant="secondary" disabled={busy} onClick={() => photoInput.current?.click()}>
-                Open a photo
+                Open an image
               </Button>
             </Section>
           </div>
@@ -846,7 +847,7 @@ export default function App() {
                   )
                 ) : (
                   <button type="button" className={styles.stageEmpty} onClick={() => photoInput.current?.click()}>
-                    Open a photo to start
+                    Open an image to start
                   </button>
                 )}
               </div>

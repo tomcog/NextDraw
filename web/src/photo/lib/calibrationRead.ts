@@ -55,7 +55,7 @@ async function pictureOf(file: File): Promise<Picture> {
   canvas.width = w;
   canvas.height = h;
   const ctx = canvas.getContext("2d", { willReadFrequently: true });
-  if (!ctx) throw new Error("This browser can’t read the photo.");
+  if (!ctx) throw new Error("This browser can’t read the image.");
   ctx.drawImage(bitmap, 0, 0, w, h);
   bitmap.close();
   return { w, h, data: ctx.getImageData(0, 0, w, h).data };
@@ -224,7 +224,7 @@ function average(pic: Picture, m: Homography, box: Box, share: number): number[]
       }
     }
   }
-  if (!n) throw new Error("Part of the sheet is outside the photo. Take it again with the whole sheet in view.");
+  if (!n) throw new Error("Part of the sheet is outside the image. Take it again with the whole sheet in view.");
   return sum.map((v) => v / n);
 }
 
@@ -250,7 +250,7 @@ function lineColour(pic: Picture, m: Homography, box: Box): number[] {
       seen.push([pic.data[at], pic.data[at + 1], pic.data[at + 2]]);
     }
   }
-  if (!seen.length) throw new Error("Part of the sheet is outside the photo. Take it again with the whole sheet in view.");
+  if (!seen.length) throw new Error("Part of the sheet is outside the image. Take it again with the whole sheet in view.");
   const light = (c: number[]) => 0.299 * c[0] + 0.587 * c[1] + 0.114 * c[2];
   seen.sort((a, b) => light(a) - light(b));
   const cores = seen.slice(Math.floor(seen.length * LINE_SPECKS), Math.max(1, Math.floor(seen.length * LINE_CORES)));
@@ -278,7 +278,7 @@ export async function readCalibration(file: File, layout: SheetLayout, paper: st
     throw new Error("Couldn’t find the four corner marks. Photograph the whole sheet, flat and evenly lit, with some space round it.");
   }
   const m = homography(CORNERS.map((c) => layout.marks[c]), CORNERS.map((c) => found[c]));
-  if (!m) throw new Error("The corner marks don’t make a sheet. Take the photo again, straighter on.");
+  if (!m) throw new Error("The corner marks don’t make a sheet. Take the image again, straighter on.");
 
   const paperLinear = linearOf(paper);
   const byPen = new Map<string, Patch[]>();
@@ -315,5 +315,5 @@ export function readingProblems(calibration: Calibration): string[] {
   const faint = Object.entries(calibration.pens)
     .filter(([, covers]) => covers["100"] && Math.max(...linearOf(covers["100"])) > 0.97 && Math.min(...linearOf(covers["100"])) > 0.9)
     .map(([pen]) => pen);
-  return faint.length ? [`${faint.join(", ")} read as almost paper: check they were plotted, or retake the photo.`] : [];
+  return faint.length ? [`${faint.join(", ")} read as almost paper: check they were plotted, or retake the image.`] : [];
 }

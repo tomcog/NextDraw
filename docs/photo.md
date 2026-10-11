@@ -98,7 +98,7 @@ get complicated, and it never needs Studio's tools for drawing and transforming 
     hatched, so busy patches come out as tone rather than short dashes. `squiggle()` in
     `shared/lib/drawing/photo.ts`; tests in `web/tests/squiggle.test.ts`.
   - Photo holds the whole drawing. Anything Studio added (crop marks, words) is kept and saved back.
-    The drawing worked on last is picked up again (`photo-last-file`), and `/photo?open=<path>` opens
+    The drawing worked on last is picked up again (`photo-last-file`), and `/image?open=<path>` (once `/photo`, which still forwards) opens
     a given one.
 
   Studio still draws, moves and sizes photo layers, since they are part of its drawings, but it no

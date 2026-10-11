@@ -15,14 +15,14 @@ export function PhotoHeader({ plotterFound }: Props) {
   return (
     <header className={styles.header}>
       {/* The mark replaces the space, so the name needs saying in full for anything reading it. */}
-      <h1 className={styles.title} aria-label="NextDraw Photo">
+      <h1 className={styles.title} aria-label="NextDraw Image">
         {/* Tom's mark, ahead of the name. Decorative: the heading names the app. */}
         <Logo size="1.5em" className={styles.logo} />
         NextDraw
         {/* A lens stands in for the space: what the picture comes through. Decorative - the heading
-            still reads "NextDraw Photo" to anything listening. */}
+            still reads "NextDraw Image" to anything listening. */}
         <Aperture className={styles.titleMark} aria-hidden="true" />
-        <span className={styles.titleApp}>Photo</span>
+        <span className={styles.titleApp}>Image</span>
       </h1>
       <span className={styles.tools}>
         <Tag className={styles.status} data-found={Boolean(plotterFound)}>

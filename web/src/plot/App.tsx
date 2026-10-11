@@ -22,6 +22,7 @@ import { MachinePanel } from "./components/MachinePanel";
 import { Section } from "../shared/components/controls/Section";
 import controls from "../shared/components/controls/controls.module.css";
 import { StatusBanner } from "../shared/components/StatusBanner";
+import { AppSwitch } from "../shared/components/AppSwitch";
 import { SettingsHud } from "./components/SettingsHud";
 import { PlotSummary } from "./components/PlotSummary";
 import { PlotProgress } from "./components/PlotProgress";
@@ -30,7 +31,7 @@ import { LayersSection } from "./components/controls/LayersSection";
 import { PositionSection } from "./components/controls/PositionSection";
 import { PresetSection } from "./components/controls/PresetSection";
 import { PaperSection } from "../shared/components/controls/PaperSection";
-import { SettingsSection } from "../shared/components/controls/SettingsSection";
+import { PanelToolbar } from "../shared/components/PanelToolbar";
 import { PenSection } from "./components/controls/PenSection";
 import { SpeedSection } from "./components/controls/SpeedSection";
 import { PlotOptionsSection } from "./components/controls/PlotOptionsSection";
@@ -377,6 +378,13 @@ export default function App() {
   // they're hidden until asked for from the Drawing tool card - and stay asked for until put away.
   const [hudOpen, setHudOpen] = useState(() => load<boolean>(STORAGE.hudOpen) ?? false);
   useEffect(() => save(STORAGE.hudOpen, hudOpen), [hudOpen]);
+  // Which of the rail's cards are out, from the toolbar at the left, as in Photo and Studio.
+  const [fileCard, setFileCard] = useState(() => load<boolean>(STORAGE.fileCard) ?? true);
+  useEffect(() => save(STORAGE.fileCard, fileCard), [fileCard]);
+  const [paperCard, setPaperCard] = useState(() => load<boolean>(STORAGE.paperCard) ?? true);
+  useEffect(() => save(STORAGE.paperCard, paperCard), [paperCard]);
+  const [penCard, setPenCard] = useState(() => load<boolean>(STORAGE.penCard) ?? true);
+  useEffect(() => save(STORAGE.penCard, penCard), [penCard]);
   const [zoomChoice, setZoomChoice] = useState<Zoom>(() => load<Zoom>(STORAGE.zoom) ?? "plotter");
   // The loupe over the preview, for a close look at the lines. Put away each time the page opens.
   const [loupe, setLoupe] = useState(false);
@@ -1548,6 +1556,16 @@ export default function App() {
       <Header plotterFound={Boolean(status?.plotter_found)} severalPlotters={severalPlotters} plotterName={onIdraw ? "iDraw" : undefined} lostContact={lostContact} />
 
       <main className={styles.layout}>
+        <div className={styles.tools}>
+          <AppSwitch current="plot" orientation="vertical" />
+          <PanelToolbar
+            cards={[
+              { key: "file", on: fileCard, toggle: () => setFileCard((on) => !on) },
+              { key: "paper", on: paperCard, toggle: () => setPaperCard((on) => !on) },
+              { key: "pen", on: penCard, toggle: () => setPenCard((on) => !on) },
+            ]}
+          />
+        </div>
         <section className={styles.stage} aria-label={paletteOpen ? "Pen colors" : "Drawing preview"}>
           <div className={styles.bedArea}>
             {paletteOpen ? (
@@ -1714,8 +1732,9 @@ export default function App() {
             speedPct={plotting ? shownSpeed(status?.speed_pct ?? 100) : resume ? shownSpeed(resume.speed_pct ?? 100) : null}
             onSpeed={setPlotSpeed}
           />
-          {/* The drawing, and what it is plotted on and with: one card, as in Studio. The
-            settings fold away together, and each on its own. */}
+          {/* The drawing, and what it is plotted on and with: a card each, shown or hidden from the
+            toolbar, as in Photo and Studio. */}
+          {fileCard && (
           <Card variant="flat" className={`${styles.controls} ${styles.fileCard}`}>
             <div className={`${styles.cardBody} ${controls.cardSections}`}>
               <FileSection
@@ -1748,10 +1767,14 @@ export default function App() {
                   </Button>
                 </div>
               )}
-              {/* The same Settings, Paper and Drawing tool cards as Studio's. Grid is Studio's alone;
-                  the units, and the plotting-only rows of the tool card, are Plot's alone. */}
-              {fileName && (
-              <SettingsSection collapsibleKey="plot-settings">
+            </div>
+          </Card>
+          )}
+          {/* The same Paper and Pen cards as Studio's; the units, and the plotting-only rows of the
+              pen card, are Plot's alone. */}
+          {fileName && paperCard && (
+          <Card variant="flat" className={styles.controls}>
+            <div className={`${styles.cardBody} ${controls.cardSections}`}>
                 <PaperSection
                   w={settings.paper_w}
                   h={settings.paper_h}
@@ -1767,6 +1790,12 @@ export default function App() {
                   onUnits={(units) => updateSettings({ units })}
                   onFit={fitToPaper}
                 />
+            </div>
+          </Card>
+          )}
+          {fileName && penCard && (
+          <Card variant="flat" className={styles.controls}>
+            <div className={`${styles.cardBody} ${controls.cardSections}`}>
                 <PresetSection
                   label={toolLabel}
                   presets={presets}
@@ -1799,10 +1828,9 @@ export default function App() {
                   onSave={savePreset}
                   onDelete={deletePreset}
                 />
-              </SettingsSection>
-              )}
             </div>
           </Card>
+          )}
           {fileName && layerViews.length > 0 && (
             <Card variant="flat" className={styles.controls}>
               <div className={`${styles.cardBody} ${controls.cardSections}`}>

@@ -74,8 +74,8 @@ export function PreviewToolbar({ view, onView, canProgress, canPhoto, zoom, onZo
               selected={view === "photo"}
               onClick={() => onView("photo")}
               icon={<Camera />}
-              aria-label="Photo"
-              title="Photo: the photos themselves, where their lines are, to compare the drawing against"
+              aria-label="Image"
+              title="Image: the images themselves, where their lines are, to compare the drawing against"
             />
           )}
           {canProgress !== undefined && (

@@ -173,6 +173,12 @@
   gap: 0.375rem;
 }
 
+/* The column of toolbars at the left shares the name; it keeps Photo's spacing, one under another. */
+.layout > .tools {
+  flex-wrap: nowrap;
+  gap: 0.5rem;
+}
+
 /* A parabolic's corners: four toggles set out as the corners sit on the box. */
 .cornerPick {
   display: flex;

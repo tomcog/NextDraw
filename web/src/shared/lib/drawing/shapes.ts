@@ -203,7 +203,7 @@ export const shapeName = (s: Shape, index: number) =>
   s.name?.trim() ||
   `${s.kind === "text" ? (s.text?.trim().split("\n")[0].slice(0, 20) || "Text")
     : s.curve ? CURVE_LABEL[s.curve.kind]
-    : { rect: "Rectangle", ellipse: "Ellipse", line: "Line", curve: "Curve", path: "Path", text: "Text", photo: "Photo" }[s.kind]} ${s.kind === "text" ? "" : index + 1}`.trim();
+    : { rect: "Rectangle", ellipse: "Ellipse", line: "Line", curve: "Curve", path: "Path", text: "Text", photo: "Image" }[s.kind]} ${s.kind === "text" ? "" : index + 1}`.trim();
 
 /**
  * The outline of a shape that has no points of its own, in the drawing's inches: the corners of a

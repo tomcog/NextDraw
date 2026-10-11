@@ -3,11 +3,11 @@ import { Aperture, PenTool, Waypoints } from "lucide-react";
 import { showApp, type AppName } from "../lib/apps";
 
 /**
- * Shared: the way between the apps, in the same place in every header. The app you are in is the one
+ * Shared: the way between the apps, in the same place in every app. The app you are in is the one
  * pressed; another brings its tab forward, or opens one. The marks are the ones each app's name
  * carries in its title. Figma: `AppSwitcher` (64:660) - a small white bar of icons, the names left to
  * their tooltips and to screen readers. Photo, Studio, Plot: the order a photo goes through them.
- * Photo stands it up, at the top of its column of toolbars on the left.
+ * Every app stands it up, at the top of its column of toolbars at the very left.
  */
 export function AppSwitch({ current, orientation }: { current: AppName; orientation?: "horizontal" | "vertical" }) {
   return (
@@ -17,10 +17,10 @@ export function AppSwitch({ current, orientation }: { current: AppName; orientat
           selected={current === "photo"}
           icon={<Aperture />}
           hideLabel
-          title={current === "photo" ? "You're in Photo" : "Go to Photo, in its own tab"}
+          title={current === "photo" ? "You're in Image" : "Go to Image, in its own tab"}
           onClick={() => current !== "photo" && showApp("photo")}
         >
-          Photo
+          Image
         </Segment>
         <Segment
           selected={current === "studio"}

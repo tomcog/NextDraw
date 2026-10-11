@@ -18,7 +18,7 @@ const sameAddressesAsFlask = () => ({
       // harness that runs this server probes the root for a plain 200 before it calls the server
       // ready - it never was, so every one of these was marked unhealthy and stopped under us.
       const [path, query] = (req.url ?? "").split("?");
-      const page = path === "/" || path === "" ? "/static/index.html" : path === "/studio" ? "/static/studio.html" : path === "/photo" ? "/static/photo.html" : null;
+      const page = path === "/" || path === "" ? "/static/index.html" : path === "/studio" ? "/static/studio.html" : path === "/image" || path === "/photo" ? "/static/photo.html" : null;
       if (page) req.url = query ? `${page}?${query}` : page;
       next();
     });

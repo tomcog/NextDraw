@@ -8,7 +8,7 @@
 .layout {
   flex: 1;
   display: grid;
-  grid-template-columns: 16.25rem minmax(0, 1fr);
+  grid-template-columns: auto 16.25rem minmax(0, 1fr);
   /* No gap across: the stage stands 16px off the cards itself, as Photo's does. The preview's left
      margin is only as wide as its side dimension line, whose ticks touch the canvas's edge. */
   gap: 1.5rem 0;
@@ -17,7 +17,7 @@
 }
 
 .stage {
-  grid-column: 2;
+  grid-column: 3;
   margin-left: 1rem;
   grid-row: 1;
   position: sticky;
@@ -32,8 +32,20 @@
   position: relative;
 }
 
-.side {
+/* The way between the apps, at the very left, as in Photo and Studio. */
+.tools {
   grid-column: 1;
+  grid-row: 1;
+  position: sticky;
+  top: 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin-right: 1rem;
+}
+
+.side {
+  grid-column: 2;
   grid-row: 1;
   display: flex;
   flex-direction: column;
@@ -79,5 +91,6 @@
 @media (max-width: 860px) {
   .layout { grid-template-columns: minmax(0, 1fr); padding-inline: 1rem; }
   .stage { position: static; margin-left: 0; }
-  .stage, .side { grid-column: auto; grid-row: auto; } /* one column: the preview first, then the controls */
+  .stage, .side, .tools { grid-column: auto; grid-row: auto; } /* one column: the preview first, then the controls */
+  .tools { position: static; flex-direction: row; margin-right: 0; }
 }

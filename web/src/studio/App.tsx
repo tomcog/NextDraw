@@ -3,7 +3,7 @@ import { DrawingToolSection } from "../shared/components/controls/DrawingToolSec
 // Separations into many plates are solved off the page (importing this turns it on).
 import "../shared/lib/drawing/separationWorker";
 import { PaperSection } from "../shared/components/controls/PaperSection";
-import { SettingsSection } from "../shared/components/controls/SettingsSection";
+import { PanelToolbar } from "../shared/components/PanelToolbar";
 import { Button, Card } from "@tomcoggia/ui";
 import { ArrowDownToLine, ClipboardCopy, ClipboardPaste, Copy, Layers2, LayersArrowDown, MousePointer2, PenLine, Spline, SquareDimensions, Trash2, Ungroup } from "lucide-react";
 import { FileBrowser, type CombineResult, type OpenResult } from "../shared/components/FileBrowser";
@@ -19,6 +19,7 @@ import { lightness } from "../shared/lib/color";
 import { joinLayerName, labelAfter, splitLayerName } from "../shared/lib/ink";
 import { HistoryToolbar, SetupToolbar, type View } from "../shared/components/PreviewToolbar";
 import { StatusBanner } from "../shared/components/StatusBanner";
+import { AppSwitch } from "../shared/components/AppSwitch";
 import type { Zoom } from "../shared/components/BedCanvas";
 import { Canvas, type Tool } from "./components/Canvas";
 import { mergeLines } from "./lib/mergeLines";
@@ -209,6 +210,15 @@ export default function App() {
  // browser's choice, like the grid - it's the sheet on the plotter today, not part of the drawing.
  const [paperColor, setPaperColor] = useState(() => load<string>(PAPER_COLOR_KEY) ?? "#ffffff");
  useEffect(() => remember(PAPER_COLOR_KEY, paperColor), [paperColor]);
+ // Which of the rail's cards are out, from the toolbar at the left, as in Photo and Plot.
+ const [fileCard, setFileCard] = useState(() => load<boolean>("studio-file-card") ?? true);
+ useEffect(() => remember("studio-file-card", fileCard), [fileCard]);
+ const [paperCard, setPaperCard] = useState(() => load<boolean>("studio-paper-card") ?? true);
+ useEffect(() => remember("studio-paper-card", paperCard), [paperCard]);
+ const [penCard, setPenCard] = useState(() => load<boolean>("studio-pen-card") ?? true);
+ useEffect(() => remember("studio-pen-card", penCard), [penCard]);
+ const [gridCard, setGridCard] = useState(() => load<boolean>("studio-grid-card") ?? true);
+ useEffect(() => remember("studio-grid-card", gridCard), [gridCard]);
  const sizeId = useMemo(() => {
   const match = SIZES.find(
    (s) =>
@@ -877,7 +887,7 @@ export default function App() {
   const turning = onActive.filter((sh) => !sh.photo);
   if (!deg) return;
   if (!turning.length) {
-   setMessage({ text: "A photo is turned in Photo, where all its layers turn together", ok: false });
+   setMessage({ text: "An image is turned in Image, where all its layers turn together", ok: false });
    return;
   }
   const b = boxAround(turning);
@@ -885,7 +895,7 @@ export default function App() {
   record();
   setShapes((list) => list.map((sh) => turned.get(sh.id) ?? sh));
   setMessage(turning.length < onActive.length
-   ? { text: "The photo on this layer stays as it is: turn it in Photo", ok: false }
+   ? { text: "The image on this layer stays as it is: turn it in Image", ok: false }
    : { text: "", ok: true });
  };
  const pickedIds = useMemo(() => new Set(selected), [selected]);
@@ -1335,11 +1345,11 @@ export default function App() {
     <DrawingToolSection tools={presets} value={toolName} onPick={pickTool} collapsibleKey="setup-pen" disabled={busy} />
     {/* Calibrating the pens moved to Photo, which is what it's for: making photos print true. */}
     <Section title="Calibration">
-     <p className={controls.hint}>Calibrating a pen’s colors - the calibration and color pairs sheets, and reading a photo of them back - is in Photo’s Setup.</p>
-     <Button size="sm" variant="secondary" onClick={() => showApp("photo")}>Go to Photo</Button>
+     <p className={controls.hint}>Calibrating a pen’s colors - the calibration and color pairs sheets, and reading an image of them back - is in Image’s Setup.</p>
+     <Button size="sm" variant="secondary" onClick={() => showApp("photo")}>Go to Image</Button>
     </Section>
     <Section title="Appearance" action={<ThemeToggle />}>
-     <p className={controls.hint}>Light or dark. Plot and Photo follow the same choice.</p>
+     <p className={controls.hint}>Light or dark. Plot and Image follow the same choice.</p>
     </Section>
    </div>
   </Card>
@@ -1354,9 +1364,9 @@ export default function App() {
  const photoCard = chosen?.kind === "photo" && chosen.photo ? (
   <Card variant="flat" className={styles.controls}>
    <div className={`${styles.cardBody} ${controls.cardSections}`}>
-    <Section title="Photo">
-     <p className={controls.hint}>This is a photo, drawn as lines. How it’s turned into lines - hatching, tone bands, colors - is set in Photo.</p>
-     <Button size="sm" variant="secondary" disabled={busy} onClick={editInPhoto}>Save and open in Photo</Button>
+    <Section title="Image">
+     <p className={controls.hint}>This is an image, drawn as lines. How it’s turned into lines - hatching, tone bands, colors - is set in Image.</p>
+     <Button size="sm" variant="secondary" disabled={busy} onClick={editInPhoto}>Save and open in Image</Button>
     </Section>
    </div>
   </Card>
@@ -1596,6 +1606,16 @@ export default function App() {
 
    <main className={styles.layout}>
     <div className={styles.tools}>
+     <AppSwitch current="studio" orientation="vertical" />
+     <PanelToolbar
+      cards={[
+       { key: "file", on: fileCard, toggle: () => setFileCard((on) => !on) },
+       { key: "paper", on: paperCard, toggle: () => setPaperCard((on) => !on) },
+       { key: "pen", on: penCard, toggle: () => setPenCard((on) => !on) },
+       { key: "grid", on: gridCard, toggle: () => setGridCard((on) => !on) },
+      ]}
+     />
+     {!setupOpen && <ToolPicker tool={tool} onTool={setTool} />}
      {!setupOpen && <HistoryToolbar canUndo={canUndo} canRedo={canRedo} onUndo={undo} onRedo={redo} disabled={busy} />}
      {setupToolbar}
     </div>
@@ -1641,6 +1661,8 @@ export default function App() {
 
     <div className={styles.side}>
      {setupOpen ? setupRail : (<>
+     {/* Out while it's asking about unsaved work too, even put away: the question is asked in it. */}
+     {(fileCard || confirmNewBlock) && (
      <Card variant="flat" className={styles.controls}>
       <div className={`${styles.cardBody} ${controls.cardSections}`}>
        <FileSection
@@ -1664,19 +1686,31 @@ export default function App() {
         onSave={save}
        />
 
-       {/* What the drawing is made on and with, in the same card as the drawing itself: the same
-         Settings, Paper and Drawing tool cards as Plot's, with the grid, which is Studio's alone. */}
-       <SettingsSection collapsibleKey="settings">
-        {paperSection}
-
-        <GridSection snapping={snapping} onSnapping={setSnapping} step={snapStep} onStep={setSnapStep} />
-
-        <DrawingToolSection tools={presets} value={toolName} onPick={pickTool} collapsibleKey="pen" disabled={busy} />
-       </SettingsSection>
       </div>
      </Card>
+     )}
 
-     <ToolPicker tool={tool} onTool={setTool} />
+     {/* What the drawing is made on and with, and the grid, which is Studio's alone: a card each,
+       shown or hidden from the toolbar, the same Paper and Pen cards as Photo's and Plot's. */}
+     {paperCard && (
+     <Card variant="flat" className={styles.controls}>
+      <div className={`${styles.cardBody} ${controls.cardSections}`}>{paperSection}</div>
+     </Card>
+     )}
+     {penCard && (
+     <Card variant="flat" className={styles.controls}>
+      <div className={`${styles.cardBody} ${controls.cardSections}`}>
+       <DrawingToolSection tools={presets} value={toolName} onPick={pickTool} collapsibleKey="pen" disabled={busy} />
+      </div>
+     </Card>
+     )}
+     {gridCard && (
+     <Card variant="flat" className={styles.controls}>
+      <div className={`${styles.cardBody} ${controls.cardSections}`}>
+       <GridSection snapping={snapping} onSnapping={setSnapping} step={snapStep} onStep={setSnapStep} />
+      </div>
+     </Card>
+     )}
 
      {/* The layers, and what is on the one being worked on: two sections of one card. */}
      <Card variant="flat" className={styles.controls}>

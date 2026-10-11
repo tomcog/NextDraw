@@ -29,7 +29,7 @@ from pathlib import Path
 
 warnings.filterwarnings("ignore", module="urllib3")
 
-from flask import Flask, jsonify, request, send_from_directory  # noqa: E402
+from flask import Flask, jsonify, redirect, request, send_from_directory  # noqa: E402
 from nextdraw import NextDraw  # noqa: E402
 from nextdrawcore import homing, serial_utils  # noqa: E402
 from nextdrawcore import nextdraw as nextdraw_core  # noqa: E402
@@ -2369,11 +2369,18 @@ def studio_index():
     return send_from_directory(ROOT / "static", "studio.html")
 
 
-@app.get("/photo")
+@app.get("/image")
 def photo_index():
-    """NextDraw Photo: a photo turned into lines for a tool's pens, saved as a drawing this app plots
-    (docs/photo.md). Built from web/ into static/ with the other two."""
+    """NextDraw Image (once Photo): an image turned into lines for a tool's pens, saved as a drawing
+    this app plots (docs/photo.md). Built from web/ into static/ with the other two."""
     return send_from_directory(ROOT / "static", "photo.html")
+
+
+@app.get("/photo")
+def photo_address():
+    """Image's old address: a bookmark or an open tab from before the rename lands in it, its query kept."""
+    query = request.query_string.decode()
+    return redirect(f"/image?{query}" if query else "/image", code=301)
 
 
 @app.get("/api/info")

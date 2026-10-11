@@ -100,9 +100,9 @@ export function PhotoCard({ shape, title, shapes, layers, busy, all, onAll, scal
       ) : (
         <>
           <SegmentedControl size="sm" variant="dark" aria-label="Color mode">
-            <Segment selected={photoMode(photo) === "value"} title="B&W: the photo as black and white, in one color or split into tone bands" onClick={() => actions.switchMode("value")}>B&amp;W</Segment>
+            <Segment selected={photoMode(photo) === "value"} title="B&W: the image as black and white, in one color or split into tone bands" onClick={() => actions.switchMode("value")}>B&amp;W</Segment>
             <Segment selected={photoMode(photo) === "cmyk"} title="CMYK: print's four plates - cyan, magenta, yellow and black - in the pen's nearest colors, blended on paper" onClick={() => actions.switchMode("cmyk")}>CMYK</Segment>
-            <Segment selected={photoMode(photo) === "colour"} title="Color: as many colors as you choose from the pen's palette, the ones that best match the photo" onClick={() => actions.switchMode("colour")}>Color</Segment>
+            <Segment selected={photoMode(photo) === "colour"} title="Color: as many colors as you choose from the pen's palette, the ones that best match the image" onClick={() => actions.switchMode("colour")}>Color</Segment>
           </SegmentedControl>
           {photoMode(photo) === "cmyk" ? (
             <>
@@ -143,13 +143,13 @@ export function PhotoCard({ shape, title, shapes, layers, busy, all, onAll, scal
               {/* How the pens are chosen: the ones that come nearest the photo as they really come
                 out on paper, or the nearest pen to each of the photo's own colour groups. */}
               <SegmentedControl size="sm" variant="dark" aria-label="Choose colors">
-                <Segment selected={Boolean(photo.fitPaper)} title="Best fit: the colors that, as they really come out on this paper, come nearest the photo between them" onClick={() => !photo.fitPaper && actions.splitBestFit(inks)}>Best fit</Segment>
-                <Segment selected={!photo.fitPaper} title="Photo's colors: the photo's own main colors, each drawn in the palette color nearest it" onClick={() => photo.fitPaper && actions.splitByColor(inks)}>Photo's colors</Segment>
+                <Segment selected={Boolean(photo.fitPaper)} title="Best fit: the colors that, as they really come out on this paper, come nearest the image between them" onClick={() => !photo.fitPaper && actions.splitBestFit(inks)}>Best fit</Segment>
+                <Segment selected={!photo.fitPaper} title="Image's colors: the image's own main colors, each drawn in the palette color nearest it" onClick={() => photo.fitPaper && actions.splitByColor(inks)}>Image's colors</Segment>
               </SegmentedControl>
               <p className={styles.empty}>
                 {photo.fitPaper
-                  ? "Tries combinations of your pens and keeps the set that, as they really come out on this paper, looks most like the photo."
-                  : "Finds the photo's main colors, as many as you ask for, and draws each area in the pen nearest its color. Quick, but it doesn't check how the pens look on paper."}
+                  ? "Tries combinations of your pens and keeps the set that, as they really come out on this paper, looks most like the image."
+                  : "Finds the image's main colors, as many as you ask for, and draws each area in the pen nearest its color. Quick, but it doesn't check how the pens look on paper."}
               </p>
               <NumberField
                 label="Colors"
@@ -170,7 +170,7 @@ export function PhotoCard({ shape, title, shapes, layers, busy, all, onAll, scal
               )}
               {photo.fitPaper && estimates && estimates.length > 0 && (
                 <p className={styles.empty}>
-                  Best fit, as near as the colors come to the photo: {estimates.map((e) => `${e.pens} ${e.pens === 1 ? "color" : "colors"} ${e.err.toFixed(1)} ΔE`).join(", ")}. Lower is closer.
+                  Best fit, as near as the colors come to the image: {estimates.map((e) => `${e.pens} ${e.pens === 1 ? "color" : "colors"} ${e.err.toFixed(1)} ΔE`).join(", ")}. Lower is closer.
                 </p>
               )}
               {/* A key ink over the colours, darkening shadows the colour layers can't reach alone.
@@ -249,8 +249,8 @@ export function PhotoCard({ shape, title, shapes, layers, busy, all, onAll, scal
           <NumberField label="Bleed" unit="%" min={0} max={25} step={1} value={Math.round((photo.bleed ?? 0) * 100)} onChange={(v) => actions.set({ bleed: v / 100 })} />
           <p className={styles.empty}>
             {(photo.bleed ?? 0) > 0
-              ? "Where the photo's colors blend, the layers either side both draw, and their lines overlap."
-              : "Each part of the photo is drawn by the one layer nearest its color."}
+              ? "Where the image's colors blend, the layers either side both draw, and their lines overlap."
+              : "Each part of the image is drawn by the one layer nearest its color."}
           </p>
         </>
       )}
@@ -339,9 +339,9 @@ export function PhotoCard({ shape, title, shapes, layers, busy, all, onAll, scal
                 <span className={controls.headerTools}>
                   {/* A quarter at a time, to stand the picture the way the paper does: the same
                     buttons as Plot's for turning a drawing. */}
-                  <ButtonRound size="sm" icon={<RotateCcwSquare />} aria-label="Turn the photo left" title="Turn the photo 90° left" disabled={busy} onClick={() => actions.turn(-1)} />
-                  <ButtonRound size="sm" icon={<RotateCwSquare />} aria-label="Turn the photo right" title="Turn the photo 90° right" disabled={busy} onClick={() => actions.turn(1)} />
-                  <Button size="sm" variant="secondary" title={photo.separation ? "Put a different picture in for this plate, keeping its settings" : "Put a different photo in, keeping every setting"} onClick={() => replaceInput.current?.click()}>
+                  <ButtonRound size="sm" icon={<RotateCcwSquare />} aria-label="Turn the image left" title="Turn the image 90° left" disabled={busy} onClick={() => actions.turn(-1)} />
+                  <ButtonRound size="sm" icon={<RotateCwSquare />} aria-label="Turn the image right" title="Turn the image 90° right" disabled={busy} onClick={() => actions.turn(1)} />
+                  <Button size="sm" variant="secondary" title={photo.separation ? "Put a different picture in for this plate, keeping its settings" : "Put a different image in, keeping every setting"} onClick={() => replaceInput.current?.click()}>
                     Replace…
                   </Button>
                   <input
@@ -369,8 +369,8 @@ export function PhotoCard({ shape, title, shapes, layers, busy, all, onAll, scal
                 filled and the photo cropped. Moved or sized by hand, it's neither. */}
               <div className={styles.fillRow}>
                 <SegmentedControl size="sm" variant="dark" aria-label="Size to the page">
-                  <Segment selected={photo.fit === "fit"} title="Fit to page: all of the photo, as large as it fits inside the margin" onClick={() => actions.place("fit", photo.margin ?? 0.5)}>Fit</Segment>
-                  <Segment selected={photo.fit === "fill"} title="Fill page: the whole page inside the margin, the photo cropped to it" onClick={() => actions.place("fill", photo.margin ?? 0.5)}>Fill</Segment>
+                  <Segment selected={photo.fit === "fit"} title="Fit to page: all of the image, as large as it fits inside the margin" onClick={() => actions.place("fit", photo.margin ?? 0.5)}>Fit</Segment>
+                  <Segment selected={photo.fit === "fill"} title="Fill page: the whole page inside the margin, the image cropped to it" onClick={() => actions.place("fill", photo.margin ?? 0.5)}>Fill</Segment>
                 </SegmentedControl>
                 <NumberField label="Margin" unit="in" min={0} max={4} step={0.25} value={photo.margin ?? 0.5} onChange={actions.setMargin} />
                 <NumberField label="Scale" unit="%" min={5} max={1000} step={5} value={scale} onChange={actions.setScale} />
@@ -513,7 +513,7 @@ export function PhotoCard({ shape, title, shapes, layers, busy, all, onAll, scal
                       while (enough > 0.1 && fullest(enough) < 0.85) enough = Math.round((enough - 0.05) * 100) / 100;
                       return (
                         <p className={styles.empty}>
-                          {`${photo.levels} ${photo.levels === 1 ? "pass" : "passes"} of a ${pen} mm line at ${photo.spacingMm} mm spacing cover at most ${Math.round(most * 100)}% of the paper, so colors stay paler than the photo's.${enough < photo.spacingMm ? ` About ${enough} mm spacing would let them reach full strength.` : ""}`}
+                          {`${photo.levels} ${photo.levels === 1 ? "pass" : "passes"} of a ${pen} mm line at ${photo.spacingMm} mm spacing cover at most ${Math.round(most * 100)}% of the paper, so colors stay paler than the image's.${enough < photo.spacingMm ? ` About ${enough} mm spacing would let them reach full strength.` : ""}`}
                         </p>
                       );
                     })()}
@@ -531,13 +531,13 @@ export function PhotoCard({ shape, title, shapes, layers, busy, all, onAll, scal
                       : photo.style === "centerlines"
                       ? `${marks.strokes.toLocaleString()} ${marks.strokes === 1 ? "line" : "lines"}${marks.circles ? `, ${marks.circles} of them ${marks.circles === 1 ? "a circle" : "circles"}` : ""}, each drawn once down the middle of a stroke in the picture${marks.widthMm ? ` (they're about ${marks.widthMm.toFixed(1)} mm wide there)` : ""}. Darker than sets what counts as a line; Shortest drops specks and whiskers.`
                       : photo.style === "outlines"
-                      ? `${marks.strokes.toLocaleString()} contours, along the photo's edges and shapes. More lines follow finer changes of tone; more smoothing, only the big ones.`
+                      ? `${marks.strokes.toLocaleString()} contours, along the image's edges and shapes. More lines follow finer changes of tone; more smoothing, only the big ones.`
                       : photo.style === "squiggle"
-                      ? `${marks.strokes.toLocaleString()} ${marks.strokes === 1 ? "line" : "lines"}. Each row swings higher and waves tighter where the photo is darker${photo.squiggleLift ? ", and lifts off where there's nothing to draw" : ", and runs on flat through white"}. As SquiggleDraw ${photo.squiggleVersion === "inkscape" ? "for Inkscape" : "in Processing"} draws it, with its controls and numbers.`
+                      ? `${marks.strokes.toLocaleString()} ${marks.strokes === 1 ? "line" : "lines"}. Each row swings higher and waves tighter where the image is darker${photo.squiggleLift ? ", and lifts off where there's nothing to draw" : ", and runs on flat through white"}. As SquiggleDraw ${photo.squiggleVersion === "inkscape" ? "for Inkscape" : "in Processing"} draws it, with its controls and numbers.`
                       : photo.style === "waves"
-                      ? `${marks.strokes.toLocaleString()} strokes. Each row waves harder and tighter where the photo is darker; white is left as paper.`
-                      : `${marks.strokes.toLocaleString()} strokes. The spacing starts at the pen’s solid-fill spacing; each pass adds lines where the photo is darker.`
-                    : "Reading the photo…"}
+                      ? `${marks.strokes.toLocaleString()} strokes. Each row waves harder and tighter where the image is darker; white is left as paper.`
+                      : `${marks.strokes.toLocaleString()} strokes. The spacing starts at the pen’s solid-fill spacing; each pass adds lines where the image is darker.`
+                    : "Reading the image…"}
                 </p>
               </Section>
             </div>
@@ -559,7 +559,7 @@ export function PhotoCard({ shape, title, shapes, layers, busy, all, onAll, scal
                     // layer of the photo at once. The switch still says whose settings are showing.
                     <SegmentedControl size="sm" variant="dark" aria-label="Settings for">
                       <Segment selected={!all} title="The settings below go to the layer picked here" onClick={() => onAll(false)}>This layer</Segment>
-                      <Segment selected={all} title="The settings below go to all the photo's layers at once" onClick={() => onAll(true)}>All layers</Segment>
+                      <Segment selected={all} title="The settings below go to all the image's layers at once" onClick={() => onAll(true)}>All layers</Segment>
                     </SegmentedControl>
                   )}
                   {layerPicker}

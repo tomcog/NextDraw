@@ -107,8 +107,8 @@ export function ConvertStage({ photo, parts, box, page, paperColor, model, ink, 
   const extras = (
     <SegmentedControl size="sm" variant="dark" aria-label="What the stage shows">
       <Segment selected={show === "picture"} onClick={() => onShow("picture")} icon={<Image />} aria-label="Picture" title="Picture: the image as it was opened, with no effect" />
-      <Segment selected={show === "lines"} onClick={() => onShow("lines")} icon={<Spline />} aria-label="Lines" title="Lines: the drawing the effect makes, with nothing of the photo" />
-      <Segment selected={show === "over"} onClick={() => onShow("over")} icon={<Layers />} aria-label="Lines over picture" title="Lines over picture: the drawing on top of a faded copy of the photo" />
+      <Segment selected={show === "lines"} onClick={() => onShow("lines")} icon={<Spline />} aria-label="Lines" title="Lines: the drawing the effect makes, with nothing of the image" />
+      <Segment selected={show === "over"} onClick={() => onShow("over")} icon={<Layers />} aria-label="Lines over picture" title="Lines over picture: the drawing on top of a faded copy of the image" />
       <Segment selected={show === "side"} onClick={() => onShow("side")} icon={<Columns2 />} aria-label="Side by side" title="Side by side: the picture on the left, the drawing on the right" />
     </SegmentedControl>
   );
@@ -134,7 +134,7 @@ export function ConvertStage({ photo, parts, box, page, paperColor, model, ink, 
           {pane(lines, false)}
         </>
       )}
-      {!read && <p className={styles.reading}>Reading the photo…</p>}
+      {!read && <p className={styles.reading}>Reading the image…</p>}
     </div>
   );
 }

@@ -1,8 +1,6 @@
-import { ButtonRound, Card } from "@tomcoggia/ui";
+import { Segment, SegmentedControl, Toolbar } from "@tomcoggia/ui";
 import { AudioWaveform, Circle, LoaderPinwheel, Minus, MousePointer2, Pentagon, Rainbow, Shell, Signal, Square, Star, Type } from "lucide-react";
-import controls from "../../../shared/components/controls/controls.module.css";
 import type { Tool } from "../Canvas";
-import styles from "../../App.module.css";
 
 const TOOLS: { kind: Tool; label: string; hint: string; icon: JSX.Element }[] = [
   { kind: "select", label: "Select", hint: "Select (V): drag a shape to move it, its corners to resize", icon: <MousePointer2 /> },
@@ -25,26 +23,20 @@ interface Props {
   onTool: (tool: Tool) => void;
 }
 
-/** The shapes that can be drawn, a round button each: the one picked is what a drag on the page makes. */
+/**
+ * The shapes that can be drawn, a glyph each in a vertical toolbar of their own at the left, as Photo's
+ * effects are: the one pressed is what a drag on the page makes. The names are in the tooltips and read out.
+ */
 export function ToolPicker({ tool, onTool }: Props) {
   return (
-    <Card variant="flat" className={styles.controls}>
-      <div className={styles.cardBody}>
-        <div className={styles.tools} role="group" aria-label="What to draw">
-          {TOOLS.map((t) => (
-            <ButtonRound
-              key={t.kind}
-              size="sm"
-              icon={t.icon}
-              className={tool === t.kind ? controls.roundActive : undefined}
-              aria-label={t.label}
-              aria-pressed={tool === t.kind}
-              title={t.hint}
-              onClick={() => onTool(t.kind)}
-            />
-          ))}
-        </div>
-      </div>
-    </Card>
+    <Toolbar tone="white" orientation="vertical" aria-label="What to draw">
+      <SegmentedControl size="sm" aria-label="Tool">
+        {TOOLS.map((t) => (
+          <Segment key={t.kind} selected={tool === t.kind} icon={t.icon} title={t.hint} onClick={() => onTool(t.kind)}>
+            {t.label}
+          </Segment>
+        ))}
+      </SegmentedControl>
+    </Toolbar>
   );
 }

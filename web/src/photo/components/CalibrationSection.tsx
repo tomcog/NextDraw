@@ -70,7 +70,7 @@ export function CalibrationSection({ tool, toolName, busy, sheetOpen, sheetIsToo
         title={!sheetOpen ? "Make or open the calibration sheet first" : !sheetIsTool ? `This sheet isn’t of ${toolName || "this pen"}’s colors: choose the pen it was made for` : undefined}
         onClick={() => input.current?.click()}
       >
-        Read a photo of the sheet
+        Read an image of the sheet
       </Button>
       <input
         ref={input}

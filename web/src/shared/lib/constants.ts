@@ -91,6 +91,9 @@ export const STORAGE = {
   penUpMoves: "nextdraw-studio-pen-up-moves",
   hudOffset: "nextdraw-plot-hud-offset",
   hudOpen: "nextdraw-plot-hud-open",
+  fileCard: "nextdraw-plot-file-card",
+  paperCard: "nextdraw-plot-paper-card",
+  penCard: "nextdraw-plot-pen-card",
 };
 
 // The channel Studio's "Open in Plot" uses to find a Plot page already open in another tab.

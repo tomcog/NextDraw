@@ -1,6 +1,5 @@
 import { Logo, Tag } from "@tomcoggia/ui";
 import { Waypoints } from "lucide-react";
-import { AppSwitch } from "../../shared/components/AppSwitch";
 import styles from "../../shared/components/Header.module.css";
 
 interface Props {
@@ -28,7 +27,6 @@ export function Header({ plotterFound, plotterName, severalPlotters, lostContact
         <span className={styles.titleApp}>Plot</span>
       </h1>
       <span className={styles.tools}>
-        <AppSwitch current="plot" />
         <Tag className={styles.status} data-found={plotterFound && !severalPlotters && !lostContact}>
           <span className={styles.dot} aria-hidden="true" />
           {text}

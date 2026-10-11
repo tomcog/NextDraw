@@ -1,6 +1,5 @@
 import { Logo, Tag } from "@tomcoggia/ui";
 import { PenTool } from "lucide-react";
-import { AppSwitch } from "../../shared/components/AppSwitch";
 import styles from "../../shared/components/Header.module.css";
 
 interface Props {
@@ -26,7 +25,6 @@ export function StudioHeader({ plotterFound }: Props) {
         <span className={styles.titleApp}>Studio</span>
       </h1>
       <span className={styles.tools}>
-        <AppSwitch current="studio" />
         <Tag className={styles.status} data-found={Boolean(plotterFound)}>
           <span className={styles.dot} aria-hidden="true" />
           {text}
