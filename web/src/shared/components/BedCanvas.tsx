@@ -261,7 +261,11 @@ export function BedCanvas(props: BedCanvasProps) {
 
   // Where the dimension lines sit in the plotter view, carried into this view at the same screen spot.
   const [vx, vy, vw, vh] = viewBox.split(" ").map(Number);
-  const k = vw / base.vb[2]; // this view's units per plotter-view unit
+  // The plotter view as it would fill this room - widened or deepened to the room's shape, as every
+  // view now is. Measured against the bare plotter view instead, the lines and labels grew with how
+  // much wider the room was than the bed: a wide window, or a rail put away, made them huge.
+  const baseW = Math.max(base.vb[2], base.vb[3] * aspect);
+  const k = vw / baseW; // this view's units per plotter-view unit
   const dy = vy + (-base.pad * 0.4 - base.vb[1]) * k;
   const dx = vx + (-base.pad * 0.35 - base.vb[0]) * k;
   const tick = base.pad * 0.14 * k;

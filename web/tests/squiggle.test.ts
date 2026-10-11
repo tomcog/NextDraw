@@ -235,3 +235,38 @@ test("hatching: a smoothed plate waits for its own separation, rather than drawi
   assert.ok(photoMarks(p, 4, 2)!.strokes > 0, "drawn once it's ready");
   setSeparationRunner(null as never);
 });
+
+test("hatching: tone bands share the passes out, so together they draw what one layer does - no tones turned over", async () => {
+  await gradient("data:gradient");
+  const base = { style: undefined, levels: 4, angle: 0, spacingMm: 0.5 } as const;
+  const one = photoMarks(photo(base), 4, 2)!;
+  for (const n of [2, 3, 4]) {
+    const bands = Array.from({ length: n }, (_, i) => photoMarks(photo({ ...base, band: [i / n, (i + 1) / n] }), 4, 2)!);
+    for (let k = 0; k < 4; k++) {
+      const drawing = bands.filter((b) => b.passes[k]);
+      assert.equal(drawing.length, 1, `${n} bands: pass ${k + 1} is one band's`);
+      assert.equal(drawing[0].passes[k], one.passes[k], `${n} bands: pass ${k + 1} as one layer draws it`);
+    }
+  }
+  // The lighter of two bands draws the first passes, the darker the rest - lighter lines under darker.
+  const [light, dark] = [0, 1].map((i) => photoMarks(photo({ ...base, band: [i / 2, (i + 1) / 2] }), 4, 2)!);
+  assert.deepEqual(light.passes.map(Boolean), [true, true, false, false]);
+  assert.deepEqual(dark.passes.map(Boolean), [false, false, true, true]);
+});
+
+test("squiggle: a tone band waves as the whole photo does there - the light band's strongest wave is half the dark band's", async () => {
+  await gradient("data:gradient");
+  // How far a band's rows swing at most: the tallest run, half its height.
+  const swing = (band: [number, number], more: Partial<Photo> = {}) => {
+    const d = photoMarks(photo({ squiggleDraw: { lines: 20 }, band, ...more }), 4, 2)!.passes.join("");
+    return Math.max(...d.split("M").filter(Boolean).map((run) => {
+      const ys = run.split(/[C ]/).filter(Boolean).map(Number).filter((_, i) => i % 2 === 1);
+      return (Math.max(...ys) - Math.min(...ys)) / 2;
+    }));
+  };
+  for (const more of [{}, { squiggleVersion: "inkscape" as const }]) {
+    const light = swing([0, 0.5], more);
+    const dark = swing([0.5, 1], more);
+    assert.ok(light < dark * 0.75, `light ${light.toFixed(3)} against dark ${dark.toFixed(3)}`);
+  }
+});

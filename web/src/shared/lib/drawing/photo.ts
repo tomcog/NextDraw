@@ -1509,14 +1509,15 @@ function colourSampler(tones: Tones, photo: Photo) {
 
 /**
  * How a photo's tone is read at a point of its box, in inches from its corner: -1 outside its band,
- * otherwise how far through the band it is, 0 to 1. Brightness, contrast and the crop are applied.
+ * otherwise - with `whole` - the photo's own darkness there, 0 to 1, or without it how far through
+ * the band it is, 0 to 1. Brightness, contrast and the crop are applied.
  * A band draws only where the photo's tone falls in it, and grades its lines across its own range;
  * `fromWhite` says whether it's the lightest, which leaves white as paper where the others draw
  * something everywhere in their band, so two bands meet without a gap. Widened by the bleed, into
  * the bands either side: graded across the wider range, what spills over starts sparse and builds,
  * like a haze rather than a second edge.
  */
-function toneSampler(tones: Tones, photo: Photo, w: number, h: number) {
+function toneSampler(tones: Tones, photo: Photo, w: number, h: number, whole = false) {
   const lift = photo.brightness / 200;
   const c = Math.max(-99, Math.min(99, photo.contrast)) / 100;
   const gain = c >= 0 ? 1 / (1 - c) : 1 + c;
@@ -1550,6 +1551,8 @@ function toneSampler(tones: Tones, photo: Photo, w: number, h: number) {
     if (x < 0 || x > w || y < 0 || y > h) return -1;
     const d = darknessAt(tones, c0 + (x / w) * (c2 - c0), c1 + (y / h) * (c3 - c1), lift, gain);
     if (d < lo || d > hi || (d === hi && hi < 1)) return -1;
+    // `whole`: where it's this band's, the photo's own darkness rather than how far through the band.
+    if (whole) return d;
     return hi > lo ? (d - lo) / (hi - lo) : 1;
   };
   return { toneAt, fromWhite: lo <= 0 };
@@ -1564,7 +1567,7 @@ function toneSampler(tones: Tones, photo: Photo, w: number, h: number) {
 function waves(tones: Tones, photo: Photo, w: number, h: number): PhotoMarks {
   const row = Math.max(0.2, photo.rowMm ?? WAVE_DEFAULTS.rowMm) / 25.4;
   const shortestWave = Math.max(0.2, photo.waveMm ?? WAVE_DEFAULTS.waveMm) / 25.4;
-  const { toneAt, fromWhite } = toneSampler(tones, photo, w, h);
+  const { toneAt } = toneSampler(tones, photo, w, h, true);
   const rad = (photo.angle * Math.PI) / 180;
   const dx = Math.cos(rad);
   const dy = Math.sin(rad);
@@ -1574,9 +1577,9 @@ function waves(tones: Tones, photo: Photo, w: number, h: number): PhotoMarks {
   // Eight looks at the photo to the tightest wave: enough for the wave to read as a curve.
   const step = shortestWave / 8;
   const n = (v: number) => Number(v.toFixed(4));
-  // How strongly the line waves for a tone through the band. The lightest band flattens to nothing at
-  // white, so white is paper; the others keep a little wave throughout, so bands meet without a gap.
-  const strength = (t: number) => (fromWhite ? t : 0.15 + 0.85 * t);
+  // How strongly the line waves: by the whole photo's darkness, in a band as in one layer, so bands
+  // meet at the same strength and white is paper.
+  const strength = (t: number) => t;
   const parts: string[] = [];
   let strokes = 0;
   let line = 0;
@@ -1689,7 +1692,9 @@ function squiggleInkscape(tones: Tones, photo: Photo, w: number, h: number): Pho
   const divisor = [128, 64, 32, 16, 8, 4][Math.round(sq.amp) - 1];
   const sqMax = 256 / divisor;
   const MM = 1 / 25.4;
-  const { toneAt: drawn, fromWhite } = toneSampler(smoothedTones(photo.src, tones, 2), photo, w, h);
+  // A tone band waves as the whole photo does there, not as far through its own band: its stretches of
+  // each row then meet the other bands' at the same strength, rather than flat against full.
+  const { toneAt: drawn, fromWhite } = toneSampler(smoothedTones(photo.src, tones, 2), photo, w, h, true);
   // Not lifting, every row of every layer runs edge to edge, as SquiggleDraw's: flat wherever this
   // layer has nothing to draw - white, another band's tone, another pen's colour.
   const toneAt = photo.squiggleLift ? drawn : (x: number, y: number) => Math.max(0, drawn(x, y));
@@ -1846,7 +1851,9 @@ function squiggle(tones: Tones, photo: Photo, w: number, h: number): PhotoMarks 
   const W2 = Math.max(1, Math.round(tones.w * (c2 - c0) * sd.scale));
   const H2 = Math.max(1, Math.round(tones.h * (c3 - c1) * sd.scale));
   const unit = h / H2; // inches to one of the sketch's pixels
-  const { toneAt: drawn, fromWhite } = toneSampler(blurred, photo, w, h);
+  // A tone band waves as the whole photo does there, not as far through its own band: its stretches of
+  // each row then meet the other bands' at the same strength, rather than flat against full.
+  const { toneAt: drawn, fromWhite } = toneSampler(blurred, photo, w, h, true);
   // Not lifting, every row of every layer runs edge to edge, as SquiggleDraw's: flat wherever this
   // layer has nothing to draw - white, another band's tone, another pen's colour.
   const toneAt = photo.squiggleLift ? drawn : (x: number, y: number) => Math.max(0, drawn(x, y));
@@ -2897,10 +2904,20 @@ function hatch(tones: Tones, photo: Photo, w: number, h: number): PhotoMarks {
   const n = (v: number) => Number(v.toFixed(4));
   const passes: string[] = [];
   let strokes = 0;
-  const { toneAt, fromWhite } = toneSampler(tones, photo, w, h);
+  // A tone band takes the passes whose thresholds fall in its band, measured against the whole photo,
+  // rather than running every pass across its own band: the bands together then draw what one layer
+  // would, and the darks get the lighter bands' lines as well as their own. Run across its own band,
+  // a light band was crosshatched black just under its top edge while the band above it started
+  // sparse - the tones turned over at every edge between bands.
+  const band = photo.band && !photo.plate && !photo.ink ? photo.band : null;
+  const { toneAt, fromWhite } = toneSampler(tones, band ? { ...photo, band: undefined } : photo, w, h);
 
   for (let k = 0; k < levels; k++) {
     const threshold = fromWhite ? (k + 1) / (levels + 1) : k / levels;
+    if (band && !(threshold >= band[0] && (threshold < band[1] || band[1] >= 1))) {
+      passes.push("");
+      continue;
+    }
     const rad = ((photo.angle + (k % 2 ? 90 : 0) + (k >= 4 ? 45 : 0)) * Math.PI) / 180;
     const dx = Math.cos(rad);
     const dy = Math.sin(rad);
