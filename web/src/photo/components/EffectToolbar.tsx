@@ -1,5 +1,5 @@
 import { Segment, SegmentedControl, Toolbar } from "@tomcoggia/ui";
-import { AudioWaveform, FingerprintPattern, Hash, Signature, Squircle, ZodiacAquarius } from "lucide-react";
+import { AudioWaveform, FingerprintPattern, Hash, Signature, Squircle, Wind, ZodiacAquarius } from "lucide-react";
 import type { ReactNode } from "react";
 import type { Photo } from "../../shared/lib/drawing/photo";
 
@@ -15,6 +15,7 @@ export const EFFECTS: { key: Effect; label: string; icon: ReactNode; about: stri
   { key: "hatch", label: "Hatching", icon: <Hash />, about: "Lines that cross and fill in as the image darkens" },
   { key: "waves", label: "Tone lines", icon: <AudioWaveform />, about: "One line along each row, waving harder and tighter where it's darker", retired: true }, // Squiggle, lifting in white, does it
   { key: "squiggle", label: "Squiggle", icon: <ZodiacAquarius />, about: "SquiggleDraw's smooth waves, unbroken through white, the rows joinable into one line" },
+  { key: "streamlines", label: "Streamlines", icon: <Wind />, about: "Lines that flow along the image's shapes, evenly apart and closer where it's darker, like an engraving" },
   { key: "outlines", label: "Outlines", icon: <FingerprintPattern />, about: "The image traced as contour lines, following its edges and shapes" },
   { key: "centerlines", label: "Centerlines", icon: <Signature />, about: "Each dark stroke of a line drawing drawn once, down its middle, so a ring is one circle" },
   { key: "silhouette", label: "Silhouette", icon: <Squircle />, about: "The line round a shape on white paper - its outline, and each hole in it" },

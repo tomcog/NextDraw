@@ -4,7 +4,7 @@ import { RotateCcwSquare, RotateCwSquare } from "lucide-react";
 import { Section } from "../../shared/components/controls/Section";
 import { NumberField } from "../../shared/components/controls/NumberField";
 import controls from "../../shared/components/controls/controls.module.css";
-import { BLACK_SHARE, CENTER_DEFAULTS, KEY_FROM, MOST_COLORS, MOST_LAYERS, MOST_PASSES, OUTLINE_DEFAULTS, PLATES, PLATE_AIMS, PLATE_OFF, SILHOUETTE_DEFAULTS, WAVE_DEFAULTS, ANGLE_PRESETS, PLATE_SETS, SQUIGGLE_DRAW, SQUIGGLE_INKSCAPE, SQUIGGLE_INKSCAPE_RANGES, SQUIGGLE_RANGES, coverSteps, plateSetOf, platesOf, squiggleDrawOf, squiggleInkscapeOf, type AnglePreset, type SquiggleDraw, type SquiggleInkscape, type PlateSet, photoMarks, photoMode, type Photo, type Plate } from "../../shared/lib/drawing/photo";
+import { BLACK_SHARE, CENTER_DEFAULTS, KEY_FROM, MOST_COLORS, MOST_LAYERS, MOST_PASSES, OUTLINE_DEFAULTS, PLATES, PLATE_AIMS, PLATE_OFF, SILHOUETTE_DEFAULTS, STREAM_DEFAULTS, WAVE_DEFAULTS, ANGLE_PRESETS, PLATE_SETS, SQUIGGLE_DRAW, SQUIGGLE_INKSCAPE, SQUIGGLE_INKSCAPE_RANGES, SQUIGGLE_RANGES, coverSteps, plateSetOf, platesOf, squiggleDrawOf, squiggleInkscapeOf, type AnglePreset, type SquiggleDraw, type SquiggleInkscape, type PlateSet, photoMarks, photoMode, type Photo, type Plate } from "../../shared/lib/drawing/photo";
 import { boxOf, type Layer, type Shape } from "../../shared/lib/drawing/shapes";
 import type { PenColor } from "../../shared/lib/types";
 import styles from "../App.module.css";
@@ -408,6 +408,25 @@ export function PhotoCard({ shape, title, shapes, layers, busy, all, onAll, scal
                     <NumberField label="Smoothing" unit="mm" min={0} max={5} step={0.05} value={photo.centerSmoothMm ?? CENTER_DEFAULTS.smoothMm} onChange={(centerSmoothMm) => actions.set({ centerSmoothMm })} />
                     <NumberField label="Shortest" unit="mm" min={0} max={20} step={0.25} value={photo.centerShortestMm ?? CENTER_DEFAULTS.shortestMm} onChange={(centerShortestMm) => actions.set({ centerShortestMm })} />
                   </div>
+                ) : photo.style === "streamlines" ? (
+                  <>
+                    {/* As Hatching: the color mode first, then the layers' angles - which the lines settle
+                      to wherever the image has no shape to follow. */}
+                    {colourMode}
+                    {photo.group && bleed}
+                    {anglePresets}
+                    <div className={`${styles.fillRow} ${styles.oneRow}`}>
+                      {angleField}
+                      <NumberField label="Spacing mm" min={0.1} max={5} step={0.05} value={photo.spacingMm} onChange={(spacingMm) => actions.set({ spacingMm })} />
+                      <NumberField label="Widest mm" min={0.5} max={20} step={0.25} value={photo.streamWidestMm ?? STREAM_DEFAULTS.widestMm} onChange={(streamWidestMm) => actions.set({ streamWidestMm })} />
+                    </div>
+                    <div className={styles.fillRow}>
+                      {/* How broadly the shapes are read: more, and the lines sweep in long curves; less, and they follow every turn. */}
+                      <NumberField label="Flow mm" min={0} max={20} step={0.5} value={photo.streamFlowMm ?? STREAM_DEFAULTS.flowMm} onChange={(streamFlowMm) => actions.set({ streamFlowMm })} />
+                      <NumberField label="Passes" min={1} max={2} step={1} value={photo.streamPasses ?? STREAM_DEFAULTS.passes} onChange={(streamPasses) => actions.set({ streamPasses })} />
+                    </div>
+                    {eachLayer("Angle, spacing, widest, flow and passes")}
+                  </>
                 ) : photo.style === "outlines" ? (
                   <>
                     {/* The color mode first, as in the other effects. No angles: contours follow the
@@ -539,6 +558,8 @@ export function PhotoCard({ shape, title, shapes, layers, busy, all, onAll, scal
                       ? `${marks.strokes.toLocaleString()} ${marks.strokes === 1 ? "loop" : "loops"}: the shape's outline${marks.strokes > 1 ? " and the holes in it" : ""}, where the picture meets white paper. Paper lighter than sets what counts as paper; Smallest drops specks and flecks.`
                       : photo.style === "centerlines"
                       ? `${marks.strokes.toLocaleString()} ${marks.strokes === 1 ? "line" : "lines"}${marks.circles ? `, ${marks.circles} of them ${marks.circles === 1 ? "a circle" : "circles"}` : ""}, each drawn once down the middle of a stroke in the picture${marks.widthMm ? ` (they're about ${marks.widthMm.toFixed(1)} mm wide there)` : ""}. Darker than sets what counts as a line; Shortest drops specks and whiskers.`
+                      : photo.style === "streamlines"
+                      ? `${marks.strokes.toLocaleString()} lines, flowing along the image's shapes. They run from Spacing apart in the blacks to Widest apart, past which it's paper; Flow sets how broadly the shapes are followed${(photo.streamPasses ?? 1) > 1 ? ", and a second pass crosses the first in the darker half" : ""}.`
                       : photo.style === "outlines"
                       ? `${marks.strokes.toLocaleString()} contours, along the image's edges and shapes. More lines follow finer changes of tone; more smoothing, only the big ones.`
                       : photo.style === "squiggle"
@@ -551,7 +572,7 @@ export function PhotoCard({ shape, title, shapes, layers, busy, all, onAll, scal
               </Section>
             </div>
           </Card>
-          {splits && effect.key !== "hatch" && effect.key !== "squiggle" && effect.key !== "waves" && effect.key !== "outlines" && (
+          {splits && effect.key !== "hatch" && effect.key !== "squiggle" && effect.key !== "waves" && effect.key !== "streamlines" && effect.key !== "outlines" && (
             <Card variant="flat" className={styles.controls}>
               <div className={`${styles.cardBody} ${controls.cardSections}`}>
                 <Section title={photo.separation ? "Separation" : "Layers"} collapsibleKey="photo-layers">

@@ -47,7 +47,16 @@ export interface Photo {
    * drawn the way SquiggleDraw draws it - smooth curves, unbroken through white, rows joinable into
    * one line. Absent, hatching.
    */
-  style?: "hatch" | "waves" | "squiggle" | "outlines" | "centerlines" | "silhouette";
+  style?: "hatch" | "waves" | "squiggle" | "streamlines" | "outlines" | "centerlines" | "silhouette";
+  /**
+   * Streamlines: the widest the lines ever get apart, in mm - lighter than that is paper. The closest
+   * is `spacingMm`, at black; between, the spacing follows the tone.
+   */
+  streamWidestMm?: number;
+  /** Streamlines: 1, or 2 for a second pass across the first in the darker half of the tones. Absent, 1. */
+  streamPasses?: number;
+  /** Streamlines: how broadly the picture's shapes are read before the lines follow them, in mm. More, longer sweeps. */
+  streamFlowMm?: number;
   /** Outlines: how many contours, spread across the tones this layer draws. */
   contours?: number;
   /** Outlines: how much fine detail and noise is smoothed away first, in mm on the page. */
@@ -412,7 +421,7 @@ export interface PhotoPart {
 
 /** The settings a layer of a photo keeps as its own, as opposed to the photo's: what a mode remembers. */
 export const LAYER_SETTINGS = [
-  "style", "angle", "spacingMm", "levels", "hatchSmoothMm", "rowMm", "waveMm", "squiggleAmpMm", "squiggleHeight", "squiggleJoin", "squiggleLift", "squiggleSmooth", "squiggleDraw", "squiggleVersion", "squiggleInkscape", "squiggleAngle", "contours", "smoothMm", "centerFrom", "centerSmoothMm", "centerShortestMm", "silhouetteFrom", "silhouetteSmoothMm", "silhouetteSmallestMm", "offsetMm",
+  "style", "angle", "spacingMm", "levels", "hatchSmoothMm", "rowMm", "waveMm", "squiggleAmpMm", "squiggleHeight", "squiggleJoin", "squiggleLift", "squiggleSmooth", "squiggleDraw", "squiggleVersion", "squiggleInkscape", "squiggleAngle", "contours", "smoothMm", "centerFrom", "centerSmoothMm", "centerShortestMm", "silhouetteFrom", "silhouetteSmoothMm", "silhouetteSmallestMm", "streamWidestMm", "streamPasses", "streamFlowMm", "offsetMm",
   "band", "ink", "regions", "region", "key", "regionInks", "keyInk", "plate", "plates", "fitPaper", "penMm", "fitPairs", "fitOpaque",
 ] as const;
 
@@ -527,6 +536,9 @@ export const squiggleAmp = (photo: Pick<Photo, "squiggleAmpMm" | "squiggleHeight
   photo.squiggleAmpMm ?? (photo.squiggleHeight !== undefined ? (photo.squiggleHeight * (photo.rowMm ?? WAVE_DEFAULTS.rowMm)) / 2 : SQUIGGLE_DEFAULTS.ampMm);
 
 /** What outlines start from: a handful of contours, a millimetre's detail smoothed away. */
+/** Streamlines' starting numbers: widest spacing in mm, passes, and how broadly the flow is read, in mm. */
+export const STREAM_DEFAULTS = { widestMm: 3, passes: 1, flowMm: 2 };
+
 export const OUTLINE_DEFAULTS = { contours: 6, smoothMm: 1 };
 
 /** What centerlines start from: anything darker than half-way is a line; a fifth of a millimetre smoothed. */
@@ -746,6 +758,7 @@ export function photoMarks(photo: Photo, w: number, h: number): PhotoMarks | nul
   if (photo.plate && (photo.plates?.length ?? 0) >= 4 && !separationOf(drawsFrom, photo)) return null;
   const made = photo.style === "waves" ? waves(tones, photo, w, h)
     : photo.style === "squiggle" ? (photo.squiggleVersion === "inkscape" ? squiggleInkscape(tones, photo, w, h) : squiggle(tones, photo, w, h))
+    : photo.style === "streamlines" ? streamlines(tones, photo, w, h)
     : photo.style === "outlines" ? outlines(tones, photo, w, h)
     : photo.style === "centerlines" ? centerlines(tones, photo, w, h)
     : photo.style === "silhouette" ? silhouette(tones, photo, w, h)
@@ -757,7 +770,7 @@ export function photoMarks(photo: Photo, w: number, h: number): PhotoMarks | nul
 
 /** Everything a photo's lines depend on, as one string: the same key, the same lines. */
 function marksKey(photo: Photo, w: number, h: number) {
-  return [photo.src.length, photo.src.slice(-32), w.toFixed(4), h.toFixed(4), photo.brightness, photo.contrast, photo.saturation ?? 0, photo.angle, photo.spacingMm, photo.levels, photo.hatchSmoothMm ?? "", photo.band?.join(",") ?? "", photo.crop?.join(",") ?? "", photo.bleed ?? 0, photo.style ?? "hatch", photo.rowMm ?? "", photo.waveMm ?? "", photo.squiggleAmpMm ?? "", photo.squiggleHeight ?? "", photo.squiggleJoin ? "join" : "", photo.squiggleLift ? "lift" : "", photo.squiggleSmooth ?? "", JSON.stringify(photo.squiggleDraw ?? {}), photo.squiggleVersion ?? "", JSON.stringify(photo.squiggleInkscape ?? {}), photo.squiggleAngle ?? "", photo.ink ?? "", photo.regions?.join(",") ?? "", photo.region ?? "", photo.contours ?? "", photo.smoothMm ?? "", photo.key ? "key" : "", photo.keyInk ?? "", photo.regionInks?.join(",") ?? "", photo.keyStrength ?? "", photo.keyFrom ?? "", photo.plate ?? "", photo.plates?.join(",") ?? "", photo.blackShare ?? "", photo.centerFrom ?? "", photo.centerSmoothMm ?? "", photo.centerShortestMm ?? "", photo.silhouetteFrom ?? "", photo.silhouetteSmoothMm ?? "", photo.silhouetteSmallestMm ?? "", photo.fitPaper ?? "", photo.penMm ?? "", photo.fitPairs ? "pairs" : "", photo.fitOpaque ? "opaque" : ""].join("|");
+  return [photo.src.length, photo.src.slice(-32), w.toFixed(4), h.toFixed(4), photo.brightness, photo.contrast, photo.saturation ?? 0, photo.angle, photo.spacingMm, photo.levels, photo.hatchSmoothMm ?? "", photo.band?.join(",") ?? "", photo.crop?.join(",") ?? "", photo.bleed ?? 0, photo.style ?? "hatch", photo.rowMm ?? "", photo.waveMm ?? "", photo.squiggleAmpMm ?? "", photo.squiggleHeight ?? "", photo.squiggleJoin ? "join" : "", photo.squiggleLift ? "lift" : "", photo.squiggleSmooth ?? "", JSON.stringify(photo.squiggleDraw ?? {}), photo.squiggleVersion ?? "", JSON.stringify(photo.squiggleInkscape ?? {}), photo.squiggleAngle ?? "", photo.ink ?? "", photo.regions?.join(",") ?? "", photo.region ?? "", photo.contours ?? "", photo.smoothMm ?? "", photo.key ? "key" : "", photo.keyInk ?? "", photo.regionInks?.join(",") ?? "", photo.keyStrength ?? "", photo.keyFrom ?? "", photo.plate ?? "", photo.plates?.join(",") ?? "", photo.blackShare ?? "", photo.centerFrom ?? "", photo.centerSmoothMm ?? "", photo.centerShortestMm ?? "", photo.silhouetteFrom ?? "", photo.silhouetteSmoothMm ?? "", photo.silhouetteSmallestMm ?? "", photo.fitPaper ?? "", photo.penMm ?? "", photo.fitPairs ? "pairs" : "", photo.fitOpaque ? "opaque" : "", photo.streamWidestMm ?? "", photo.streamPasses ?? "", photo.streamFlowMm ?? ""].join("|");
 }
 
 /**
@@ -2971,6 +2984,317 @@ function hatch(tones: Tones, photo: Photo, w: number, h: number): PhotoMarks {
 }
 
 
+// ---------- Streamlines ----------
+
+/**
+ * Tone as streamlines, after Jobard and Lefer: lines that flow along the picture's own shapes - round
+ * a cheek, down a fold - rather than straight across it, closer together where it's darker. Each line
+ * runs on until it comes within half its spacing of another, then stops; the next starts its spacing
+ * away from one already drawn, so they lie evenly, the way an engraver's do. Where the picture has no
+ * shape to follow - sky, a flat wall - they settle to the layer's angle. A second pass runs across the
+ * first for the deepest darks.
+ */
+function streamlines(tones: Tones, photo: Photo, w: number, h: number): PhotoMarks {
+  const spacing = Math.max(0.05, photo.spacingMm) / 25.4;
+  const widest = Math.max(spacing, (photo.streamWidestMm ?? STREAM_DEFAULTS.widestMm) / 25.4);
+  const passCount = Math.min(2, Math.max(1, Math.round(photo.streamPasses ?? STREAM_DEFAULTS.passes)));
+  // One look at the photo every half a spacing along a line: close enough that a neighbour can't slip
+  // between two of them unseen.
+  const step = spacing / 2;
+  const shortest = Math.max(1 / 25.4, spacing * 4);
+  // A band draws where the photo's tone is its own, at the whole photo's darkness, so bands together
+  // draw what one layer would.
+  const { toneAt } = toneSampler(tones, photo, w, h, true);
+  const field = flowField(tones, photo, w, h);
+  const n = (v: number) => Number(v.toFixed(4));
+
+  // Every point drawn so far, filed by where it is, so the nearest are quick to find. Each grid square
+  // keeps its last point; each point the one filed there before it.
+  const cell = Math.max(spacing * 2, 0.4 / 25.4);
+  const cols = Math.ceil(w / cell) + 1;
+  const rows = Math.ceil(h / cell) + 1;
+  const head = new Int32Array(cols * rows).fill(-1);
+  const xs: number[] = [];
+  const ys: number[] = [];
+  const lineOf: number[] = [];
+  const indexOf: number[] = [];
+  const next: number[] = [];
+  const cellOf = (x: number, y: number) => Math.min(rows - 1, Math.max(0, Math.floor(y / cell))) * cols + Math.min(cols - 1, Math.max(0, Math.floor(x / cell)));
+  const file = (x: number, y: number, line: number, index: number) => {
+    const c = cellOf(x, y);
+    xs.push(x);
+    ys.push(y);
+    lineOf.push(line);
+    indexOf.push(index);
+    next.push(head[c]);
+    head[c] = xs.length - 1;
+  };
+  // Whether anything already drawn is nearer than `r` - leaving out this line's own points close along it.
+  const crowded = (x: number, y: number, r: number, line = -1, index = 0, ownGap = 0) => {
+    const r2 = r * r;
+    const cx0 = Math.max(0, Math.floor((x - r) / cell));
+    const cx1 = Math.min(cols - 1, Math.floor((x + r) / cell));
+    const cy0 = Math.max(0, Math.floor((y - r) / cell));
+    const cy1 = Math.min(rows - 1, Math.floor((y + r) / cell));
+    for (let cy = cy0; cy <= cy1; cy++) {
+      for (let cx = cx0; cx <= cx1; cx++) {
+        for (let i = head[cy * cols + cx]; i >= 0; i = next[i]) {
+          if (lineOf[i] === line && Math.abs(indexOf[i] - index) <= ownGap) continue;
+          const ddx = xs[i] - x;
+          const ddy = ys[i] - y;
+          if (ddx * ddx + ddy * ddy < r2) return true;
+        }
+      }
+    }
+    return false;
+  };
+
+  const passes: string[] = [];
+  let strokes = 0;
+  let lineCount = 0;
+  for (let k = 0; k < passCount; k++) {
+    // Each pass keeps its spacing from its own lines only: the second runs across the first.
+    head.fill(-1);
+    xs.length = ys.length = lineOf.length = indexOf.length = next.length = 0;
+    // Each pass draws its share of the darkness: with two, the first fills in to the middle tones and
+    // the second, across it, from there to black. The spacing is the closest spacing over that share,
+    // so the ink laid down follows the tone; past the widest, it's paper.
+    const sepAt = (x: number, y: number) => {
+      const t = toneAt(x, y);
+      if (t < 0) return Infinity;
+      const share = Math.min(1, Math.max(0, t * passCount - k));
+      const sep = share > 0 ? spacing / share : Infinity;
+      return sep <= widest ? sep : Infinity;
+    };
+    const turn = k === 1;
+    const dirAt = (x: number, y: number, fx: number, fy: number): [number, number] => {
+      let [ux, uy] = field(x, y);
+      if (turn) [ux, uy] = [-uy, ux];
+      return ux * fx + uy * fy < 0 ? [-ux, -uy] : [ux, uy];
+    };
+    // A line from a seed, both ways, stopping at the edge, in paper, or near another line. Its points
+    // are filed as it goes, so it can't run back into itself; if it comes out too short to keep, they
+    // are taken out again - the last filed in each square, so the list stays whole.
+    const grow = (sx: number, sy: number): number[][] | null => {
+      const line = lineCount;
+      const [u0x, u0y] = field(sx, sy);
+      const start = turn ? [-u0y, u0x] : [u0x, u0y];
+      const halves: number[][][] = [];
+      let length = 0;
+      file(sx, sy, line, 0);
+      const filed: number[] = [xs.length - 1];
+      for (const sign of [1, -1]) {
+        const half: number[][] = [];
+        let x = sx;
+        let y = sy;
+        let fx = start[0] * sign;
+        let fy = start[1] * sign;
+        for (let i = 1; i < 20000; i++) {
+          const [ax, ay] = dirAt(x, y, fx, fy);
+          const [bx, by] = dirAt(x + (ax * step) / 2, y + (ay * step) / 2, ax, ay);
+          const nx = x + bx * step;
+          const ny = y + by * step;
+          if (nx < 0 || nx > w || ny < 0 || ny > h) break;
+          const sep = sepAt(nx, ny);
+          if (!Number.isFinite(sep)) break;
+          const index = i * sign;
+          if (crowded(nx, ny, sep / 2, line, index, Math.ceil((sep * 1.5) / step))) break;
+          file(nx, ny, line, index);
+          filed.push(xs.length - 1);
+          half.push([nx, ny]);
+          length += step;
+          x = nx;
+          y = ny;
+          fx = bx;
+          fy = by;
+        }
+        halves.push(half);
+      }
+      if (length < shortest) {
+        for (let j = filed.length - 1; j >= 0; j--) {
+          const i = filed[j];
+          head[cellOf(xs[i], ys[i])] = next[i];
+        }
+        xs.length = ys.length = lineOf.length = indexOf.length = next.length = filed[0];
+        return null;
+      }
+      lineCount++;
+      return [...halves[1].reverse(), [sx, sy], ...halves[0]];
+    };
+    // A seed is good where there's something to draw and nothing already within its spacing.
+    const seedable = (x: number, y: number) => {
+      if (x < 0 || x > w || y < 0 || y > h) return false;
+      const sep = sepAt(x, y);
+      return Number.isFinite(sep) && !crowded(x, y, sep);
+    };
+
+    const drawn: number[][][] = [];
+    // Each line kept seeds its neighbours, a spacing away either side, and they theirs, until the
+    // area fills; then the search across the photo finds the next area that hasn't been reached.
+    const spread = (first: number[][]) => {
+      const queue = [first];
+      drawn.push(first);
+      for (let q = 0; q < queue.length; q++) {
+        const pts = queue[q];
+        for (let i = 0; i < pts.length; i += 2) {
+          const [x, y] = pts[i];
+          const [a, b] = pts[Math.min(pts.length - 1, i + 1)];
+          const [c, d] = pts[Math.max(0, i - 1)];
+          const len = Math.hypot(a - c, b - d) || 1;
+          const nx = -(b - d) / len;
+          const ny = (a - c) / len;
+          const sep = sepAt(x, y);
+          if (!Number.isFinite(sep)) continue;
+          for (const side of [1, -1]) {
+            const qx = x + nx * sep * side;
+            const qy = y + ny * sep * side;
+            if (!seedable(qx, qy)) continue;
+            const grown = grow(qx, qy);
+            if (grown) {
+              drawn.push(grown);
+              queue.push(grown);
+            }
+          }
+        }
+      }
+    };
+    const scan = spacing * 2;
+    for (let y = scan / 2; y < h; y += scan) {
+      for (let x = scan / 2; x < w; x += scan) {
+        if (!seedable(x, y)) continue;
+        const grown = grow(x, y);
+        if (grown) spread(grown);
+      }
+    }
+
+    // Drawn in the order they were made - each beside the last - and each turned to start at whichever
+    // end is nearer where the pen is, so it doesn't cross the page between them.
+    const parts: string[] = [];
+    let px = 0;
+    let py = 0;
+    for (const pts of drawn) {
+      const [ax, ay] = pts[0];
+      const [bx, by] = pts[pts.length - 1];
+      const run = (bx - px) ** 2 + (by - py) ** 2 < (ax - px) ** 2 + (ay - py) ** 2 ? [...pts].reverse() : pts;
+      const kept = simplified(run, 0.01 / 25.4);
+      parts.push(`M${kept.map(([x, y]) => `${n(x)} ${n(y)}`).join("L")}`);
+      [px, py] = run[run.length - 1];
+      strokes++;
+    }
+    passes.push(parts.join(""));
+  }
+  return { passes, strokes };
+}
+
+/** The longer side of the grid the flow is worked out on. */
+const FLOW_EDGE = 400;
+
+/**
+ * Which way the lines flow at each point of the photo's box, as a direction (either way along it):
+ * along the edges and shapes of the picture - across the way it gets lighter or darker - smoothed by
+ * `streamFlowMm` so the lines sweep rather than wander. Where there's no shape to follow, the layer's
+ * angle. Worked out from the structure tensor: each point's gradient, doubled in angle so opposite
+ * directions agree, averaged over the neighbourhood.
+ */
+function flowField(tones: Tones, photo: Photo, w: number, h: number) {
+  const gw = Math.max(3, Math.round((FLOW_EDGE * w) / Math.max(w, h)));
+  const gh = Math.max(3, Math.round((FLOW_EDGE * h) / Math.max(w, h)));
+  const lift = photo.brightness / 200;
+  const c = Math.max(-99, Math.min(99, photo.contrast)) / 100;
+  const gain = c >= 0 ? 1 / (1 - c) : 1 + c;
+  const [c0, c1, c2, c3] = photo.crop ?? [0, 0, 1, 1];
+  const dark = new Float32Array(gw * gh);
+  for (let y = 0; y < gh; y++) {
+    for (let x = 0; x < gw; x++) dark[y * gw + x] = darknessAt(tones, c0 + (x / (gw - 1)) * (c2 - c0), c1 + (y / (gh - 1)) * (c3 - c1), lift, gain);
+  }
+  blurGrid(dark, gw, gh, 1);
+  const jxx = new Float32Array(gw * gh);
+  const jxy = new Float32Array(gw * gh);
+  const jyy = new Float32Array(gw * gh);
+  const at = (x: number, y: number) => dark[Math.min(gh - 1, Math.max(0, y)) * gw + Math.min(gw - 1, Math.max(0, x))];
+  for (let y = 0; y < gh; y++) {
+    for (let x = 0; x < gw; x++) {
+      const gx = at(x + 1, y - 1) + 2 * at(x + 1, y) + at(x + 1, y + 1) - at(x - 1, y - 1) - 2 * at(x - 1, y) - at(x - 1, y + 1);
+      const gy = at(x - 1, y + 1) + 2 * at(x, y + 1) + at(x + 1, y + 1) - at(x - 1, y - 1) - 2 * at(x, y - 1) - at(x + 1, y - 1);
+      const i = y * gw + x;
+      jxx[i] = gx * gx;
+      jxy[i] = gx * gy;
+      jyy[i] = gy * gy;
+    }
+  }
+  const cellMm = (w * 25.4) / (gw - 1);
+  const r = Math.max(0, photo.streamFlowMm ?? STREAM_DEFAULTS.flowMm) / cellMm;
+  blurGrid(jxx, gw, gh, r);
+  blurGrid(jxy, gw, gh, r);
+  blurGrid(jyy, gw, gh, r);
+  // The gradient's direction, doubled: (Jxx - Jyy, 2Jxy), as long as the shape is clear. A little of
+  // the layer's own angle is added everywhere, so where the picture is flat that's what wins.
+  const ex = new Float32Array(gw * gh);
+  const ey = new Float32Array(gw * gh);
+  let total = 0;
+  for (let i = 0; i < ex.length; i++) {
+    ex[i] = jxx[i] - jyy[i];
+    ey[i] = 2 * jxy[i];
+    total += Math.hypot(ex[i], ey[i]);
+  }
+  const quiet = (0.15 * total) / ex.length + 1e-9;
+  // The gradient runs across the lines, so the angle it settles to is the layer's turned a right angle.
+  const across = ((photo.angle + 90) * Math.PI) / 180;
+  const qx = quiet * Math.cos(2 * across);
+  const qy = quiet * Math.sin(2 * across);
+  for (let i = 0; i < ex.length; i++) {
+    const a = ex[i] + qx;
+    const b = ey[i] + qy;
+    const len = Math.hypot(a, b) || 1;
+    ex[i] = a / len;
+    ey[i] = b / len;
+  }
+  return (x: number, y: number): [number, number] => {
+    const gx = Math.min(gw - 1, Math.max(0, (x / w) * (gw - 1)));
+    const gy = Math.min(gh - 1, Math.max(0, (y / h) * (gh - 1)));
+    const x0 = Math.floor(gx);
+    const y0 = Math.floor(gy);
+    const x1 = Math.min(gw - 1, x0 + 1);
+    const y1 = Math.min(gh - 1, y0 + 1);
+    const fx = gx - x0;
+    const fy = gy - y0;
+    const mix = (v: Float32Array) =>
+      (v[y0 * gw + x0] * (1 - fx) + v[y0 * gw + x1] * fx) * (1 - fy) + (v[y1 * gw + x0] * (1 - fx) + v[y1 * gw + x1] * fx) * fy;
+    // Halved back to a direction, and turned a right angle: along the shape, not across it.
+    const theta = Math.atan2(mix(ey), mix(ex)) / 2 + Math.PI / 2;
+    return [Math.cos(theta), Math.sin(theta)];
+  };
+}
+
+/** A line with the points dropped that lie within `tolerance` of the straight line past them (Douglas-Peucker). */
+function simplified(pts: number[][], tolerance: number): number[][] {
+  if (pts.length < 3) return pts;
+  const keep = new Uint8Array(pts.length);
+  keep[0] = keep[pts.length - 1] = 1;
+  const stack: [number, number][] = [[0, pts.length - 1]];
+  while (stack.length) {
+    const [a, b] = stack.pop()!;
+    const [ax, ay] = pts[a];
+    const [bx, by] = pts[b];
+    const len = Math.hypot(bx - ax, by - ay) || 1e-12;
+    let far = -1;
+    let most = tolerance;
+    for (let i = a + 1; i < b; i++) {
+      const d = Math.abs((bx - ax) * (ay - pts[i][1]) - (ax - pts[i][0]) * (by - ay)) / len;
+      if (d > most) {
+        most = d;
+        far = i;
+      }
+    }
+    if (far >= 0) {
+      keep[far] = 1;
+      stack.push([a, far], [far, b]);
+    }
+  }
+  return pts.filter((_, i) => keep[i]);
+}
+
+
 /** A photo read back from a saved drawing: only a picture and numbers are kept, so check them on the way in. */
 export function photoFromData(raw: Record<string, unknown>): Photo | null {
   const src = raw.src;
@@ -2990,13 +3314,16 @@ export function photoFromData(raw: Record<string, unknown>): Photo | null {
       ? { crop: raw.crop.map(Number) as [number, number, number, number] }
       : {}),
     ...(raw.fit === "fit" || raw.fit === "fill" ? { fit: raw.fit } : {}),
-    ...(raw.style === "waves" || raw.style === "squiggle" || raw.style === "outlines" || raw.style === "centerlines" || raw.style === "silhouette" ? { style: raw.style } : {}),
+    ...(raw.style === "waves" || raw.style === "squiggle" || raw.style === "streamlines" || raw.style === "outlines" || raw.style === "centerlines" || raw.style === "silhouette" ? { style: raw.style } : {}),
     ...(Number.isFinite(Number(raw.center_from)) && raw.center_from !== undefined ? { centerFrom: Number(raw.center_from) } : {}),
     ...(Number.isFinite(Number(raw.center_smooth_mm)) && raw.center_smooth_mm !== undefined ? { centerSmoothMm: Number(raw.center_smooth_mm) } : {}),
     ...(Number.isFinite(Number(raw.center_shortest_mm)) && raw.center_shortest_mm !== undefined ? { centerShortestMm: Number(raw.center_shortest_mm) } : {}),
     ...(Number.isFinite(Number(raw.silhouette_from)) && raw.silhouette_from !== undefined ? { silhouetteFrom: Number(raw.silhouette_from) } : {}),
     ...(Number.isFinite(Number(raw.silhouette_smooth_mm)) && raw.silhouette_smooth_mm !== undefined ? { silhouetteSmoothMm: Number(raw.silhouette_smooth_mm) } : {}),
     ...(Number.isFinite(Number(raw.silhouette_smallest_mm)) && raw.silhouette_smallest_mm !== undefined ? { silhouetteSmallestMm: Number(raw.silhouette_smallest_mm) } : {}),
+    ...(Number.isFinite(Number(raw.stream_widest_mm)) && raw.stream_widest_mm !== undefined ? { streamWidestMm: Number(raw.stream_widest_mm) } : {}),
+    ...(Number.isFinite(Number(raw.stream_passes)) && raw.stream_passes !== undefined ? { streamPasses: Number(raw.stream_passes) } : {}),
+    ...(Number.isFinite(Number(raw.stream_flow_mm)) && raw.stream_flow_mm !== undefined ? { streamFlowMm: Number(raw.stream_flow_mm) } : {}),
     ...(Number.isFinite(Number(raw.contours)) && raw.contours !== undefined ? { contours: Number(raw.contours) } : {}),
     ...(Number.isFinite(Number(raw.smooth_mm)) && raw.smooth_mm !== undefined ? { smoothMm: Number(raw.smooth_mm) } : {}),
     ...(typeof raw.ink === "string" ? { ink: raw.ink } : {}),
@@ -3050,13 +3377,16 @@ export const photoData = (p: Photo) => ({
   ...(p.band ? { band: p.band } : {}),
   ...(p.crop ? { crop: p.crop } : {}),
   ...(p.fit ? { fit: p.fit } : {}),
-  ...(p.style === "waves" || p.style === "squiggle" || p.style === "outlines" || p.style === "centerlines" || p.style === "silhouette" ? { style: p.style } : {}),
+  ...(p.style === "waves" || p.style === "squiggle" || p.style === "streamlines" || p.style === "outlines" || p.style === "centerlines" || p.style === "silhouette" ? { style: p.style } : {}),
   ...(p.centerFrom !== undefined ? { center_from: p.centerFrom } : {}),
   ...(p.centerSmoothMm !== undefined ? { center_smooth_mm: p.centerSmoothMm } : {}),
   ...(p.centerShortestMm !== undefined ? { center_shortest_mm: p.centerShortestMm } : {}),
   ...(p.silhouetteFrom !== undefined ? { silhouette_from: p.silhouetteFrom } : {}),
   ...(p.silhouetteSmoothMm !== undefined ? { silhouette_smooth_mm: p.silhouetteSmoothMm } : {}),
   ...(p.silhouetteSmallestMm !== undefined ? { silhouette_smallest_mm: p.silhouetteSmallestMm } : {}),
+  ...(p.streamWidestMm !== undefined ? { stream_widest_mm: p.streamWidestMm } : {}),
+  ...(p.streamPasses !== undefined ? { stream_passes: p.streamPasses } : {}),
+  ...(p.streamFlowMm !== undefined ? { stream_flow_mm: p.streamFlowMm } : {}),
   ...(p.contours !== undefined ? { contours: p.contours } : {}),
   ...(p.smoothMm !== undefined ? { smooth_mm: p.smoothMm } : {}),
   ...(p.ink ? { ink: p.ink, regions: p.regions, region: p.region } : {}),
