@@ -145,15 +145,25 @@ export default function App() {
  const [shapes, setShapes] = useState<Shape[]>([]);
  const [fills, setFills] = useState<Fill[]>([]);
  const [layers, setLayers] = useState<Layer[]>(() => [{ id: newLayerId(), name: "Black", color: "#262626" }]);
- // The targeted layers, in the order they were targeted: one, or several worked on as one - picked,
- // listed, turned and simplified together. New shapes land on the one targeted last. Anything that
- // sets a single layer (opening, adding, deleting one) sets it alone.
+ // The targeted layers, in the order they were targeted: none, one, or several worked on as one -
+ // picked, listed, turned and simplified together. New shapes land on the one targeted last, or with
+ // none targeted on the top layer, which is then targeted. Anything that sets a single layer
+ // (opening, adding, deleting one) sets it alone.
  const [targets, setTargets] = useState<string[]>([]);
  const activeLayer = targets[targets.length - 1] ?? "";
  const setActiveLayer = (to: string | ((current: string) => string)) =>
   setTargets((list) => {
    const id = typeof to === "function" ? to(list[list.length - 1] ?? "") : to;
    return id ? [id] : [];
+  });
+ // Paths hidden from view by their row's eye. Studio's view alone, as a layer's eye is: the file
+ // keeps them, and Plot draws them.
+ const [hiddenShapes, setHiddenShapes] = useState<Set<string>>(() => new Set());
+ const showShapes = (ids: string[], visible: boolean) =>
+  setHiddenShapes((set) => {
+   const next = new Set(set);
+   for (const id of ids) (visible ? next.delete(id) : next.add(id));
+   return next;
   });
  const [colorMenu, setColorMenu] = useState<{ id: string; anchor: HTMLElement } | null>(null);
  // A tool's measured hatch numbers are the sensible starting point for a new fill, and they live in
@@ -200,7 +210,8 @@ export default function App() {
  // Choosing a layer in the Layers card only chooses the layer: its paths are listed, but none is
  // selected until one is clicked, on the page or in the list. Whatever was selected on the layer
  // before is let go, so nothing is left selected out of sight. With `add`, the layer joins the
- // targets, or leaves them - never the last one - and what was picked on the others stays picked.
+ // targets, or leaves them - the last one too, leaving none - and what was picked on the others
+ // stays picked.
  const switchLayer = (id: string, add = false) => {
   if (!add) {
    if (targets.length === 1 && id === activeLayer) return;
@@ -209,7 +220,6 @@ export default function App() {
    return;
   }
   const next = targets.includes(id) ? targets.filter((t) => t !== id) : [...targets, id];
-  if (!next.length) return;
   setTargets(next);
   setSelected((ids) => ids.filter((sid) => next.includes(shapes.find((sh) => sh.id === sid)?.layerId ?? "")));
  };
@@ -334,6 +344,8 @@ export default function App() {
   record();
   // Text is as wide as its words: the drag only says how tall.
   setShapes((list) => [...list, shape.kind === "text" ? fitText(shape, fontsRef.current[shape.font ?? ""]) : shape]);
+  // Drawn with nothing targeted: it lands on the top layer, which is targeted, so it can be picked.
+  setTargets((list) => (list.length ? list : [shape.layerId]));
   pick(shape.id);
   setTool("select"); // what you want next is nearly always to nudge the thing you just drew
  }, [record]);
@@ -399,11 +411,11 @@ export default function App() {
    id: newShapeId(),
    group: undefined,
    groupName: undefined,
-   layerId: layerId ?? activeLayer,
+   layerId: layerId ?? drawOn.id,
   };
   setShapes((list) => [...list, copy]);
   setFills((list) => [...list, ...clipboard.fills.map((f) => ({ ...f, id: newFillId(), shapeId: copy.id }))]);
-  if (layerId && layerId !== activeLayer) setActiveLayer(layerId);
+  if (layerId ? layerId !== activeLayer : !targets.length) setActiveLayer(copy.layerId);
   pick(copy.id);
  };
 
@@ -880,10 +892,12 @@ export default function App() {
  const fillLead = chosen ?? fillTargets[0] ?? null;
  const chosenFills = fillLead ? fills.filter((f) => f.shapeId === fillLead.id) : [];
 
- // The layer new shapes land on. Always a real layer. And every layer targeted with it, in the
- // order they stack: the paths card lists what's on all of them, and they turn as one.
- const active = layers.find((l) => l.id === activeLayer) ?? layers[0];
- const targetLayers = layers.filter((l) => l.id === active?.id || targets.includes(l.id));
+ // The layer targeted last, if any, and every layer targeted, in the order they stack: the layer
+ // card lists what's on all of them, and they turn as one. New shapes land on the last targeted, or
+ // with none targeted on the top layer.
+ const active = layers.find((l) => l.id === activeLayer);
+ const drawOn = active ?? layers[layers.length - 1];
+ const targetLayers = layers.filter((l) => targets.includes(l.id));
  const targetIds = useMemo(() => new Set(targetLayers.map((l) => l.id)), [targetLayers.map((l) => l.id).join("|")]);
  const onActive = shapes.filter((sh) => targetIds.has(sh.layerId));
 
@@ -1079,6 +1093,11 @@ export default function App() {
  // there would be written back simplified, and kept without Simplify being pressed.
  const simplifierShowing = Boolean(simplifierCard && simplifierPreview && (Object.values(simplifier.on).some(Boolean) || simplifier.prune.on));
  const keepAsIs = () => {};
+ // What the page draws: the drawing, or the Simplifier's version of it, less the paths hidden by eye.
+ const canvasShapes = useMemo(() => {
+  const list = simplifierShowing ? simplifierPreview!.shapes : shapes;
+  return hiddenShapes.size ? list.filter((sh) => !hiddenShapes.has(sh.id)) : list;
+ }, [simplifierShowing, simplifierPreview, shapes, hiddenShapes]);
 
  /** Take a joined shape apart again: each run becomes a shape of its own. */
  const splitShape = (id: string) => {
@@ -1652,7 +1671,7 @@ export default function App() {
      <Canvas
       page={page}
       paperColor={paperColor}
-      shapes={simplifierShowing ? simplifierPreview!.shapes : shapes}
+      shapes={canvasShapes}
       fills={fills}
       model={model}
       // One bar over the page for everything true of what is being looked at: what has just
@@ -1668,7 +1687,7 @@ export default function App() {
         onLoupe: setLoupe,
       }}
       layers={layers}
-      activeLayer={active?.id ?? ""}
+      activeLayer={drawOn?.id ?? ""}
       targetLayers={targetIds}
       penWidthMm={penWidthMm}
       inkOpacity={inkOpacity}
@@ -1784,7 +1803,7 @@ export default function App() {
      )}
      {/* The layer being drawn on, a card of its own under the layers: turned, and its paths. Out and
        away with the Layers card, from its switch. */}
-     {layersCard && active && (
+     {layersCard && targetLayers.length > 0 && (
      <Card variant="flat" className={styles.controls}>
       <div className={`${styles.cardBody} ${controls.cardSections}`}>
         <ShapeList
@@ -1796,6 +1815,8 @@ export default function App() {
          rowMenuId={rowMenu?.id}
          onPick={pickFromRow}
          onTurn={turnLayer}
+         hidden={hiddenShapes}
+         onVisible={showShapes}
          onDeleteAll={() => {
           record();
           const gone = onActive.map((sh) => sh.id);

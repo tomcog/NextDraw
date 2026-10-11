@@ -294,14 +294,6 @@ span.shapeName { cursor: pointer; }
 /* The library keeps room for a row's number even when there is none to print. */
 .shapeList [class*="number"] { display: none; }
 
-.shapeSize {
-  flex: none;
-  padding: 0.125rem 0.25rem;
-  font-size: 10px;
-  color: var(--ui-text-muted);
-  font-variant-numeric: tabular-nums;
-}
-
 @media (max-width: 860px) {
   .layout { grid-template-columns: minmax(0, 1fr); padding-inline: 1rem; }
   .stage { position: static; margin-left: 0; }

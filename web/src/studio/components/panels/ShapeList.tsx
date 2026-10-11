@@ -4,8 +4,7 @@ import { EllipsisVertical, Image as ImageIcon, RotateCcwSquare, RotateCwSquare, 
 import { NumberField } from "../../../shared/components/controls/NumberField";
 import { Section } from "../../../shared/components/controls/Section";
 import controls from "../../../shared/components/controls/controls.module.css";
-import { trimNum } from "../../../shared/lib/format";
-import { boxAround, boxOf, groupLabel, groupsOf, shapeName, type Layer, type Shape } from "../../../shared/lib/drawing/shapes";
+import { groupLabel, groupsOf, shapeName, type Layer, type Shape } from "../../../shared/lib/drawing/shapes";
 import styles from "../../App.module.css";
 
 /** How many rows are listed by name. A separation's layer is tens of thousands of marks. */
@@ -27,6 +26,9 @@ interface Props {
    *  which picks the whole shape. */
   onPick: (id: string, add: boolean) => void;
   onDeleteAll: () => void;
+  /** The paths hidden from view in Studio - not from the file, or the plot - by their row's eye. */
+  hidden: Set<string>;
+  onVisible: (ids: string[], visible: boolean) => void;
   /** Turn everything on the layer about its middle, in degrees clockwise. */
   onTurn: (deg: number) => void;
   onRenameType: (id: string, name: string) => void;
@@ -64,7 +66,7 @@ function rowsOf(shapes: Shape[]): Row[] {
  * Only while there is something on the layer: a heading over a line saying there is nothing under
  * it is two lines to say one thing.
  */
-export function ShapeList({ layers, shapes, picked, busy, renaming, rowMenuId, onPick, onDeleteAll, onTurn, onRenameType, onRenameCancel, onRenameDone, onRowMenu, onGroupMenu }: Props) {
+export function ShapeList({ layers, shapes, picked, busy, renaming, rowMenuId, onPick, onDeleteAll, hidden, onVisible, onTurn, onRenameType, onRenameCancel, onRenameDone, onRowMenu, onGroupMenu }: Props) {
   const [turnBy, setTurnBy] = useState(15);
   if (!shapes.length) return null;
   // One layer is named; several, worked on as one, are said by their dots alone.
@@ -121,7 +123,8 @@ export function ShapeList({ layers, shapes, picked, busy, renaming, rowMenuId, o
           const group = row.kind === "shape";
           const sh = group ? row.members[0] : row.shape;
           const id = group ? row.id : sh.id;
-          const b = group ? boxAround(row.members) : boxOf(sh);
+          const ids = group ? row.members.map((m) => m.id) : [sh.id];
+          const shown = !ids.every((id) => hidden.has(id));
           const name = group ? groupLabel(row.members, row.index) : shapeName(sh, row.index);
           const on = group ? row.members.every((m) => picked.has(m.id)) : picked.has(sh.id);
           return (
@@ -140,7 +143,10 @@ export function ShapeList({ layers, shapes, picked, busy, renaming, rowMenuId, o
                 number={null}
                 // No swatch: everything on a layer draws in that layer's one ink, and
                 // the row right above says which it is.
-                hideVisibility
+                // The eye hides the path from view here, as a layer's eye does its layer: the file
+                // and the plot keep it.
+                visible={shown}
+                onVisibleChange={(v) => onVisible(ids, v)}
                 hideHandle
                 // A photo isn't drawn like the paths, so its row says so in the box.
                 // A shape made of several paths says so the same way.
@@ -187,11 +193,6 @@ export function ShapeList({ layers, shapes, picked, busy, renaming, rowMenuId, o
                         {name}
                       </span>
                     )}
-                    {/* How big it is, at the end of the row. Numbers alone: the page is
-                      inches throughout, and setting them is the kebab's job. */}
-                    <span className={styles.shapeSize}>
-                      {`${trimNum(b.x1 - b.x0, 2)} × ${trimNum(b.y1 - b.y0, 2)}`}
-                    </span>
                   </span>
                 }
               />
