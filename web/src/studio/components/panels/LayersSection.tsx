@@ -1,6 +1,6 @@
 import { useRef, type ReactNode } from "react";
 import { ButtonRound, LayerController } from "@tomcoggia/ui";
-import { EllipsisVertical, LayersArrowUp, Merge, Plus } from "lucide-react";
+import { EllipsisVertical, LayersArrowUp, Plus } from "lucide-react";
 import { Section } from "../../../shared/components/controls/Section";
 import { isPalettePen, labelAfter, LABEL_SEPARATOR } from "../../../shared/lib/ink";
 import type { Preset } from "../../../shared/lib/types";
@@ -18,8 +18,6 @@ interface Props {
   active: Layer | undefined;
   /** Every targeted layer: the one drawn on and any worked on with it. */
   targets: Set<string>;
-  /** Whether there is more than one shape in the drawing, so merging lines could do anything. */
-  canMerge: boolean;
   /** The drawing tool, whose palette says which layers are its pens. */
   tool: Preset | null;
   busy: boolean;
@@ -32,7 +30,6 @@ interface Props {
    *  the layer names no pen, and the whole name is typed. */
   renamePen?: string | null;
   onSort: () => void;
-  onMerge: () => void;
   onAdd: () => void;
   /** Target this layer alone, or with `add` put it in with the others or take it out. */
   onSwitch: (id: string, add?: boolean) => void;
@@ -79,11 +76,6 @@ export function LayersSection(props: Props) {
             <ButtonRound size="sm" icon={<LayersArrowUp />} aria-label="Sort layers by darkness"
               title="Sort by darkness: the lightest color is layer 1 and drawn first, with darker colors over it"
               disabled={busy} onClick={props.onSort} />
-          )}
-          {props.canMerge && (
-            <ButtonRound size="sm" icon={<Merge />} aria-label="Merge overlapping lines"
-              title="Merge overlapping lines: straight lines that run over one another along the same line - a halftone's dashes, a line drawn twice - joined into single strokes, so each bit is drawn once. Looks the same; draws faster"
-              disabled={busy} onClick={props.onMerge} />
           )}
           <ButtonRound size="sm" icon={<Plus />} aria-label="Add a layer"
             title="Add a layer: one more color to draw with" disabled={busy} onClick={props.onAdd} />

@@ -518,24 +518,6 @@ export default function App() {
   */
  const nudge = (dx: number, dy: number) => moveShapes(selected, dx, dy);
 
- // Straight lines lying along one another - a halftone's overrunning dashes, a line drawn twice -
- // merged into the strokes they look like, so the pen draws each bit of line once.
- const mergeOverlaps = () => {
-  const merged = mergeLines(shapes, fills.map((f) => f.shapeId));
-  if (!merged) {
-   setMessage({ text: "No lines overlap: nothing to merge", ok: true });
-   return;
-  }
-  record();
-  setShapes(merged.shapes);
-  setSelected([]);
-  const saved = merged.saved * 0.0254;
-  setMessage({
-   text: `Merged ${merged.before.toLocaleString()} overlapping lines into ${merged.after.toLocaleString()} - ${saved >= 1 ? `${saved.toFixed(1)} m` : `${Math.round(saved * 1000)} mm`} less to draw`,
-   ok: true,
-  });
- };
-
  /** Move these shapes together, kept on the page; a photo's other layers go with it. */
  const moveShapes = (which: string[], dx: number, dy: number) => {
   if (!which.length) return;
@@ -1070,14 +1052,19 @@ export default function App() {
    pruneEvery: simplifier.prune.on ? simplifier.prune.every : 0, pruneMode: simplifier.prune.mode, pruneSeed: simplifier.prune.seed,
   };
   const onLayer = (s: Shape) => simplifyScope === "drawing" || targetIds.has(s.layerId);
-  return { ...simplifyDrawing(list, onLayer, opts), before: pointCount(list.filter(onLayer)) };
+  // Overlapping straight lines merged first, so the rest - and Prune's count of strokes - work on the
+  // strokes they come to.
+  const merged = simplifier.merge ? mergeLines(list, fills.map((f) => f.shapeId), onLayer)?.shapes ?? list : list;
+  const run = simplifyDrawing(merged, onLayer, opts);
+  const left = new Set(run.shapes.map((s) => s.id));
+  return { shapes: run.shapes, gone: list.filter((s) => !left.has(s.id)).map((s) => s.id), before: pointCount(list.filter(onLayer)) };
  };
  const simplifierPreview = useMemo(() => {
   if (!simplifierCard) return null;
   const run = simplifierRun(shapes);
   return { ...run, after: pointCount(run.shapes.filter((s) => simplifyScope === "drawing" || targetIds.has(s.layerId))) };
   // eslint-disable-next-line react-hooks/exhaustive-deps
- }, [simplifierCard, shapes, simplifier, simplifyScope, targetIds]);
+ }, [simplifierCard, shapes, fills, simplifier, simplifyScope, targetIds]);
  const applySimplifier = () => {
   if (!simplifierPreview) return;
   const { shapes: simpler, gone } = simplifierPreview;
@@ -1091,7 +1078,7 @@ export default function App() {
  };
  // While anything is ticked, the page shows the drawing simplified, and takes no edits: a shape dragged
  // there would be written back simplified, and kept without Simplify being pressed.
- const simplifierShowing = Boolean(simplifierCard && simplifierPreview && (Object.values(simplifier.on).some(Boolean) || simplifier.prune.on));
+ const simplifierShowing = Boolean(simplifierCard && simplifierPreview && (Object.values(simplifier.on).some(Boolean) || simplifier.prune.on || simplifier.merge));
  const keepAsIs = () => {};
  // What the page draws: the drawing, or the Simplifier's version of it, less the paths hidden by eye.
  const canvasShapes = useMemo(() => {
@@ -1769,14 +1756,12 @@ export default function App() {
         layers={layers}
         active={active}
         targets={targetIds}
-        canMerge={shapes.length > 1}
         tool={tool2}
         busy={busy}
         colorMenuId={colorMenu?.id}
         rowMenuId={rowMenu?.id}
         renaming={renamingLayer}
         onSort={sortLayersByLightness}
-        onMerge={mergeOverlaps}
         onAdd={addLayer}
         onSwitch={switchLayer}
         onVisible={(id, visible) => patchLayer(id, { hidden: !visible })}

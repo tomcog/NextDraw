@@ -13,6 +13,8 @@ export interface SimplifierState {
   mm: Record<SimplifyKey, number>;
   /** Prune: one stroke out of every `every` taken out, picked as `mode` says, a shuffle drawn from `seed`. */
   prune: { on: boolean; every: number; mode: PruneMode; seed: number };
+  /** Straight lines lying along one another joined into the strokes they look like. */
+  merge: boolean;
 }
 
 /** Every box clear, every distance back to where it starts: how the card opens, and is left after Simplify. */
@@ -20,6 +22,7 @@ export const SIMPLIFIER_START: SimplifierState = {
   on: { mergeShort: false, straighten: false, joinEnds: false, dropTiny: false },
   mm: { mergeShort: 0.1, straighten: 0.05, joinEnds: 0.2, dropTiny: 0.3 },
   prune: { on: false, every: 2, mode: "even", seed: 0 },
+  merge: false,
 };
 
 const STEPS: { key: SimplifyKey; label: string; hint: string; max: number; step: number }[] = [
@@ -54,7 +57,7 @@ interface Props {
 const newSeed = () => Math.floor(Math.random() * 2 ** 31);
 
 export function SimplifierSection({ value, onChange, scope, onScope, layerName, before, after, removed, busy, onApply }: Props) {
-  const anyOn = Object.values(value.on).some(Boolean) || value.prune.on;
+  const anyOn = Object.values(value.on).some(Boolean) || value.prune.on || value.merge;
   const prune = (patch: Partial<SimplifierState["prune"]>) => onChange({ ...value, prune: { ...value.prune, ...patch } });
   const fewer = before - after;
   return (
@@ -63,6 +66,13 @@ export function SimplifierSection({ value, onChange, scope, onScope, layerName, 
         <Segment selected={scope === "drawing"} title="Every path in the drawing" onClick={() => onScope("drawing")}>Whole drawing</Segment>
         <Segment selected={scope === "layer"} title={`Only the paths on ${layerName}`} onClick={() => onScope("layer")}>This layer</Segment>
       </SegmentedControl>
+      {/* Merge has no distance: lines are on the same line or they aren't. */}
+      <Checkbox
+        checked={value.merge}
+        label="Merge overlapping lines"
+        title="Straight lines that run over one another along the same line - a halftone's dashes, a line drawn twice - joined into single strokes, so each bit is drawn once"
+        onChange={(e) => onChange({ ...value, merge: e.target.checked })}
+      />
       {STEPS.map(({ key, label, hint, max, step }) => (
         <div key={key}>
           <Checkbox

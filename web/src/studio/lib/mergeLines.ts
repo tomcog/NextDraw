@@ -35,12 +35,14 @@ export interface Merged {
 }
 
 /**
- * Every layer's straight lines that overlap or touch along the same line joined into one stroke. The
- * shapes that took part become one path per layer - "Merged lines", in place of the first of them -
- * drawn row by row, each row the other way from the last so the pen doesn't cross back. Lines that
- * meet nothing are left as the shapes they were. Null when nothing overlaps.
+ * Every layer's straight lines that overlap or touch along the same line joined into one stroke - the
+ * Simplifier's "Merge overlapping lines", on the shapes `onLayer` lets in. The shapes that took part
+ * become one path per layer - "Merged lines", in place of the first of them - line by line, every
+ * stroke the same way round: left to right, or down where it's upright. Not turned back on alternate
+ * rows, which a pen that may only be pulled can't take, and the plotter orders its travel itself.
+ * Lines that meet nothing are left as the shapes they were. Null when nothing overlaps.
  */
-export function mergeLines(shapes: Shape[], filledIds: string[]): Merged | null {
+export function mergeLines(shapes: Shape[], filledIds: string[], onLayer: (s: Shape) => boolean = () => true): Merged | null {
   const filled = new Set(filledIds);
   let before = 0;
   let after = 0;
@@ -53,7 +55,7 @@ export function mergeLines(shapes: Shape[], filledIds: string[]): Merged | null 
     type Piece = { shape: string; t0: number; t1: number };
     const lines = new Map<string, { dx: number; dy: number; c: number; pieces: Piece[] }>();
     for (const s of shapes) {
-      if (s.layerId !== layerId) continue;
+      if (s.layerId !== layerId || !onLayer(s)) continue;
       for (const [a, b] of straightPieces(s, filled) ?? []) {
         let dx = b.x - a.x;
         let dy = b.y - a.y;
@@ -95,27 +97,13 @@ export function mergeLines(shapes: Shape[], filledIds: string[]): Merged | null 
     for (const st of strokes) if (st.from.size > 1 || st.drawn > st.t1 - st.t0 + NEAR) for (const id of st.from) joined.add(id);
     if (!joined.size) continue;
     const kept = strokes.filter((st) => [...st.from].some((id) => joined.has(id)));
-    // Line by line - by direction, then across - and along each, every other line the other way.
+    // Line by line - by direction, then across - and along each, in order.
     kept.sort((p, q) => Math.atan2(p.line.dy, p.line.dx) - Math.atan2(q.line.dy, q.line.dx) || p.line.c - q.line.c || p.t0 - q.t0);
-    const runs: Node[][] = [];
-    let lastLine: Stroke["line"] | null = null;
-    let back = true;
-    let row: Node[][] = [];
-    const flush = () => {
-      for (const r of back ? row.reverse().map((r) => [r[1], r[0]]) : row) runs.push(r);
-      row = [];
-    };
-    for (const st of kept) {
-      if (st.line !== lastLine) {
-        flush();
-        back = !back;
-        lastLine = st.line;
-      }
+    const runs: Node[][] = kept.map((st) => {
       const { dx, dy, c } = st.line;
       const at = (t: number): Node => ({ x: dx * t - dy * c, y: dy * t + dx * c });
-      row.push([at(st.t0), at(st.t1)]);
-    }
-    flush();
+      return [at(st.t0), at(st.t1)];
+    });
     const count = shapes.filter((s) => joined.has(s.id)).reduce((n, s) => n + (straightPieces(s, filled)?.length ?? 0), 0);
     before += count;
     after += runs.length;

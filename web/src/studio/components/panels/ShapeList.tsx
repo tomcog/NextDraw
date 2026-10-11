@@ -147,6 +147,7 @@ export function ShapeList({ layers, shapes, picked, busy, renaming, rowMenuId, o
                 // and the plot keep it.
                 visible={shown}
                 onVisibleChange={(v) => onVisible(ids, v)}
+                noun={group ? "shape" : "path"}
                 hideHandle
                 // A photo isn't drawn like the paths, so its row says so in the box.
                 // A shape made of several paths says so the same way.

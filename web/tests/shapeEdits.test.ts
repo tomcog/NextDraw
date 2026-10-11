@@ -5,6 +5,7 @@ import { drawnBox } from "../src/studio/lib/drawing";
 import type { Fill } from "../src/shared/lib/drawing/hatch";
 import { bakedCopies, flattened, handOutFills, joined, markRuns, pointCount, simplified, simplifyDrawing, splitApart } from "../src/studio/lib/shapeEdits";
 import { pathRuns, type Shape } from "../src/shared/lib/drawing/shapes";
+import { mergeLines } from "../src/studio/lib/mergeLines";
 
 const shape = (over: Partial<Shape>): Shape => ({ id: "s", kind: "rect", x: 1, y: 1, x2: 3, y2: 2, layerId: "l", ...over });
 const close = (a: number, b: number, what = "") => assert.ok(Math.abs(a - b) < 1e-6, `${what} ${a} ≠ ${b}`);
@@ -168,4 +169,17 @@ test("Prune evenly isn't thrown by rows left empty where the picture is white", 
   const left = pathRuns(simplifyDrawing([hatch], () => true, { ...off, pruneEvery: 2 }).shapes[0]).map((r) => Math.round(r[0].y * 50));
   // Every other row that's there goes - counted among the rows drawn, not the empty ones.
   assert.deepEqual(left, rows.filter((_, i) => i % 2 === 0));
+});
+
+test("Merge joins overlapping dashes into strokes all one way round, only where it's asked to", () => {
+  // A row of dashes that overrun one another, one drawn right to left, and a row on another layer.
+  const dash = (x0: number, x1: number, y: number) => [{ x: x0, y }, { x: x1, y }];
+  const row = shape({ id: "r", kind: "path", runs: [dash(0, 0.6, 1), dash(1, 0.5, 1), dash(0.9, 1.5, 1), dash(0, 1, 2), dash(0.8, 2, 2)] });
+  const other = shape({ id: "o", kind: "path", layerId: "m", runs: [dash(0, 0.6, 1), dash(0.5, 1, 1)] });
+  const merged = mergeLines([row, other], [], (s) => s.layerId === "l")!;
+  const runs = pathRuns(merged.shapes.find((s) => s.layerId === "l")!);
+  // Each row is one stroke, left to right - the second row too, not turned back.
+  assert.deepEqual(runs.map((r) => [r[0].x, r[1].x, r[0].y]).map((v) => v.map((n) => Math.round(n * 1000) / 1000)), [[0, 1.5, 1], [0, 2, 2]]);
+  // The other layer was left out of it.
+  assert.equal(merged.shapes.find((s) => s.layerId === "m"), other);
 });
