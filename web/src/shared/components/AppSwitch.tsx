@@ -6,22 +6,13 @@ import { showApp, type AppName } from "../lib/apps";
  * Shared: the way between the apps, in the same place in every app. The app you are in is the one
  * pressed; another brings its tab forward, or opens one. The marks are the ones each app's name
  * carries in its title. Figma: `AppSwitcher` (64:660) - a small white bar of icons, the names left to
- * their tooltips and to screen readers. Photo, Studio, Plot: the order a photo goes through them.
+ * their tooltips and to screen readers. Studio, Image, Plot.
  * Every app stands it up, at the top of its column of toolbars at the very left.
  */
 export function AppSwitch({ current, orientation }: { current: AppName; orientation?: "horizontal" | "vertical" }) {
   return (
     <Toolbar tone="white" orientation={orientation} aria-label="Apps">
       <SegmentedControl size="sm" variant="dark" aria-label="App">
-        <Segment
-          selected={current === "photo"}
-          icon={<Aperture />}
-          hideLabel
-          title={current === "photo" ? "You're in Image" : "Go to Image, in its own tab"}
-          onClick={() => current !== "photo" && showApp("photo")}
-        >
-          Image
-        </Segment>
         <Segment
           selected={current === "studio"}
           icon={<PenTool />}
@@ -30,6 +21,15 @@ export function AppSwitch({ current, orientation }: { current: AppName; orientat
           onClick={() => current !== "studio" && showApp("studio")}
         >
           Studio
+        </Segment>
+        <Segment
+          selected={current === "photo"}
+          icon={<Aperture />}
+          hideLabel
+          title={current === "photo" ? "You're in Image" : "Go to Image, in its own tab"}
+          onClick={() => current !== "photo" && showApp("photo")}
+        >
+          Image
         </Segment>
         <Segment
           selected={current === "plot"}
