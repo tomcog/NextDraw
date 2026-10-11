@@ -29,3 +29,17 @@ test("separations: the drawing is named for the files without their ink", () => 
   assert.equal(stemWithoutPlate("portrait-magenta-channel.tif"), "portrait");
   assert.equal(stemWithoutPlate("PortraitYellow.jpg"), "Portrait");
 });
+
+test("separations: any color by its name is drawn in that color", () => {
+  const color = (name: string) => inkNamed(name, pens)?.color;
+  assert.deepEqual(color("Portrait_Peach.png"), { name: "peach", color: "#ffcba4" });
+  assert.equal(color("portrait-cranberry.png")?.name, "cranberry");
+  assert.equal(color("PortraitFederalBlue.png")?.name, "federal blue");
+  assert.equal(color("sunset fluorescent pink.png")?.name, "fluorescent pink");
+  // Riso's aqua, not the web's.
+  assert.equal(color("ink-3-aqua.png")?.color, "#5ec8e5");
+  // A plate's name is still a plate, and a pen's name its pen.
+  assert.equal(inkNamed("portrait_red.png", pens)?.plate, "r");
+  assert.equal(inkNamed("cheeks-pink.png", pens)?.pen?.name, "Pink");
+  assert.equal(inkNamed("IMG_0042.png", pens), undefined);
+});

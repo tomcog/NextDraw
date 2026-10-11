@@ -4032,6 +4032,96 @@ def delete_preset(name):
     return jsonify(presets=resolve_presets(presets))
 
 
+# ---- Ink colors by name, from Claude ----
+# A folder of separations names each file for its ink - "Portrait_Peach.png". The page knows a few
+# hundred color names itself (web/src/shared/lib/colorNames.ts); a name it doesn't know is asked of
+# Claude here, when this Mac has an Anthropic API key: in ANTHROPIC_API_KEY, or in the file below.
+# Without one, the page draws those layers in a dark gray and says so.
+ANTHROPIC_KEY_FILE = Path.home() / ".config" / "nextdraw" / "anthropic-key"
+_color_answers = {}  # file name -> answer, for this run: the same folder opened again isn't asked twice
+
+
+def anthropic_key():
+    key = os.environ.get("ANTHROPIC_API_KEY", "").strip()
+    if not key and ANTHROPIC_KEY_FILE.is_file():
+        key = ANTHROPIC_KEY_FILE.read_text().strip()
+    return key
+
+
+COLOR_NAMES_PROMPT = (
+    "Each line below is the file name of one grayscale separation: a single ink's channel of an image, "
+    "to be printed or plotted in that ink. File names usually say the ink - a color name such as "
+    "'peach', 'federal blue' or 'fluorescent pink', possibly run together, abbreviated or misspelled, "
+    "or a Riso, Pantone or paint name. For each line give the ink's name, short and in title case "
+    "('Peach'), and its color as #rrggbb, as the ink looks printed solid on white paper. If a name "
+    "says no ink - an original, a composite preview, a numbered scan - give an empty name and hex.")
+
+
+@app.post("/api/color-names")
+def color_names():
+    names = [str(n)[:200] for n in (request.get_json(silent=True) or {}).get("names", [])][:40]
+    if not names:
+        return jsonify(results=[])
+    key = anthropic_key()
+    if not key:
+        return jsonify(error="no-key", key_file=display_path(ANTHROPIC_KEY_FILE)), 503
+    try:
+        import anthropic  # only needed here, so a Mac without it still plots
+    except ImportError:
+        return jsonify(error="no-library"), 503
+    ask = [n for n in names if n not in _color_answers]
+    if ask:
+        # The API's own address, whatever the environment says: this asks Anthropic, nothing else.
+        client = anthropic.Anthropic(api_key=key, base_url="https://api.anthropic.com", timeout=60.0)
+        try:
+            response = client.messages.create(
+                model="claude-opus-5-5",
+                max_tokens=4000,
+                system=COLOR_NAMES_PROMPT,
+                messages=[{"role": "user", "content": "\n".join(f"{i + 1}. {n}" for i, n in enumerate(ask))}],
+                extra_headers={"anthropic-beta": "server-side-fallback-2026-07-01"},
+                extra_body={
+                    # A declined request is run again on Anthropic's recommended fallback model.
+                    "fallbacks": "default",
+                    "output_config": {
+                        "effort": "low",
+                        "format": {"type": "json_schema", "schema": {
+                            "type": "object",
+                            "properties": {"results": {"type": "array", "items": {
+                                "type": "object",
+                                "properties": {"line": {"type": "integer"}, "ink": {"type": "string"},
+                                               "hex": {"type": "string"}},
+                                "required": ["line", "ink", "hex"],
+                                "additionalProperties": False}}},
+                            "required": ["results"],
+                            "additionalProperties": False}},
+                    },
+                },
+            )
+        except anthropic.AuthenticationError:
+            return jsonify(error="bad-key", key_file=display_path(ANTHROPIC_KEY_FILE)), 503
+        except anthropic.APIConnectionError:
+            return jsonify(error="offline"), 503
+        except anthropic.APIStatusError as exc:
+            return jsonify(error=f"api-{exc.status_code}"), 503
+        if response.stop_reason == "refusal":
+            return jsonify(error="refused"), 503
+        text = "".join(b.text for b in response.content if b.type == "text")
+        try:
+            found = json.loads(text).get("results", [])
+        except ValueError:
+            return jsonify(error="unreadable"), 503
+        for item in found:
+            at = item.get("line", 0) - 1
+            hex_ = str(item.get("hex", "")).strip().lower()
+            if 0 <= at < len(ask):
+                ok = bool(re.fullmatch(r"#[0-9a-f]{6}", hex_)) and bool(str(item.get("ink", "")).strip())
+                _color_answers[ask[at]] = {"ink": str(item["ink"]).strip(), "hex": hex_} if ok else None
+        for n in ask:
+            _color_answers.setdefault(n, None)
+    return jsonify(results=[_color_answers.get(n) for n in names])
+
+
 def lan_addresses():
     """How other devices on the network can reach this computer: its Bonjour name and its IP address."""
     names = []

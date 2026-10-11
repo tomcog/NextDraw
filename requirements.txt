@@ -8,3 +8,6 @@ nextdraw_api==1.5.0
 nextdrawcore==1.5.0
 plotink==1.14.2
 ink_extensions==2.2.0
+# Image asks Claude for the color of an ink named in a separation's file name that it doesn't know
+# itself (server.py, /api/color-names). The last 0.x: 1.x needs Python 3.10, newer than macOS's own.
+anthropic>=0.125,<1

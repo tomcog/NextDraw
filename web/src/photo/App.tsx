@@ -38,7 +38,7 @@ import { dropWork, keepWork, loadWork, type Work } from "./lib/workInProgress";
 import { PhotoCard } from "./components/PhotoCard";
 import { PhotoHeader } from "./components/PhotoHeader";
 import { GENERAL_PEN } from "./lib/generalPen";
-import { folderOf, separationFiles } from "./lib/separationFolder";
+import { folderOf, inksOf, separationFiles, type Inks } from "./lib/separationFolder";
 import styles from "./App.module.css";
 
 // NextDraw Photo: a photo turned into lines for the tool's pens, saved as an ordinary layered drawing
@@ -66,7 +66,7 @@ const NO_FILLS: Fill[] = [];
 const firstLayer = (): Layer => ({ id: newLayerId(), name: "Black", color: "#262626" });
 
 /** What waits on the question about unsaved work: a new drawing, photos opened, or a file opened. */
-type Next = { kind: "new" } | { kind: "photos"; files: File[]; skipped?: string[] } | { kind: "open"; res: OpenResult };
+type Next = { kind: "new" } | { kind: "photos"; files: File[]; skipped?: string[]; found?: Inks } | { kind: "open"; res: OpenResult };
 
 export default function App() {
   const [page, setPage] = useState<Page>({ w: 11, h: 8.5 });
@@ -297,20 +297,20 @@ export default function App() {
 
   // Photos opened: a new drawing named after them, and the photo put in once it's in place - one
   // photo, or several separations (…_C, …_M, …_Y, …_K) for a layer each.
-  const [pendingPhotos, setPendingPhotos] = useState<{ files: File[]; skipped: string[] } | null>(null);
-  const startPhotos = (files: File[], skipped: string[] = []) => {
+  const [pendingPhotos, setPendingPhotos] = useState<{ files: File[]; skipped: string[]; found?: Inks } | null>(null);
+  const startPhotos = (files: File[], skipped: string[] = [], found?: Inks) => {
     newDrawing();
     // A new photo is first seen as it is, before any effect: the first view in the bar.
     setConvertView("picture");
     file.setName(files.length > 1 || skipped.length ? stemWithoutPlate(files[0].name, tool.palette, folderOf(files[0])) : files[0].name.replace(/\.[^.]+$/, ""));
-    setPendingPhotos({ files, skipped });
+    setPendingPhotos({ files, skipped, found });
   };
   useEffect(() => {
     if (!pendingPhotos || shapes.length) return;
-    const { files, skipped } = pendingPhotos;
+    const { files, skipped, found } = pendingPhotos;
     setPendingPhotos(null);
     // From a folder, even one file is a separation: its name said its ink.
-    if (files.length > 1 || skipped.length) addSeparations(files, skipped);
+    if (files.length > 1 || skipped.length) addSeparations(files, skipped, found);
     else addPhoto(files[0]);
   }, [pendingPhotos, shapes.length]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -402,7 +402,7 @@ export default function App() {
   const goOn = (next: Next) => {
     setConfirmNext(null);
     if (next.kind === "new") newDrawing();
-    else if (next.kind === "photos") startPhotos(next.files, next.skipped);
+    else if (next.kind === "photos") startPhotos(next.files, next.skipped, next.found);
     else openDrawing(next.res);
   };
   const ask = (next: Next) => (file.dirty && shapes.length ? setConfirmNext(next) : goOn(next));
@@ -730,10 +730,21 @@ export default function App() {
       busy={busy}
             hasShapes={shapes.length > 0}
             onOpen={() => setBrowsing("drawing")}
-            onOpenPhotos={(files) => files.length && ask({ kind: "photos", files })}
-            onOpenFolder={(files) => {
-              const { use, skipped } = separationFiles(files, tool.palette ?? []);
-              if (use.length) ask({ kind: "photos", files: use, skipped });
+            onOpenPhotos={async (files) => {
+              if (!files.length) return;
+              if (files.length === 1) return ask({ kind: "photos", files });
+              // Several at once are separations: each one's ink is read from its name, Claude asked
+              // for the names this app doesn't know.
+              setMessage({ text: "Reading the inks from the file names…", ok: true, progress: true });
+              const found = await inksOf(files, tool.palette ?? []);
+              setMessage({ text: "", ok: true });
+              ask({ kind: "photos", files, found });
+            }}
+            onOpenFolder={async (files) => {
+              setMessage({ text: "Reading the inks from the file names…", ok: true, progress: true });
+              const { use, skipped, ...found } = await separationFiles(files, tool.palette ?? []);
+              setMessage({ text: "", ok: true });
+              if (use.length) ask({ kind: "photos", files: use, skipped, found });
               else setMessage({ text: "There are no images in that folder", ok: false });
             }}
             onNew={() => ask({ kind: "new" })}

@@ -13,7 +13,7 @@ import {
 import { boxOf, newLayerId, newShapeId, type Layer, type Page, type Shape } from "../../shared/lib/drawing/shapes";
 import { samplePhoto, type Candidate } from "./choosePens";
 import { searchPensOffPage } from "./penSearch";
-import { folderOf } from "./separationFolder";
+import { folderOf, type Inks } from "./separationFolder";
 
 export interface PhotoContext {
   /** The one shape picked, if one is. */
@@ -132,7 +132,7 @@ export function photoActions(ctx: PhotoContext) {
     * that named no ink. Sized by the first, and the rest over it, so they register. Layers stack by
     * their pens' lightness, lightest at the bottom.
     */
-  const addSeparations = async (files: File[], skipped: string[] = []) => {
+  const addSeparations = async (files: File[], skipped: string[] = [], found?: Inks) => {
     if (!active || !files.length) return;
     try {
       const read = await Promise.allSettled(files.map(async (file) => {
@@ -147,7 +147,8 @@ export function photoActions(ctx: PhotoContext) {
         return;
       }
       const pens = tool2?.palette ?? [];
-      const inks = copies.map(({ file }) => inkNamed(file.name, pens));
+      // The inks as read already - from the names, and from Claude for names this app doesn't know.
+      const inks = copies.map(({ file }) => (found ? found.inks.get(file) : inkNamed(file.name, pens)));
       // Four files and none named: C, M, Y and K, in the order they came.
       const plates = inks.every((ink) => !ink) && copies.length === 4 ? [...PLATES] : inks.map((ink) => ink?.plate);
       // Each plate's pen, chosen together so no two plates share one.
@@ -161,7 +162,9 @@ export function photoActions(ctx: PhotoContext) {
       const group = copies.length > 1 ? newShapeId() : undefined;
       const parts = copies.map(({ file, copy }, i) => {
         const plate = plates[i];
-        const named = inks[i]?.pen;
+        // A pen by its name, or a color by its name: "Peach" is drawn in peach, whatever pen there is,
+        // until one is chosen for it in the Layers card.
+        const named = inks[i]?.pen ?? inks[i]?.color;
         const pen = plate ? matched[used.indexOf(plate)] ?? darkest : named ?? darkest;
         const separation = plate ? PLATE_AIMS[plate].name : named?.name ?? file.name.replace(/\.[^.]+$/, "");
         return {
@@ -195,15 +198,19 @@ export function photoActions(ctx: PhotoContext) {
       // Pictures of other proportions are stretched over the first, which puts them out of register.
       const aspect = first.copy.width / first.copy.height;
       const odd = copies.filter(({ copy }) => Math.abs(copy.width / copy.height / aspect - 1) > 0.01).map(({ file }) => file.name);
+      // Files whose ink no name said - drawn in the darkest pen - and why Claude didn't say either.
+      const unknown = copies.filter((_, i) => !inks[i] && !plates[i]).map(({ file }) => file.name);
       const left = [
         ...(unreadable.length ? [`couldn't read ${unreadable.join(", ")}`] : []),
+        ...(unknown.length ? [`couldn't tell the ink of ${unknown.join(", ")}${found?.why ? ` (${found.why})` : ""}, so ${unknown.length === 1 ? "it's" : "they're"} in ${darkest?.name ?? "the darkest pen"} until you pick a color`] : []),
         ...(skipped.length ? [`left out ${skipped.join(", ")}, which ${skipped.length === 1 ? "names" : "name"} no ink`] : []),
       ];
       setMessage(odd.length
         ? { text: `${odd.join(", ")} ${odd.length === 1 ? "isn't" : "aren't"} the same shape as ${first.file.name}, so ${odd.length === 1 ? "it's" : "they're"} stretched to it and won't line up`, ok: false }
         : unreadable.length
           ? { text: `Added ${copies.length} separations, but ${left.join("; ")}. Save ${unreadable.length === 1 ? "it" : "them"} as PNG or JPEG to add ${unreadable.length === 1 ? "it" : "them"}.`, ok: false }
-          : { text: `Added ${copies.length} separations: ${parts.map((p) => `${p.separation} in ${p.layerName}`).join(", ")}${left.length ? `. ${left.join("; ").replace(/^./, (c) => c.toUpperCase())}` : ""}`, ok: true });
+          // An ink that couldn't be told is said at the top, where it's seen: its layer needs a color.
+          : { text: `Added ${copies.length} separations: ${parts.map((p) => `${p.separation} in ${p.layerName}`).join(", ")}${left.length ? `. ${left.join("; ").replace(/^./, (c) => c.toUpperCase())}` : ""}`, ok: !unknown.length });
     } catch (err) {
       setMessage({ text: (err as Error).message, ok: false });
     }

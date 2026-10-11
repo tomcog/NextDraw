@@ -3,6 +3,7 @@
 // few numbers, and the lines are made from those every time. Nothing here is a shape to edit line by
 // line: a photo is tens of thousands of strokes, and it is the photo and its numbers that are edited.
 
+import { colorNamed } from "../colorNames";
 import type { Point } from "./parametric";
 import { fitNodes, pathData, type Node } from "./path";
 
@@ -441,10 +442,11 @@ const nameWords = (name: string) =>
  * "portrait-cyan-channel.tif", "PortraitMagenta.jpg", "img yellow 2.png", "portrait_K.png". In turn:
  * a plate's name as a word of its own (CMYK and the extra inks: orange, green, red, violet), the
  * last such word winning; a long plate name run into others ("portraitcyan"); one of the palette's
- * pens by its name ("Pink", "Light gray"), the longest name found; or C, M, Y or K as a word of its
- * own. Undefined when the name says no ink.
+ * pens by its name ("Pink", "Light gray"), the longest name found; any other color by its name
+ * (colorNames.ts: "peach", "cranberry", "federal blue"); or C, M, Y or K as a word of its own.
+ * Undefined when the name says no ink.
  */
-export function inkNamed<P extends { name: string }>(name: string, pens: P[] = []): { plate?: Plate; pen?: P } | undefined {
+export function inkNamed<P extends { name: string }>(name: string, pens: P[] = []): { plate?: Plate; pen?: P; color?: { name: string; color: string } } | undefined {
   const words = nameWords(name);
   for (let i = words.length - 1; i >= 0; i--) {
     const plate = PLATE_WORDS.find(([w]) => w === words[i])?.[1];
@@ -457,7 +459,12 @@ export function inkNamed<P extends { name: string }>(name: string, pens: P[] = [
   const spaced = ` ${words.join(" ")} `;
   const pen = pens.filter((p) => nameWords(p.name).length && spaced.includes(` ${nameWords(p.name).join(" ")} `))
     .sort((a, b) => b.name.length - a.name.length)[0];
-  if (pen) return { pen };
+  // Any other color by its name - "peach", "cranberry", "federal blue" - drawn in that color, whatever
+  // pen there is: one can be chosen for it later. The longer name wins, so "fluorescent pink" isn't
+  // taken for the pen called Pink.
+  const color = colorNamed(words);
+  if (pen && (!color || nameWords(pen.name).length >= color.name.split(" ").length)) return { pen };
+  if (color) return { color };
   for (let i = words.length - 1; i >= 0; i--) {
     const plate = (["c", "m", "y", "k"] as Plate[]).find((p) => p === words[i]);
     if (plate) return { plate };
