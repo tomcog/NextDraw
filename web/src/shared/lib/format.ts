@@ -36,9 +36,22 @@ export const listOf = (names: string[]) =>
   names.length < 2 ? names.join("") : `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}`;
 
 /**
- * How far an arrow key moves a number box, everywhere in NextDraw: up or down one of whatever the
- * field shows - a millimetre, a degree, a percent - or ten with Shift, whatever its step. Null for
- * any other key. The caller stops the browser's own step (`preventDefault`) when it uses this.
+ * How far an arrow key moves a number box, everywhere in NextDraw, or null for any other key. The
+ * caller stops the browser's own step (`preventDefault`) when it uses this.
+ *
+ * Scaled to the field's range (Tom, 2026-10-11): about a fiftieth of it, rounded down to a power of
+ * ten, so a 0-20 mm smoothing moves 0.1 a press and a 0-4 in margin 0.01, where a whole unit would
+ * leap across it. Never more than one unit - a millimetre, a degree, a percent - whatever coarser
+ * step the field has (an angle stepping by 15° still moves 1°). A field of whole numbers - its step
+ * a whole number, a count or a percent - still moves by one. Ten times as far with Shift. A field
+ * with no range moves one unit.
  */
-export const arrowStep = (e: { key: string; shiftKey: boolean }): number | null =>
-  e.key === "ArrowUp" ? (e.shiftKey ? 10 : 1) : e.key === "ArrowDown" ? (e.shiftKey ? -10 : -1) : null;
+export const arrowStep = (e: { key: string; shiftKey: boolean }, range: { min?: number; max?: number; step?: number } = {}): number | null => {
+  const sign = e.key === "ArrowUp" ? 1 : e.key === "ArrowDown" ? -1 : 0;
+  if (!sign) return null;
+  const span = (range.max ?? NaN) - (range.min ?? NaN);
+  const scaled = span > 0 ? Math.min(1, 10 ** Math.floor(Math.log10(span / 50))) : 1;
+  const whole = range.step !== undefined && Number.isInteger(range.step) && range.step >= 1;
+  const unit = whole ? 1 : scaled;
+  return Number((sign * unit * (e.shiftKey ? 10 : 1)).toPrecision(6));
+};

@@ -73,8 +73,8 @@ export function Slider({ label, value, min = 0, max = 100, step = 1, format, dec
         onBlur={(e) => commit(e.target.value)}
         onKeyDown={(e) => {
           if (e.key === "Enter") commit((e.target as HTMLInputElement).value);
-          // One unit a press, ten with Shift, applied straight away.
-          const by = arrowStep(e);
+          // A step scaled to the slider's range, ten with Shift, applied straight away.
+          const by = arrowStep(e, { min, max, step });
           if (by !== null) {
             e.preventDefault();
             const current = Number(draft);

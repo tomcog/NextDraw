@@ -21,9 +21,9 @@ interface Props {
 // as "" - and an empty box read as a number is 0, so the value snaps to the minimum and the rest of
 // the typing lands on top of whatever that put in the box. So the draft is free text until it's
 // committed on blur or Enter, and only then is it clamped; a draft that isn't a number at all leaves
-// the value alone. The arrow keys move it one unit, ten with Shift, and commit as they go, so holding
-// one still walks the value.
-export function NumberField({ label, value, min, max, step = 1, disabled, unit, hideLabel, onChange }: Props) {
+// the value alone. The arrow keys move it by a step scaled to its range (arrowStep), ten with Shift,
+// and commit as they go, so holding one still walks the value.
+export function NumberField({ label, value, min, max, step, disabled, unit, hideLabel, onChange }: Props) {
   const [draft, setDraft] = useState(String(value));
   useEffect(() => setDraft(String(value)), [value]);
 
@@ -50,7 +50,7 @@ export function NumberField({ label, value, min, max, step = 1, disabled, unit, 
       style={unit ? { paddingRight: `${0.5 + unit.length * 0.5}rem` } : undefined}
       type="number"
       inputMode="decimal"
-      step={step}
+      step={step ?? 1}
       min={min}
       max={max}
       value={draft}
@@ -59,7 +59,7 @@ export function NumberField({ label, value, min, max, step = 1, disabled, unit, 
       onBlur={(e) => commit(e.target.value)}
       onKeyDown={(e) => {
         if (e.key === "Enter") commit((e.target as HTMLInputElement).value);
-        const by = arrowStep(e);
+        const by = arrowStep(e, { min, max, step });
         if (by !== null) {
           e.preventDefault();
           const current = Number(draft);
