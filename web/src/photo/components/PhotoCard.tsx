@@ -286,6 +286,10 @@ export function PhotoCard({ shape, title, shapes, layers, busy, all, onAll, scal
   const angleField = (
     <NumberField label="Angle" unit="°" min={-180} max={180} step={5} value={photo.angle} onChange={(angle) => (all && photo.group ? actions.setAngles({ by: angle - photo.angle }) : actions.set({ angle }))} />
   );
+  // Squiggle's own angle: every layer level, left to right, unless turned - not hatching's angles by color.
+  const squiggleAngleField = (
+    <NumberField label="Angle" unit="°" min={-180} max={180} step={5} value={photo.squiggleAngle ?? 0} onChange={(v) => actions.set({ squiggleAngle: v || undefined })} />
+  );
   // A SquiggleDraw control: set, it keeps only what differs from the sketch's default.
   const setSquiggle = (change: Partial<SquiggleDraw>) => {
     const next: Partial<SquiggleDraw> = { ...(photo.squiggleDraw ?? {}), ...change };
@@ -409,10 +413,9 @@ export function PhotoCard({ shape, title, shapes, layers, busy, all, onAll, scal
                   </>
                 ) : photo.style === "squiggle" ? (
                   <>
-                    {/* As Hatching: the color mode first, then the layers' angles. */}
+                    {/* As Hatching: the color mode first. The rows are level, every layer alike, unless turned here. */}
                     {colourMode}
                     {photo.group && bleed}
-                    {anglePresets}
                     {/* Which SquiggleDraw: the Processing sketch, whose waves tighten in the darks, or the
                       Inkscape extension's grid, whose waves keep their frequency and only grow. */}
                     <SegmentedControl size="sm" variant="dark" aria-label="SquiggleDraw version">
@@ -423,7 +426,7 @@ export function PhotoCard({ shape, title, shapes, layers, busy, all, onAll, scal
                       <>
                         {/* The extension's own controls, its names, ranges and numbers; the angle and lifting are Photo's. */}
                         <div className={styles.fillRow}>
-                          {angleField}
+                          {squiggleAngleField}
                           {inkscapeField("rows")}
                         </div>
                         <div className={styles.fillRow}>
@@ -447,7 +450,7 @@ export function PhotoCard({ shape, title, shapes, layers, busy, all, onAll, scal
                         {/* SquiggleDraw's own controls, its names, ranges and numbers, so a photo comes out as
                           the sketch draws it; the angle, smoothness and lifting are Photo's, over it. */}
                         <div className={styles.fillRow}>
-                          {angleField}
+                          {squiggleAngleField}
                           {squiggleField("lines")}
                         </div>
                         <div className={styles.fillRow}>

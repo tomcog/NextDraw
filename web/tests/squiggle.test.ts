@@ -75,14 +75,37 @@ test("squiggle, the Inkscape way: a row per grid row, `freq` waves a cell, at mo
   assert.ok(firstX(ink({ cols: 100 }, { squiggleLift: true }).passes[0]) > 0.01);
 });
 
+test("squiggle: level, left to right, whatever hatching's angle - turned only by its own", async () => {
+  await gradient("data:gradient");
+  for (const squiggleVersion of [undefined, "inkscape"] as const) {
+    const at = (more: Partial<Photo>) => photoMarks(photo({ squiggleVersion, squiggleDraw: { lines: 20 }, squiggleInkscape: { rows: 10 }, ...more }), 4, 2)!.passes[0];
+    assert.equal(at({ angle: 75 }), at({ angle: 0 }), "hatching's angle leaves squiggles alone");
+    assert.notEqual(at({ squiggleAngle: 30 }), at({}), "its own angle turns them");
+  }
+});
+
+test("squiggle: every layer's rows run the whole width, flat where it has nothing to draw, unless lifting", async () => {
+  await gradient("data:gradient");
+  // The dark band: nothing of it on the photo's lighter left half.
+  const xs = (d: string) => d.split("M").filter(Boolean).map((run) => run.split(/[C ]/).filter(Boolean).map(Number).filter((_, i) => i % 2 === 0));
+  for (const squiggleVersion of [undefined, "inkscape"] as const) {
+    const at = (more: Partial<Photo>) => photoMarks(photo({ squiggleVersion, band: [0.5, 1], squiggleDraw: { lines: 20 }, squiggleInkscape: { rows: 10 }, ...more }), 4, 2)!;
+    const runs = xs(at({}).passes[0]);
+    assert.equal(runs.length, squiggleVersion ? 10 : 20, "one line a row");
+    for (const r of runs) assert.ok(Math.min(...r) < 0.01 && Math.max(...r) > 4 - 0.01, "edge to edge");
+    const lifted = xs(at({ squiggleLift: true }).passes[0]);
+    assert.ok(Math.min(...lifted.map((r) => Math.min(...r))) > 1.5, "lifting, it starts where the dark band does");
+  }
+});
+
 test("squiggle: no angle or row spacing throws, even where a run is a single point", async () => {
   await gradient("data:gradient");
   for (let angle = -180; angle <= 180; angle += 5) for (const lines of [10, 60, 200]) {
     for (const band of [undefined, [0, 0.5], [0.5, 1]] as const) {
-      const m = photoMarks(photo({ angle, squiggleDraw: { lines }, squiggleJoin: angle % 10 === 0, ...(band ? { band: [band[0], band[1]] as [number, number] } : {}) }), 3, 2)!;
+      const m = photoMarks(photo({ squiggleAngle: angle, squiggleDraw: { lines }, squiggleJoin: angle % 10 === 0, ...(band ? { band: [band[0], band[1]] as [number, number] } : {}) }), 3, 2)!;
       assert.ok(!/NaN|Infinity/.test(m.passes[0]));
       if (angle % 15 === 0) {
-        const k = photoMarks(photo({ angle, squiggleVersion: "inkscape", squiggleInkscape: { rows: Math.round(lines / 4), path: angle % 30 === 0 ? "join" : "uni" }, ...(band ? { band: [band[0], band[1]] as [number, number] } : {}) }), 3, 2)!;
+        const k = photoMarks(photo({ squiggleAngle: angle, squiggleVersion: "inkscape", squiggleInkscape: { rows: Math.round(lines / 4), path: angle % 30 === 0 ? "join" : "uni" }, ...(band ? { band: [band[0], band[1]] as [number, number] } : {}) }), 3, 2)!;
         assert.ok(!/NaN|Infinity/.test(k.passes[0]));
       }
     }
