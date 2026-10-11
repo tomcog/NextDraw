@@ -392,7 +392,7 @@ export function PhotoCard({ shape, title, shapes, layers, busy, all, onAll, scal
           <Card variant="flat" className={styles.controls}>
             <div className={`${styles.cardBody} ${controls.cardSections}`}>
               {/* The effect's own numbers, under its name: the toolbar on the left chooses which. */}
-              <Section title={<span className={styles.effectTitle}>{effect.icon}{effect.label}</span>}>
+              <Section title={<span className={controls.iconTitle}>{effect.icon}{effect.label}</span>}>
                 {photo.style === "silhouette" ? (
                   <div className={styles.fillRow}>
                     <NumberField label="Paper lighter than" unit="%" min={1} max={99} step={1} value={Math.round((photo.silhouetteFrom ?? SILHOUETTE_DEFAULTS.from) * 100)} onChange={(v) => actions.set({ silhouetteFrom: v / 100 })} />

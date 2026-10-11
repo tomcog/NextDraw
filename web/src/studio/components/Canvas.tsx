@@ -57,6 +57,8 @@ interface Props {
   layers: Layer[];
   /** The layer new shapes are drawn onto. */
   activeLayer: string;
+  /** The targeted layers: only their shapes are picked, by a press or a band. */
+  targetLayers: Set<string>;
   /** The single-stroke fonts that have been loaded, by name, and the one a new text is set in. */
   fonts: Record<string, StrokeFont>;
   font: string;
@@ -335,7 +337,7 @@ const LayerMarks = memo(function LayerMarks({ shapes, fills, fonts, photos }: { 
 // The page at true proportions, with a one-inch grid. It keeps the page's own proportions and is
 // sized to them (--canvas-aspect), so the drawing gets as large as the space allows - the same way
 // Plot's preview fills its column.
-export function Canvas({ bar, page, paperColor, shapes, fills, layers, activeLayer, model, toolbar, fonts, font, snap, penWidthMm, inkOpacity, inkBuilds, inkOpaque = false, inkBuild, view, tool, selected, onSelect, onAdd, onUpdate, onUpdateMany, onEditStart }: Props) {
+export function Canvas({ bar, page, paperColor, shapes, fills, layers, activeLayer, targetLayers, model, toolbar, fonts, font, snap, penWidthMm, inkOpacity, inkBuilds, inkOpaque = false, inkBuild, view, tool, selected, onSelect, onAdd, onUpdate, onUpdateMany, onEditStart }: Props) {
   const bed = useRef<BedCanvasHandle>(null);
   const [drag, setDrag] = useState<Drag | null>(null);
   const pointer = useRef<number | null>(null);
@@ -613,8 +615,10 @@ export function Canvas({ bar, page, paperColor, shapes, fills, layers, activeLay
         x0: Math.min(drag.from.x, drag.to.x), y0: Math.min(drag.from.y, drag.to.y),
         x1: Math.max(drag.from.x, drag.to.x), y1: Math.max(drag.from.y, drag.to.y),
       };
-      // Anything the band touches, so a shape doesn't have to be swallowed whole to be caught.
+      // Anything the band touches, so a shape doesn't have to be swallowed whole to be caught - on the
+      // target layer only, as a press picks.
       const caught = shown.filter((sh) => {
+        if (!targetLayers.has(sh.layerId)) return false;
         const b = boxOf(sh);
         return b.x0 <= band.x1 && b.x1 >= band.x0 && b.y0 <= band.y1 && b.y1 >= band.y0;
       });
@@ -720,6 +724,9 @@ export function Canvas({ bar, page, paperColor, shapes, fills, layers, activeLay
             <g className={styles.chrome}>
               {shown.map((sh) => {
                 if (bigLayers.has(sh.layerId)) return null; // picked up with the rest of their layer
+                // Only the targeted layers' shapes can be picked: a press on another layer's goes
+                // through to the page, as if it weren't there.
+                if (!targetLayers.has(sh.layerId)) return null;
                 // Not in Preview, which shows only what the pen will draw: there the hatch is the shape.
                 const guide = sh.outline === false && !inkSim;
                 return (

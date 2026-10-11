@@ -10,14 +10,14 @@ import { FileBrowser, type CombineResult, type OpenResult } from "../shared/comp
 import { Section } from "../shared/components/controls/Section";
 import controls from "../shared/components/controls/controls.module.css";
 import { api } from "../shared/lib/api";
-import { openInPhoto, showApp } from "../shared/lib/apps";
+import { openInPhoto } from "../shared/lib/apps";
 import { load, save as remember } from "../shared/lib/storage";
 import { DEFAULT_SETTINGS, PAPER_SIZES } from "../shared/lib/constants";
 import type { Info, PenColor, PlotterModel, Preset } from "../shared/lib/types";
 import { listOf } from "../shared/lib/format";
 import { lightness } from "../shared/lib/color";
 import { joinLayerName, labelAfter, splitLayerName } from "../shared/lib/ink";
-import { HistoryToolbar, SetupToolbar, type View } from "../shared/components/PreviewToolbar";
+import { HistoryToolbar, type View } from "../shared/components/PreviewToolbar";
 import { StatusBanner } from "../shared/components/StatusBanner";
 import { AppSwitch } from "../shared/components/AppSwitch";
 import type { Zoom } from "../shared/components/BedCanvas";
@@ -25,7 +25,6 @@ import { Canvas, type Tool } from "./components/Canvas";
 import { mergeLines } from "./lib/mergeLines";
 import { SizePopover } from "./components/SizePopover";
 import { StudioHeader } from "./components/StudioHeader";
-import { ThemeToggle } from "../shared/components/ThemeToggle";
 import { canFill, newFillId, shapeAsOne, type Fill } from "../shared/lib/drawing/hatch";
 import { type Curve, type Point } from "../shared/lib/drawing/parametric";
 import { fontNames, loadFont, type StrokeFont } from "../shared/lib/drawing/font";
@@ -48,7 +47,7 @@ import { FileSection } from "../shared/components/controls/FileSection";
 import { GridSection } from "./components/panels/GridSection";
 import { SIMPLIFIER_START, SimplifierSection, type SimplifierState } from "./components/panels/SimplifierSection";
 import { ToolPicker } from "./components/panels/ToolPicker";
-import { LayersSection, type AlignEdge } from "./components/panels/LayersSection";
+import { LayersSection } from "./components/panels/LayersSection";
 import { boxAround, boxOf, clampToPage, groupLabel, groupsOf, moveBy, newGroupId, newLayerId, newShapeId, resizeTo, shapeName, turnAround, withWholeGroups, type Layer, type Page, type Shape } from "../shared/lib/drawing/shapes";
 import { buildSvg, svgForMarks } from "../shared/lib/drawing/svg";
 import { drawnMiddle, fitToPage, reshapeDrawing, runsOffPage, turnDrawingLeft } from "./lib/drawing";
@@ -146,7 +145,16 @@ export default function App() {
  const [shapes, setShapes] = useState<Shape[]>([]);
  const [fills, setFills] = useState<Fill[]>([]);
  const [layers, setLayers] = useState<Layer[]>(() => [{ id: newLayerId(), name: "Black", color: "#262626" }]);
- const [activeLayer, setActiveLayer] = useState<string>("");
+ // The targeted layers, in the order they were targeted: one, or several worked on as one - picked,
+ // listed, turned and simplified together. New shapes land on the one targeted last. Anything that
+ // sets a single layer (opening, adding, deleting one) sets it alone.
+ const [targets, setTargets] = useState<string[]>([]);
+ const activeLayer = targets[targets.length - 1] ?? "";
+ const setActiveLayer = (to: string | ((current: string) => string)) =>
+  setTargets((list) => {
+   const id = typeof to === "function" ? to(list[list.length - 1] ?? "") : to;
+   return id ? [id] : [];
+  });
  const [colorMenu, setColorMenu] = useState<{ id: string; anchor: HTMLElement } | null>(null);
  // A tool's measured hatch numbers are the sensible starting point for a new fill, and they live in
  // Plot's presets rather than being invented here.
@@ -191,11 +199,19 @@ export default function App() {
  const pick = (id: string | null) => setSelected(id ? [id] : []);
  // Choosing a layer in the Layers card only chooses the layer: its paths are listed, but none is
  // selected until one is clicked, on the page or in the list. Whatever was selected on the layer
- // before is let go, so nothing is left selected out of sight.
- const switchLayer = (id: string) => {
-  if (id === activeLayer) return;
-  setActiveLayer(id);
-  setSelected([]);
+ // before is let go, so nothing is left selected out of sight. With `add`, the layer joins the
+ // targets, or leaves them - never the last one - and what was picked on the others stays picked.
+ const switchLayer = (id: string, add = false) => {
+  if (!add) {
+   if (targets.length === 1 && id === activeLayer) return;
+   setTargets([id]);
+   setSelected([]);
+   return;
+  }
+  const next = targets.includes(id) ? targets.filter((t) => t !== id) : [...targets, id];
+  if (!next.length) return;
+  setTargets(next);
+  setSelected((ids) => ids.filter((sid) => next.includes(shapes.find((sh) => sh.id === sid)?.layerId ?? "")));
  };
  const [busy, setBusy] = useState(false);
  const [browserOpen, setBrowserOpen] = useState(false);
@@ -222,6 +238,9 @@ export default function App() {
  useEffect(() => remember("studio-grid-card", gridCard), [gridCard]);
  // The Simplifier as the tool in hand, its card out. Put down each time the page opens, as a tool is.
  const [simplifierCard, setSimplifierCard] = useState(false);
+ // The Layers card, out or put away from its switch under Select; remembered, like the other cards.
+ const [layersCard, setLayersCard] = useState(() => load<boolean>("studio-layers-card") ?? true);
+ useEffect(() => remember("studio-layers-card", layersCard), [layersCard]);
  // The Simplifier's settings, in mm on the paper, and whether it works on the whole drawing or one layer.
  // Which simplifications are ticked and how far each reaches, until Simplify keeps them and clears it.
  const [simplifier, setSimplifier] = useState<SimplifierState>(SIMPLIFIER_START);
@@ -481,7 +500,7 @@ export default function App() {
  };
 
  /**
-  * Nudge everything picked. The arrow keys move it a sixteenth of an inch, a whole inch with Shift
+  * Nudge everything picked. The arrow keys move it a point (1/72 in), a whole inch with Shift
   * and a hundredth with Alt for the last little bit; the limit is the box round the whole selection,
   * so a group slides along the page's edge rather than piling up against it.
   */
@@ -528,7 +547,7 @@ export default function App() {
 
  useEffect(() => {
   const onKey = (e: KeyboardEvent) => {
-   const step = e.shiftKey ? 1 : e.altKey ? 0.01 : 1 / 16;
+   const step = e.shiftKey ? 1 : e.altKey ? 0.01 : 1 / 72; // a point
    const by: Record<string, [number, number]> = {
     ArrowLeft: [-step, 0], ArrowRight: [step, 0], ArrowUp: [0, -step], ArrowDown: [0, step],
    };
@@ -770,8 +789,6 @@ export default function App() {
 
  const tool2 = presets.find((t) => t.name === toolName) ?? null;
 
- // Setup: away from the drawing, getting the drawing tools ready.
- const [setupOpen, setSetupOpen] = useState(false);
 
  const palette: PenColor[] = tool2?.palette?.length ? tool2.palette : [PLAIN_PEN];
  // Darkest last in the list, so the default pen is the one you'd reach for first.
@@ -863,32 +880,13 @@ export default function App() {
  const fillLead = chosen ?? fillTargets[0] ?? null;
  const chosenFills = fillLead ? fills.filter((f) => f.shapeId === fillLead.id) : [];
 
- // The layer new shapes land on, and the one the Shapes card lists. Always a real layer.
+ // The layer new shapes land on. Always a real layer. And every layer targeted with it, in the
+ // order they stack: the paths card lists what's on all of them, and they turn as one.
  const active = layers.find((l) => l.id === activeLayer) ?? layers[0];
- const onActive = shapes.filter((sh) => sh.layerId === active?.id);
+ const targetLayers = layers.filter((l) => l.id === active?.id || targets.includes(l.id));
+ const targetIds = useMemo(() => new Set(targetLayers.map((l) => l.id)), [targetLayers.map((l) => l.id).join("|")]);
+ const onActive = shapes.filter((sh) => targetIds.has(sh.layerId));
 
- // Lining one layer up with another: everything on the active layer moved as one, so its box meets
- // the other layer's - or the paper's - at the edge or middle asked for. The layers that can be
- // lined up with are those with something on them; the paper when there's none.
- const [alignTo, setAlignTo] = useState("");
- // A layer that is all another part of the same photo moves with the active one, so it can't be
- // lined up with: the photo's layers are already in register.
- const activePhotos = new Set(onActive.flatMap((sh) => (sh.photo?.group ? [sh.photo.group] : [])));
- const alignable = layers.filter((l) => {
-  if (l.id === active?.id) return false;
-  const on = shapes.filter((sh) => sh.layerId === l.id);
-  return on.length > 0 && !on.every((sh) => sh.photo?.group && activePhotos.has(sh.photo.group));
- });
- const alignTarget = alignTo === "paper" || alignable.some((l) => l.id === alignTo) ? alignTo : alignable[0]?.id ?? "paper";
- const alignLayer = (edge: AlignEdge) => {
-  if (!onActive.length) return;
-  const to = alignTarget === "paper" ? { x0: 0, y0: 0, x1: page.w, y1: page.h } : boxAround(shapes.filter((sh) => sh.layerId === alignTarget));
-  const from = boxAround(onActive);
-  const dx = edge === "left" ? to.x0 - from.x0 : edge === "right" ? to.x1 - from.x1 : edge === "centre" ? (to.x0 + to.x1 - from.x0 - from.x1) / 2 : 0;
-  const dy = edge === "top" ? to.y0 - from.y0 : edge === "bottom" ? to.y1 - from.y1 : edge === "middle" ? (to.y0 + to.y1 - from.y0 - from.y1) / 2 : 0;
-  if (Math.abs(dx) < 1e-6 && Math.abs(dy) < 1e-6) return;
-  moveShapes(onActive.map((sh) => sh.id), dx, dy);
- };
  // Turning the active layer as one, about the middle of the box round it: what dragging the turn grip
  // does to the layer picked whole, by an exact angle. Photos stay as they are - they stand square to
  // the page, and their layers are in register with each other - and turn in Photo.
@@ -1053,16 +1051,19 @@ export default function App() {
   */
  const simplifierRun = (list: Shape[]) => {
   const inches = (k: keyof SimplifierState["on"]) => (simplifier.on[k] ? simplifier.mm[k] / 25.4 : 0);
-  const opts = { mergeShort: inches("mergeShort"), straighten: inches("straighten"), joinEnds: inches("joinEnds"), dropTiny: inches("dropTiny") };
-  const onLayer = (s: Shape) => simplifyScope === "drawing" || s.layerId === activeLayer;
+  const opts = {
+   mergeShort: inches("mergeShort"), straighten: inches("straighten"), joinEnds: inches("joinEnds"), dropTiny: inches("dropTiny"),
+   pruneEvery: simplifier.prune.on ? simplifier.prune.every : 0, pruneMode: simplifier.prune.mode, pruneSeed: simplifier.prune.seed,
+  };
+  const onLayer = (s: Shape) => simplifyScope === "drawing" || targetIds.has(s.layerId);
   return { ...simplifyDrawing(list, onLayer, opts), before: pointCount(list.filter(onLayer)) };
  };
  const simplifierPreview = useMemo(() => {
   if (!simplifierCard) return null;
   const run = simplifierRun(shapes);
-  return { ...run, after: pointCount(run.shapes.filter((s) => simplifyScope === "drawing" || s.layerId === activeLayer)) };
+  return { ...run, after: pointCount(run.shapes.filter((s) => simplifyScope === "drawing" || targetIds.has(s.layerId))) };
   // eslint-disable-next-line react-hooks/exhaustive-deps
- }, [simplifierCard, shapes, simplifier, simplifyScope, activeLayer]);
+ }, [simplifierCard, shapes, simplifier, simplifyScope, targetIds]);
  const applySimplifier = () => {
   if (!simplifierPreview) return;
   const { shapes: simpler, gone } = simplifierPreview;
@@ -1076,7 +1077,7 @@ export default function App() {
  };
  // While anything is ticked, the page shows the drawing simplified, and takes no edits: a shape dragged
  // there would be written back simplified, and kept without Simplify being pressed.
- const simplifierShowing = Boolean(simplifierCard && simplifierPreview && Object.values(simplifier.on).some(Boolean));
+ const simplifierShowing = Boolean(simplifierCard && simplifierPreview && (Object.values(simplifier.on).some(Boolean) || simplifier.prune.on));
  const keepAsIs = () => {};
 
  /** Take a joined shape apart again: each run becomes a shape of its own. */
@@ -1228,7 +1229,7 @@ export default function App() {
  const selectOnCanvas = (ids: string[]) => {
   setSelected(ids);
   const first = shapes.find((s) => s.id === ids[0]);
-  if (first?.layerId && first.layerId !== activeLayer) setActiveLayer(first.layerId);
+  if (first?.layerId && !targetIds.has(first.layerId)) setActiveLayer(first.layerId);
  };
 
  // Picking from the list: the row's box puts a path in or takes it out, as a checkbox would; its
@@ -1376,26 +1377,6 @@ export default function App() {
   />
  );
 
- // Setup: getting the drawing tools ready, away from the drawing. Calibrating the pens is Photo's.
- const setupRail = (
-  <Card variant="flat" className={styles.controls}>
-   <div className={`${styles.cardBody} ${controls.cardSections}`}>
-    <Section title="Setup">
-     <p className={controls.hint}>Getting the pens ready. The drawing stays as it is; the gear goes back to it.</p>
-    </Section>
-    <DrawingToolSection tools={presets} value={toolName} onPick={pickTool} collapsibleKey="setup-pen" disabled={busy} />
-    {/* Calibrating the pens moved to Photo, which is what it's for: making photos print true. */}
-    <Section title="Calibration">
-     <p className={controls.hint}>Calibrating a pen’s colors - the calibration and color pairs sheets, and reading an image of them back - is in Image’s Setup.</p>
-     <Button size="sm" variant="secondary" onClick={() => showApp("photo")}>Go to Image</Button>
-    </Section>
-    <Section title="Appearance" action={<ThemeToggle />}>
-     <p className={controls.hint}>Light or dark. Plot and Image follow the same choice.</p>
-    </Section>
-   </div>
-  </Card>
- );
-
  // A photo layer is drawn, moved and sized here like anything else, but how it's turned into lines is
  // set in Photo: saved first, so Photo opens what's on screen.
  const editInPhoto = async () => {
@@ -1412,16 +1393,6 @@ export default function App() {
    </div>
   </Card>
  ) : null;
-
- // Setup takes the drawing's place while it's open. Its switch is at the bottom of the toolbars down
- // the left, as in Photo.
- const setupToolbar = (
-  <SetupToolbar
-   open={setupOpen}
-   onToggle={() => setSetupOpen((open) => !open)}
-   orientation="vertical"
-  />
- );
 
  /** The copied fill onto the chosen shape, or every fillable shape selected, in place of their own. */
  const pasteFill = () => {
@@ -1546,8 +1517,12 @@ export default function App() {
         label: "Select all on layer",
         icon: <MousePointer2 />,
         disabled: !shapes.some((s) => s.layerId === rowMenu.id),
-        // Picked as one, they move as one: the way a whole layer is shifted about the page.
-        onSelect: () => setSelected(shapes.filter((s) => s.layerId === rowMenu.id).map((s) => s.id)),
+        // Picked as one, they move as one: the way a whole layer is shifted about the page. The layer
+        // becomes the target too, as only the target layer's shapes are picked on the page.
+        onSelect: () => {
+         setActiveLayer(rowMenu.id);
+         setSelected(shapes.filter((s) => s.layerId === rowMenu.id).map((s) => s.id));
+        },
        },
        {
         label: "Rename",
@@ -1656,23 +1631,22 @@ export default function App() {
        { key: "grid", on: gridCard, toggle: () => setGridCard((on) => !on) },
       ]}
      />
-     {!setupOpen && (
-      <ToolPicker
-       tool={tool}
-       onTool={(t) => {
-        setTool(t);
-        setSimplifierCard(false);
-       }}
-       simplifying={simplifierCard}
-       // Picked, the page picks shapes as Select does; picked again, it's put down for Select.
-       onSimplify={() => {
-        setTool("select");
-        setSimplifierCard((on) => !on);
-       }}
-      />
-     )}
-     {!setupOpen && <HistoryToolbar canUndo={canUndo} canRedo={canRedo} onUndo={undo} onRedo={redo} disabled={busy} />}
-     {setupToolbar}
+     <ToolPicker
+      tool={tool}
+      onTool={(t) => {
+       setTool(t);
+       setSimplifierCard(false);
+      }}
+      layersOut={layersCard}
+      onLayers={() => setLayersCard((on) => !on)}
+      simplifying={simplifierCard}
+      // Picked, the page picks shapes as Select does; picked again, it's put down for Select.
+      onSimplify={() => {
+       setTool("select");
+       setSimplifierCard((on) => !on);
+      }}
+     />
+     <HistoryToolbar canUndo={canUndo} canRedo={canRedo} onUndo={undo} onRedo={redo} disabled={busy} />
     </div>
     <section className={styles.stage} aria-label="Drawing page">
      <Canvas
@@ -1695,6 +1669,7 @@ export default function App() {
       }}
       layers={layers}
       activeLayer={active?.id ?? ""}
+      targetLayers={targetIds}
       penWidthMm={penWidthMm}
       inkOpacity={inkOpacity}
       inkBuilds={inkBuilds}
@@ -1715,7 +1690,7 @@ export default function App() {
     </section>
 
     <div className={styles.side}>
-     {setupOpen ? setupRail : (<>
+     <>
      {/* Out while it's asking about unsaved work too, even put away: the question is asked in it. */}
      {(fileCard || confirmNewBlock) && (
      <Card variant="flat" className={styles.controls}>
@@ -1766,33 +1741,15 @@ export default function App() {
       </div>
      </Card>
      )}
-     {simplifierCard && simplifierPreview && (
-     <Card variant="flat" className={styles.controls}>
-      <div className={`${styles.cardBody} ${controls.cardSections}`}>
-       <SimplifierSection
-        value={simplifier}
-        onChange={setSimplifier}
-        scope={simplifyScope}
-        onScope={setSimplifyScope}
-        layerName={active?.name ?? "this layer"}
-        before={simplifierPreview.before}
-        after={simplifierPreview.after}
-        removed={simplifierPreview.gone.length}
-        busy={busy}
-        onApply={applySimplifier}
-       />
-      </div>
-     </Card>
-     )}
 
-     {/* The layers, and what is on the one being worked on: two sections of one card. */}
+     {/* The Layers card, shown or hidden from its switch at the left. */}
+     {layersCard && (
      <Card variant="flat" className={styles.controls}>
       <div className={`${styles.cardBody} ${controls.cardSections}`}>
-       <Section title="Artwork" collapsibleKey="artwork">
        <LayersSection
         layers={layers}
         active={active}
-        activeHasShapes={onActive.length > 0}
+        targets={targetIds}
         canMerge={shapes.length > 1}
         tool={tool2}
         busy={busy}
@@ -1821,22 +1778,24 @@ export default function App() {
          next.splice(to, 0, next.splice(from, 1)[0]);
          return next;
         })}
-        alignTarget={alignTarget}
-        alignable={alignable}
-        onAlignTarget={setAlignTo}
-        onAlign={alignLayer}
-        onTurn={turnLayer}
        />
-
-       {active && (
+      </div>
+     </Card>
+     )}
+     {/* The layer being drawn on, a card of its own under the layers: turned, and its paths. Out and
+       away with the Layers card, from its switch. */}
+     {layersCard && active && (
+     <Card variant="flat" className={styles.controls}>
+      <div className={`${styles.cardBody} ${controls.cardSections}`}>
         <ShapeList
-         layer={active}
+         layers={targetLayers}
          shapes={onActive}
          picked={pickedIds}
          busy={busy}
          renaming={renaming}
          rowMenuId={rowMenu?.id}
          onPick={pickFromRow}
+         onTurn={turnLayer}
          onDeleteAll={() => {
           record();
           const gone = onActive.map((sh) => sh.id);
@@ -1853,10 +1812,28 @@ export default function App() {
          onRowMenu={(id, anchor) => setRowMenu((open) => (open?.id === id ? null : { kind: "shape", id, anchor }))}
          onGroupMenu={(id, anchor) => setRowMenu((open) => (open?.id === id ? null : { kind: "group", id, anchor }))}
         />
-       )}
-       </Section>
       </div>
      </Card>
+     )}
+     {/* Under the Layers card when both are out, as its switch is under Layers'. */}
+     {simplifierCard && simplifierPreview && (
+     <Card variant="flat" className={styles.controls}>
+      <div className={`${styles.cardBody} ${controls.cardSections}`}>
+       <SimplifierSection
+        value={simplifier}
+        onChange={setSimplifier}
+        scope={simplifyScope}
+        onScope={setSimplifyScope}
+        layerName={targetLayers.length > 1 ? "the targeted layers" : active?.name ?? "this layer"}
+        before={simplifierPreview.before}
+        after={simplifierPreview.after}
+        removed={simplifierPreview.gone.length}
+        busy={busy}
+        onApply={applySimplifier}
+       />
+      </div>
+     </Card>
+     )}
 
      {selected.length > 1 && (
       <SelectionCard
@@ -1905,7 +1882,7 @@ export default function App() {
        }}
       />
      )}
-     </>)}
+     </>
 
     </div>
    </main>

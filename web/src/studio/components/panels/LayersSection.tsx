@@ -1,23 +1,23 @@
-import { useRef, useState } from "react";
-import { Button, ButtonRound, InputSelect, LayerController, Segment, SegmentedControl } from "@tomcoggia/ui";
-import { AlignCenterHorizontal, AlignCenterVertical, AlignEndHorizontal, AlignEndVertical, AlignStartHorizontal, AlignStartVertical, EllipsisVertical, LayersArrowUp, Merge, Plus, RotateCcwSquare, RotateCwSquare } from "lucide-react";
+import { useRef, type ReactNode } from "react";
+import { ButtonRound, LayerController } from "@tomcoggia/ui";
+import { EllipsisVertical, LayersArrowUp, Merge, Plus } from "lucide-react";
 import { Section } from "../../../shared/components/controls/Section";
-import { NumberField } from "../../../shared/components/controls/NumberField";
 import { isPalettePen, labelAfter, LABEL_SEPARATOR } from "../../../shared/lib/ink";
 import type { Preset } from "../../../shared/lib/types";
 import { useRowDrag } from "../../lib/useRowDrag";
 import type { Layer } from "../../../shared/lib/drawing/shapes";
 import styles from "../../App.module.css";
 
-export type AlignEdge = "left" | "centre" | "right" | "top" | "middle" | "bottom";
 
 interface Props {
+  /** What goes under the list, folded away with it: the shapes on the layer being drawn on. */
+  children?: ReactNode;
   /** Bottom first, the order they're drawn in. Listed top first, the way they stack on the paper. */
   layers: Layer[];
   /** The layer being drawn on. */
   active: Layer | undefined;
-  /** Whether there is anything on the active layer: aligning and turning it need something to move. */
-  activeHasShapes: boolean;
+  /** Every targeted layer: the one drawn on and any worked on with it. */
+  targets: Set<string>;
   /** Whether there is more than one shape in the drawing, so merging lines could do anything. */
   canMerge: boolean;
   /** The drawing tool, whose palette says which layers are its pens. */
@@ -34,7 +34,8 @@ interface Props {
   onSort: () => void;
   onMerge: () => void;
   onAdd: () => void;
-  onSwitch: (id: string) => void;
+  /** Target this layer alone, or with `add` put it in with the others or take it out. */
+  onSwitch: (id: string, add?: boolean) => void;
   onVisible: (id: string, visible: boolean) => void;
   onColorMenu: (id: string, anchor: HTMLElement) => void;
   onRowMenu: (id: string, anchor: HTMLElement) => void;
@@ -47,14 +48,6 @@ interface Props {
   onRestackStart: () => void;
   /** Move a layer to a new place in the stack, `to` counted bottom first like `layers`. */
   onRestack: (id: string, to: number) => void;
-  /** What the active layer lines up with: another layer's id, or "paper". */
-  alignTarget: string;
-  /** The layers it can line up with. */
-  alignable: Layer[];
-  onAlignTarget: (id: string) => void;
-  onAlign: (edge: AlignEdge) => void;
-  /** Turn the active layer about its middle, in degrees clockwise. */
-  onTurn: (deg: number) => void;
 }
 
 /**
@@ -62,7 +55,7 @@ interface Props {
  * the active layer lined up with another or turned, as one.
  */
 export function LayersSection(props: Props) {
-  const { layers, active, busy, tool, renaming } = props;
+  const { layers, busy, tool, renaming } = props;
   const layerList = useRef<HTMLUListElement>(null);
   const layerRows = useRef(new Map<string, HTMLElement>());
   // Layers are shown top-first, the way they stack on the paper; the array holds them bottom-first,
@@ -75,7 +68,6 @@ export function LayersSection(props: Props) {
     onStart: props.onRestackStart,
     onMove: (id, to) => props.onRestack(id, layers.length - 1 - to),
   });
-  const [turnBy, setTurnBy] = useState(15);
 
   return (
     <Section
@@ -115,7 +107,9 @@ export function LayersSection(props: Props) {
               }}
             >
               <LayerController
-                name="studio-layer"
+                // A group of its own per row, as the paths' are: several layers can be targeted at
+                // once, and a browser only ever lets one radio of a group be on.
+                name={`studio-layer-${layer.id}`}
                 // The layer being drawn on is marked with the target, as Plot marks the one to print.
                 // (A "print" row's printed mark needs `printed`, which Studio never passes.)
                 purpose="print"
@@ -132,11 +126,14 @@ export function LayersSection(props: Props) {
                   disabled: busy,
                   onClick: (e) => props.onColorMenu(layer.id, e.currentTarget),
                 }}
-                checked={active?.id === layer.id}
+                checked={props.targets.has(layer.id)}
                 visible={!layer.hidden}
                 onVisibleChange={(visible) => props.onVisible(layer.id, visible)}
                 disabled={busy}
-                onChange={() => props.onSwitch(layer.id)}
+                // The box is a checkbox in all but looks, as a path's is: each click puts this layer
+                // in with the targeted ones or takes it out. The name, below, targets it alone.
+                onChange={() => {}}
+                onClick={() => props.onSwitch(layer.id, true)}
                 aria-label={`Draw on layer ${at + 1}, ${layer.name}`}
                 label={renaming === layer.id ? (
                   <span className={styles.shapeLabel}>
@@ -165,11 +162,11 @@ export function LayersSection(props: Props) {
                   // for from the kebab, so nothing typed can land in a name by accident.
                   // Green while it is the one being drawn on, like the nib beside it.
                   <span
-                    className={layer.id === active?.id
+                    className={props.targets.has(layer.id)
                       ? `${styles.shapeName} ${styles.shapeNameOn}`
                       : styles.shapeName}
-                    title="Click to draw on this layer"
-                    onClick={() => props.onSwitch(layer.id)}
+                    title="Click to target this layer alone; Shift-click to target it with the others"
+                    onClick={(e) => props.onSwitch(layer.id, e.shiftKey)}
                   >
                     {layer.name}
                   </span>
@@ -192,31 +189,7 @@ export function LayersSection(props: Props) {
           );
         })}
       </ul>
-      {/* The active layer lined up with another, by the boxes round what's on them. */}
-      {active && props.activeHasShapes && (
-        <div className={styles.alignRow}>
-          <InputSelect size="md" label={`Align ${active.name} to`} value={props.alignTarget} disabled={busy} onChange={(e) => props.onAlignTarget(e.target.value)}>
-            {props.alignable.map((l) => <option key={l.id} value={l.id}>{l.name}</option>)}
-            <option value="paper">The paper</option>
-          </InputSelect>
-          <SegmentedControl size="sm" variant="dark" actions aria-label={`Align ${active.name}`}>
-            <Segment icon={<AlignStartVertical />} aria-label="Left edges" title="Left edges: move this layer so its left edge meets the other's" disabled={busy} onClick={() => props.onAlign("left")} />
-            <Segment icon={<AlignCenterVertical />} aria-label="Centers" title="Centers: move this layer across so the two are centered on each other" disabled={busy} onClick={() => props.onAlign("centre")} />
-            <Segment icon={<AlignEndVertical />} aria-label="Right edges" title="Right edges: move this layer so its right edge meets the other's" disabled={busy} onClick={() => props.onAlign("right")} />
-            <Segment icon={<AlignStartHorizontal />} aria-label="Top edges" title="Top edges: move this layer so its top meets the other's" disabled={busy} onClick={() => props.onAlign("top")} />
-            <Segment icon={<AlignCenterHorizontal />} aria-label="Middles" title="Middles: move this layer up or down so the two are centered on each other" disabled={busy} onClick={() => props.onAlign("middle")} />
-            <Segment icon={<AlignEndHorizontal />} aria-label="Bottom edges" title="Bottom edges: move this layer so its bottom meets the other's" disabled={busy} onClick={() => props.onAlign("bottom")} />
-          </SegmentedControl>
-          {/* Turned as one, about its middle: a quarter either way, or by an angle typed in,
-            clockwise and negative for the other way. */}
-          <div className={styles.turnRow}>
-            <ButtonRound size="sm" icon={<RotateCcwSquare />} aria-label={`Turn ${active.name} left`} title={`Turn ${active.name} 90° left, about its middle`} disabled={busy} onClick={() => props.onTurn(-90)} />
-            <ButtonRound size="sm" icon={<RotateCwSquare />} aria-label={`Turn ${active.name} right`} title={`Turn ${active.name} 90° right, about its middle`} disabled={busy} onClick={() => props.onTurn(90)} />
-            <NumberField label="Turn by" unit="°" min={-359} max={359} step={1} value={turnBy} disabled={busy} onChange={setTurnBy} />
-            <Button size="md" variant="secondary" title={`Turn ${active.name} by ${turnBy}°, clockwise - a negative angle turns it the other way`} disabled={busy || !turnBy} onClick={() => props.onTurn(turnBy)}>Turn</Button>
-          </div>
-        </div>
-      )}
+      {props.children}
     </Section>
   );
 }

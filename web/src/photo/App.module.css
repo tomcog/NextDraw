@@ -196,15 +196,3 @@
   vertical-align: middle;
 }
 
-/* The effect's name at the top of its card, its toolbar glyph before it in the muted gray. */
-.effectTitle {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.375rem;
-}
-.effectTitle > svg {
-  width: 16px;
-  height: 16px;
-  color: var(--ui-text-muted);
-  flex: none;
-}

@@ -123,3 +123,49 @@ test("the Simplifier thins straight runs, joins ends that meet, drops specks, an
   assert.deepEqual(r.gone, ["p"]);
   assert.deepEqual(r.shapes, [other]);
 });
+
+test("Prune takes out one stroke in N on each layer: evenly across the page, or picked at random", () => {
+  const off = { mergeShort: 0, straighten: 0, joinEnds: 0, dropTiny: 0 };
+  const stroke = (i: number) => [{ x: i, y: 0 }, { x: i, y: 1 }];
+  // Six upright lines on layer l, in two paths, and three on layer m.
+  const a = shape({ id: "a", kind: "path", runs: [0, 1, 2, 3].map(stroke) });
+  const b = shape({ id: "b", kind: "path", runs: [4, 5].map(stroke) });
+  const c = shape({ id: "c", kind: "path", layerId: "m", runs: [6, 7, 8].map(stroke) });
+  const xs = (list: Shape[]) => list.flatMap((s) => pathRuns(s).map((r) => r[0].x));
+
+  // Evenly: every 2nd line across the page, each layer counted on its own.
+  assert.deepEqual(xs(simplifyDrawing([a, b, c], () => true, { ...off, pruneEvery: 2 }).shapes), [0, 2, 4, 6, 8]);
+  assert.deepEqual(xs(simplifyDrawing([a, b, c], () => true, { ...off, pruneEvery: 3 }).shapes), [0, 1, 3, 4, 6, 7]);
+  // Random: the same share goes, and the same seed picks the same strokes again.
+  const random = { ...off, pruneEvery: 2, pruneMode: "random" as const, pruneSeed: 7 };
+  const one = xs(simplifyDrawing([a, b, c], () => true, random).shapes);
+  assert.equal(one.filter((x) => x < 6).length, 3);
+  assert.deepEqual(xs(simplifyDrawing([a, b, c], () => true, random).shapes), one);
+});
+
+test("Prune evenly takes whole rows of a hatching, however the rows are broken up and listed", () => {
+  const off = { mergeShort: 0, straighten: 0, joinEnds: 0, dropTiny: 0 };
+  // Eight level rows a tenth apart, each in two pieces, listed back and forth and out of order.
+  const piece = (row: number, half: number) => (half ? [{ x: 2, y: row / 10 }, { x: 1, y: row / 10 }] : [{ x: 0, y: row / 10 }, { x: 0.9, y: row / 10 }]);
+  const order = [3, 0, 6, 1, 7, 2, 5, 4];
+  const hatch = shape({ id: "h", kind: "path", runs: order.flatMap((r) => [piece(r, 0), piece(r, 1)]) });
+  const rowsLeft = (opts: object) => [...new Set(pathRuns(simplifyDrawing([hatch], () => true, { ...off, ...opts }).shapes[0]).map((r) => Math.round(r[0].y * 10)))].sort();
+  // Every other row goes, both its pieces, whatever order the file has them in.
+  assert.deepEqual(rowsLeft({ pruneEvery: 2 }), [0, 2, 4, 6]);
+  // Shuffled: one row of each pair goes, never both, so half are left and no two pairs lose more.
+  for (const seed of [1, 2, 3, 4, 5]) {
+    const left = rowsLeft({ pruneEvery: 2, pruneMode: "blocks", pruneSeed: seed });
+    assert.equal(left.length, 4);
+    for (let pair = 0; pair < 8; pair += 2) assert.equal(left.filter((r) => r === pair || r === pair + 1).length, 1);
+  }
+});
+
+test("Prune evenly isn't thrown by rows left empty where the picture is white", () => {
+  const off = { mergeShort: 0, straighten: 0, joinEnds: 0, dropTiny: 0 };
+  // Rows 0 to 19, a fiftieth apart, with 6, 7 and 13 missing: their gaps are three and two spacings.
+  const rows = Array.from({ length: 20 }, (_, r) => r).filter((r) => ![6, 7, 13].includes(r));
+  const hatch = shape({ id: "h", kind: "path", runs: rows.map((r) => [{ x: 0, y: r / 50 }, { x: 1, y: r / 50 }]) });
+  const left = pathRuns(simplifyDrawing([hatch], () => true, { ...off, pruneEvery: 2 }).shapes[0]).map((r) => Math.round(r[0].y * 50));
+  // Every other row that's there goes - counted among the rows drawn, not the empty ones.
+  assert.deepEqual(left, rows.filter((_, i) => i % 2 === 0));
+});

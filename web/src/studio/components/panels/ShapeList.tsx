@@ -1,5 +1,7 @@
-import { ButtonRound, LayerController } from "@tomcoggia/ui";
-import { EllipsisVertical, Image as ImageIcon, Shapes, Trash2 } from "lucide-react";
+import { useState } from "react";
+import { Button, ButtonRound, LayerController } from "@tomcoggia/ui";
+import { EllipsisVertical, Image as ImageIcon, RotateCcwSquare, RotateCwSquare, Shapes, Trash2 } from "lucide-react";
+import { NumberField } from "../../../shared/components/controls/NumberField";
 import { Section } from "../../../shared/components/controls/Section";
 import controls from "../../../shared/components/controls/controls.module.css";
 import { trimNum } from "../../../shared/lib/format";
@@ -10,8 +12,9 @@ import styles from "../../App.module.css";
 const SHAPE_LIST_LIMIT = 200;
 
 interface Props {
-  layer: Layer;
-  /** What is on the layer, in drawing order. */
+  /** The targeted layers, in the order they stack: one, or several worked on as one. */
+  layers: Layer[];
+  /** What is on them, in drawing order. */
   shapes: Shape[];
   picked: Set<string>;
   busy: boolean;
@@ -24,6 +27,8 @@ interface Props {
    *  which picks the whole shape. */
   onPick: (id: string, add: boolean) => void;
   onDeleteAll: () => void;
+  /** Turn everything on the layer about its middle, in degrees clockwise. */
+  onTurn: (deg: number) => void;
   onRenameType: (id: string, name: string) => void;
   /** Escape: put back the name it had before. */
   onRenameCancel: (id: string) => void;
@@ -59,32 +64,56 @@ function rowsOf(shapes: Shape[]): Row[] {
  * Only while there is something on the layer: a heading over a line saying there is nothing under
  * it is two lines to say one thing.
  */
-export function ShapeList({ layer, shapes, picked, busy, renaming, rowMenuId, onPick, onDeleteAll, onRenameType, onRenameCancel, onRenameDone, onRowMenu, onGroupMenu }: Props) {
+export function ShapeList({ layers, shapes, picked, busy, renaming, rowMenuId, onPick, onDeleteAll, onTurn, onRenameType, onRenameCancel, onRenameDone, onRowMenu, onGroupMenu }: Props) {
+  const [turnBy, setTurnBy] = useState(15);
   if (!shapes.length) return null;
+  // One layer is named; several, worked on as one, are said by their dots alone.
+  const one = layers.length === 1 ? layers[0] : null;
+  const what = one ? one.name : "the targeted layers";
   const rows = rowsOf(shapes);
   return (
     <Section
-      // The layer's ink in front of its name - after the "On", so the dot reads as part
-      // of the name rather than as a bullet before the whole heading. A mark to read,
-      // not a control: picking the colour is the swatch in the row above.
+      // The layer's ink in front of its name: the card is the paths on that layer, and says so by
+      // naming it. Several layers targeted at once show their dots alone, in stacking order. A mark
+      // to read, not a control: picking the colour is the layer's swatch.
       title={(
         <>
-          On
-          <span className={controls.legendDot} style={{ background: layer.color }} aria-hidden />
-          {layer.name}
+          {one ? (
+            <>
+              <span className={controls.legendDot} style={{ background: one.color }} aria-hidden />
+              {one.name}
+            </>
+          ) : (
+            // The names are in the dots' tooltip, and read out, rather than spelled along the heading.
+            <span className={controls.legendDots} role="img" aria-label={layers.map((l) => l.name).join(", ")} title={layers.map((l) => l.name).join(", ")}>
+              {layers.map((l) => <span key={l.id} className={controls.legendDot} style={{ background: l.color }} />)}
+            </span>
+          )}
         </>
       )}
       collapsibleKey="shapes-on-layer"
-      // Folded each time a layer is picked, and opened only by a click: a layer of hundreds of
-      // paths would otherwise unroll them all down the panel just for being chosen.
-      key={layer.id}
-      defaultOpen={false}
+      // Open each time a layer is picked: its turn tools are there to use. The Paths under them are
+      // what stays folded, so a layer of hundreds doesn't unroll them all just for being chosen.
+      key={layers.map((l) => l.id).join("|")}
       forget
       action={
-        <ButtonRound size="sm" icon={<Trash2 />} aria-label="Delete everything on this layer"
-          title="Delete every path on this layer" disabled={busy} onClick={onDeleteAll} />
+        <ButtonRound size="sm" icon={<Trash2 />} aria-label={`Delete everything on ${one ? "this layer" : "these layers"}`}
+          title={`Delete every path on ${one ? "this layer" : "the targeted layers"}`} disabled={busy} onClick={onDeleteAll} />
       }
     >
+      {/* The layer turned as one, about its middle: a quarter either way, or by an angle typed in,
+        clockwise and negative for the other way. */}
+      <div className={styles.turnRow}>
+        <ButtonRound size="sm" icon={<RotateCcwSquare />} aria-label={`Turn ${what} left`} title={`Turn ${what} 90° left, about their middle`} disabled={busy} onClick={() => onTurn(-90)} />
+        <ButtonRound size="sm" icon={<RotateCwSquare />} aria-label={`Turn ${what} right`} title={`Turn ${what} 90° right, about their middle`} disabled={busy} onClick={() => onTurn(90)} />
+        <NumberField label="Turn by" unit="°" min={-359} max={359} step={1} value={turnBy} disabled={busy} onChange={setTurnBy} />
+        <Button size="md" variant="secondary" title={`Turn ${what} by ${turnBy}°, clockwise - a negative angle turns it the other way`} disabled={busy || !turnBy} onClick={() => onTurn(turnBy)}>Turn</Button>
+      </div>
+      {/* The layer's card holds its paths under a heading of their own, a row each, folded to start
+        with - a layer of hundreds of paths would otherwise unroll them all - and folded again when
+        another layer is picked, as the card is. */}
+      <div className={styles.pathsSection}>
+      <Section title="Paths" collapsibleKey="paths-on-layer" defaultOpen={false} forget>
       <ul className={styles.shapeList}>
         {rows.slice(0, SHAPE_LIST_LIMIT).map((row) => {
           // A shape stands for its paths: one row, its own name, the box round all of them, and its
@@ -103,7 +132,8 @@ export function ShapeList({ layer, shapes, picked, busy, renaming, rowMenuId, on
                 // A group of its own per row: several shapes can be picked at once,
                 // and a browser only ever lets one radio of a group be on.
                 name={`studio-shape-${id}`}
-                purpose="draw"
+                // Picked, a path's box shows the target, as the layer it's on does.
+                purpose="print"
                 // No numeral: a layer is numbered because it is plotted in that
                 // order, and a shape on it isn't. The row still says which it is to a
                 // screen reader, below.
@@ -183,6 +213,8 @@ export function ShapeList({ layer, shapes, picked, busy, renaming, rowMenuId, on
           </li>
         )}
       </ul>
+      </Section>
+      </div>
     </Section>
   );
 }

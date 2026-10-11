@@ -226,6 +226,158 @@ export interface Simplify {
   joinEnds: number;
   /** A run whose longest side is under this is taken out. */
   dropTiny: number;
+  /** One stroke out of every this many is taken out, on each layer; 0 leaves them all. */
+  pruneEvery?: number;
+  /** How they're picked: across the page in step, one at random from each block of N, or freely. */
+  pruneMode?: PruneMode;
+  /** The shuffle for "blocks" and "random", so the same one can be shown again. */
+  pruneSeed?: number;
+}
+
+export type PruneMode = "even" | "blocks" | "random";
+
+/** A repeatable run of numbers from 0 to 1 out of a seed (mulberry32), so a shuffle can be shown again. */
+function seeded(seed: number) {
+  let a = seed >>> 0;
+  return () => {
+    a = (a + 0x6d2b79f5) >>> 0;
+    let t = a;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+/** Where a point falls along a Hilbert curve over a 1024-square grid: near on the page is near in the order. */
+function hilbert(x: number, y: number): number {
+  let d = 0;
+  for (let n = 512; n > 0; n >>= 1) {
+    const rx = (x & n) > 0 ? 1 : 0;
+    const ry = (y & n) > 0 ? 1 : 0;
+    d += n * n * ((3 * rx) ^ ry);
+    if (ry === 0) {
+      if (rx === 1) { x = 1023 - x; y = 1023 - y; }
+      [x, y] = [y, x];
+    }
+  }
+  return d;
+}
+
+interface Stroke { key: string; mid: Point; angle: number; length: number }
+
+/**
+ * A layer's strokes as rows to prune, in order across the page. Strokes running the same way - within a
+ * few degrees - are a family, like a hatching's lines, and a family's strokes are sorted by how far
+ * across the lines they sit; those at the same place are one row, however many pieces the row is in.
+ * What isn't in a family of at least three rows - an outline, a loop, a speck - is a row each, ordered
+ * along a Hilbert curve so that neighbours on the page are neighbours in the order.
+ */
+function strokeRows(strokes: Stroke[]): string[][] {
+  const rows: string[][] = [];
+  // The families are found from strokes long enough for their way to be sure - over half a millimetre.
+  const lines = strokes.filter((s) => s.length > 0.02).sort((a, b) => a.angle - b.angle);
+  const families: Stroke[][] = [];
+  for (const s of lines) {
+    const last = families[families.length - 1];
+    if (last && s.angle - last[last.length - 1].angle <= 4) last.push(s);
+    else families.push([s]);
+  }
+  // Nearly 0° and nearly 180° are the same way.
+  if (families.length > 1 && families[0][0].angle + 180 - families[families.length - 1].slice(-1)[0].angle <= 4) {
+    families[0].push(...families.pop()!);
+  }
+  // A shorter piece - a bit of a row between two tones - joins the family it runs nearest to, within
+  // 15°: its own way is too rough to start one. A loop or a dot, running no way at all, stays loose.
+  const loose: Stroke[] = [];
+  const apart = (a: number, b: number) => Math.min(Math.abs(a - b), 180 - Math.abs(a - b));
+  for (const s of strokes) {
+    if (s.length > 0.02) continue;
+    const near = s.length > 0.002 ? families.find((f) => apart(f[0].angle, s.angle) <= 15) : undefined;
+    if (near) near.push(s);
+    else loose.push(s);
+  }
+  for (const family of families) {
+    // The family's way, from its long strokes alone: the short ones joined it for their place, not their way.
+    const sure = family.filter((s) => s.length > 0.02);
+    const mean = sure.reduce((sum, s) => sum + (s.angle > sure[0].angle + 90 ? s.angle - 180 : s.angle), 0) / sure.length;
+    const t = (mean * Math.PI) / 180;
+    // Across the lines, counted from the left or the top, so the first row is the one seen first.
+    const flip = -Math.sin(t) < -1e-9 ? -1 : 1;
+    const across = (p: Point) => flip * (-p.x * Math.sin(t) + p.y * Math.cos(t));
+    const sorted = family.map((s) => ({ s, at: across(s.mid) })).sort((a, b) => a.at - b.at);
+    // Pieces of one row sit at nearly the same place across, rows a spacing apart: two kinds of gap, the
+    // small wobble within a row and the step to the next. The widest jump between gap sizes is where
+    // one kind ends and the other starts; with no clear jump, every gap is a step to a new row. Steps
+    // to the next row are many - a fifth of the gaps at least - so a jump with only a few gaps above it
+    // is rows left empty where the picture is white, not the break.
+    const gaps = sorted.slice(1).map((o, i) => o.at - sorted[i].at).filter((g) => g > 1e-5).sort((a, b) => a - b);
+    let same = 1e-5;
+    let jump = 2; // a jump smaller than double isn't a break between kinds
+    for (let i = 0; i + 1 < gaps.length && gaps.length - (i + 1) >= gaps.length / 5; i++) {
+      const ratio = gaps[i + 1] / gaps[i];
+      if (ratio > jump) { jump = ratio; same = Math.sqrt(gaps[i] * gaps[i + 1]); }
+    }
+    const famRows: string[][] = [];
+    sorted.forEach((o, i) => {
+      if (i && o.at - sorted[i - 1].at <= same) famRows[famRows.length - 1].push(o.s.key);
+      else famRows.push([o.s.key]);
+    });
+    if (famRows.length >= 3) rows.push(...famRows);
+    else loose.push(...family);
+  }
+  if (loose.length) {
+    const box = pointsBox(loose.map((s) => s.mid));
+    const size = Math.max(box.x1 - box.x0, box.y1 - box.y0) || 1;
+    const cell = (v: number, o: number) => Math.min(1023, Math.floor(((v - o) / size) * 1023));
+    loose
+      .map((s) => ({ key: s.key, h: hilbert(cell(s.mid.x, box.x0), cell(s.mid.y, box.y0)) }))
+      .sort((a, b) => a.h - b.h)
+      .forEach(({ key }) => rows.push([key]));
+  }
+  return rows;
+}
+
+/**
+ * The strokes Prune takes out, as "shape id:run index", one in every N on each layer on its own.
+ * "even" takes the Nth row, the 2Nth and so on, across the page (see strokeRows), so a hatching loses
+ * every other line rather than every other piece of line. "blocks" takes one row at random out of each
+ * N, so the share is the same everywhere but the rhythm loosens. "random" picks one in N strokes freely.
+ */
+function prunedStrokes(shapes: Shape[], onLayer: (s: Shape) => boolean, every: number, mode: PruneMode, seed: number): Set<string> {
+  const out = new Set<string>();
+  if (every < 2) return out;
+  const byLayer = new Map<string, Stroke[]>();
+  for (const s of shapes) {
+    if (s.kind !== "path" || !onLayer(s)) continue;
+    const list = byLayer.get(s.layerId) ?? [];
+    pathRuns(s).forEach((run, i) => {
+      const a = run[0], z = run[run.length - 1];
+      const length = Math.hypot(z.x - a.x, z.y - a.y);
+      const angle = ((Math.atan2(z.y - a.y, z.x - a.x) * 180) / Math.PI + 360) % 180;
+      // Placed by the middle of its two ends: on the row's line even when the stroke waves along it.
+      list.push({ key: `${s.id}:${i}`, mid: { x: (a.x + z.x) / 2, y: (a.y + z.y) / 2 }, angle, length });
+    });
+    byLayer.set(s.layerId, list);
+  }
+  for (const strokes of byLayer.values()) {
+    const random = seeded(seed);
+    if (mode === "random") {
+      strokes.map((st) => ({ key: st.key, r: random() })).sort((a, b) => a.r - b.r)
+        .slice(0, Math.round(strokes.length / every)).forEach(({ key }) => out.add(key));
+      continue;
+    }
+    const rows = strokeRows(strokes);
+    for (let start = 0; start < rows.length; start += every) {
+      const block = rows.slice(start, start + every);
+      let pick: number;
+      if (mode === "even") pick = every - 1;
+      // A short block at the end loses a row only as often as its share would.
+      else if (block.length < every) pick = random() < block.length / every ? Math.floor(random() * block.length) : -1;
+      else pick = Math.floor(random() * every);
+      block[pick]?.forEach((key) => out.add(key));
+    }
+  }
+  return out;
 }
 
 /** How many points a shape's paths hold: what the Simplifier counts, before and after. */
@@ -255,10 +407,12 @@ function mergeShort(run: Node[], d: number): Node[] {
  */
 export function simplifyDrawing(shapes: Shape[], onLayer: (s: Shape) => boolean, opts: Simplify): { shapes: Shape[]; gone: string[] } {
   const gone: string[] = [];
+  // Pruned first, so the rest work on what's left and the count is of both together.
+  const pruned = prunedStrokes(shapes, onLayer, opts.pruneEvery ?? 0, opts.pruneMode ?? "even", opts.pruneSeed ?? 0);
   const out = shapes.flatMap((s) => {
     if (s.kind !== "path" || !onLayer(s)) return [s];
     const straight = (r: Node[]) => r.every((n) => !n.in && !n.out);
-    let runs = pathRuns(s).map((r) => (straight(r) ? simplifyRun(mergeShort(r, opts.mergeShort), opts.straighten) as Node[] : r));
+    let runs = pathRuns(s).filter((_, i) => !pruned.has(`${s.id}:${i}`)).map((r) => (straight(r) ? simplifyRun(mergeShort(r, opts.mergeShort), opts.straighten) as Node[] : r));
     if (opts.joinEnds > 0 && runs.length > 1) {
       const joined: Node[][] = [runs[0]];
       for (const r of runs.slice(1)) {

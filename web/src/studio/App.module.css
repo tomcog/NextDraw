@@ -49,6 +49,12 @@
   min-width: 0;
 }
 
+/* Every card put away: the rail goes and the canvas takes its width, as Image's does. Read from the
+   rail itself, since what can be in it - a shape's card, a photo's, a selection's - comes and goes. */
+.side:empty { display: none; }
+.layout:has(> .side:empty) { grid-template-columns: auto minmax(0, 1fr); }
+.layout:has(> .side:empty) > .stage { grid-column: 2; }
+
 .controls {
   background: var(--ui-surface-raised);
   min-width: 0;
@@ -84,17 +90,6 @@
 }
 
 .fillRow > * { flex: 1 1 4.5rem; min-width: 4.5rem; }
-
-/* Lining the active layer up with another: which one, then the six ways, under the layer list. */
-.alignRow {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 0.5rem;
-  margin-top: 0.5rem;
-}
-
-.alignRow > :first-child { align-self: stretch; }
 
 /* Turning the layer: the two quarter turns, then an angle and the button that turns by it. */
 .turnRow {
@@ -210,6 +205,8 @@
 }
 
 .shapeList {
+  /* The target in a picked path's box is black, as the layers' is: the library's hook for it. */
+  --ui-layer-controller-target-color: var(--ui-text-default);
   list-style: none;
   margin: 0;
   padding: 0;
@@ -251,8 +248,8 @@ span.shapeName { cursor: pointer; }
   color: var(--ui-text-default);
 }
 
-/* The shape being worked on, in the green of the nib beside it - the same token the library's row
-   marks its chosen layer with, so the two greens in a row are one green. */
+/* The shape being worked on, in the colour of the target beside it - the same token the library's row
+   marks its pick with, so the two are one colour. */
 .shapeNameOn { color: var(--ui-layer-controller-target-color, var(--ui-safety)); }
 
 .shapeRow {
@@ -324,5 +321,7 @@ span.shapeName { cursor: pointer; }
   pointer-events: none;
 }
 
-
-
+/* The Paths heading inside a layer's card: a step up from the other sub-headings, as it's the card's
+   main part. */
+/* Doubled, to outweigh the shared rule for every sub-heading (.cardSections fieldset fieldset legend). */
+.pathsSection.pathsSection > fieldset > legend { font-size: 14px; }

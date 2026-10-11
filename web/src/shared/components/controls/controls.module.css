@@ -366,8 +366,15 @@
    against words a size larger. */
 .legendDot {
   composes: layerChipDot;
-  width: 10px;
-  height: 10px;
+  width: 14px;
+  height: 14px;
+}
+
+/* Several layers worked on as one: their dots in a row, in place of a name. */
+.legendDots {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
 }
 
 /* Small paths: the switch, and how much slower when it's on. */
@@ -579,4 +586,18 @@
   color: var(--ui-brand);
   font-size: 12px;
   font-weight: 500;
+}
+
+/* A card heading with the glyph of the tool or effect it belongs to before its name, muted, 16 px:
+   Image's effect cards and Studio's Simplifier. */
+.iconTitle {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+}
+.iconTitle > svg {
+  width: 16px;
+  height: 16px;
+  color: var(--ui-text-muted);
+  flex: none;
 }
