@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { InputText } from "@tomcoggia/ui";
 import styles from "./controls.module.css";
-import { trimNum } from "../../lib/format";
+import { arrowStep, trimNum } from "../../lib/format";
 import type { Units } from "../../lib/types";
 
 interface Props {
@@ -16,7 +16,7 @@ interface Props {
 }
 
 // A length stored in mm, shown and typed in the chosen unit. Commits on blur or Enter; the up and
-// down arrow keys step it (0.05 in or 1 mm, ×10 with Shift) and apply straight away.
+// down arrow keys step it one unit (1 in or 1 mm, ×10 with Shift) and apply straight away.
 export function LengthField({ label, mm, units, min, disabled, suffix, onChange }: Props) {
   const show = (v: number) => (units === "in" ? trimNum(v / 25.4, 3) : trimNum(v, 1));
   const [draft, setDraft] = useState(show(mm));
@@ -48,9 +48,9 @@ export function LengthField({ label, mm, units, min, disabled, suffix, onChange 
       onBlur={(e) => commit(e.target.value)}
       onKeyDown={(e) => {
         if (e.key === "Enter") commit((e.target as HTMLInputElement).value);
-        if (e.key === "ArrowUp" || e.key === "ArrowDown") {
+        const step = arrowStep(e);
+        if (step !== null) {
           e.preventDefault();
-          const step = (units === "in" ? 0.05 : 1) * (e.shiftKey ? 10 : 1) * (e.key === "ArrowUp" ? 1 : -1);
           const current = Number(draft);
           const next = (Number.isNaN(current) ? Number(show(mm)) : current) + step;
           commit(units === "in" ? next.toFixed(3) : next.toFixed(1));

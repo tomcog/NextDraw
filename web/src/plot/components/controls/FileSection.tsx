@@ -3,7 +3,7 @@ import { ButtonRound, InputText } from "@tomcoggia/ui";
 import { Crop, FolderOpen, PenTool, RotateCcw, RotateCcwSquare, RotateCwSquare, ScanSquare, StickyNoteX } from "lucide-react";
 import styles from "../../../shared/components/controls/controls.module.css";
 import { FileCard } from "../../../shared/components/controls/FileCard";
-import { fmtLen, trimNum } from "../../../shared/lib/format";
+import { arrowStep, fmtLen, trimNum } from "../../../shared/lib/format";
 import type { Preview } from "../../../shared/lib/preview";
 import type { Units } from "../../../shared/lib/types";
 
@@ -121,9 +121,9 @@ export function FileSection({
             onBlur={(e) => commit(e.target.value)}
             onKeyDown={(e) => {
               if (e.key === "Enter") commit((e.target as HTMLInputElement).value);
-              if (e.key === "ArrowUp" || e.key === "ArrowDown") {
+              const stepBy = arrowStep(e);
+              if (stepBy !== null) {
                 e.preventDefault();
-                const stepBy = (e.shiftKey ? 10 : 1) * (e.key === "ArrowUp" ? 1 : -1);
                 commit(String((Number(draft) || scale) + stepBy));
               }
             }}

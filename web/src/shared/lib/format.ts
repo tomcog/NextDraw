@@ -34,3 +34,11 @@ export const near = (a: number, b: number) => Math.abs(a - b) < 0.6;
 /** Names as a sentence would list them: "a", "a and b", "a, b and c". */
 export const listOf = (names: string[]) =>
   names.length < 2 ? names.join("") : `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}`;
+
+/**
+ * How far an arrow key moves a number box, everywhere in NextDraw: up or down one of whatever the
+ * field shows - a millimetre, a degree, a percent - or ten with Shift, whatever its step. Null for
+ * any other key. The caller stops the browser's own step (`preventDefault`) when it uses this.
+ */
+export const arrowStep = (e: { key: string; shiftKey: boolean }): number | null =>
+  e.key === "ArrowUp" ? (e.shiftKey ? 10 : 1) : e.key === "ArrowDown" ? (e.shiftKey ? -10 : -1) : null;

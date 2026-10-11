@@ -3,6 +3,7 @@ import { Button, ButtonRound, Card, InputText } from "@tomcoggia/ui";
 import { Plus, Trash2 } from "lucide-react";
 import styles from "./PaletteEditor.module.css";
 import { hexToHsl, hslToHex, lightness, onPaper } from "../../shared/lib/color";
+import { arrowStep } from "../../shared/lib/format";
 import type { PenColor, Preset } from "../../shared/lib/types";
 
 interface Props {
@@ -68,6 +69,13 @@ function HslFields({ color, name, disabled, onChange }: { color: string; name: s
           value={text[at]}
           disabled={disabled}
           onChange={(e) => type(at, e.target.value)}
+          onKeyDown={(e) => {
+            // One a press, ten with Shift.
+            const by = arrowStep(e);
+            if (by === null) return;
+            e.preventDefault();
+            type(at, String((Number(text[at]) || 0) + by));
+          }}
         />
       ))}
     </div>

@@ -1,6 +1,7 @@
 import { useEffect, useId, useState } from "react";
 import { InputText } from "@tomcoggia/ui";
 import styles from "./controls.module.css";
+import { arrowStep } from "../../lib/format";
 
 interface Props {
   label: string;
@@ -70,7 +71,16 @@ export function Slider({ label, value, min = 0, max = 100, step = 1, format, dec
         aria-label={label}
         onChange={(e) => setDraft(e.target.value)}
         onBlur={(e) => commit(e.target.value)}
-        onKeyDown={(e) => { if (e.key === "Enter") commit((e.target as HTMLInputElement).value); }}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") commit((e.target as HTMLInputElement).value);
+          // One unit a press, ten with Shift, applied straight away.
+          const by = arrowStep(e);
+          if (by !== null) {
+            e.preventDefault();
+            const current = Number(draft);
+            commit(String((Number.isNaN(current) ? value : current) + by));
+          }
+        }}
       />}
     </div>
   );

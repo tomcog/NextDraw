@@ -2,6 +2,7 @@ import { Checkbox, InputSelect, InputText } from "@tomcoggia/ui";
 import { Slider } from "../../../shared/components/controls/Slider";
 import { LengthField } from "../../../shared/components/controls/LengthField";
 import styles from "../../../shared/components/controls/controls.module.css";
+import { arrowStep } from "../../../shared/lib/format";
 import type { Settings } from "../../../shared/lib/types";
 
 interface Props {
@@ -35,6 +36,12 @@ export function PlotOptionsSection({ settings: s, disabled, onChange, handling, 
           value={s.copies}
           disabled={disabled}
           onChange={(e) => onChange({ copies: clampInt(e.target.value, 1, 100) })}
+          onKeyDown={(e) => {
+            const by = arrowStep(e);
+            if (by === null) return;
+            e.preventDefault();
+            onChange({ copies: clampInt(String(s.copies + by), 1, 100) });
+          }}
         />
         {s.copies > 1 && (
           <InputText
@@ -46,6 +53,12 @@ export function PlotOptionsSection({ settings: s, disabled, onChange, handling, 
             value={s.page_delay}
             disabled={disabled}
             onChange={(e) => onChange({ page_delay: clampInt(e.target.value, 0, 3600) })}
+            onKeyDown={(e) => {
+              const by = arrowStep(e);
+              if (by === null) return;
+              e.preventDefault();
+              onChange({ page_delay: clampInt(String(s.page_delay + by), 0, 3600) });
+            }}
           />
         )}
       </div>
