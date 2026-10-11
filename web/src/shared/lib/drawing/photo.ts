@@ -47,7 +47,11 @@ export interface Photo {
    * drawn the way SquiggleDraw draws it - smooth curves, unbroken through white, rows joinable into
    * one line. Absent, hatching.
    */
-  style?: "hatch" | "waves" | "squiggle" | "streamlines" | "oneline" | "outlines" | "centerlines" | "silhouette";
+  style?: "hatch" | "waves" | "squiggle" | "streamlines" | "oneline" | "hilbert" | "outlines" | "centerlines" | "silhouette";
+  /** Hilbert curve: the largest its squares get, in mm, however light - so light areas still meander. */
+  hilbertCoarsestMm?: number;
+  /** Hilbert curve: lift the pen where this layer has nothing to draw, rather than meandering on through white. */
+  hilbertLift?: boolean;
   /** One line: how many dots the line is drawn through. More, a finer picture and a longer line. */
   lineDots?: number;
   /** One line: lift the pen over jumps longer than this, in mm, so white stays paper. Absent or 0, never. */
@@ -425,7 +429,7 @@ export interface PhotoPart {
 
 /** The settings a layer of a photo keeps as its own, as opposed to the photo's: what a mode remembers. */
 export const LAYER_SETTINGS = [
-  "style", "angle", "spacingMm", "levels", "hatchSmoothMm", "rowMm", "waveMm", "squiggleAmpMm", "squiggleHeight", "squiggleJoin", "squiggleLift", "squiggleSmooth", "squiggleDraw", "squiggleVersion", "squiggleInkscape", "squiggleAngle", "contours", "smoothMm", "centerFrom", "centerSmoothMm", "centerShortestMm", "silhouetteFrom", "silhouetteSmoothMm", "silhouetteSmallestMm", "streamWidestMm", "streamPasses", "streamFlowMm", "lineDots", "lineLiftMm", "offsetMm",
+  "style", "angle", "spacingMm", "levels", "hatchSmoothMm", "rowMm", "waveMm", "squiggleAmpMm", "squiggleHeight", "squiggleJoin", "squiggleLift", "squiggleSmooth", "squiggleDraw", "squiggleVersion", "squiggleInkscape", "squiggleAngle", "contours", "smoothMm", "centerFrom", "centerSmoothMm", "centerShortestMm", "silhouetteFrom", "silhouetteSmoothMm", "silhouetteSmallestMm", "streamWidestMm", "streamPasses", "streamFlowMm", "lineDots", "lineLiftMm", "hilbertCoarsestMm", "hilbertLift", "offsetMm",
   "band", "ink", "regions", "region", "key", "regionInks", "keyInk", "plate", "plates", "fitPaper", "penMm", "fitPairs", "fitOpaque",
 ] as const;
 
@@ -540,6 +544,11 @@ export const squiggleAmp = (photo: Pick<Photo, "squiggleAmpMm" | "squiggleHeight
   photo.squiggleAmpMm ?? (photo.squiggleHeight !== undefined ? (photo.squiggleHeight * (photo.rowMm ?? WAVE_DEFAULTS.rowMm)) / 2 : SQUIGGLE_DEFAULTS.ampMm);
 
 /** What outlines start from: a handful of contours, a millimetre's detail smoothed away. */
+/** The Hilbert curve's coarsest square to start with, in mm. */
+export const HILBERT_DEFAULTS = { coarsestMm: 6 };
+/** The longer side of the grid the Hilbert curve reads the tone from. */
+const HILBERT_EDGE = 1024;
+
 /** One line's starting number of dots, and the most it allows. */
 export const ONE_LINE_DEFAULTS = { dots: 5000 };
 export const ONE_LINE_MOST = 30000;
@@ -774,6 +783,7 @@ export function photoMarks(photo: Photo, w: number, h: number): PhotoMarks | nul
     : photo.style === "squiggle" ? (photo.squiggleVersion === "inkscape" ? squiggleInkscape(tones, photo, w, h) : squiggle(tones, photo, w, h))
     : photo.style === "streamlines" ? streamlines(tones, photo, w, h)
     : photo.style === "oneline" ? oneLine(tones, photo, w, h)
+    : photo.style === "hilbert" ? hilbert(tones, photo, w, h)
     : photo.style === "outlines" ? outlines(tones, photo, w, h)
     : photo.style === "centerlines" ? centerlines(tones, photo, w, h)
     : photo.style === "silhouette" ? silhouette(tones, photo, w, h)
@@ -785,7 +795,7 @@ export function photoMarks(photo: Photo, w: number, h: number): PhotoMarks | nul
 
 /** Everything a photo's lines depend on, as one string: the same key, the same lines. */
 function marksKey(photo: Photo, w: number, h: number) {
-  return [photo.src.length, photo.src.slice(-32), w.toFixed(4), h.toFixed(4), photo.brightness, photo.contrast, photo.saturation ?? 0, photo.angle, photo.spacingMm, photo.levels, photo.hatchSmoothMm ?? "", photo.band?.join(",") ?? "", photo.crop?.join(",") ?? "", photo.bleed ?? 0, photo.style ?? "hatch", photo.rowMm ?? "", photo.waveMm ?? "", photo.squiggleAmpMm ?? "", photo.squiggleHeight ?? "", photo.squiggleJoin ? "join" : "", photo.squiggleLift ? "lift" : "", photo.squiggleSmooth ?? "", JSON.stringify(photo.squiggleDraw ?? {}), photo.squiggleVersion ?? "", JSON.stringify(photo.squiggleInkscape ?? {}), photo.squiggleAngle ?? "", photo.ink ?? "", photo.regions?.join(",") ?? "", photo.region ?? "", photo.contours ?? "", photo.smoothMm ?? "", photo.key ? "key" : "", photo.keyInk ?? "", photo.regionInks?.join(",") ?? "", photo.keyStrength ?? "", photo.keyFrom ?? "", photo.plate ?? "", photo.plates?.join(",") ?? "", photo.blackShare ?? "", photo.centerFrom ?? "", photo.centerSmoothMm ?? "", photo.centerShortestMm ?? "", photo.silhouetteFrom ?? "", photo.silhouetteSmoothMm ?? "", photo.silhouetteSmallestMm ?? "", photo.fitPaper ?? "", photo.penMm ?? "", photo.fitPairs ? "pairs" : "", photo.fitOpaque ? "opaque" : "", photo.streamWidestMm ?? "", photo.streamPasses ?? "", photo.streamFlowMm ?? "", photo.lineDots ?? "", photo.lineLiftMm ?? ""].join("|");
+  return [photo.src.length, photo.src.slice(-32), w.toFixed(4), h.toFixed(4), photo.brightness, photo.contrast, photo.saturation ?? 0, photo.angle, photo.spacingMm, photo.levels, photo.hatchSmoothMm ?? "", photo.band?.join(",") ?? "", photo.crop?.join(",") ?? "", photo.bleed ?? 0, photo.style ?? "hatch", photo.rowMm ?? "", photo.waveMm ?? "", photo.squiggleAmpMm ?? "", photo.squiggleHeight ?? "", photo.squiggleJoin ? "join" : "", photo.squiggleLift ? "lift" : "", photo.squiggleSmooth ?? "", JSON.stringify(photo.squiggleDraw ?? {}), photo.squiggleVersion ?? "", JSON.stringify(photo.squiggleInkscape ?? {}), photo.squiggleAngle ?? "", photo.ink ?? "", photo.regions?.join(",") ?? "", photo.region ?? "", photo.contours ?? "", photo.smoothMm ?? "", photo.key ? "key" : "", photo.keyInk ?? "", photo.regionInks?.join(",") ?? "", photo.keyStrength ?? "", photo.keyFrom ?? "", photo.plate ?? "", photo.plates?.join(",") ?? "", photo.blackShare ?? "", photo.centerFrom ?? "", photo.centerSmoothMm ?? "", photo.centerShortestMm ?? "", photo.silhouetteFrom ?? "", photo.silhouetteSmoothMm ?? "", photo.silhouetteSmallestMm ?? "", photo.fitPaper ?? "", photo.penMm ?? "", photo.fitPairs ? "pairs" : "", photo.fitOpaque ? "opaque" : "", photo.streamWidestMm ?? "", photo.streamPasses ?? "", photo.streamFlowMm ?? "", photo.lineDots ?? "", photo.lineLiftMm ?? "", photo.hilbertCoarsestMm ?? "", photo.hilbertLift ? "hlift" : ""].join("|");
 }
 
 /**
@@ -2999,6 +3009,109 @@ function hatch(tones: Tones, photo: Photo, w: number, h: number): PhotoMarks {
 }
 
 
+// ---------- Hilbert curve ----------
+
+/**
+ * Tone as a Hilbert curve: one line that fills the picture by folding into itself, square within
+ * square, folded finer where it's darker. A square of the curve is as wide as the spacing over the
+ * darkness there - the line through it covers the paper in proportion - but never wider than
+ * Coarsest, so light areas still meander gently. The tone shows in steps, each fold halving the
+ * square: that stepped, mechanical halftone is the look. A picture that isn't square is a row of
+ * near-square tiles, each curve ending where the next begins, so it is one line - broken only, if
+ * asked, where there's nothing to draw.
+ */
+function hilbert(tones: Tones, photo: Photo, w: number, h: number): PhotoMarks {
+  const spacing = Math.max(0.05, photo.spacingMm) / 25.4;
+  const coarsest = Math.max(spacing, (photo.hilbertCoarsestMm ?? HILBERT_DEFAULTS.coarsestMm) / 25.4);
+  const lift = Boolean(photo.hilbertLift);
+  const { toneAt } = toneSampler(tones, photo, w, h, true);
+
+  // The darkness, summed across and down, so any square's average is four look-ups.
+  const gw = Math.max(4, Math.round((HILBERT_EDGE * w) / Math.max(w, h)));
+  const gh = Math.max(4, Math.round((HILBERT_EDGE * h) / Math.max(w, h)));
+  const sum = new Float64Array((gw + 1) * (gh + 1));
+  for (let y = 0; y < gh; y++) {
+    let row = 0;
+    for (let x = 0; x < gw; x++) {
+      const t = toneAt(((x + 0.5) * w) / gw, ((y + 0.5) * h) / gh);
+      row += t > 0 ? t : 0;
+      sum[(y + 1) * (gw + 1) + x + 1] = sum[y * (gw + 1) + x + 1] + row;
+    }
+  }
+  const at = (x: number, y: number) => sum[y * (gw + 1) + x];
+  // The average darkness over a box in inches - for a box smaller than a grid square, the square it's in.
+  const toneOver = (x0: number, y0: number, x1: number, y1: number) => {
+    const a = Math.max(0, Math.min(gw - 1, Math.floor((Math.min(x0, x1) / w) * gw)));
+    const b = Math.max(0, Math.min(gh - 1, Math.floor((Math.min(y0, y1) / h) * gh)));
+    const c = Math.max(a + 1, Math.min(gw, Math.ceil((Math.max(x0, x1) / w) * gw)));
+    const d = Math.max(b + 1, Math.min(gh, Math.ceil((Math.max(y0, y1) / h) * gh)));
+    return (at(c, d) - at(a, d) - at(c, b) + at(a, b)) / ((c - a) * (d - b));
+  };
+
+  const n = (v: number) => Number(v.toFixed(4));
+  const parts: string[] = [];
+  let strokes = 0;
+  let length = 0;
+  let piece: number[][] = [];
+  const close = () => {
+    if (piece.length > 1) {
+      // Points in a straight run are one segment: the curve is mostly straight runs.
+      const kept = [piece[0]];
+      for (let i = 1; i < piece.length - 1; i++) {
+        const [ax, ay] = kept[kept.length - 1];
+        const [bx, by] = piece[i];
+        const [cx, cy] = piece[i + 1];
+        if (Math.abs((bx - ax) * (cy - ay) - (by - ay) * (cx - ax)) > 1e-10) kept.push(piece[i]);
+      }
+      kept.push(piece[piece.length - 1]);
+      for (let i = 1; i < kept.length; i++) length += Math.hypot(kept[i][0] - kept[i - 1][0], kept[i][1] - kept[i - 1][1]);
+      parts.push(`M${kept.map(([x, y]) => `${n(x)} ${n(y)}`).join("L")}`);
+      strokes++;
+    }
+    piece = [];
+  };
+  // One square of the curve: at (x0, y0), `i` the way it travels, `j` across - halved and turned
+  // into four smaller squares, in the curve's order, until it's fine enough for its tone.
+  const fold = (x0: number, y0: number, ix: number, iy: number, jx: number, jy: number) => {
+    const side = Math.max(Math.hypot(ix, iy), Math.hypot(jx, jy));
+    const tone = toneOver(x0, y0, x0 + ix + jx, y0 + iy + jy);
+    const wanted = tone > 0 ? spacing / tone : Infinity;
+    // Each fold halves the square, so the tone comes in steps; each square takes the step nearest the
+    // size it wants - rounded at the half-way point on that doubling scale, √2 - rather than always
+    // the finer, which put everything darker than about 40% on the finest step. The finest is within
+    // √2 of the spacing.
+    if (side / 2 >= spacing / Math.SQRT2 && (side > coarsest || side > wanted * Math.SQRT2)) {
+      const [hix, hiy, hjx, hjy] = [ix / 2, iy / 2, jx / 2, jy / 2];
+      fold(x0, y0, hjx, hjy, hix, hiy);
+      fold(x0 + hjx, y0 + hjy, hix, hiy, hjx, hjy);
+      fold(x0 + hjx + hix, y0 + hjy + hiy, hix, hiy, hjx, hjy);
+      fold(x0 + hjx + ix, y0 + hjy + iy, -hjx, -hjy, -hix, -hiy);
+      return;
+    }
+    const cx = x0 + (ix + jx) / 2;
+    const cy = y0 + (iy + jy) / 2;
+    // Lifting, and nothing to draw here: the pen comes up.
+    if (lift && tone <= 0.01) {
+      close();
+      return;
+    }
+    piece.push([cx, cy]);
+  };
+  // A row of tiles along the picture's long side, as many as divide it into near-squares - each
+  // between half and fully as long as it is wide, so the picture is covered exactly and nothing hangs
+  // off it. Each curve runs from its tile's first corner along `i` to the next tile's first corner.
+  const across = w >= h;
+  const count = Math.max(1, Math.ceil(Math.max(w, h) / Math.min(w, h) - 1e-9));
+  const along = Math.max(w, h) / count;
+  for (let k = 0; k < count; k++) {
+    if (across) fold(k * along, 0, along, 0, 0, h);
+    else fold(0, k * along, 0, along, w, 0);
+  }
+  close();
+  return { passes: [parts.join("")], strokes, lengthMm: length * 25.4 };
+}
+
+
 // ---------- One line ----------
 
 /**
@@ -3618,13 +3731,15 @@ export function photoFromData(raw: Record<string, unknown>): Photo | null {
       ? { crop: raw.crop.map(Number) as [number, number, number, number] }
       : {}),
     ...(raw.fit === "fit" || raw.fit === "fill" ? { fit: raw.fit } : {}),
-    ...(raw.style === "waves" || raw.style === "squiggle" || raw.style === "streamlines" || raw.style === "oneline" || raw.style === "outlines" || raw.style === "centerlines" || raw.style === "silhouette" ? { style: raw.style } : {}),
+    ...(raw.style === "waves" || raw.style === "squiggle" || raw.style === "streamlines" || raw.style === "oneline" || raw.style === "hilbert" || raw.style === "outlines" || raw.style === "centerlines" || raw.style === "silhouette" ? { style: raw.style } : {}),
     ...(Number.isFinite(Number(raw.center_from)) && raw.center_from !== undefined ? { centerFrom: Number(raw.center_from) } : {}),
     ...(Number.isFinite(Number(raw.center_smooth_mm)) && raw.center_smooth_mm !== undefined ? { centerSmoothMm: Number(raw.center_smooth_mm) } : {}),
     ...(Number.isFinite(Number(raw.center_shortest_mm)) && raw.center_shortest_mm !== undefined ? { centerShortestMm: Number(raw.center_shortest_mm) } : {}),
     ...(Number.isFinite(Number(raw.silhouette_from)) && raw.silhouette_from !== undefined ? { silhouetteFrom: Number(raw.silhouette_from) } : {}),
     ...(Number.isFinite(Number(raw.silhouette_smooth_mm)) && raw.silhouette_smooth_mm !== undefined ? { silhouetteSmoothMm: Number(raw.silhouette_smooth_mm) } : {}),
     ...(Number.isFinite(Number(raw.silhouette_smallest_mm)) && raw.silhouette_smallest_mm !== undefined ? { silhouetteSmallestMm: Number(raw.silhouette_smallest_mm) } : {}),
+    ...(Number.isFinite(Number(raw.hilbert_coarsest_mm)) && raw.hilbert_coarsest_mm !== undefined ? { hilbertCoarsestMm: Number(raw.hilbert_coarsest_mm) } : {}),
+    ...(raw.hilbert_lift === true ? { hilbertLift: true } : {}),
     ...(Number.isFinite(Number(raw.line_dots)) && raw.line_dots !== undefined ? { lineDots: Number(raw.line_dots) } : {}),
     ...(Number.isFinite(Number(raw.line_lift_mm)) && raw.line_lift_mm !== undefined ? { lineLiftMm: Number(raw.line_lift_mm) } : {}),
     ...(Number.isFinite(Number(raw.stream_widest_mm)) && raw.stream_widest_mm !== undefined ? { streamWidestMm: Number(raw.stream_widest_mm) } : {}),
@@ -3683,13 +3798,15 @@ export const photoData = (p: Photo) => ({
   ...(p.band ? { band: p.band } : {}),
   ...(p.crop ? { crop: p.crop } : {}),
   ...(p.fit ? { fit: p.fit } : {}),
-  ...(p.style === "waves" || p.style === "squiggle" || p.style === "streamlines" || p.style === "oneline" || p.style === "outlines" || p.style === "centerlines" || p.style === "silhouette" ? { style: p.style } : {}),
+  ...(p.style === "waves" || p.style === "squiggle" || p.style === "streamlines" || p.style === "oneline" || p.style === "hilbert" || p.style === "outlines" || p.style === "centerlines" || p.style === "silhouette" ? { style: p.style } : {}),
   ...(p.centerFrom !== undefined ? { center_from: p.centerFrom } : {}),
   ...(p.centerSmoothMm !== undefined ? { center_smooth_mm: p.centerSmoothMm } : {}),
   ...(p.centerShortestMm !== undefined ? { center_shortest_mm: p.centerShortestMm } : {}),
   ...(p.silhouetteFrom !== undefined ? { silhouette_from: p.silhouetteFrom } : {}),
   ...(p.silhouetteSmoothMm !== undefined ? { silhouette_smooth_mm: p.silhouetteSmoothMm } : {}),
   ...(p.silhouetteSmallestMm !== undefined ? { silhouette_smallest_mm: p.silhouetteSmallestMm } : {}),
+  ...(p.hilbertCoarsestMm !== undefined ? { hilbert_coarsest_mm: p.hilbertCoarsestMm } : {}),
+  ...(p.hilbertLift ? { hilbert_lift: true } : {}),
   ...(p.lineDots !== undefined ? { line_dots: p.lineDots } : {}),
   ...(p.lineLiftMm ? { line_lift_mm: p.lineLiftMm } : {}),
   ...(p.streamWidestMm !== undefined ? { stream_widest_mm: p.streamWidestMm } : {}),

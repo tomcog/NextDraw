@@ -4,7 +4,7 @@ import { RotateCcwSquare, RotateCwSquare } from "lucide-react";
 import { Section } from "../../shared/components/controls/Section";
 import { NumberField } from "../../shared/components/controls/NumberField";
 import controls from "../../shared/components/controls/controls.module.css";
-import { BLACK_SHARE, CENTER_DEFAULTS, KEY_FROM, MOST_COLORS, MOST_LAYERS, MOST_PASSES, OUTLINE_DEFAULTS, PLATES, PLATE_AIMS, PLATE_OFF, SILHOUETTE_DEFAULTS, STREAM_DEFAULTS, ONE_LINE_DEFAULTS, ONE_LINE_MOST, WAVE_DEFAULTS, ANGLE_PRESETS, PLATE_SETS, SQUIGGLE_DRAW, SQUIGGLE_INKSCAPE, SQUIGGLE_INKSCAPE_RANGES, SQUIGGLE_RANGES, coverSteps, plateSetOf, platesOf, squiggleDrawOf, squiggleInkscapeOf, type AnglePreset, type SquiggleDraw, type SquiggleInkscape, type PlateSet, photoMarks, photoMode, type Photo, type Plate } from "../../shared/lib/drawing/photo";
+import { BLACK_SHARE, CENTER_DEFAULTS, KEY_FROM, MOST_COLORS, MOST_LAYERS, MOST_PASSES, OUTLINE_DEFAULTS, PLATES, PLATE_AIMS, PLATE_OFF, SILHOUETTE_DEFAULTS, STREAM_DEFAULTS, ONE_LINE_DEFAULTS, ONE_LINE_MOST, HILBERT_DEFAULTS, WAVE_DEFAULTS, ANGLE_PRESETS, PLATE_SETS, SQUIGGLE_DRAW, SQUIGGLE_INKSCAPE, SQUIGGLE_INKSCAPE_RANGES, SQUIGGLE_RANGES, coverSteps, plateSetOf, platesOf, squiggleDrawOf, squiggleInkscapeOf, type AnglePreset, type SquiggleDraw, type SquiggleInkscape, type PlateSet, photoMarks, photoMode, type Photo, type Plate } from "../../shared/lib/drawing/photo";
 import { boxOf, type Layer, type Shape } from "../../shared/lib/drawing/shapes";
 import type { PenColor } from "../../shared/lib/types";
 import styles from "../App.module.css";
@@ -439,6 +439,19 @@ export function PhotoCard({ shape, title, shapes, layers, busy, all, onAll, scal
                     </div>
                     {eachLayer("Dots and lift")}
                   </>
+                ) : photo.style === "hilbert" ? (
+                  <>
+                    {/* As the other tonal effects: the color mode first. No angles: the curve runs square to the picture. */}
+                    {colourMode}
+                    {photo.group && bleed}
+                    <div className={styles.fillRow}>
+                      <NumberField label="Spacing mm" min={0.1} max={5} step={0.05} value={photo.spacingMm} onChange={(spacingMm) => actions.set({ spacingMm })} />
+                      {/* How big the curve's squares get in the lightest parts, so they still meander. */}
+                      <NumberField label="Coarsest mm" min={0.5} max={50} step={0.5} value={photo.hilbertCoarsestMm ?? HILBERT_DEFAULTS.coarsestMm} onChange={(hilbertCoarsestMm) => actions.set({ hilbertCoarsestMm })} />
+                    </div>
+                    <Checkbox checked={Boolean(photo.hilbertLift)} label="Lift the pen in white areas" onChange={(e) => actions.set({ hilbertLift: e.target.checked || undefined })} />
+                    {eachLayer("Spacing, coarsest and lift")}
+                  </>
                 ) : photo.style === "outlines" ? (
                   <>
                     {/* The color mode first, as in the other effects. No angles: contours follow the
@@ -574,6 +587,8 @@ export function PhotoCard({ shape, title, shapes, layers, busy, all, onAll, scal
                       ? `${marks.strokes.toLocaleString()} lines, flowing along the image's shapes. They run from Spacing apart in the blacks to Widest apart, past which it's paper; Flow sets how broadly the shapes are followed${(photo.streamPasses ?? 1) > 1 ? ", and a second pass crosses the first in the darker half" : ""}.`
                       : photo.style === "oneline"
                       ? `${marks.strokes === 1 ? "One line" : `${marks.strokes.toLocaleString()} lines`} through ${(marks.dots ?? 0).toLocaleString()} dots, ${((marks.lengthMm ?? 0) / 1000).toFixed(1)} m of drawing. The dots are thicker where the image is darker, so the line winds tighter there.${marks.strokes > 1 ? " The pen lifts over jumps longer than Lift over." : ""}`
+                      : photo.style === "hilbert"
+                      ? `${marks.strokes === 1 ? "One line" : `${marks.strokes.toLocaleString()} lines`}, ${((marks.lengthMm ?? 0) / 1000).toFixed(1)} m of drawing, folding finer where the image is darker: from Coarsest in the lightest parts down to Spacing in the blacks, halving at each step.${photo.hilbertLift ? " The pen lifts where there's nothing to draw." : ""}`
                       : photo.style === "outlines"
                       ? `${marks.strokes.toLocaleString()} contours, along the image's edges and shapes. More lines follow finer changes of tone; more smoothing, only the big ones.`
                       : photo.style === "squiggle"
@@ -586,7 +601,7 @@ export function PhotoCard({ shape, title, shapes, layers, busy, all, onAll, scal
               </Section>
             </div>
           </Card>
-          {splits && effect.key !== "hatch" && effect.key !== "squiggle" && effect.key !== "waves" && effect.key !== "streamlines" && effect.key !== "oneline" && effect.key !== "outlines" && (
+          {splits && effect.key !== "hatch" && effect.key !== "squiggle" && effect.key !== "waves" && effect.key !== "streamlines" && effect.key !== "oneline" && effect.key !== "hilbert" && effect.key !== "outlines" && (
             <Card variant="flat" className={styles.controls}>
               <div className={`${styles.cardBody} ${controls.cardSections}`}>
                 <Section title={photo.separation ? "Separation" : "Layers"} collapsibleKey="photo-layers">
