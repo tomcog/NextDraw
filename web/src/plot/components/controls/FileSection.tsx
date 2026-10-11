@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { ButtonRound, InputText } from "@tomcoggia/ui";
-import { Crop, FolderOpen, PenTool, RotateCcw, RotateCcwSquare, RotateCwSquare, ScanSquare, X } from "lucide-react";
+import { Crop, FolderOpen, PenTool, RotateCcw, RotateCcwSquare, RotateCwSquare, ScanSquare, StickyNoteX } from "lucide-react";
 import styles from "../../../shared/components/controls/controls.module.css";
 import { Section } from "../../../shared/components/controls/Section";
 import { fmtLen, trimNum } from "../../../shared/lib/format";
@@ -68,7 +68,7 @@ export function FileSection({
           {fileName && (
             <ButtonRound
               size="sm"
-              icon={<X />}
+              icon={<StickyNoteX />}
               className={styles.clearFile}
               aria-label="Clear the drawing"
               title="Close this drawing"
