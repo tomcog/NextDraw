@@ -7,7 +7,7 @@ import type { Dispatch, SetStateAction } from "react";
 import { lightness } from "../../shared/lib/color";
 import type { PenColor, Preset } from "../../shared/lib/types";
 import {
-  BAND_NAMES, LAYER_SETTINGS, MOST_COLORS, MOST_LAYERS, PHOTO_DEFAULTS, PLATES, PLATE_AIMS, colourGroups, isColourful, matchPens, photoMode,
+  BAND_NAMES, LAYER_SETTINGS, MOST_COLORS, MOST_LAYERS, PHOTO_DEFAULTS, PLATES, PLATE_AIMS, PLATE_OFF, colourGroups, isColourful, matchPens, photoMode,
   placeOnPage, plateNamed, platePens, presetAngle, readTones, hexLinear, linearHex, coverSteps, stemWithoutPlate, turnedCopy, turnedCrop, workingCopy, type AnglePreset, type Photo, type PhotoPart, type Plate, type PlateSet, PLATE_SETS, plateSetOf, platesOf,
 } from "../../shared/lib/drawing/photo";
 import { boxOf, newLayerId, newShapeId, type Layer, type Page, type Shape } from "../../shared/lib/drawing/shapes";
@@ -700,7 +700,8 @@ export function photoActions(ctx: PhotoContext) {
     if (!chosen?.photo) return;
     record();
     const use = preset ?? chosen.photo.anglePreset ?? "classic";
-    const turn = turnedBy(chosen.photo.angleTurn ?? 0, by);
+    // Uniform, chosen: every layer takes the angle of the one in hand, which is then their shared turn.
+    const turn = preset === "uniform" ? turnedBy(chosen.photo.angle, by) : turnedBy(chosen.photo.angleTurn ?? 0, by);
     const members = chosen.photo.group ? shapes.filter((sh) => sh.photo?.group === chosen.photo!.group) : [chosen];
     const place = (sh: Shape) => layers.findIndex((l) => l.id === sh.layerId);
     const order = [...members].sort((a, b) => place(a) - place(b)).map((m) => m.id);
@@ -717,10 +718,21 @@ export function photoActions(ctx: PhotoContext) {
    */
   const setPlatePen = (plate: Plate, penName: string) => {
     if (!chosen?.photo?.plates) return;
-    const pen = tool2?.palette?.find((p) => p.name === penName);
-    if (!pen) return;
     const at = platesOf(chosen.photo.plates).indexOf(plate);
     if (at < 0) return;
+    // None: the channel is left out. The others are separated again without it, and its layer, kept
+    // as it is, has nothing to draw until a pen is chosen for it again.
+    if (penName === PLATE_OFF) {
+      record();
+      const plates = [...chosen.photo.plates];
+      plates[at] = PLATE_OFF;
+      const group = chosen.photo.group;
+      setShapes((list) => list.map((sh) => ((group ? sh.photo?.group === group : sh.id === chosen.id) ? { ...sh, photo: { ...sh.photo!, plates } } : sh)));
+      setMessage({ text: `${PLATE_AIMS[plate].name} left out: the other plates make up the image without it`, ok: true });
+      return;
+    }
+    const pen = tool2?.palette?.find((p) => p.name === penName);
+    if (!pen) return;
     record();
     const plates = [...chosen.photo.plates];
     plates[at] = pen.color;

@@ -246,6 +246,9 @@ export const PLATE_SETS: { key: PlateSet; label: string; about: string; plates: 
 export const plateSetOf = (plates: unknown[] | undefined): PlateSet =>
   PLATE_SETS.find((s) => s.plates.length === (plates?.length ?? 4))?.key ?? "cmyk";
 /** The plates, in order, of the set a photo's plates are. */
+/** A plate set to None: its channel is left out - the others are separated without it, and it draws nothing. */
+export const PLATE_OFF = "none";
+
 export const platesOf = (plates: unknown[] | undefined): Plate[] => PLATE_SETS.find((s) => s.key === plateSetOf(plates))!.plates;
 
 /**
@@ -439,11 +442,12 @@ export const PHOTO_DEFAULTS = { brightness: 0, contrast: 0, angle: 45, levels: 4
  * 45°. Cardinal keeps to the square and its diagonals. Golden spread turns each layer by the golden
  * angle from the last - for any number of layers, as far apart as they can be.
  */
-export type AnglePreset = "classic" | "cardinal" | "golden";
+export type AnglePreset = "classic" | "cardinal" | "golden" | "uniform";
 export const ANGLE_PRESETS: { key: AnglePreset; label: string; about: string }[] = [
   { key: "classic", label: "Classic", about: "Print's screen angles: cyan 15°, magenta 75°, yellow 0°, black 45°; layers by tone or color 45°, 15°, 75°, 0°, 30°, 60°" },
   { key: "cardinal", label: "Cardinal", about: "The square and its diagonals: 0°, 90°, 45°, 135°, then 22.5°, 112.5°" },
   { key: "golden", label: "Golden spread", about: "Each layer turned 137.5° - the golden angle - from the last: 0°, 137.5°, 95°, 52.5°, 10°, 147.5°" },
+  { key: "uniform", label: "Uniform", about: "Every layer's lines at the same angle: the Angle setting, which then turns them all together" },
 ];
 const CLASSIC = [45, 15, 75, 0, 30, 60];
 const CARDINAL = [0, 90, 45, 135, 22.5, 112.5];
@@ -453,6 +457,7 @@ const GOLDEN = 180 * (3 - Math.sqrt(5)); // 137.5077...°, the golden angle
 export function presetAngle(preset: AnglePreset, index: number, plate?: Plate): number {
   if (preset === "classic") return plate ? PLATE_AIMS[plate].angle : CLASSIC[index % CLASSIC.length];
   if (preset === "cardinal") return CARDINAL[index % CARDINAL.length];
+  if (preset === "uniform") return 0; // all alike: the angle they share is the turn on top of it
   return Math.round(((index * GOLDEN) % 180) * 10) / 10;
 }
 
@@ -1311,7 +1316,10 @@ export function separationReady(photo: Photo): boolean {
  */
 export function solveSeparation({ rgb, w, h, plates, brightness, contrast, blackShare, levels, penMm, spacingMm }: SeparationRequest): Float32Array[] {
   const adjust = adjuster(brightness, contrast);
-  const pens = plates.map(hexLinear);
+  // A plate set to None is a pen of paper's colour that's never used: the rest come as near as they can
+  // without it, and its map stays empty.
+  const off = plates.map((p) => p === PLATE_OFF);
+  const pens = plates.map((p) => (p === PLATE_OFF ? [1, 1, 1] : hexLinear(p)));
   const steps = coverSteps(penMm, spacingMm, levels);
   const reach = withinReach(pens, steps);
   const maps = plates.map(() => new Float32Array(w * h));
@@ -1332,7 +1340,7 @@ export function solveSeparation({ rgb, w, h, plates, brightness, contrast, black
       let covers = solved.get(key);
       if (!covers) {
         const from: number[] | null = before && Math.hypot(want[0] - before.want[0], want[1] - before.want[1], want[2] - before.want[2]) < EDGE_DE ? before.covers : null;
-        covers = Float32Array.from(chooseCovers(want, pens, steps, blackShare, from));
+        covers = Float32Array.from(chooseCovers(want, pens, steps, blackShare, from, off));
         solved.set(key, covers);
       }
       before = { want, covers: [...covers] };
@@ -1379,7 +1387,7 @@ function coverTone(cover: number, steps: number[]): number {
  * from nothing, the first pens tried (cyan, magenta, yellow) settle an orange as yellow over magenta
  * and the orange pen is never reached.
  */
-function chooseCovers(want: number[], pens: number[][], steps: number[], blackShare: number, from: number[] | null): number[] {
+function chooseCovers(want: number[], pens: number[][], steps: number[], blackShare: number, from: number[] | null, off: boolean[] = []): number[] {
   const most = steps[steps.length - 1];
   const covers = from ? [...from] : new Array<number>(pens.length).fill(0);
   const weight = pens.map((_, n) => (n === 3 ? 1 - blackShare : blackShare) * 2 * INK_COST);
@@ -1394,6 +1402,7 @@ function chooseCovers(want: number[], pens: number[][], steps: number[], blackSh
     let start = -1;
     let amount = 0;
     for (let n = 0; n < pens.length; n++) {
+      if (off[n]) continue;
       for (let k = 1; k <= 16; k++) {
         covers[n] = (most * k) / 16;
         const e = score();
@@ -1406,6 +1415,7 @@ function chooseCovers(want: number[], pens: number[][], steps: number[], blackSh
   for (let round = 0; round < 30; round++) {
     let moved = 0;
     for (let n = 0; n < pens.length; n++) {
+      if (off[n]) continue;
       const was = covers[n];
       // The best amount for this pen, the others held: a golden-section search, then none if none is better.
       let a = 0;
@@ -1436,8 +1446,9 @@ function chooseCovers(want: number[], pens: number[][], steps: number[], blackSh
 /** How many passes of each plate's pen, in plate order, a colour is drawn with: one point of a separation, for checking it. */
 export function platePasses(rgb: [number, number, number], plates: string[], { levels = 6, penMm = 0.4, spacingMm = 1.2, blackShare = BLACK_SHARE } = {}): number[] {
   const steps = coverSteps(penMm, spacingMm, levels);
-  const pens = plates.map(hexLinear);
-  const covers = chooseCovers(withinReach(pens, steps)(labOfLinear(rgb.map(linear))), pens, steps, blackShare, null);
+  const off = plates.map((p) => p === PLATE_OFF);
+  const pens = plates.map((p) => (p === PLATE_OFF ? [1, 1, 1] : hexLinear(p)));
+  const covers = chooseCovers(withinReach(pens, steps)(labOfLinear(rgb.map(linear))), pens, steps, blackShare, null, off);
   return covers.map((c) => {
     const tone = coverTone(c, steps);
     return tone ? Math.floor(tone * steps.length) : 0;
@@ -3015,7 +3026,7 @@ export function photoFromData(raw: Record<string, unknown>): Photo | null {
     ...(Number.isFinite(Number(raw.squiggle_amp_mm)) && raw.squiggle_amp_mm !== undefined ? { squiggleAmpMm: Number(raw.squiggle_amp_mm) } : {}),
     ...(Number.isFinite(Number(raw.squiggle_height)) && raw.squiggle_height !== undefined ? { squiggleHeight: Number(raw.squiggle_height) } : {}),
     ...(raw.squiggle_join === true ? { squiggleJoin: true } : {}),
-    ...(raw.angle_preset === "classic" || raw.angle_preset === "cardinal" || raw.angle_preset === "golden" ? { anglePreset: raw.angle_preset } : {}),
+    ...(raw.angle_preset === "classic" || raw.angle_preset === "cardinal" || raw.angle_preset === "golden" || raw.angle_preset === "uniform" ? { anglePreset: raw.angle_preset } : {}),
     ...(Number.isFinite(Number(raw.angle_turn)) && raw.angle_turn !== undefined ? { angleTurn: Number(raw.angle_turn) } : {}),
     ...(raw.squiggle_lift === true ? { squiggleLift: true } : {}),
     ...(Number.isFinite(Number(raw.squiggle_smooth)) && raw.squiggle_smooth !== undefined ? { squiggleSmooth: Number(raw.squiggle_smooth) } : {}),

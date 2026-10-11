@@ -155,11 +155,14 @@ test("squiggle: lifting leaves white as paper, and still draws the darks", async
 });
 
 test("angle presets: classic is print's, cardinal the square, golden spread 137.5° apart", () => {
-  const six = (p: "classic" | "cardinal" | "golden") => [0, 1, 2, 3, 4, 5].map((i) => presetAngle(p, i));
+  const six = (p: "classic" | "cardinal" | "golden" | "uniform") => [0, 1, 2, 3, 4, 5].map((i) => presetAngle(p, i));
   assert.deepEqual(six("classic"), [45, 15, 75, 0, 30, 60]);
   assert.deepEqual(six("cardinal"), [0, 90, 45, 135, 22.5, 112.5]);
   assert.deepEqual(six("golden"), [0, 137.5, 95, 52.5, 10, 147.5]);
   assert.deepEqual((["c", "m", "y", "k"] as const).map((p) => presetAngle("classic", 0, p)), [15, 75, 0, 45]);
+  // Uniform: every layer and every plate alike - the shared angle is the turn on top.
+  assert.deepEqual(six("uniform"), [0, 0, 0, 0, 0, 0]);
+  assert.deepEqual((["c", "m", "y", "k"] as const).map((p) => presetAngle("uniform", 0, p)), [0, 0, 0, 0]);
 });
 
 test("plate sets: an orange is drawn in the orange pen, not built from yellow and magenta", async () => {
@@ -269,4 +272,17 @@ test("squiggle: a tone band waves as the whole photo does there - the light band
     const dark = swing([0.5, 1], more);
     assert.ok(light < dark * 0.75, `light ${light.toFixed(3)} against dark ${dark.toFixed(3)}`);
   }
+});
+
+test("plate sets: a plate set to None draws nothing, and the others make up the colour without it", () => {
+  const pens = ["#00a3e0", "#d6007a", "#ffe500", "#1a1a1a", "#ff6a13", "#00a650", "#e4002b", "#5b2c8f"];
+  const noOrange = [...pens];
+  noOrange[4] = "none";
+  const orange = platePasses([240, 110, 30], noOrange);
+  assert.equal(orange[4], 0, "nothing from the orange plate");
+  assert.ok(orange[1] + orange[2] + orange[6] >= 3, `made of magenta, yellow and red instead: ${orange.join(",")}`);
+  // Its map in a whole separation stays empty.
+  const rgb = new Uint8ClampedArray([240, 110, 30, 30, 160, 80]);
+  const maps = solveSeparation({ rgb, w: 2, h: 1, plates: noOrange, brightness: 0, contrast: 0, blackShare: 0.5, levels: 4, penMm: 0.28, spacingMm: 0.5 });
+  assert.deepEqual([...maps[4]], [0, 0]);
 });

@@ -5,7 +5,7 @@ import { apply, axisAligned, multiply, parseTransform, IDENTITY, type Matrix } f
 import { repeatFromData } from "./repeat";
 import { newGroupId, newLayerId, newShapeId, pointsBox, type Layer, type Page, type Shape } from "./shapes";
 import { FILL_GROUP_PREFIX, GROUP_PREFIX, PHOTO_GROUP_PREFIX, SOURCE_GROUP_SUFFIX } from "./svg";
-import { photoFromData, platesOf } from "./photo";
+import { PLATE_OFF, photoFromData, platesOf } from "./photo";
 
 // Reading a drawing back in, so work can be picked up again after it's been handed to Plot.
 //
@@ -585,7 +585,7 @@ export function parseDrawing(text: string): Opened {
       }),
       keyInk: keyMember ? colourOf(keyMember) : undefined,
       // Every plate of its set - four, or six to eight with the extra inks - each its layer's colour.
-      ...(sh.photo.plate ? { plates: platesOf(sh.photo.plates).map((p, i) => { const m = members.find((x) => x.photo?.plate === p); return m ? colourOf(m) : sh.photo!.plates?.[i] ?? "#000000"; }) } : {}),
+      ...(sh.photo.plate ? { plates: platesOf(sh.photo.plates).map((p, i) => { const m = members.find((x) => x.photo?.plate === p); return sh.photo!.plates?.[i] === PLATE_OFF ? PLATE_OFF : m ? colourOf(m) : sh.photo!.plates?.[i] ?? "#000000"; }) } : {}),
     };
   }
 

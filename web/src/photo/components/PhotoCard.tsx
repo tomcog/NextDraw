@@ -4,7 +4,7 @@ import { RotateCcwSquare, RotateCwSquare } from "lucide-react";
 import { Section } from "../../shared/components/controls/Section";
 import { NumberField } from "../../shared/components/controls/NumberField";
 import controls from "../../shared/components/controls/controls.module.css";
-import { BLACK_SHARE, CENTER_DEFAULTS, KEY_FROM, MOST_COLORS, MOST_LAYERS, MOST_PASSES, OUTLINE_DEFAULTS, PLATES, PLATE_AIMS, SILHOUETTE_DEFAULTS, WAVE_DEFAULTS, ANGLE_PRESETS, PLATE_SETS, SQUIGGLE_DRAW, SQUIGGLE_INKSCAPE, SQUIGGLE_INKSCAPE_RANGES, SQUIGGLE_RANGES, coverSteps, plateSetOf, platesOf, squiggleDrawOf, squiggleInkscapeOf, type AnglePreset, type SquiggleDraw, type SquiggleInkscape, type PlateSet, photoMarks, photoMode, type Photo, type Plate } from "../../shared/lib/drawing/photo";
+import { BLACK_SHARE, CENTER_DEFAULTS, KEY_FROM, MOST_COLORS, MOST_LAYERS, MOST_PASSES, OUTLINE_DEFAULTS, PLATES, PLATE_AIMS, PLATE_OFF, SILHOUETTE_DEFAULTS, WAVE_DEFAULTS, ANGLE_PRESETS, PLATE_SETS, SQUIGGLE_DRAW, SQUIGGLE_INKSCAPE, SQUIGGLE_INKSCAPE_RANGES, SQUIGGLE_RANGES, coverSteps, plateSetOf, platesOf, squiggleDrawOf, squiggleInkscapeOf, type AnglePreset, type SquiggleDraw, type SquiggleInkscape, type PlateSet, photoMarks, photoMode, type Photo, type Plate } from "../../shared/lib/drawing/photo";
 import { boxOf, type Layer, type Shape } from "../../shared/lib/drawing/shapes";
 import type { PenColor } from "../../shared/lib/types";
 import styles from "../App.module.css";
@@ -125,10 +125,12 @@ export function PhotoCard({ shape, title, shapes, layers, busy, all, onAll, scal
                       key={plate}
                       size="md"
                       label={PLATE_AIMS[plate].name}
-                      value={palette.find((p) => p.color.toLowerCase() === photo.plates![i]?.toLowerCase())?.name ?? ""}
+                      value={photo.plates![i] === PLATE_OFF ? PLATE_OFF : palette.find((p) => p.color.toLowerCase() === photo.plates![i]?.toLowerCase())?.name ?? ""}
                       onChange={(e) => actions.setPlatePen(plate, e.target.value)}
                     >
-                      {!palette.some((p) => p.color.toLowerCase() === photo.plates![i]?.toLowerCase()) && <option value="">Not in this palette</option>}
+                      {photo.plates![i] !== PLATE_OFF && !palette.some((p) => p.color.toLowerCase() === photo.plates![i]?.toLowerCase()) && <option value="">Not in this palette</option>}
+                      {/* None leaves the channel out: the other plates make up the photo without it. */}
+                      <option value={PLATE_OFF}>None</option>
                       {palette.map((p) => <option key={p.name} value={p.name}>{p.name}</option>)}
                     </InputSelect>
                   ))}
@@ -282,9 +284,10 @@ export function PhotoCard({ shape, title, shapes, layers, busy, all, onAll, scal
       {ANGLE_PRESETS.map((a) => <option key={a.key} value={a.key}>{a.label}</option>)}
     </InputSelect>
   );
-  // This layer's angle. For the whole drawing, changing it turns every layer with it.
+  // This layer's angle. For the whole drawing - or with Uniform, which keeps every layer at one angle -
+  // changing it turns every layer with it.
   const angleField = (
-    <NumberField label="Angle" unit="°" min={-180} max={180} step={5} value={photo.angle} onChange={(angle) => (all && photo.group ? actions.setAngles({ by: angle - photo.angle }) : actions.set({ angle }))} />
+    <NumberField label="Angle" unit="°" min={-180} max={180} step={5} value={photo.angle} onChange={(angle) => ((all || photo.anglePreset === "uniform") && photo.group ? actions.setAngles({ by: angle - photo.angle }) : actions.set({ angle }))} />
   );
   // Squiggle's own angle: every layer level, left to right, unless turned - not hatching's angles by color.
   const squiggleAngleField = (
