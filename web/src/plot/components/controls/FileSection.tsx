@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { ButtonRound, InputText } from "@tomcoggia/ui";
 import { Crop, FolderOpen, PenTool, RotateCcw, RotateCcwSquare, RotateCwSquare, ScanSquare, StickyNoteX } from "lucide-react";
 import styles from "../../../shared/components/controls/controls.module.css";
-import { Section } from "../../../shared/components/controls/Section";
+import { FileCard } from "../../../shared/components/controls/FileCard";
 import { fmtLen, trimNum } from "../../../shared/lib/format";
 import type { Preview } from "../../../shared/lib/preview";
 import type { Units } from "../../../shared/lib/types";
@@ -59,16 +59,17 @@ export function FileSection({
       : saveState === "saving" ? `Saving to ${folder}…` : saveState === "saved" ? `Saved to ${folder}` : `In ${folder}`;
 
   return (
-    <Section
-      title="File"
+    <FileCard
+      fileName={fileName}
+      collapsibleKey="plot-file"
       // Round buttons at the card's top right, as Studio's File card has: close the drawing, when
       // one is open, and open another.
       action={
         <span className={styles.headerTools}>
           {/* The way to Studio with this drawing, as Studio's Send is the way here: Studio's nib, as
-              its name in the header carries. Opened in Studio's own tab; this one stays on Plot. */}
+              its name in the header carries. Opened in this tab, in Plot's place. */}
           {onEditInStudio && (
-            <ButtonRound size="sm" icon={<PenTool />} aria-label="Open in Studio" title="Open in Studio, in Studio's own tab" disabled={busy} onClick={onEditInStudio} />
+            <ButtonRound size="sm" icon={<PenTool />} aria-label="Open in Studio" title="Open this drawing in Studio, in this tab" disabled={busy} onClick={onEditInStudio} />
           )}
           {fileName && (
             <ButtonRound
@@ -164,6 +165,6 @@ export function FileSection({
           <ButtonRound size="sm" icon={<RotateCwSquare />} aria-label="Turn the drawing right" title="Turn the drawing 90° right" disabled={busy} onClick={() => onRotate(1)} />
         </div>
       )}
-    </Section>
+    </FileCard>
   );
 }

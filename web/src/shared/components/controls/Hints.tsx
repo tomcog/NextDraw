@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import styles from "./Hints.module.css";
 
@@ -84,20 +84,31 @@ export function Hints({ delay = 500 }: { delay?: number }) {
     };
   }, [delay]);
 
-  if (!hint) return null;
   // Under what it is about, pushed back onto the page if it would hang off an edge, and above it
-  // when there is no room below.
-  const width = box.current?.offsetWidth ?? 0;
-  const height = box.current?.offsetHeight ?? 0;
-  const gap = 6;
-  const below = hint.at.bottom + gap;
-  const top = below + height > window.innerHeight - 8 ? Math.max(8, hint.at.top - gap - height) : below;
-  const left = Math.min(
-    Math.max(8, hint.at.left + hint.at.width / 2 - width / 2),
-    Math.max(8, window.innerWidth - width - 8),
-  );
+  // when there is no room below. Placed once it has been measured, before it's painted: worked out
+  // while rendering, its first showing had no width yet, sat half its width too far right, and
+  // jumped left on the next render.
+  const [place, setPlace] = useState<{ left: number; top: number } | null>(null);
+  useLayoutEffect(() => {
+    if (!hint || !box.current) {
+      setPlace(null);
+      return;
+    }
+    const width = box.current.offsetWidth;
+    const height = box.current.offsetHeight;
+    const gap = 6;
+    const below = hint.at.bottom + gap;
+    const top = below + height > window.innerHeight - 8 ? Math.max(8, hint.at.top - gap - height) : below;
+    const left = Math.min(
+      Math.max(8, hint.at.left + hint.at.width / 2 - width / 2),
+      Math.max(8, window.innerWidth - width - 8),
+    );
+    setPlace({ left, top });
+  }, [hint]);
+
+  if (!hint) return null;
   return createPortal(
-    <div ref={box} className={styles.hint} style={{ left, top }} role="tooltip">
+    <div ref={box} className={styles.hint} style={place ? place : { left: 0, top: 0, visibility: "hidden" }} role="tooltip">
       {hint.text}
     </div>,
     document.body,

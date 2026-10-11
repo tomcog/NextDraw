@@ -520,6 +520,7 @@ export default function App() {
         <Card variant="flat" className={styles.controls}>
           <div className={`${styles.cardBody} ${controls.cardSections}`}>
             <FileSection
+              collapsibleKey="photo-file"
               name={file.name}
               onName={file.setName}
               saved={file.saved}

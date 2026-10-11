@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { ButtonRound, InputText, Segment, Toolbar, ToolbarExpander } from "@tomcoggia/ui";
 import { File as FileIcon, FileInput, FilePlus, FolderOpen, ImagePlus, PenTool, Save, Send } from "lucide-react";
-import { Section } from "./Section";
+import { FileCard } from "./FileCard";
 import controls from "./controls.module.css";
 import styles from "./FileSection.module.css";
 
@@ -26,13 +26,16 @@ interface Props {
   onEditInStudio?: () => void;
   onSendToPlot: () => void;
   onSave: () => void;
+  /** Under which the card's folding is remembered: the app's own. */
+  collapsibleKey: string;
 }
 
 /**
- * Shared: the File card - the drawing's name, where it's saved, and opening, starting, sending and
- * saving. The same card in Studio and Photo; the buttons only one app has are passed in by that app.
+ * Shared: the File card's inside in Studio and Image - the drawing's name, where it's saved, and
+ * opening, starting, sending and saving - in the File card every app has (FileCard). The buttons only
+ * one app has are passed in by that app.
  */
-export function FileSection({ name, onName, saved, dirty, hasShapes, busy, confirm, onOpen, onAddLayer, onOpenPhotos, onNew, onEditInStudio, onSendToPlot, onSave }: Props) {
+export function FileSection({ name, onName, saved, dirty, hasShapes, busy, confirm, onOpen, onAddLayer, onOpenPhotos, onNew, onEditInStudio, onSendToPlot, onSave, collapsibleKey }: Props) {
   const photoInput = useRef<HTMLInputElement>(null);
   // The drawer: its buttons each do one thing and fold it, so a click anywhere else in the app
   // folds it too, as the row menus do.
@@ -48,8 +51,11 @@ export function FileSection({ name, onName, saved, dirty, hasShapes, busy, confi
   }, [drawerOpen]);
 
   return (
-    <Section
-      title="File"
+    <FileCard
+      fileName={name || null}
+      collapsibleKey={collapsibleKey}
+      // The question about unsaved work is asked in here: never folded away while it's waiting.
+      forceOpen={Boolean(confirm)}
       action={
         <span className={styles.headerTools}>
           {/* Opening, starting and sending sit in a drawer behind the File button; Save stays out,
@@ -142,6 +148,6 @@ export function FileSection({ name, onName, saved, dirty, hasShapes, busy, confi
       </p>
 
       {confirm}
-    </Section>
+    </FileCard>
   );
 }

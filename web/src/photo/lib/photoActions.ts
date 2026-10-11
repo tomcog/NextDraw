@@ -272,8 +272,12 @@ export function photoActions(ctx: PhotoContext) {
     const modes = { ...(chosen.photo.modes ?? {}), [from]: photoParts() };
     const back = modes[to];
     if (back?.length) {
+      // How it was split is the mode's own; how the photo is drawn and adjusted is the whole photo's,
+      // and stays as it is now. Brought back as it was saved, a split kept from before a change of
+      // effect came back in the old effect - Outlines switched to B&W turned back into Hatching.
+      const { style, brightness, contrast, saturation } = chosen.photo;
       rebuildPhoto(
-        back.map((part) => ({ ...part, photo: { ...Object.fromEntries(LAYER_SETTINGS.map((k) => [k, undefined])), ...part.photo, modes } })),
+        back.map((part) => ({ ...part, photo: { ...Object.fromEntries(LAYER_SETTINGS.map((k) => [k, undefined])), ...part.photo, modes, style, brightness, contrast, saturation } })),
         back.length > 1 ? chosen.photo.group ?? newShapeId() : undefined,
         `Back to how it was split by ${to}`,
         true,

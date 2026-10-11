@@ -281,8 +281,10 @@ export function Bed(props: Props) {
   // The frame, the paper, the grid, the dimension lines and home are BedCanvas's - shared with
   // Studio so the two previews cannot drift apart. What's left here is Plot's own: the drawing where
   // it will plot, the carriage, the plot in progress and dragging the drawing into place.
+  // What's drawn, not the drawing's page: a drawing made the paper's size has a page the paper's
+  // size, and framed by its page the Drawing zoom was the Paper zoom over again.
   const drawingBox: Box | null = fp
-    ? [fp.x * UNITS, fp.y * UNITS, (fp.x + fp.w) * UNITS, (fp.y + fp.h) * UNITS]
+    ? [fp.ink.x0 * UNITS, fp.ink.y0 * UNITS, fp.ink.x1 * UNITS, fp.ink.y1 * UNITS]
     : null;
 
   const snap = (mm: number) => {

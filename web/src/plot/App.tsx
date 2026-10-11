@@ -25,7 +25,7 @@ import { loadFont } from "../shared/lib/drawing/font";
 import { fitText } from "../shared/lib/drawing/text";
 import { buildSvg } from "../shared/lib/drawing/svg";
 import { parseDrawing } from "../shared/lib/drawing/parse";
-import { openInStudio } from "../shared/lib/apps";
+import { APP_URL, openInStudio } from "../shared/lib/apps";
 import { FileBrowser, type OpenResult } from "../shared/components/FileBrowser";
 import { MachinePanel } from "./components/MachinePanel";
 import { Section } from "../shared/components/controls/Section";
@@ -1859,7 +1859,9 @@ export default function App() {
                 onTrim={trimPage}
                 onRotate={(turn) => setRotation((r) => (((r + turn * 90) % 360) + 360) % 360)}
                 // Only a drawing that lives in a folder: an uploaded copy has nowhere for Studio to read it from.
-                onEditInStudio={status?.file_path ? () => openStudio(status.file_path!) : undefined}
+                // This tab becomes Studio on the drawing: Plot is left, not opened beside. The plotter
+                // carries on with anything it's doing; Plot's page picks it up again when come back to.
+                onEditInStudio={status?.file_path ? () => window.location.assign(`${APP_URL.studio}?open=${encodeURIComponent(status.file_path!)}`) : undefined}
               />
               {shownMisfits && (
                 <div className={styles.misfits} role="status">

@@ -1729,6 +1729,7 @@ export default function App() {
      <Card variant="flat" className={styles.controls}>
       <div className={`${styles.cardBody} ${controls.cardSections}`}>
        <FileSection
+        collapsibleKey="studio-file"
         name={name}
         onName={setName}
         saved={saved}

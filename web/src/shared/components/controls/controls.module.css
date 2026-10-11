@@ -588,6 +588,16 @@
   font-weight: 500;
 }
 
+/* A folded File card's drawing name: as the other cards' values, cut short with its full name in the
+   tooltip, so a long name can't push the chevron and the heading apart. */
+.fileInTitle {
+  composes: toolInTitle;
+  max-width: 10rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 /* A card heading with the glyph of the tool or effect it belongs to before its name, muted, 16 px:
    Image's effect cards and Studio's Simplifier. */
 .iconTitle {

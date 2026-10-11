@@ -21,12 +21,15 @@ interface Props {
   actionWhenOpen?: boolean;
   /** What the heading row shows at its end while the section is folded, in place of the action. */
   closedAction?: ReactNode;
+  /** Open whatever was chosen, while this is true: something in it that has to be seen - a question. */
+  forceOpen?: boolean;
 }
 
-export function Section({ title, action, children, collapsibleKey, defaultOpen = true, forget = false, actionWhenOpen = false, closedAction }: Props) {
-  const [open, setOpen] = useState(() =>
+export function Section({ title, action, children, collapsibleKey, defaultOpen = true, forget = false, actionWhenOpen = false, closedAction, forceOpen = false }: Props) {
+  const [chosen, setOpen] = useState(() =>
     collapsibleKey ? (forget ? undefined : load<boolean>(`studio-open-${collapsibleKey}`)) ?? defaultOpen : true,
   );
+  const open = chosen || forceOpen;
   const toggle = () => {
     const next = !open;
     setOpen(next);
