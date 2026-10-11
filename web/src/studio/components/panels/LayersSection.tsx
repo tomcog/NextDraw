@@ -116,7 +116,9 @@ export function LayersSection(props: Props) {
             >
               <LayerController
                 name="studio-layer"
-                purpose="draw"
+                // The layer being drawn on is marked with the target, as Plot marks the one to print.
+                // (A "print" row's printed mark needs `printed`, which Studio never passes.)
+                purpose="print"
                 number={at + 1}
                 color={layer.color}
                 swatchCut={notAPen}

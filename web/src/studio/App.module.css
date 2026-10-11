@@ -114,6 +114,8 @@
 
 /* Layers: the library's own row, with a bin after it. */
 .layerList {
+  /* The target on the layer being drawn on is black, as Plot's is: the library's hook for it. */
+  --ui-layer-controller-target-color: var(--ui-text-default);
   position: relative; /* rows measure their offsetTop against the list */
   list-style: none;
   margin: 0;
