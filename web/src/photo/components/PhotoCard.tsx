@@ -4,7 +4,7 @@ import { RotateCcwSquare, RotateCwSquare } from "lucide-react";
 import { Section } from "../../shared/components/controls/Section";
 import { NumberField } from "../../shared/components/controls/NumberField";
 import controls from "../../shared/components/controls/controls.module.css";
-import { BLACK_SHARE, CENTER_DEFAULTS, KEY_FROM, MOST_COLORS, MOST_LAYERS, MOST_PASSES, OUTLINE_DEFAULTS, PLATES, PLATE_AIMS, PLATE_OFF, SILHOUETTE_DEFAULTS, STREAM_DEFAULTS, WAVE_DEFAULTS, ANGLE_PRESETS, PLATE_SETS, SQUIGGLE_DRAW, SQUIGGLE_INKSCAPE, SQUIGGLE_INKSCAPE_RANGES, SQUIGGLE_RANGES, coverSteps, plateSetOf, platesOf, squiggleDrawOf, squiggleInkscapeOf, type AnglePreset, type SquiggleDraw, type SquiggleInkscape, type PlateSet, photoMarks, photoMode, type Photo, type Plate } from "../../shared/lib/drawing/photo";
+import { BLACK_SHARE, CENTER_DEFAULTS, KEY_FROM, MOST_COLORS, MOST_LAYERS, MOST_PASSES, OUTLINE_DEFAULTS, PLATES, PLATE_AIMS, PLATE_OFF, SILHOUETTE_DEFAULTS, STREAM_DEFAULTS, ONE_LINE_DEFAULTS, ONE_LINE_MOST, WAVE_DEFAULTS, ANGLE_PRESETS, PLATE_SETS, SQUIGGLE_DRAW, SQUIGGLE_INKSCAPE, SQUIGGLE_INKSCAPE_RANGES, SQUIGGLE_RANGES, coverSteps, plateSetOf, platesOf, squiggleDrawOf, squiggleInkscapeOf, type AnglePreset, type SquiggleDraw, type SquiggleInkscape, type PlateSet, photoMarks, photoMode, type Photo, type Plate } from "../../shared/lib/drawing/photo";
 import { boxOf, type Layer, type Shape } from "../../shared/lib/drawing/shapes";
 import type { PenColor } from "../../shared/lib/types";
 import styles from "../App.module.css";
@@ -427,6 +427,18 @@ export function PhotoCard({ shape, title, shapes, layers, busy, all, onAll, scal
                     </div>
                     {eachLayer("Angle, spacing, widest, flow and passes")}
                   </>
+                ) : photo.style === "oneline" ? (
+                  <>
+                    {/* As the other tonal effects: the color mode first. No angles: the line goes where the dots are. */}
+                    {colourMode}
+                    {photo.group && bleed}
+                    <div className={styles.fillRow}>
+                      <NumberField label="Dots" min={50} max={ONE_LINE_MOST} step={500} value={photo.lineDots ?? ONE_LINE_DEFAULTS.dots} onChange={(lineDots) => actions.set({ lineDots })} />
+                      {/* 0 keeps it one unbroken line; more, and the pen lifts over jumps that long, leaving white as paper. */}
+                      <NumberField label="Lift over" unit="mm" min={0} max={100} step={1} value={photo.lineLiftMm ?? 0} onChange={(v) => actions.set({ lineLiftMm: v > 0 ? v : undefined })} />
+                    </div>
+                    {eachLayer("Dots and lift")}
+                  </>
                 ) : photo.style === "outlines" ? (
                   <>
                     {/* The color mode first, as in the other effects. No angles: contours follow the
@@ -560,6 +572,8 @@ export function PhotoCard({ shape, title, shapes, layers, busy, all, onAll, scal
                       ? `${marks.strokes.toLocaleString()} ${marks.strokes === 1 ? "line" : "lines"}${marks.circles ? `, ${marks.circles} of them ${marks.circles === 1 ? "a circle" : "circles"}` : ""}, each drawn once down the middle of a stroke in the picture${marks.widthMm ? ` (they're about ${marks.widthMm.toFixed(1)} mm wide there)` : ""}. Darker than sets what counts as a line; Shortest drops specks and whiskers.`
                       : photo.style === "streamlines"
                       ? `${marks.strokes.toLocaleString()} lines, flowing along the image's shapes. They run from Spacing apart in the blacks to Widest apart, past which it's paper; Flow sets how broadly the shapes are followed${(photo.streamPasses ?? 1) > 1 ? ", and a second pass crosses the first in the darker half" : ""}.`
+                      : photo.style === "oneline"
+                      ? `${marks.strokes === 1 ? "One line" : `${marks.strokes.toLocaleString()} lines`} through ${(marks.dots ?? 0).toLocaleString()} dots, ${((marks.lengthMm ?? 0) / 1000).toFixed(1)} m of drawing. The dots are thicker where the image is darker, so the line winds tighter there.${marks.strokes > 1 ? " The pen lifts over jumps longer than Lift over." : ""}`
                       : photo.style === "outlines"
                       ? `${marks.strokes.toLocaleString()} contours, along the image's edges and shapes. More lines follow finer changes of tone; more smoothing, only the big ones.`
                       : photo.style === "squiggle"
@@ -572,7 +586,7 @@ export function PhotoCard({ shape, title, shapes, layers, busy, all, onAll, scal
               </Section>
             </div>
           </Card>
-          {splits && effect.key !== "hatch" && effect.key !== "squiggle" && effect.key !== "waves" && effect.key !== "streamlines" && effect.key !== "outlines" && (
+          {splits && effect.key !== "hatch" && effect.key !== "squiggle" && effect.key !== "waves" && effect.key !== "streamlines" && effect.key !== "oneline" && effect.key !== "outlines" && (
             <Card variant="flat" className={styles.controls}>
               <div className={`${styles.cardBody} ${controls.cardSections}`}>
                 <Section title={photo.separation ? "Separation" : "Layers"} collapsibleKey="photo-layers">

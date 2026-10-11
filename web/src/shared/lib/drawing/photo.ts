@@ -47,7 +47,11 @@ export interface Photo {
    * drawn the way SquiggleDraw draws it - smooth curves, unbroken through white, rows joinable into
    * one line. Absent, hatching.
    */
-  style?: "hatch" | "waves" | "squiggle" | "streamlines" | "outlines" | "centerlines" | "silhouette";
+  style?: "hatch" | "waves" | "squiggle" | "streamlines" | "oneline" | "outlines" | "centerlines" | "silhouette";
+  /** One line: how many dots the line is drawn through. More, a finer picture and a longer line. */
+  lineDots?: number;
+  /** One line: lift the pen over jumps longer than this, in mm, so white stays paper. Absent or 0, never. */
+  lineLiftMm?: number;
   /**
    * Streamlines: the widest the lines ever get apart, in mm - lighter than that is paper. The closest
    * is `spacingMm`, at black; between, the spacing follows the tone.
@@ -421,7 +425,7 @@ export interface PhotoPart {
 
 /** The settings a layer of a photo keeps as its own, as opposed to the photo's: what a mode remembers. */
 export const LAYER_SETTINGS = [
-  "style", "angle", "spacingMm", "levels", "hatchSmoothMm", "rowMm", "waveMm", "squiggleAmpMm", "squiggleHeight", "squiggleJoin", "squiggleLift", "squiggleSmooth", "squiggleDraw", "squiggleVersion", "squiggleInkscape", "squiggleAngle", "contours", "smoothMm", "centerFrom", "centerSmoothMm", "centerShortestMm", "silhouetteFrom", "silhouetteSmoothMm", "silhouetteSmallestMm", "streamWidestMm", "streamPasses", "streamFlowMm", "offsetMm",
+  "style", "angle", "spacingMm", "levels", "hatchSmoothMm", "rowMm", "waveMm", "squiggleAmpMm", "squiggleHeight", "squiggleJoin", "squiggleLift", "squiggleSmooth", "squiggleDraw", "squiggleVersion", "squiggleInkscape", "squiggleAngle", "contours", "smoothMm", "centerFrom", "centerSmoothMm", "centerShortestMm", "silhouetteFrom", "silhouetteSmoothMm", "silhouetteSmallestMm", "streamWidestMm", "streamPasses", "streamFlowMm", "lineDots", "lineLiftMm", "offsetMm",
   "band", "ink", "regions", "region", "key", "regionInks", "keyInk", "plate", "plates", "fitPaper", "penMm", "fitPairs", "fitOpaque",
 ] as const;
 
@@ -536,6 +540,13 @@ export const squiggleAmp = (photo: Pick<Photo, "squiggleAmpMm" | "squiggleHeight
   photo.squiggleAmpMm ?? (photo.squiggleHeight !== undefined ? (photo.squiggleHeight * (photo.rowMm ?? WAVE_DEFAULTS.rowMm)) / 2 : SQUIGGLE_DEFAULTS.ampMm);
 
 /** What outlines start from: a handful of contours, a millimetre's detail smoothed away. */
+/** One line's starting number of dots, and the most it allows. */
+export const ONE_LINE_DEFAULTS = { dots: 5000 };
+export const ONE_LINE_MOST = 30000;
+/** The longer side of the grid the dots are spread on, and how many times they're spread. */
+const ONE_LINE_EDGE = 500;
+const ONE_LINE_SPREAD = 12;
+
 /** Streamlines' starting numbers: widest spacing in mm, passes, and how broadly the flow is read, in mm. */
 export const STREAM_DEFAULTS = { widestMm: 3, passes: 1, flowMm: 2 };
 
@@ -731,6 +742,9 @@ export interface PhotoMarks {
   widthMm?: number;
   /** Centerlines: how many of the lines came out as true circles. */
   circles?: number;
+  /** One line: how many dots it runs through, and how long it is where the pen is down, in mm. */
+  dots?: number;
+  lengthMm?: number;
 }
 
 const marksCache = new Map<string, PhotoMarks>();
@@ -759,6 +773,7 @@ export function photoMarks(photo: Photo, w: number, h: number): PhotoMarks | nul
   const made = photo.style === "waves" ? waves(tones, photo, w, h)
     : photo.style === "squiggle" ? (photo.squiggleVersion === "inkscape" ? squiggleInkscape(tones, photo, w, h) : squiggle(tones, photo, w, h))
     : photo.style === "streamlines" ? streamlines(tones, photo, w, h)
+    : photo.style === "oneline" ? oneLine(tones, photo, w, h)
     : photo.style === "outlines" ? outlines(tones, photo, w, h)
     : photo.style === "centerlines" ? centerlines(tones, photo, w, h)
     : photo.style === "silhouette" ? silhouette(tones, photo, w, h)
@@ -770,7 +785,7 @@ export function photoMarks(photo: Photo, w: number, h: number): PhotoMarks | nul
 
 /** Everything a photo's lines depend on, as one string: the same key, the same lines. */
 function marksKey(photo: Photo, w: number, h: number) {
-  return [photo.src.length, photo.src.slice(-32), w.toFixed(4), h.toFixed(4), photo.brightness, photo.contrast, photo.saturation ?? 0, photo.angle, photo.spacingMm, photo.levels, photo.hatchSmoothMm ?? "", photo.band?.join(",") ?? "", photo.crop?.join(",") ?? "", photo.bleed ?? 0, photo.style ?? "hatch", photo.rowMm ?? "", photo.waveMm ?? "", photo.squiggleAmpMm ?? "", photo.squiggleHeight ?? "", photo.squiggleJoin ? "join" : "", photo.squiggleLift ? "lift" : "", photo.squiggleSmooth ?? "", JSON.stringify(photo.squiggleDraw ?? {}), photo.squiggleVersion ?? "", JSON.stringify(photo.squiggleInkscape ?? {}), photo.squiggleAngle ?? "", photo.ink ?? "", photo.regions?.join(",") ?? "", photo.region ?? "", photo.contours ?? "", photo.smoothMm ?? "", photo.key ? "key" : "", photo.keyInk ?? "", photo.regionInks?.join(",") ?? "", photo.keyStrength ?? "", photo.keyFrom ?? "", photo.plate ?? "", photo.plates?.join(",") ?? "", photo.blackShare ?? "", photo.centerFrom ?? "", photo.centerSmoothMm ?? "", photo.centerShortestMm ?? "", photo.silhouetteFrom ?? "", photo.silhouetteSmoothMm ?? "", photo.silhouetteSmallestMm ?? "", photo.fitPaper ?? "", photo.penMm ?? "", photo.fitPairs ? "pairs" : "", photo.fitOpaque ? "opaque" : "", photo.streamWidestMm ?? "", photo.streamPasses ?? "", photo.streamFlowMm ?? ""].join("|");
+  return [photo.src.length, photo.src.slice(-32), w.toFixed(4), h.toFixed(4), photo.brightness, photo.contrast, photo.saturation ?? 0, photo.angle, photo.spacingMm, photo.levels, photo.hatchSmoothMm ?? "", photo.band?.join(",") ?? "", photo.crop?.join(",") ?? "", photo.bleed ?? 0, photo.style ?? "hatch", photo.rowMm ?? "", photo.waveMm ?? "", photo.squiggleAmpMm ?? "", photo.squiggleHeight ?? "", photo.squiggleJoin ? "join" : "", photo.squiggleLift ? "lift" : "", photo.squiggleSmooth ?? "", JSON.stringify(photo.squiggleDraw ?? {}), photo.squiggleVersion ?? "", JSON.stringify(photo.squiggleInkscape ?? {}), photo.squiggleAngle ?? "", photo.ink ?? "", photo.regions?.join(",") ?? "", photo.region ?? "", photo.contours ?? "", photo.smoothMm ?? "", photo.key ? "key" : "", photo.keyInk ?? "", photo.regionInks?.join(",") ?? "", photo.keyStrength ?? "", photo.keyFrom ?? "", photo.plate ?? "", photo.plates?.join(",") ?? "", photo.blackShare ?? "", photo.centerFrom ?? "", photo.centerSmoothMm ?? "", photo.centerShortestMm ?? "", photo.silhouetteFrom ?? "", photo.silhouetteSmoothMm ?? "", photo.silhouetteSmallestMm ?? "", photo.fitPaper ?? "", photo.penMm ?? "", photo.fitPairs ? "pairs" : "", photo.fitOpaque ? "opaque" : "", photo.streamWidestMm ?? "", photo.streamPasses ?? "", photo.streamFlowMm ?? "", photo.lineDots ?? "", photo.lineLiftMm ?? ""].join("|");
 }
 
 /**
@@ -2984,6 +2999,295 @@ function hatch(tones: Tones, photo: Photo, w: number, h: number): PhotoMarks {
 }
 
 
+// ---------- One line ----------
+
+/**
+ * Tone as one line: the photo stippled - dots scattered thicker where it's darker, then spread evenly
+ * (Secord's weighted Voronoi stippling) - and the dots joined by the shortest route that visits each
+ * once (a travelling salesman's tour), so the pen goes down once and draws the whole picture. Where
+ * the dots are thick the line winds tightly and reads dark; where they're sparse it runs in long
+ * strokes and reads light. Lifting over long jumps, if asked, leaves white as paper.
+ */
+function oneLine(tones: Tones, photo: Photo, w: number, h: number): PhotoMarks {
+  const count = Math.round(Math.min(ONE_LINE_MOST, Math.max(50, photo.lineDots ?? ONE_LINE_DEFAULTS.dots)));
+  const { toneAt } = toneSampler(tones, photo, w, h, true);
+  // The grid the dots are spread on: fine enough that each dot's cell is a few squares across.
+  const gw = Math.max(8, Math.round((ONE_LINE_EDGE * w) / Math.max(w, h)));
+  const gh = Math.max(8, Math.round((ONE_LINE_EDGE * h) / Math.max(w, h)));
+  const sx = w / gw;
+  const sy = h / gh;
+  // How many dots each square wants. The line's ink goes as the square root of how thick the dots
+  // are - twice the dots, about 1.4 times the line - so squared, the ink follows the tone.
+  const want = new Float32Array(gw * gh);
+  let total = 0;
+  for (let y = 0; y < gh; y++) {
+    for (let x = 0; x < gw; x++) {
+      const t = toneAt((x + 0.5) * sx, (y + 0.5) * sy);
+      const d = t > 0 ? t * t : 0;
+      want[y * gw + x] = d;
+      total += d;
+    }
+  }
+  if (total <= 0) return { passes: [""], strokes: 0 };
+
+  // The same scatter every time, so a changed number doesn't reshuffle the whole picture.
+  let seed = 0x9e3779b9;
+  const random = () => {
+    seed = (seed + 0x6d2b79f5) | 0;
+    let t = Math.imul(seed ^ (seed >>> 15), 1 | seed);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+  // First scatter: each dot in a square picked as often as it wants dots, somewhere inside it.
+  const cumulative = new Float64Array(want.length);
+  let run = 0;
+  for (let i = 0; i < want.length; i++) cumulative[i] = run += want[i];
+  const px = new Float64Array(count);
+  const py = new Float64Array(count);
+  for (let k = 0; k < count; k++) {
+    const r = random() * run;
+    let lo = 0;
+    let hi = want.length - 1;
+    while (lo < hi) {
+      const mid = (lo + hi) >> 1;
+      if (cumulative[mid] < r) lo = mid + 1;
+      else hi = mid;
+    }
+    px[k] = (lo % gw) + random();
+    py[k] = Math.floor(lo / gw) + random();
+  }
+
+  // Then spread them evenly: each dot moved to the weighted middle of the squares nearest it (Lloyd's
+  // relaxation), so they sit apart like stipple rather than clumping like grain.
+  const cell = Math.max(1, Math.sqrt((gw * gh) / count));
+  const bw = Math.ceil(gw / cell) + 1;
+  const bh = Math.ceil(gh / cell) + 1;
+  const head = new Int32Array(bw * bh);
+  const next = new Int32Array(count);
+  const file = () => {
+    head.fill(-1);
+    for (let k = 0; k < count; k++) {
+      const b = Math.min(bh - 1, Math.floor(py[k] / cell)) * bw + Math.min(bw - 1, Math.floor(px[k] / cell));
+      next[k] = head[b];
+      head[b] = k;
+    }
+  };
+  // The dot nearest a point: the squares round it in widening rings until no nearer can be found.
+  const nearest = (x: number, y: number) => {
+    const bx = Math.min(bw - 1, Math.floor(x / cell));
+    const by = Math.min(bh - 1, Math.floor(y / cell));
+    let best = -1;
+    let bestD = Infinity;
+    for (let ring = 0; ring < Math.max(bw, bh); ring++) {
+      if (best >= 0 && (ring - 1) * cell > Math.sqrt(bestD)) break;
+      for (let cy = by - ring; cy <= by + ring; cy++) {
+        if (cy < 0 || cy >= bh) continue;
+        for (let cx = bx - ring; cx <= bx + ring; cx++) {
+          if (cx < 0 || cx >= bw || (Math.abs(cx - bx) !== ring && Math.abs(cy - by) !== ring)) continue;
+          for (let k = head[cy * bw + cx]; k >= 0; k = next[k]) {
+            const d = (px[k] - x) ** 2 + (py[k] - y) ** 2;
+            if (d < bestD) {
+              bestD = d;
+              best = k;
+            }
+          }
+        }
+      }
+    }
+    return best;
+  };
+  const mx = new Float64Array(count);
+  const my = new Float64Array(count);
+  const mw = new Float64Array(count);
+  for (let pass = 0; pass < ONE_LINE_SPREAD; pass++) {
+    file();
+    mx.fill(0);
+    my.fill(0);
+    mw.fill(0);
+    for (let y = 0; y < gh; y++) {
+      for (let x = 0; x < gw; x++) {
+        const d = want[y * gw + x];
+        if (d <= 0) continue;
+        const k = nearest(x + 0.5, y + 0.5);
+        mx[k] += d * (x + 0.5);
+        my[k] += d * (y + 0.5);
+        mw[k] += d;
+      }
+    }
+    for (let k = 0; k < count; k++) {
+      if (mw[k] > 0) {
+        px[k] = mx[k] / mw[k];
+        py[k] = my[k] / mw[k];
+      }
+    }
+  }
+  // Into inches on the page.
+  for (let k = 0; k < count; k++) {
+    px[k] *= sx;
+    py[k] *= sy;
+  }
+
+  const order = tour(px, py);
+  // The tour is a loop; the line is the loop opened at its longest jump, so that one is never drawn.
+  const dist = (a: number, b: number) => Math.hypot(px[a] - px[b], py[a] - py[b]);
+  let cut = 0;
+  for (let i = 0; i < count; i++) if (dist(order[i], order[(i + 1) % count]) > dist(order[cut], order[(cut + 1) % count])) cut = i;
+  const line = Array.from({ length: count }, (_, i) => order[(cut + 1 + i) % count]);
+  // Lifting over jumps longer than asked, so white is left as paper. Absent or 0, one unbroken line.
+  const lift = (photo.lineLiftMm ?? 0) / 25.4;
+  const n = (v: number) => Number(v.toFixed(4));
+  const parts: string[] = [];
+  let strokes = 0;
+  let piece: string[] = [];
+  let length = 0;
+  const close = () => {
+    if (piece.length > 1) {
+      parts.push(`M${piece.join("L")}`);
+      strokes++;
+    }
+    piece = [];
+  };
+  for (let i = 0; i < line.length; i++) {
+    if (i > 0) {
+      const jump = dist(line[i - 1], line[i]);
+      if (lift > 0 && jump > lift) close();
+      else length += jump;
+    }
+    piece.push(`${n(px[line[i]])} ${n(py[line[i]])}`);
+  }
+  close();
+  return { passes: [parts.join("")], strokes, dots: count, lengthMm: length * 25.4 };
+}
+
+/**
+ * A short route through every point, back to the start: each point joined to the nearest not yet
+ * visited, then straightened - wherever two of its legs cross or could be swapped for two shorter
+ * ones, the stretch between is turned round (2-opt), looking only at each point's nearest few so a
+ * big picture is still quick.
+ */
+function tour(px: Float64Array, py: Float64Array): Int32Array {
+  const count = px.length;
+  const order = new Int32Array(count);
+  if (count < 4) return order.map((_, i) => i);
+  let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+  for (let k = 0; k < count; k++) {
+    x0 = Math.min(x0, px[k]); x1 = Math.max(x1, px[k]);
+    y0 = Math.min(y0, py[k]); y1 = Math.max(y1, py[k]);
+  }
+  const cell = Math.max(1e-6, Math.sqrt(((x1 - x0) * (y1 - y0) || 1) / count) * 2);
+  const bw = Math.floor((x1 - x0) / cell) + 1;
+  const bh = Math.floor((y1 - y0) / cell) + 1;
+  const bucketOf = (k: number) => Math.floor((py[k] - y0) / cell) * bw + Math.floor((px[k] - x0) / cell);
+  const buckets: number[][] = Array.from({ length: bw * bh }, () => []);
+  for (let k = 0; k < count; k++) buckets[bucketOf(k)].push(k);
+  const d = (a: number, b: number) => Math.hypot(px[a] - px[b], py[a] - py[b]);
+
+  // Each point's nearest few.
+  const NEAR = 8;
+  const near: Int32Array[] = [];
+  for (let k = 0; k < count; k++) {
+    const bx = Math.floor((px[k] - x0) / cell);
+    const by = Math.floor((py[k] - y0) / cell);
+    const found: number[] = [];
+    for (let ring = 1; found.length < NEAR + 1 && ring <= Math.max(bw, bh); ring++) {
+      found.length = 0;
+      for (let cy = Math.max(0, by - ring); cy <= Math.min(bh - 1, by + ring); cy++) {
+        for (let cx = Math.max(0, bx - ring); cx <= Math.min(bw - 1, bx + ring); cx++) found.push(...buckets[cy * bw + cx]);
+      }
+    }
+    near.push(Int32Array.from(found.filter((j) => j !== k).sort((a, b) => d(k, a) - d(k, b)).slice(0, NEAR)));
+  }
+
+  // Nearest unvisited, found by searching the buckets outward and emptying them as points are used.
+  const left = buckets.map((b) => [...b]);
+  let at = 0;
+  left[bucketOf(0)].splice(left[bucketOf(0)].indexOf(0), 1);
+  order[0] = 0;
+  for (let i = 1; i < count; i++) {
+    const bx = Math.floor((px[at] - x0) / cell);
+    const by = Math.floor((py[at] - y0) / cell);
+    let best = -1;
+    let bestD = Infinity;
+    let bestBucket = -1;
+    for (let ring = 0; ring <= Math.max(bw, bh); ring++) {
+      if (best >= 0 && (ring - 1) * cell > bestD) break;
+      for (let cy = by - ring; cy <= by + ring; cy++) {
+        if (cy < 0 || cy >= bh) continue;
+        for (let cx = bx - ring; cx <= bx + ring; cx++) {
+          if (cx < 0 || cx >= bw || (Math.abs(cx - bx) !== ring && Math.abs(cy - by) !== ring)) continue;
+          for (const j of left[cy * bw + cx]) {
+            const dj = d(at, j);
+            if (dj < bestD) {
+              bestD = dj;
+              best = j;
+              bestBucket = cy * bw + cx;
+            }
+          }
+        }
+      }
+    }
+    const list = left[bestBucket];
+    list.splice(list.indexOf(best), 1);
+    order[i] = best;
+    at = best;
+  }
+
+  // 2-opt, with a queue of points whose legs may still improve.
+  const pos = new Int32Array(count);
+  for (let i = 0; i < count; i++) pos[order[i]] = i;
+  const succ = (k: number) => order[(pos[k] + 1) % count];
+  const pred = (k: number) => order[(pos[k] - 1 + count) % count];
+  // Turn round the stretch from position i to j, going forward and wrapping; whichever way round is shorter.
+  const reverse = (i: number, j: number) => {
+    let len = ((j - i + count) % count) + 1;
+    if (len * 2 > count) {
+      const ni = (j + 1) % count;
+      j = (i - 1 + count) % count;
+      i = ni;
+      len = count - len;
+    }
+    for (let s = 0; s < len >> 1; s++) {
+      const a = (i + s) % count;
+      const b = (j - s + count) % count;
+      const t = order[a];
+      order[a] = order[b];
+      order[b] = t;
+      pos[order[a]] = a;
+      pos[order[b]] = b;
+    }
+  };
+  const queued = new Uint8Array(count).fill(1);
+  const queue: number[] = Array.from(order);
+  let moves = 0;
+  for (let q = 0; q < queue.length && moves < count * 50; q++) {
+    const a = queue[q];
+    queued[a] = 0;
+    let improved = false;
+    for (const dir of [1, -1]) {
+      const an = dir === 1 ? succ(a) : pred(a);
+      const dA = d(a, an);
+      for (const b of near[a]) {
+        const gain = dA - d(a, b);
+        if (gain <= 1e-12) break;
+        const bn = dir === 1 ? succ(b) : pred(b);
+        if (b === an || bn === a) continue;
+        if (gain + d(b, bn) - d(an, bn) > 1e-12) {
+          // Legs a-an and b-bn become a-b and an-bn.
+          if (dir === 1) reverse(pos[an], pos[b]);
+          else reverse(pos[b], pos[an]);
+          for (const k of [a, an, b, bn]) if (!queued[k]) { queued[k] = 1; queue.push(k); }
+          moves++;
+          improved = true;
+          break;
+        }
+      }
+      if (improved) break;
+    }
+  }
+  return order;
+}
+
+
 // ---------- Streamlines ----------
 
 /**
@@ -3314,13 +3618,15 @@ export function photoFromData(raw: Record<string, unknown>): Photo | null {
       ? { crop: raw.crop.map(Number) as [number, number, number, number] }
       : {}),
     ...(raw.fit === "fit" || raw.fit === "fill" ? { fit: raw.fit } : {}),
-    ...(raw.style === "waves" || raw.style === "squiggle" || raw.style === "streamlines" || raw.style === "outlines" || raw.style === "centerlines" || raw.style === "silhouette" ? { style: raw.style } : {}),
+    ...(raw.style === "waves" || raw.style === "squiggle" || raw.style === "streamlines" || raw.style === "oneline" || raw.style === "outlines" || raw.style === "centerlines" || raw.style === "silhouette" ? { style: raw.style } : {}),
     ...(Number.isFinite(Number(raw.center_from)) && raw.center_from !== undefined ? { centerFrom: Number(raw.center_from) } : {}),
     ...(Number.isFinite(Number(raw.center_smooth_mm)) && raw.center_smooth_mm !== undefined ? { centerSmoothMm: Number(raw.center_smooth_mm) } : {}),
     ...(Number.isFinite(Number(raw.center_shortest_mm)) && raw.center_shortest_mm !== undefined ? { centerShortestMm: Number(raw.center_shortest_mm) } : {}),
     ...(Number.isFinite(Number(raw.silhouette_from)) && raw.silhouette_from !== undefined ? { silhouetteFrom: Number(raw.silhouette_from) } : {}),
     ...(Number.isFinite(Number(raw.silhouette_smooth_mm)) && raw.silhouette_smooth_mm !== undefined ? { silhouetteSmoothMm: Number(raw.silhouette_smooth_mm) } : {}),
     ...(Number.isFinite(Number(raw.silhouette_smallest_mm)) && raw.silhouette_smallest_mm !== undefined ? { silhouetteSmallestMm: Number(raw.silhouette_smallest_mm) } : {}),
+    ...(Number.isFinite(Number(raw.line_dots)) && raw.line_dots !== undefined ? { lineDots: Number(raw.line_dots) } : {}),
+    ...(Number.isFinite(Number(raw.line_lift_mm)) && raw.line_lift_mm !== undefined ? { lineLiftMm: Number(raw.line_lift_mm) } : {}),
     ...(Number.isFinite(Number(raw.stream_widest_mm)) && raw.stream_widest_mm !== undefined ? { streamWidestMm: Number(raw.stream_widest_mm) } : {}),
     ...(Number.isFinite(Number(raw.stream_passes)) && raw.stream_passes !== undefined ? { streamPasses: Number(raw.stream_passes) } : {}),
     ...(Number.isFinite(Number(raw.stream_flow_mm)) && raw.stream_flow_mm !== undefined ? { streamFlowMm: Number(raw.stream_flow_mm) } : {}),
@@ -3377,13 +3683,15 @@ export const photoData = (p: Photo) => ({
   ...(p.band ? { band: p.band } : {}),
   ...(p.crop ? { crop: p.crop } : {}),
   ...(p.fit ? { fit: p.fit } : {}),
-  ...(p.style === "waves" || p.style === "squiggle" || p.style === "streamlines" || p.style === "outlines" || p.style === "centerlines" || p.style === "silhouette" ? { style: p.style } : {}),
+  ...(p.style === "waves" || p.style === "squiggle" || p.style === "streamlines" || p.style === "oneline" || p.style === "outlines" || p.style === "centerlines" || p.style === "silhouette" ? { style: p.style } : {}),
   ...(p.centerFrom !== undefined ? { center_from: p.centerFrom } : {}),
   ...(p.centerSmoothMm !== undefined ? { center_smooth_mm: p.centerSmoothMm } : {}),
   ...(p.centerShortestMm !== undefined ? { center_shortest_mm: p.centerShortestMm } : {}),
   ...(p.silhouetteFrom !== undefined ? { silhouette_from: p.silhouetteFrom } : {}),
   ...(p.silhouetteSmoothMm !== undefined ? { silhouette_smooth_mm: p.silhouetteSmoothMm } : {}),
   ...(p.silhouetteSmallestMm !== undefined ? { silhouette_smallest_mm: p.silhouetteSmallestMm } : {}),
+  ...(p.lineDots !== undefined ? { line_dots: p.lineDots } : {}),
+  ...(p.lineLiftMm ? { line_lift_mm: p.lineLiftMm } : {}),
   ...(p.streamWidestMm !== undefined ? { stream_widest_mm: p.streamWidestMm } : {}),
   ...(p.streamPasses !== undefined ? { stream_passes: p.streamPasses } : {}),
   ...(p.streamFlowMm !== undefined ? { stream_flow_mm: p.streamFlowMm } : {}),
