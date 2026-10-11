@@ -437,7 +437,20 @@ export function PhotoCard({ shape, title, shapes, layers, busy, all, onAll, scal
                       {/* 0 keeps it one unbroken line; more, and the pen lifts over jumps that long, leaving white as paper. */}
                       <NumberField label="Lift over" unit="mm" min={0} max={100} step={1} value={photo.lineLiftMm ?? 0} onChange={(v) => actions.set({ lineLiftMm: v > 0 ? v : undefined })} />
                     </div>
-                    {eachLayer("Dots and lift")}
+                    <div className={styles.fillRow}>
+                      {/* 0, straight from dot to dot - angular; 100, smooth curves through them; 200, overshooting into loops. */}
+                      <NumberField label="Curviness" unit="%" min={0} max={200} step={10} value={Math.round((photo.lineCurve ?? 0) * 100)} onChange={(v) => actions.set({ lineCurve: v > 0 ? v / 100 : undefined })} />
+                      {/* 0, the dots spread evenly - a tidy maze; 100, left as scattered - looser, with clumps and gaps. */}
+                      <NumberField label="Grain" unit="%" min={0} max={100} step={10} value={Math.round((photo.lineGrain ?? 0) * 100)} onChange={(v) => actions.set({ lineGrain: v > 0 ? v / 100 : undefined })} />
+                      {/* Less, more dots in the lights, for detail there; more, crowded into the darks, punchier. */}
+                      <NumberField label="Contrast" unit="%" min={0} max={100} step={10} value={Math.round((photo.lineContrast ?? 0.5) * 100)} onChange={(v) => actions.set({ lineContrast: v === 50 ? undefined : v / 100 })} />
+                    </div>
+                    <div className={styles.fillRow}>
+                      {/* Which way the line prefers to run, and how strongly: 0, any way; 100, in streaks that way. */}
+                      <NumberField label="Direction" unit="°" min={-180} max={180} step={15} value={photo.lineAngle ?? 0} onChange={(v) => actions.set({ lineAngle: v || undefined })} />
+                      <NumberField label="Strength" unit="%" min={0} max={100} step={10} value={Math.round((photo.lineBias ?? 0) * 100)} onChange={(v) => actions.set({ lineBias: v > 0 ? v / 100 : undefined })} />
+                    </div>
+                    {eachLayer("These settings")}
                   </>
                 ) : photo.style === "hilbert" ? (
                   <>

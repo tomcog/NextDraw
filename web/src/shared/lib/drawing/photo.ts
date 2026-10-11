@@ -56,6 +56,15 @@ export interface Photo {
   lineDots?: number;
   /** One line: lift the pen over jumps longer than this, in mm, so white stays paper. Absent or 0, never. */
   lineLiftMm?: number;
+  /** One line: how round the line is, 0 to 2 - 0 straight from dot to dot, 1 smooth curves through them, 2 loops. Absent, 0. */
+  lineCurve?: number;
+  /** One line: the way the line prefers to run, in degrees, and how strongly, 0 to 1. Absent, any way. */
+  lineAngle?: number;
+  lineBias?: number;
+  /** One line: how grainy the dots are, 0 to 1 - 0 spread evenly, like stipple; 1 left as scattered. Absent, 0. */
+  lineGrain?: number;
+  /** One line: how strongly the dots crowd into the darks, 0 to 1. Absent, 0.5. */
+  lineContrast?: number;
   /**
    * Streamlines: the widest the lines ever get apart, in mm - lighter than that is paper. The closest
    * is `spacingMm`, at black; between, the spacing follows the tone.
@@ -429,7 +438,7 @@ export interface PhotoPart {
 
 /** The settings a layer of a photo keeps as its own, as opposed to the photo's: what a mode remembers. */
 export const LAYER_SETTINGS = [
-  "style", "angle", "spacingMm", "levels", "hatchSmoothMm", "rowMm", "waveMm", "squiggleAmpMm", "squiggleHeight", "squiggleJoin", "squiggleLift", "squiggleSmooth", "squiggleDraw", "squiggleVersion", "squiggleInkscape", "squiggleAngle", "contours", "smoothMm", "centerFrom", "centerSmoothMm", "centerShortestMm", "silhouetteFrom", "silhouetteSmoothMm", "silhouetteSmallestMm", "streamWidestMm", "streamPasses", "streamFlowMm", "lineDots", "lineLiftMm", "hilbertCoarsestMm", "hilbertLift", "offsetMm",
+  "style", "angle", "spacingMm", "levels", "hatchSmoothMm", "rowMm", "waveMm", "squiggleAmpMm", "squiggleHeight", "squiggleJoin", "squiggleLift", "squiggleSmooth", "squiggleDraw", "squiggleVersion", "squiggleInkscape", "squiggleAngle", "contours", "smoothMm", "centerFrom", "centerSmoothMm", "centerShortestMm", "silhouetteFrom", "silhouetteSmoothMm", "silhouetteSmallestMm", "streamWidestMm", "streamPasses", "streamFlowMm", "lineDots", "lineLiftMm", "lineCurve", "lineAngle", "lineBias", "lineGrain", "lineContrast", "hilbertCoarsestMm", "hilbertLift", "offsetMm",
   "band", "ink", "regions", "region", "key", "regionInks", "keyInk", "plate", "plates", "fitPaper", "penMm", "fitPairs", "fitOpaque",
 ] as const;
 
@@ -795,7 +804,7 @@ export function photoMarks(photo: Photo, w: number, h: number): PhotoMarks | nul
 
 /** Everything a photo's lines depend on, as one string: the same key, the same lines. */
 function marksKey(photo: Photo, w: number, h: number) {
-  return [photo.src.length, photo.src.slice(-32), w.toFixed(4), h.toFixed(4), photo.brightness, photo.contrast, photo.saturation ?? 0, photo.angle, photo.spacingMm, photo.levels, photo.hatchSmoothMm ?? "", photo.band?.join(",") ?? "", photo.crop?.join(",") ?? "", photo.bleed ?? 0, photo.style ?? "hatch", photo.rowMm ?? "", photo.waveMm ?? "", photo.squiggleAmpMm ?? "", photo.squiggleHeight ?? "", photo.squiggleJoin ? "join" : "", photo.squiggleLift ? "lift" : "", photo.squiggleSmooth ?? "", JSON.stringify(photo.squiggleDraw ?? {}), photo.squiggleVersion ?? "", JSON.stringify(photo.squiggleInkscape ?? {}), photo.squiggleAngle ?? "", photo.ink ?? "", photo.regions?.join(",") ?? "", photo.region ?? "", photo.contours ?? "", photo.smoothMm ?? "", photo.key ? "key" : "", photo.keyInk ?? "", photo.regionInks?.join(",") ?? "", photo.keyStrength ?? "", photo.keyFrom ?? "", photo.plate ?? "", photo.plates?.join(",") ?? "", photo.blackShare ?? "", photo.centerFrom ?? "", photo.centerSmoothMm ?? "", photo.centerShortestMm ?? "", photo.silhouetteFrom ?? "", photo.silhouetteSmoothMm ?? "", photo.silhouetteSmallestMm ?? "", photo.fitPaper ?? "", photo.penMm ?? "", photo.fitPairs ? "pairs" : "", photo.fitOpaque ? "opaque" : "", photo.streamWidestMm ?? "", photo.streamPasses ?? "", photo.streamFlowMm ?? "", photo.lineDots ?? "", photo.lineLiftMm ?? "", photo.hilbertCoarsestMm ?? "", photo.hilbertLift ? "hlift" : ""].join("|");
+  return [photo.src.length, photo.src.slice(-32), w.toFixed(4), h.toFixed(4), photo.brightness, photo.contrast, photo.saturation ?? 0, photo.angle, photo.spacingMm, photo.levels, photo.hatchSmoothMm ?? "", photo.band?.join(",") ?? "", photo.crop?.join(",") ?? "", photo.bleed ?? 0, photo.style ?? "hatch", photo.rowMm ?? "", photo.waveMm ?? "", photo.squiggleAmpMm ?? "", photo.squiggleHeight ?? "", photo.squiggleJoin ? "join" : "", photo.squiggleLift ? "lift" : "", photo.squiggleSmooth ?? "", JSON.stringify(photo.squiggleDraw ?? {}), photo.squiggleVersion ?? "", JSON.stringify(photo.squiggleInkscape ?? {}), photo.squiggleAngle ?? "", photo.ink ?? "", photo.regions?.join(",") ?? "", photo.region ?? "", photo.contours ?? "", photo.smoothMm ?? "", photo.key ? "key" : "", photo.keyInk ?? "", photo.regionInks?.join(",") ?? "", photo.keyStrength ?? "", photo.keyFrom ?? "", photo.plate ?? "", photo.plates?.join(",") ?? "", photo.blackShare ?? "", photo.centerFrom ?? "", photo.centerSmoothMm ?? "", photo.centerShortestMm ?? "", photo.silhouetteFrom ?? "", photo.silhouetteSmoothMm ?? "", photo.silhouetteSmallestMm ?? "", photo.fitPaper ?? "", photo.penMm ?? "", photo.fitPairs ? "pairs" : "", photo.fitOpaque ? "opaque" : "", photo.streamWidestMm ?? "", photo.streamPasses ?? "", photo.streamFlowMm ?? "", photo.lineDots ?? "", photo.lineLiftMm ?? "", photo.lineCurve ?? "", photo.lineAngle ?? "", photo.lineBias ?? "", photo.lineGrain ?? "", photo.lineContrast ?? "", photo.hilbertCoarsestMm ?? "", photo.hilbertLift ? "hlift" : ""].join("|");
 }
 
 /**
@@ -3130,13 +3139,16 @@ function oneLine(tones: Tones, photo: Photo, w: number, h: number): PhotoMarks {
   const sx = w / gw;
   const sy = h / gh;
   // How many dots each square wants. The line's ink goes as the square root of how thick the dots
-  // are - twice the dots, about 1.4 times the line - so squared, the ink follows the tone.
+  // are - twice the dots, about 1.4 times the line - so squared, the ink follows the tone: that's
+  // Contrast at its middle. Less spreads the dots into the lights, for detail there; more crowds
+  // them into the darks, for a punchier picture.
+  const power = 0.5 + 3 * Math.min(1, Math.max(0, photo.lineContrast ?? 0.5));
   const want = new Float32Array(gw * gh);
   let total = 0;
   for (let y = 0; y < gh; y++) {
     for (let x = 0; x < gw; x++) {
       const t = toneAt((x + 0.5) * sx, (y + 0.5) * sy);
-      const d = t > 0 ? t * t : 0;
+      const d = t > 0 ? t ** power : 0;
       want[y * gw + x] = d;
       total += d;
     }
@@ -3212,7 +3224,9 @@ function oneLine(tones: Tones, photo: Photo, w: number, h: number): PhotoMarks {
   const mx = new Float64Array(count);
   const my = new Float64Array(count);
   const mw = new Float64Array(count);
-  for (let pass = 0; pass < ONE_LINE_SPREAD; pass++) {
+  // Grain: fewer spreads, and the dots keep more of their first scatter's clumps and gaps.
+  const spreads = Math.round(ONE_LINE_SPREAD * (1 - Math.min(1, Math.max(0, photo.lineGrain ?? 0))));
+  for (let pass = 0; pass < spreads; pass++) {
     file();
     mx.fill(0);
     my.fill(0);
@@ -3240,7 +3254,25 @@ function oneLine(tones: Tones, photo: Photo, w: number, h: number): PhotoMarks {
     py[k] *= sy;
   }
 
-  const order = tour(px, py);
+  // Direction: the route is planned with the page stretched across the way the line should run, so
+  // a step across costs more than a step along and the line runs in streaks that way. At full
+  // strength a step across costs four times as much.
+  const bias = Math.min(1, Math.max(0, photo.lineBias ?? 0));
+  let order: Int32Array;
+  if (bias > 0) {
+    const rad = ((photo.lineAngle ?? 0) * Math.PI) / 180;
+    const [c, sn] = [Math.cos(rad), Math.sin(rad)];
+    const stretch = 1 + 3 * bias;
+    const tx = new Float64Array(count);
+    const ty = new Float64Array(count);
+    for (let k = 0; k < count; k++) {
+      tx[k] = px[k] * c + py[k] * sn;
+      ty[k] = (-px[k] * sn + py[k] * c) * stretch;
+    }
+    order = tour(tx, ty);
+  } else {
+    order = tour(px, py);
+  }
   // The tour is a loop; the line is the loop opened at its longest jump, so that one is never drawn.
   const dist = (a: number, b: number) => Math.hypot(px[a] - px[b], py[a] - py[b]);
   let cut = 0;
@@ -3248,14 +3280,29 @@ function oneLine(tones: Tones, photo: Photo, w: number, h: number): PhotoMarks {
   const line = Array.from({ length: count }, (_, i) => order[(cut + 1 + i) % count]);
   // Lifting over jumps longer than asked, so white is left as paper. Absent or 0, one unbroken line.
   const lift = (photo.lineLiftMm ?? 0) / 25.4;
+  // Curviness: each step a curve through the dots, its handles along the line from the dot before to
+  // the dot after (Catmull-Rom), as long as asked - at 1, the usual sixth of that; past it they
+  // overshoot into loops, up to 2. 0, straight.
+  const curve = Math.min(2, Math.max(0, photo.lineCurve ?? 0));
   const n = (v: number) => Number(v.toFixed(4));
   const parts: string[] = [];
   let strokes = 0;
-  let piece: string[] = [];
+  let piece: number[] = [];
   let length = 0;
   const close = () => {
     if (piece.length > 1) {
-      parts.push(`M${piece.join("L")}`);
+      const at = (i: number) => piece[Math.max(0, Math.min(piece.length - 1, i))];
+      let d = `M${n(px[piece[0]])} ${n(py[piece[0]])}`;
+      for (let i = 1; i < piece.length; i++) {
+        const [a, b, c, e] = [at(i - 2), at(i - 1), at(i), at(i + 1)];
+        if (curve > 0) {
+          const k = curve / 6;
+          d += `C${n(px[b] + (px[c] - px[a]) * k)} ${n(py[b] + (py[c] - py[a]) * k)} ${n(px[c] - (px[e] - px[b]) * k)} ${n(py[c] - (py[e] - py[b]) * k)} ${n(px[c])} ${n(py[c])}`;
+        } else {
+          d += `L${n(px[c])} ${n(py[c])}`;
+        }
+      }
+      parts.push(d);
       strokes++;
     }
     piece = [];
@@ -3266,15 +3313,15 @@ function oneLine(tones: Tones, photo: Photo, w: number, h: number): PhotoMarks {
       if (lift > 0 && jump > lift) close();
       else length += jump;
     }
-    piece.push(`${n(px[line[i]])} ${n(py[line[i]])}`);
+    piece.push(line[i]);
   }
   close();
   return { passes: [parts.join("")], strokes, dots: count, lengthMm: length * 25.4 };
 }
 
 /**
- * A short route through every point, back to the start: each point joined to the nearest not yet
- * visited, then straightened - wherever two of its legs cross or could be swapped for two shorter
+ * A short route through every point, back to the start: the points in a Hilbert curve's order, then
+ * straightened - wherever two of its legs cross or could be swapped for two shorter
  * ones, the stretch between is turned round (2-opt), looking only at each point's nearest few so a
  * big picture is still quick.
  */
@@ -3311,39 +3358,31 @@ function tour(px: Float64Array, py: Float64Array): Int32Array {
     near.push(Int32Array.from(found.filter((j) => j !== k).sort((a, b) => d(k, a) - d(k, b)).slice(0, NEAR)));
   }
 
-  // Nearest unvisited, found by searching the buckets outward and emptying them as points are used.
-  const left = buckets.map((b) => [...b]);
-  let at = 0;
-  left[bucketOf(0)].splice(left[bucketOf(0)].indexOf(0), 1);
-  order[0] = 0;
-  for (let i = 1; i < count; i++) {
-    const bx = Math.floor((px[at] - x0) / cell);
-    const by = Math.floor((py[at] - y0) / cell);
-    let best = -1;
-    let bestD = Infinity;
-    let bestBucket = -1;
-    for (let ring = 0; ring <= Math.max(bw, bh); ring++) {
-      if (best >= 0 && (ring - 1) * cell > bestD) break;
-      for (let cy = by - ring; cy <= by + ring; cy++) {
-        if (cy < 0 || cy >= bh) continue;
-        for (let cx = bx - ring; cx <= bx + ring; cx++) {
-          if (cx < 0 || cx >= bw || (Math.abs(cx - bx) !== ring && Math.abs(cy - by) !== ring)) continue;
-          for (const j of left[cy * bw + cx]) {
-            const dj = d(at, j);
-            if (dj < bestD) {
-              bestD = dj;
-              best = j;
-              bestBucket = cy * bw + cx;
-            }
-          }
+  // A first route in the order a Hilbert curve visits them: never a long jump, since the curve keeps
+  // near points near each other. Starting from nearest-unvisited instead strands a few dots that
+  // have to be fetched across the page at the end - long jumps the straightening below can't
+  // reach, looking only at each dot's nearest few.
+  const ORDER = 1 << 16;
+  const keyOf = (k: number) => {
+    let x = Math.min(ORDER - 1, Math.floor(((px[k] - x0) / (x1 - x0 || 1)) * (ORDER - 1)));
+    let y = Math.min(ORDER - 1, Math.floor(((py[k] - y0) / (y1 - y0 || 1)) * (ORDER - 1)));
+    let key = 0;
+    for (let s = ORDER >> 1; s > 0; s >>= 1) {
+      const rx = (x & s) > 0 ? 1 : 0;
+      const ry = (y & s) > 0 ? 1 : 0;
+      key += s * s * ((3 * rx) ^ ry);
+      if (ry === 0) {
+        if (rx === 1) {
+          x = s - 1 - x;
+          y = s - 1 - y;
         }
+        [x, y] = [y, x];
       }
     }
-    const list = left[bestBucket];
-    list.splice(list.indexOf(best), 1);
-    order[i] = best;
-    at = best;
-  }
+    return key;
+  };
+  const keys = Float64Array.from({ length: count }, (_, k) => keyOf(k));
+  Array.from({ length: count }, (_, k) => k).sort((a, b) => keys[a] - keys[b]).forEach((k, i) => (order[i] = k));
 
   // 2-opt, with a queue of points whose legs may still improve.
   const pos = new Int32Array(count);
@@ -3740,6 +3779,9 @@ export function photoFromData(raw: Record<string, unknown>): Photo | null {
     ...(Number.isFinite(Number(raw.silhouette_smallest_mm)) && raw.silhouette_smallest_mm !== undefined ? { silhouetteSmallestMm: Number(raw.silhouette_smallest_mm) } : {}),
     ...(Number.isFinite(Number(raw.hilbert_coarsest_mm)) && raw.hilbert_coarsest_mm !== undefined ? { hilbertCoarsestMm: Number(raw.hilbert_coarsest_mm) } : {}),
     ...(raw.hilbert_lift === true ? { hilbertLift: true } : {}),
+    ...Object.fromEntries((["line_curve", "line_angle", "line_bias", "line_grain", "line_contrast"] as const)
+      .filter((k) => raw[k] !== undefined && Number.isFinite(Number(raw[k])))
+      .map((k) => [{ line_curve: "lineCurve", line_angle: "lineAngle", line_bias: "lineBias", line_grain: "lineGrain", line_contrast: "lineContrast" }[k], Number(raw[k])])),
     ...(Number.isFinite(Number(raw.line_dots)) && raw.line_dots !== undefined ? { lineDots: Number(raw.line_dots) } : {}),
     ...(Number.isFinite(Number(raw.line_lift_mm)) && raw.line_lift_mm !== undefined ? { lineLiftMm: Number(raw.line_lift_mm) } : {}),
     ...(Number.isFinite(Number(raw.stream_widest_mm)) && raw.stream_widest_mm !== undefined ? { streamWidestMm: Number(raw.stream_widest_mm) } : {}),
@@ -3808,6 +3850,11 @@ export const photoData = (p: Photo) => ({
   ...(p.hilbertCoarsestMm !== undefined ? { hilbert_coarsest_mm: p.hilbertCoarsestMm } : {}),
   ...(p.hilbertLift ? { hilbert_lift: true } : {}),
   ...(p.lineDots !== undefined ? { line_dots: p.lineDots } : {}),
+  ...(p.lineCurve ? { line_curve: p.lineCurve } : {}),
+  ...(p.lineAngle ? { line_angle: p.lineAngle } : {}),
+  ...(p.lineBias ? { line_bias: p.lineBias } : {}),
+  ...(p.lineGrain ? { line_grain: p.lineGrain } : {}),
+  ...(p.lineContrast !== undefined ? { line_contrast: p.lineContrast } : {}),
   ...(p.lineLiftMm ? { line_lift_mm: p.lineLiftMm } : {}),
   ...(p.streamWidestMm !== undefined ? { stream_widest_mm: p.streamWidestMm } : {}),
   ...(p.streamPasses !== undefined ? { stream_passes: p.streamPasses } : {}),

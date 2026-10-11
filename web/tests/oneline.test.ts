@@ -55,3 +55,32 @@ test("one line: the route doesn't cross itself, and lifting over long jumps brea
   const lifted = photoMarks(photo({ lineDots: 300, lineLiftMm: 6 }), 3, 3)!;
   assert.ok(lifted.strokes > 1);
 });
+
+test("one line: curviness draws curves; direction streaks the line; grain stays untangled; contrast crowds the darks", async () => {
+  await gradient("data:one");
+  const curved = photoMarks(photo({ lineDots: 300, lineCurve: 1 }), 3, 3)!.passes[0];
+  assert.ok(curved.includes("C") && !curved.includes("L"), "curves only");
+
+  // Direction 0 at full strength: the line travels far more across than down.
+  const travel = (d: string) => {
+    const [line] = points(d);
+    let dx = 0, dy = 0;
+    for (let i = 1; i < line.length; i++) { dx += Math.abs(line[i][0] - line[i - 1][0]); dy += Math.abs(line[i][1] - line[i - 1][1]); }
+    return dx / dy;
+  };
+  assert.ok(travel(photoMarks(photo({ lineDots: 600, lineBias: 1 }), 3, 3)!.passes[0]) > 1.8, "runs across");
+  assert.ok(travel(photoMarks(photo({ lineDots: 600, lineAngle: 90, lineBias: 1 }), 3, 3)!.passes[0]) < 0.55, "runs down");
+
+  // Grainy dots: no long jumps across the picture.
+  const [grainy] = points(photoMarks(photo({ lineDots: 600, lineGrain: 1 }), 3, 3)!.passes[0]);
+  let longest = 0;
+  for (let i = 1; i < grainy.length; i++) longest = Math.max(longest, Math.hypot(grainy[i][0] - grainy[i - 1][0], grainy[i][1] - grainy[i - 1][1]));
+  assert.ok(longest < 0.6, `longest jump ${longest.toFixed(2)} in`);
+
+  // More contrast, more of the dots on the dark side.
+  const darkShare = (c: number) => {
+    const [line] = points(photoMarks(photo({ lineDots: 600, lineContrast: c }), 3, 3)!.passes[0]);
+    return line.filter((p) => p[0] > 2).length / line.length;
+  };
+  assert.ok(darkShare(1) > darkShare(0) + 0.15);
+});
