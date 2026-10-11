@@ -365,6 +365,12 @@ export function PhotoCard({ shape, title, shapes, layers, busy, all, onAll, scal
                 <NumberField label="Contrast" min={-100} max={100} step={5} value={photo.contrast} onChange={(contrast) => actions.set({ contrast })} />
                 <NumberField label="Saturation" min={-100} max={100} step={5} value={photo.saturation ?? 0} onChange={(v) => actions.set({ saturation: v || undefined })} />
               </div>
+              {/* Black and white is Saturation all the way down: on sets it to -100, off back to the photo's own. */}
+              <Checkbox
+                checked={photo.saturation === -100}
+                label="B&W"
+                onChange={(e) => actions.set({ saturation: e.target.checked ? -100 : undefined })}
+              />
               {/* Sized to the page, inside the margin: the whole photo as large as it fits, or the page
                 filled and the photo cropped. Moved or sized by hand, it's neither. */}
               <div className={styles.fillRow}>
