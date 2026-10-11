@@ -315,8 +315,8 @@ export function photoActions(ctx: PhotoContext) {
         shapeName: `${name} ${pen.name}`,
         photo: {
           band: undefined, key: undefined, keyInk: undefined, regions: undefined, region: undefined, regionInks: undefined,
-          // Best fit's own options don't carry over: fine steps would quietly replace the passes.
-          fitPaper: undefined, fitPairs: undefined, fineSteps: undefined,
+          // Best fit's own options don't carry over.
+          fitPaper: undefined, fitPairs: undefined,
           plate, plates, ink: pen.color, angle: PLATE_AIMS[plate].angle,
           // The pen's line width: with the spacing, how much paper each pass covers, which the
           // separation works out its passes from.
@@ -401,7 +401,7 @@ export function photoActions(ctx: PhotoContext) {
         layerName: n > 1 ? `${ink} ${words[i]}` : ink,
         layerColor: color,
         shapeName: n > 1 ? `${name} ${words[i]}` : name,
-        photo: { band: n > 1 ? [i / n, (i + 1) / n] as [number, number] : undefined, ink: undefined, regions: undefined, region: undefined, key: undefined, keyInk: undefined, regionInks: undefined, plate: undefined, plates: undefined, fitPaper: undefined, fitPairs: undefined, fineSteps: undefined, ...extra },
+        photo: { band: n > 1 ? [i / n, (i + 1) / n] as [number, number] : undefined, ink: undefined, regions: undefined, region: undefined, key: undefined, keyInk: undefined, regionInks: undefined, plate: undefined, plates: undefined, fitPaper: undefined, fitPairs: undefined, ...extra },
       })),
       n > 1 ? chosen.photo.group ?? newShapeId() : undefined,
       n > 1 ? `Split into ${n} tone layers` : "One layer, by value",
@@ -440,8 +440,6 @@ export function photoActions(ctx: PhotoContext) {
     const oldKey = chosen.photo.group ? shapes.find((sh) => sh.photo?.group === chosen.photo!.group && sh.photo?.key) : undefined;
     const keyPen = oldKey ? { name: layers.find((l) => l.id === oldKey.layerId)?.name.replace(/\s+key$/i, "") ?? "Key", color: oldKey.photo!.ink! } : darkestPen(pens);
     const regionInks = groups.map((_, r) => matched[r]?.color ?? null);
-    // Fine steps stays as it was while the photo stays in Color; coming from B&W or CMYK, it starts off.
-    const fineSteps = photoMode(chosen.photo) === "colour" && chosen.photo.fineSteps ? true : undefined;
     const withKey = keyPen && (oldKey || photoMode(chosen.photo) !== "colour" || chosen.photo.keyInk !== undefined);
     rebuildPhoto(
       [
@@ -449,13 +447,13 @@ export function photoActions(ctx: PhotoContext) {
           layerName: pen.name,
           layerColor: pen.color,
           shapeName: `${name} ${pen.name}`,
-          photo: { band: undefined, key: undefined, plate: undefined, plates: undefined, fitPaper: undefined, penMm: undefined, fitPairs: undefined, fineSteps, ink: pen.color, regions: groups, region, regionInks, keyInk: withKey ? keyPen!.color : undefined, ...extra },
+          photo: { band: undefined, key: undefined, plate: undefined, plates: undefined, fitPaper: undefined, penMm: undefined, fitPairs: undefined, ink: pen.color, regions: groups, region, regionInks, keyInk: withKey ? keyPen!.color : undefined, ...extra },
         })),
         ...(withKey ? [{
           layerName: `${keyPen!.name} key`,
           layerColor: keyPen!.color,
           shapeName: `${name} ${keyPen!.name} key`,
-          photo: { band: undefined, key: true, plate: undefined, plates: undefined, fitPaper: undefined, penMm: undefined, fitPairs: undefined, fineSteps, ink: keyPen!.color, regions: groups, region: undefined, regionInks, keyInk: keyPen!.color, ...extra },
+          photo: { band: undefined, key: true, plate: undefined, plates: undefined, fitPaper: undefined, penMm: undefined, fitPairs: undefined, ink: keyPen!.color, regions: groups, region: undefined, regionInks, keyInk: keyPen!.color, ...extra },
         }] : []),
       ],
       parts.length + (withKey ? 1 : 0) > 1 ? chosen.photo.group ?? newShapeId() : undefined,
@@ -480,8 +478,8 @@ export function photoActions(ctx: PhotoContext) {
   };
 
   /** What a best fit for the chosen photo is made with: its hatching's steps, the tool's ink, and pairs or not. */
-  const fitSettings = (pairs: boolean, fine: boolean) => ({
-    steps: coverSteps(tool2?.settings.pen_width ?? 0.5, chosen?.photo?.spacingMm ?? 0.5, chosen?.photo?.levels ?? 4, fine),
+  const fitSettings = (pairs: boolean) => ({
+    steps: coverSteps(tool2?.settings.pen_width ?? 0.5, chosen?.photo?.spacingMm ?? 0.5, chosen?.photo?.levels ?? 4),
     pairs,
     opaque: tool2?.settings.ink_opaque === true,
   });
@@ -490,12 +488,12 @@ export function photoActions(ctx: PhotoContext) {
    * The best `count` pens for the chosen photo on this paper, and how near the photo each count comes:
    * worked out off the page. Null while the photo hasn't been read.
    */
-  const bestPens = async (count: number, pairs: boolean, fine: boolean) => {
+  const bestPens = async (count: number, pairs: boolean) => {
     if (!chosen?.photo) return null;
     const pixels = samplePhoto(chosen.photo.src, chosen.photo.brightness, chosen.photo.contrast, chosen.photo.saturation);
     if (!pixels) return null;
     const { pens, list } = candidates();
-    const choice = await searchPensOffPage(pixels, list, paper, count, fitSettings(pairs, fine));
+    const choice = await searchPensOffPage(pixels, list, paper, count, fitSettings(pairs));
     return choice ? { ...choice, pens: choice.pens.map((k) => ({ pen: pens[k], onPaper: list[k].onPaper })) } : null;
   };
 
@@ -513,7 +511,6 @@ export function photoActions(ctx: PhotoContext) {
     count: number,
     extra: Partial<Photo> = {},
     pairs = chosen?.photo?.fitPaper ? Boolean(chosen.photo.fitPairs) : true,
-    fine = chosen?.photo?.fitPaper ? Boolean(chosen.photo.fineSteps) : true,
   ) => {
     if (!chosen?.photo) return;
     if (!tool2?.palette?.length) {
@@ -525,7 +522,7 @@ export function photoActions(ctx: PhotoContext) {
     setMessage({ text: "Choosing colors…", ok: true, progress: true });
     let best: Awaited<ReturnType<typeof bestPens>> = null;
     try {
-      best = await bestPens(n, pairs, fine);
+      best = await bestPens(n, pairs);
     } catch (err) {
       setMessage({ text: `Couldn’t choose colors: ${(err as Error).message}`, ok: false });
       return;
@@ -550,7 +547,7 @@ export function photoActions(ctx: PhotoContext) {
         photo: {
           band: undefined, key: undefined, keyInk: undefined, plate: undefined, plates: undefined,
           ink: pen.color, regions, region, regionInks, fitPaper: paper, penMm: tool2.settings.pen_width ?? 0.5,
-          fitPairs: pairs || undefined, fitOpaque: tool2.settings.ink_opaque === true || undefined, fineSteps: fine || undefined,
+          fitPairs: pairs || undefined, fitOpaque: tool2.settings.ink_opaque === true || undefined,
           ...extra,
         },
       })),

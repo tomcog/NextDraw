@@ -645,14 +645,14 @@ export default function App() {
       return;
     }
     const counts = [inks - 1, inks, inks + 1].filter((n) => n >= 1 && n <= (tool?.palette?.length ?? 0));
-    Promise.all(counts.map((n) => bestPens(n, Boolean(chosen.photo!.fitPairs), Boolean(chosen.photo!.fineSteps))))
+    Promise.all(counts.map((n) => bestPens(n, Boolean(chosen.photo!.fitPairs))))
       .then((found) => {
         if (mine !== asked.current) return;
         const out = found.flatMap((best, i) => (best?.errors.length ? [{ pens: counts[i], err: best.errors[best.errors.length - 1] }] : []));
         setEstimates(out.length ? out : undefined);
       })
       .catch(() => mine === asked.current && setEstimates(undefined));
-  }, [chosen?.photo?.src, chosen?.photo?.brightness, chosen?.photo?.contrast, chosen?.photo?.fitPaper, chosen?.photo?.fitPairs, chosen?.photo?.fineSteps, chosen?.photo?.spacingMm, chosen?.photo?.levels, convertRead, inks, tool, paperColor]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [chosen?.photo?.src, chosen?.photo?.brightness, chosen?.photo?.contrast, chosen?.photo?.fitPaper, chosen?.photo?.fitPairs, chosen?.photo?.spacingMm, chosen?.photo?.levels, convertRead, inks, tool, paperColor]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // The chosen photo's card: how it's turned into lines.
   const photoCard = chosen?.photo ? (
@@ -684,7 +684,6 @@ export default function App() {
         splitByColor: splitPhotoByColor,
         splitBestFit: (count) => splitPhotoBestFit(count),
         setPairs: (on) => splitPhotoBestFit(inks, {}, on),
-        setFine: (on) => (chosen?.photo?.fitPaper ? splitPhotoBestFit(inks, {}, undefined, on) : splitPhotoByColor(inks, { fineSteps: on || undefined })),
         setKeyLayer,
         place: placePhoto,
         setMargin: setPhotoMargin,

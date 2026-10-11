@@ -24,8 +24,6 @@ export interface PhotoActions {
   splitBestFit: (count: number) => void;
   /** Split by best fit again, with or without two pens hatched across each other. */
   setPairs: (on: boolean) => void;
-  /** Split by best fit again, hatched in fine steps or in whole passes. */
-  setFine: (on: boolean) => void;
   setKeyLayer: (on: boolean) => void;
   place: (how: "fit" | "fill", margin: number) => void;
   setMargin: (margin: number) => void;
@@ -170,13 +168,6 @@ export function PhotoCard({ shape, title, shapes, layers, busy, all, onAll, scal
                   onChange={(e) => actions.setPairs(e.target.checked)}
                 />
               )}
-              {/* Lines come in one at a time rather than a pass at once, so pale colours can be a
-                few sparse lines rather than nothing or a third of the paper. Either way of choosing pens. */}
-              <Checkbox
-                checked={Boolean(photo.fineSteps)}
-                label="Fine steps, for pale colors"
-                onChange={(e) => actions.setFine(e.target.checked)}
-              />
               {photo.fitPaper && estimates && estimates.length > 0 && (
                 <p className={styles.empty}>
                   Best fit, as near as the colors come to the photo: {estimates.map((e) => `${e.pens} ${e.pens === 1 ? "color" : "colors"} ${e.err.toFixed(1)} ΔE`).join(", ")}. Lower is closer.
@@ -506,12 +497,8 @@ export function PhotoCard({ shape, title, shapes, layers, busy, all, onAll, scal
                     <div className={`${styles.fillRow} ${styles.oneRow}`}>
                       {angleField}
                       <NumberField label="Spacing mm" min={0.1} max={5} step={0.05} value={photo.spacingMm} onChange={(spacingMm) => actions.set({ spacingMm })} />
-                      {/* Fine steps sets its own steps, so there are no passes to choose. */}
-                      {!photo.fineSteps && <NumberField label="Passes" min={1} max={MOST_PASSES} step={1} value={photo.levels} onChange={(levels) => actions.set({ levels })} />}
+                      <NumberField label="Passes" min={1} max={MOST_PASSES} step={1} value={photo.levels} onChange={(levels) => actions.set({ levels })} />
                     </div>
-                    {photo.fineSteps && (
-                      <p className={styles.empty}>Fine steps is on, so lines come in one at a time in its own steps rather than in passes. Turn it off under Color to set the passes.</p>
-                    )}
                     {/* When the lines can't cover enough of the paper for colors to reach full strength: by how
                       much, and the spacing that would. */}
                     {(() => {
