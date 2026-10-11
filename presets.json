@@ -600,6 +600,90 @@
     ]
   },
   {
+    "name": "Pilot G2",
+    "settings": {
+      "handling": 1,
+      "speed_pendown": 50,
+      "speed_penup": 75,
+      "accel": 50,
+      "pen_pos_down": 30,
+      "pen_pos_up": 60,
+      "pen_setup": 60,
+      "pen_rate_lower": 12,
+      "pen_rate_raise": 100,
+      "pen_width": 0.28,
+      "ink_opacity": 0.95,
+      "join_gap": 0.25,
+      "ink_builds": false
+    },
+    "hatch": {
+      "angle": 45,
+      "spacing_mm": 0.35
+    },
+    "palette": [
+      {
+        "name": "Black",
+        "color": "#1e1e1e"
+      },
+      {
+        "name": "Grape Purple",
+        "color": "#5b2a86"
+      },
+      {
+        "name": "Blue",
+        "color": "#1f3fa8"
+      },
+      {
+        "name": "Purple",
+        "color": "#8a3a9a"
+      },
+      {
+        "name": "Violet",
+        "color": "#6a5acd"
+      },
+      {
+        "name": "Magenta",
+        "color": "#c8237f"
+      },
+      {
+        "name": "Red",
+        "color": "#d9262e"
+      },
+      {
+        "name": "Green",
+        "color": "#1f8a4c"
+      },
+      {
+        "name": "Pink",
+        "color": "#f0509a"
+      },
+      {
+        "name": "Light Blue",
+        "color": "#3c9be0"
+      },
+      {
+        "name": "Orange",
+        "color": "#f58025"
+      },
+      {
+        "name": "Melon",
+        "color": "#ff8f6b"
+      },
+      {
+        "name": "Lime Green",
+        "color": "#8cc83c"
+      },
+      {
+        "name": "Sky Blue",
+        "color": "#5fc4ea"
+      },
+      {
+        "name": "Yellow",
+        "color": "#f5d81f"
+      }
+    ]
+  },
+  {
     "name": "Sharpie S-Gel",
     "settings": {
       "handling": 1,
