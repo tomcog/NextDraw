@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Button, ButtonRound, InputSelect, Segment, SegmentedControl } from "@tomcoggia/ui";
-import { MoveHorizontal, MoveVertical, Palette, Pipette, RotateCcw } from "lucide-react";
+import { MoveHorizontal, MoveVertical, Pipette, RotateCcw } from "lucide-react";
 import styles from "./controls.module.css";
 import { LengthField } from "./LengthField";
 import { NumberField } from "./NumberField";
@@ -63,7 +63,8 @@ export function PaperSection({ w, h, sizeId, units, color, collapsibleKey, disab
   // never added to the list.
   const [typing, setTyping] = useState(false);
   const custom = typing || sizeId === "custom";
-  // Paper colour rarely changes, so its swatches stay tucked behind the Palette button.
+  const colorName = PAPER_COLORS.find((c) => c.color === color)?.name ?? color;
+  // Paper colour rarely changes, so its swatches stay tucked behind the dot in its colour.
   const [colorsOpen, setColorsOpen] = useState(false);
   // Kept between visits, so the margin a sheet is usually given is the one the button fits to.
   const [margin, setMargin] = useState(() => {
@@ -92,16 +93,23 @@ export function PaperSection({ w, h, sizeId, units, color, collapsibleKey, disab
       title="Paper"
       collapsibleKey={collapsibleKey}
       actionWhenOpen
-      // Folded, the row says what paper the drawing is on, as the Drawing tool row names the tool.
-      closedAction={<span className={styles.toolInTitle}>{`${fmtLen(w, units, false)} × ${fmtLen(h, units)}`}</span>}
+      // Folded, the row says what paper the drawing is on - its size, and a dot in its color - as the
+      // Drawing tool row names the tool.
+      closedAction={
+        <span className={styles.paperClosed}>
+          <span className={styles.toolInTitle}>{`${fmtLen(w, units, false)} × ${fmtLen(h, units)}`}</span>
+          <span className={styles.paperSwatch} style={{ background: color }} role="img" aria-label={`${colorName} paper`} title={`${colorName} paper`} />
+        </span>
+      }
+      // Open, the dot is the paper's color, and opens the colors to choose another.
       action={
-        <ButtonRound
-          size="sm"
-          icon={<Palette />}
-          className={colorsOpen ? styles.roundActive : undefined}
-          aria-label="Paper color"
+        <button
+          type="button"
+          className={styles.paperSwatch}
+          style={{ background: color }}
+          aria-label={`Paper color: ${colorName}`}
           aria-expanded={colorsOpen}
-          title={colorsOpen ? "Hide paper colors" : "Paper color"}
+          title={colorsOpen ? "Hide paper colors" : `${colorName} paper: click for another color`}
           onClick={() => setColorsOpen((open) => !open)}
         />
       }

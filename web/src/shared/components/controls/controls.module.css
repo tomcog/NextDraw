@@ -268,6 +268,13 @@
 
 .scaleRow > :first-child { flex: 0 1 7rem; min-width: 5rem; }
 
+/* Folded, the Paper heading's size and the dot in the paper's color, side by side. */
+.paperClosed {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
 /* Paper color: round swatches, the chosen one ringed. The last opens the system color picker. */
 .paperColors {
   display: flex;
@@ -289,7 +296,10 @@
   cursor: pointer;
 }
 
-.paperSwatch[aria-checked="true"] {
+/* The paper's own dot, in the Paper card's heading: ringed while its colors are out, as a chosen
+   swatch is. */
+.paperSwatch[aria-checked="true"],
+.paperSwatch[aria-expanded="true"] {
   outline: 2px solid var(--ui-action);
   outline-offset: 2px;
 }
