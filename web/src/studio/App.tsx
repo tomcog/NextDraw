@@ -10,7 +10,7 @@ import { FileBrowser, type CombineResult, type OpenResult } from "../shared/comp
 import { Section } from "../shared/components/controls/Section";
 import controls from "../shared/components/controls/controls.module.css";
 import { api } from "../shared/lib/api";
-import { openInPhoto, STUDIO_CHANNEL } from "../shared/lib/apps";
+import { APP_URL, openInPhoto, STUDIO_CHANNEL } from "../shared/lib/apps";
 import { load, save as remember } from "../shared/lib/storage";
 import { DEFAULT_SETTINGS, PAPER_SIZES } from "../shared/lib/constants";
 import type { Info, PenColor, PlotterModel, Preset } from "../shared/lib/types";
@@ -265,7 +265,7 @@ export default function App() {
   return match ? match.id : "custom";
  }, [page]);
 
- const { name, setName, saved, dirty, touch, opened, combined, started, save, sendToPlot } = useDrawingFile({
+ const { name, setName, saved, dirty, touch, opened, combined, started, save, sendToPlot, snapshot: takeSnapshot, openInPlot } = useDrawingFile({
   shapes, fills, layers, page, sizeId, toolName, fonts, setBusy, setMessage, lastFileKey: LAST_FILE_KEY,
  });
 
@@ -1462,9 +1462,25 @@ export default function App() {
   />
  );
 
+ // A snapshot just saved: said at the top, with the ways on from it, until something else is said. In
+ // Studio it opens in a tab of its own: the drawing here may have changes not saved.
+ const [snapped, setSnapped] = useState<{ name: string; path: string } | null>(null);
+ useEffect(() => setSnapped(null), [message]);
  const banner = useMemo(
-  () => (message.text && (!message.ok || message.progress) ? { text: message.text, error: !message.ok, working: message.progress } : null),
-  [message],
+  () => (message.text && (!message.ok || message.progress)
+   ? { text: message.text, error: !message.ok, working: message.progress }
+   : snapped
+    ? {
+     text: `Snapshot saved: ${snapped.name}`,
+     brand: true,
+     id: snapped.path,
+     actions: [
+      { label: "Open in a new Studio tab", onClick: () => { window.open(`${APP_URL.studio}?open=${encodeURIComponent(snapped.path)}`, "_blank"); } },
+      { label: "Open in Plot", onClick: () => void openInPlot(snapped.path) },
+     ],
+    }
+    : null),
+  [message, snapped], // eslint-disable-line react-hooks/exhaustive-deps
  );
 
  return (
@@ -1747,6 +1763,11 @@ export default function App() {
         }}
         onNew={() => startNew()}
         onSendToPlot={sendToPlot}
+        // Only where there's an image to bake: a drawing of plain paths is its own snapshot.
+        onSnapshot={shapes.some((sh) => sh.kind === "photo") ? async () => {
+         const res = await takeSnapshot();
+         if (res) setSnapped({ name: res.name.replace(/\.svg$/i, ""), path: res.path });
+        } : undefined}
         onSave={save}
        />
 

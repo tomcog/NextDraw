@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { ButtonRound, InputText, Segment, Toolbar, ToolbarExpander } from "@tomcoggia/ui";
-import { File as FileIcon, FileInput, FilePlus, FolderOpen, ImagePlus, PenTool, Save, Send } from "lucide-react";
+import { Camera, File as FileIcon, FileInput, FilePlus, FolderOpen, ImagePlus, PenTool, Save, Send } from "lucide-react";
 import { FileCard } from "./FileCard";
 import controls from "./controls.module.css";
 import styles from "./FileSection.module.css";
@@ -25,6 +25,8 @@ interface Props {
   /** Photo: save, then carry on with the drawing in Studio - crop marks, words, anything drawn. */
   onEditInStudio?: () => void;
   onSendToPlot: () => void;
+  /** A snapshot: the drawing with its images baked into lines, saved beside it as a new file. */
+  onSnapshot?: () => void;
   onSave: () => void;
   /** Under which the card's folding is remembered: the app's own. */
   collapsibleKey: string;
@@ -35,7 +37,7 @@ interface Props {
  * opening, starting, sending and saving - in the File card every app has (FileCard). The buttons only
  * one app has are passed in by that app.
  */
-export function FileSection({ name, onName, saved, dirty, hasShapes, busy, confirm, onOpen, onAddLayer, onOpenPhotos, onNew, onEditInStudio, onSendToPlot, onSave, collapsibleKey }: Props) {
+export function FileSection({ name, onName, saved, dirty, hasShapes, busy, confirm, onOpen, onAddLayer, onOpenPhotos, onNew, onEditInStudio, onSendToPlot, onSnapshot, onSave, collapsibleKey }: Props) {
   const photoInput = useRef<HTMLInputElement>(null);
   // The drawer: its buttons each do one thing and fold it, so a click anywhere else in the app
   // folds it too, as the row menus do.
@@ -101,6 +103,11 @@ export function FileSection({ name, onName, saved, dirty, hasShapes, busy, confi
               {onEditInStudio && (
                 <Segment icon={<PenTool />} hideLabel title="Save this drawing and carry on with it in Studio, in its own tab" disabled={busy || !hasShapes} onClick={onEditInStudio}>
                   Edit in Studio
+                </Segment>
+              )}
+              {onSnapshot && (
+                <Segment icon={<Camera />} hideLabel title="Snapshot: save a copy with the images baked into the lines they draw now - to carry on with as paths in Studio, or plot as it is. This drawing stays as it is" disabled={busy || !hasShapes} onClick={onSnapshot}>
+                  Snapshot
                 </Segment>
               )}
               <Segment icon={<Send />} hideLabel title="Save this drawing and open it in Plot, ready to draw" disabled={busy || !hasShapes} onClick={onSendToPlot}>

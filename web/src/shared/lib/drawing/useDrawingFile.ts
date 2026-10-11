@@ -8,6 +8,7 @@ import type { StrokeFont } from "./font";
 import type { Fill } from "./hatch";
 import type { Layer, Page, Shape } from "./shapes";
 import { buildSvg, cleanFileName } from "./svg";
+import { snapshotName, snapshotShapes } from "./snapshot";
 
 /** Where the drawing was last saved, or read from: the file, and its folder as the File card says it. */
 export type Saved = { path: string; folder: string } | null;
@@ -216,6 +217,51 @@ export function useDrawingFile({ shapes, fills, layers, page, sizeId, toolName, 
   // Save if there's anything new, then hand the drawing to Plot. A Plot page already open in another
   // tab takes it from there - it shows whatever drawing was opened last - and Studio stays put. With no
   // Plot page open, one opens in a new tab; only if the browser won't allow that does this tab go.
+  /**
+   * A snapshot: the drawing as it stands, its image layers baked into the lines they draw now, saved
+   * as a new file beside it - or in the shared folder, before it's saved - for carrying on with in
+   * Studio as plain paths, or plotting as it is. The drawing itself is left as it was: not saved, not
+   * renamed, its images still the images. Returns where the snapshot landed, or null.
+   */
+  const snapshot = async (): Promise<{ name: string; path: string; folder: string } | null> => {
+    if (!shapes.length) {
+      setMessage({ text: "Draw something first", ok: false });
+      return null;
+    }
+    setBusy(true);
+    try {
+      const svg = buildSvg(snapshotShapes(shapes), fills, layers, page, { paperSizeId: sizeId, toolName, fonts });
+      const res = await postJSON<{ name: string; path: string; folder: string }>("/api/studio/save", {
+        name: cleanFileName(snapshotName(name)),
+        svg,
+        ...(saved ? { folder: saved.path.slice(0, saved.path.lastIndexOf("/")) } : saveTo ? { folder: saveTo } : {}),
+      });
+      return res;
+    } catch (err) {
+      setMessage({ text: (err as Error).message, ok: false });
+      return null;
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  /** A saved file opened in Plot: Plot's page, if one's open, takes it; else one opens in its own tab. */
+  const openInPlot = async (path: string) => {
+    setBusy(true);
+    try {
+      await postJSON("/api/open", { path });
+      if (await plotPageAnswers()) {
+        setMessage({ text: "Opened in Plot, in its own tab", ok: true });
+        return;
+      }
+      if (!window.open(APP_URL.plot, PLOT_CHANNEL)) window.location.href = APP_URL.plot;
+    } catch (err) {
+      setMessage({ text: (err as Error).message, ok: false });
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const sendToPlot = async () => {
     const where = dirty || !saved ? await save() : saved;
     if (!where) return;
@@ -250,5 +296,5 @@ export function useDrawingFile({ shapes, fills, layers, page, sizeId, toolName, 
   }, []);
   const fileState: FileState = { name, saved, saveTo, foreign, openedAs };
 
-  return { name, setName, saved, dirty, touch, opened, combined, started, resumed, fileState, save, sendToPlot };
+  return { name, setName, saved, dirty, touch, opened, combined, started, resumed, fileState, save, sendToPlot, snapshot, openInPlot };
 }

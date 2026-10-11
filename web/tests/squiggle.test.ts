@@ -286,3 +286,21 @@ test("plate sets: a plate set to None draws nothing, and the others make up the 
   const maps = solveSeparation({ rgb, w: 2, h: 1, plates: noOrange, brightness: 0, contrast: 0, blackShare: 0.5, levels: 4, penMm: 0.28, spacingMm: 0.5 });
   assert.deepEqual([...maps[4]], [0, 0]);
 });
+
+test("snapshot: an image layer becomes the path of its lines, where it sits, on its layer", async () => {
+  await gradient("data:gradient");
+  const { snapshotShapes, snapshotName } = await import("../src/shared/lib/drawing/snapshot");
+  const { pathRuns } = await import("../src/shared/lib/drawing/shapes");
+  const img = { id: "p", kind: "photo" as const, layerId: "l", x: 1, y: 2, x2: 5, y2: 4, photo: photo({ style: undefined, levels: 4, angle: 0, spacingMm: 1 }) };
+  const rect = { id: "r", kind: "rect" as const, layerId: "m", x: 0, y: 0, x2: 1, y2: 1 };
+  const [path, kept] = snapshotShapes([img, rect]);
+  assert.equal(path.kind, "path");
+  assert.equal(path.layerId, "l");
+  assert.equal(path.photo, undefined, "no image left to redraw it from");
+  const runs = pathRuns(path);
+  assert.ok(runs.length > 10, `${runs.length} strokes`);
+  // Where the image sat: every stroke inside its box.
+  for (const r of runs) for (const n of r) assert.ok(n.x >= 1 - 1e-6 && n.x <= 5 + 1e-6 && n.y >= 2 - 1e-6 && n.y <= 4 + 1e-6);
+  assert.equal(kept, rect, "everything else as it was");
+  assert.equal(snapshotName("anubis", new Date(2026, 9, 11, 9, 5)), "anubis snapshot 2026-10-11 09.05");
+});

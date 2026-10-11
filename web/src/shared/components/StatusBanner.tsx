@@ -19,6 +19,8 @@ export interface BannerMessage {
   working?: boolean;
   /** One thing to do about it, as a button beside the text. */
   action?: { label: string; onClick: () => void };
+  /** Several things to do about it, a button each, after `action`. */
+  actions?: { label: string; onClick: () => void }[];
 }
 
 /**
@@ -39,9 +41,9 @@ export function StatusBanner({ message }: { message: BannerMessage | null }) {
           <ul className={styles.items}>{message.items.map((item) => <li key={item}>{item}</li>)}</ul>
         )}
       </div>
-      {message.action && (
-        <Button size="sm" variant="secondary" onClick={message.action.onClick}>{message.action.label}</Button>
-      )}
+      {[...(message.action ? [message.action] : []), ...(message.actions ?? [])].map((a) => (
+        <Button key={a.label} size="sm" variant="secondary" onClick={a.onClick}>{a.label}</Button>
+      ))}
       <ButtonRound
         size="sm"
         variant="outline-light"

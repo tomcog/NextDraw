@@ -68,9 +68,24 @@ export default function App() {
 
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<{ text: string; ok: boolean; progress?: boolean }>({ text: "", ok: true });
+  // A snapshot just saved: said at the top, with the ways on from it, until something else is said.
+  const [snapped, setSnapped] = useState<{ name: string; path: string } | null>(null);
+  useEffect(() => setSnapped(null), [message]);
   const banner = useMemo(
-    () => (message.text && (!message.ok || message.progress) ? { text: message.text, error: !message.ok, working: message.progress } : null),
-    [message],
+    () => (message.text && (!message.ok || message.progress)
+      ? { text: message.text, error: !message.ok, working: message.progress }
+      : snapped
+        ? {
+          text: `Snapshot saved: ${snapped.name}`,
+          brand: true,
+          id: snapped.path,
+          actions: [
+            { label: "Open in Studio", onClick: () => void openInStudio(snapped.path) },
+            { label: "Open in Plot", onClick: () => void file.openInPlot(snapped.path) },
+          ],
+        }
+        : null),
+    [message, snapped], // eslint-disable-line react-hooks/exhaustive-deps
   );
 
   // Whether a plotter is on USB, for the header and the tool list - asked now and then, as Studio does.
@@ -533,6 +548,10 @@ export default function App() {
               onNew={() => ask({ kind: "new" })}
               onEditInStudio={editInStudio}
               onSendToPlot={file.sendToPlot}
+              onSnapshot={async () => {
+                const res = await file.snapshot();
+                if (res) setSnapped({ name: res.name.replace(/\.svg$/i, ""), path: res.path });
+              }}
               onSave={() => file.save()}
             />
           </div>
