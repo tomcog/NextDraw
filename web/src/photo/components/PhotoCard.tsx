@@ -4,10 +4,12 @@ import { RotateCcwSquare, RotateCwSquare } from "lucide-react";
 import { Section } from "../../shared/components/controls/Section";
 import { NumberField } from "../../shared/components/controls/NumberField";
 import controls from "../../shared/components/controls/controls.module.css";
-import { BLACK_SHARE, CENTER_DEFAULTS, KEY_FROM, MOST_COLORS, MOST_LAYERS, MOST_PASSES, OUTLINE_DEFAULTS, PLATES, PLATE_AIMS, PLATE_OFF, SILHOUETTE_DEFAULTS, STREAM_DEFAULTS, ONE_LINE_DEFAULTS, ONE_LINE_MOST, HILBERT_DEFAULTS, WAVE_DEFAULTS, ANGLE_PRESETS, PLATE_SETS, SQUIGGLE_DRAW, SQUIGGLE_INKSCAPE, SQUIGGLE_INKSCAPE_RANGES, SQUIGGLE_RANGES, coverSteps, plateSetOf, platesOf, squiggleDrawOf, squiggleInkscapeOf, type AnglePreset, type SquiggleDraw, type SquiggleInkscape, type PlateSet, photoMarks, photoMode, type Photo, type Plate } from "../../shared/lib/drawing/photo";
+import { BLACK_SHARE, CENTER_DEFAULTS, KEY_FROM, MOST_COLORS, MOST_LAYERS, MOST_SIDE_LAYERS, MOST_PASSES, paperToneOf, OUTLINE_DEFAULTS, PLATE_AIMS, PLATE_OFF, SILHOUETTE_DEFAULTS, STREAM_DEFAULTS, ONE_LINE_DEFAULTS, ONE_LINE_MOST, HILBERT_DEFAULTS, WAVE_DEFAULTS, ANGLE_PRESETS, PLATE_SETS, SQUIGGLE_DRAW, SQUIGGLE_INKSCAPE, SQUIGGLE_INKSCAPE_RANGES, SQUIGGLE_RANGES, coverSteps, plateSetOf, platesOf, squiggleDrawOf, squiggleInkscapeOf, type AnglePreset, type SquiggleDraw, type SquiggleInkscape, type PlateSet, photoMarks, photoMode, type Photo, type Plate } from "../../shared/lib/drawing/photo";
 import { boxOf, type Layer, type Shape } from "../../shared/lib/drawing/shapes";
 import type { PenColor } from "../../shared/lib/types";
 import styles from "../App.module.css";
+
+const ALL_PLATES = Object.keys(PLATE_AIMS) as Plate[];
 import { EFFECTS, effectOf } from "./EffectToolbar";
 
 /** What the card does to the photo. Each acts on the chosen photo, and on all its layers where it should. */
@@ -30,6 +32,10 @@ export interface PhotoActions {
   setScale: (percent: number) => void;
   /** Draw a plate in another of the pen's colors, by its name in the palette. */
   setPlatePen: (plate: Plate, penName: string) => void;
+  /** B&W split around the paper: so many layers darker than it and lighter, the tones between left bare. */
+  splitAround: (dark: number, light: number) => void;
+  /** Which of the picture's tones a photo split around the paper leaves bare, as darkness from and to. */
+  setPaperTone: (tone: [number, number]) => void;
   /** With no pen preset: draw the layer in hand in any color, from the picker. */
   setColor: (color: string) => void;
   /** Split into a set of plates: CMYK, or CMYK with more inks. */
@@ -93,11 +99,12 @@ export function PhotoCard({ shape, title, shapes, layers, busy, all, onAll, scal
           <InputSelect
             size="md"
             label="Plate"
-            value={PLATES.find((p) => PLATE_AIMS[p].name === photo.separation) ?? "other"}
+            value={ALL_PLATES.find((p) => PLATE_AIMS[p].name === photo.separation) ?? "other"}
             onChange={(e) => actions.setPlate(e.target.value as Plate | "other")}
           >
-            {PLATES.map((p) => <option key={p} value={p}>{PLATE_AIMS[p].name}</option>)}
-            <option value="other">{PLATES.some((p) => PLATE_AIMS[p].name === photo.separation) ? "Another color" : photo.separation}</option>
+            {/* CMYK, then the extra inks a separation can be for. */}
+            {ALL_PLATES.map((p) => <option key={p} value={p}>{PLATE_AIMS[p].name}</option>)}
+            <option value="other">{ALL_PLATES.some((p) => PLATE_AIMS[p].name === photo.separation) ? "Another color" : photo.separation}</option>
           </InputSelect>
           <p className={styles.empty}>A separation: this layer draws its own grayscale picture, more of its color where it's darker. Replace swaps this plate alone.</p>
         </>
@@ -196,14 +203,44 @@ export function PhotoCard({ shape, title, shapes, layers, busy, all, onAll, scal
               )}
             </>
           ) : (
-            <NumberField
-              label="Tone layers"
-              min={1}
-              max={MOST_LAYERS}
-              step={1}
-              value={photo.group ? shapes.filter((sh) => sh.photo?.group === photo.group).length : 1}
-              onChange={actions.split}
-            />
+            <>
+              {/* One pen darker than the paper, in tone layers - or the paper as one of the tones, pens
+                darker and lighter than it either side: black and white on gray, the midtones bare. */}
+              <SegmentedControl size="sm" variant="dark" aria-label="Pens">
+                <Segment selected={!photo.side} title="Dark pen: one pen darker than the paper, in tone layers from light to dark" onClick={() => photo.side && actions.split(1)}>Dark pen</Segment>
+                <Segment selected={Boolean(photo.side)} title="Dark + light pens: pens darker than the paper draw the shadows, pens lighter than it the highlights, and the tones between are bare paper" onClick={() => !photo.side && actions.splitAround(1, 1)}>Dark + light pens</Segment>
+              </SegmentedControl>
+              {photo.side ? (() => {
+                const members = photo.group ? shapes.filter((sh) => sh.photo?.group === photo.group) : [shape];
+                const dark = members.filter((sh) => sh.photo?.side === "dark").length;
+                const light = members.filter((sh) => sh.photo?.side === "light").length;
+                const [p0, p1] = paperToneOf(photo);
+                return (
+                  <>
+                    <div className={styles.fillRow}>
+                      <NumberField label="Dark layers" min={light ? 0 : 1} max={MOST_SIDE_LAYERS} step={1} value={dark} onChange={(v) => actions.splitAround(v, light)} />
+                      <NumberField label="Light layers" min={dark ? 0 : 1} max={MOST_SIDE_LAYERS} step={1} value={light} onChange={(v) => actions.splitAround(dark, v)} />
+                    </div>
+                    <div className={styles.fillRow}>
+                      <NumberField label="Paper from" unit="%" min={0} max={Math.round(p1 * 100)} step={1} value={Math.round(p0 * 100)} onChange={(v) => actions.setPaperTone([v / 100, p1])} />
+                      <NumberField label="Paper to" unit="%" min={Math.round(p0 * 100)} max={100} step={1} value={Math.round(p1 * 100)} onChange={(v) => actions.setPaperTone([p0, v / 100])} />
+                    </div>
+                    <p className={styles.empty}>
+                      {`Tones from ${Math.round(p0 * 100)}% to ${Math.round(p1 * 100)}% dark are left as bare paper. Darker ones are drawn in the dark ${dark === 1 ? "pen" : "pens"}, lighter ones in the light ${light === 1 ? "pen" : "pens"}, with more lines the further they are from the paper.`}
+                    </p>
+                  </>
+                );
+              })() : (
+                <NumberField
+                  label="Tone layers"
+                  min={1}
+                  max={MOST_LAYERS}
+                  step={1}
+                  value={photo.group ? shapes.filter((sh) => sh.photo?.group === photo.group).length : 1}
+                  onChange={actions.split}
+                />
+              )}
+            </>
           )}
         </>
       )}
@@ -275,8 +312,13 @@ export function PhotoCard({ shape, title, shapes, layers, busy, all, onAll, scal
       {photo.band && (() => {
         const [lo, hi] = photo.band;
         const bleed = photo.bleed ?? 0;
-        const from = Math.round(Math.max(0, lo - (lo > 0 ? bleed : 0)) * 100);
-        const to = Math.round(Math.min(1, hi + (hi < 1 ? bleed : 0)) * 100);
+        // Split around the paper, a band is a share of its side, from the paper outwards: said as the
+        // picture's own darkness.
+        const [p0, p1] = paperToneOf(photo);
+        const real = (t: number) => (photo.side === "dark" ? p1 + (1 - p1) * t : photo.side === "light" ? p0 * (1 - t) : t);
+        const ends = [real(Math.max(0, lo - (lo > 0 ? bleed : 0))), real(Math.min(1, hi + (hi < 1 ? bleed : 0)))];
+        const from = Math.round(Math.min(...ends) * 100);
+        const to = Math.round(Math.max(...ends) * 100);
         return (
           <>
             {/* How far the bands reach into each other, so their lines overlap where they meet. */}

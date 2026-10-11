@@ -7,8 +7,8 @@ import type { Dispatch, SetStateAction } from "react";
 import { lightness } from "../../shared/lib/color";
 import type { PenColor, Preset } from "../../shared/lib/types";
 import {
-  BAND_NAMES, LAYER_SETTINGS, MOST_COLORS, MOST_LAYERS, PHOTO_DEFAULTS, PLATES, PLATE_AIMS, PLATE_OFF, colourGroups, isColourful, matchPens, photoMode,
-  placeOnPage, plateNamed, platePens, presetAngle, readTones, hexLinear, linearHex, coverSteps, stemWithoutPlate, turnedCopy, turnedCrop, workingCopy, type AnglePreset, type Photo, type PhotoPart, type Plate, type PlateSet, PLATE_SETS, plateSetOf, platesOf,
+  BAND_NAMES, LAYER_SETTINGS, MOST_SIDE_LAYERS, paperToneOf, MOST_COLORS, MOST_LAYERS, PHOTO_DEFAULTS, PLATES, PLATE_AIMS, PLATE_OFF, colourGroups, isColourful, matchPens, photoMode,
+  placeOnPage, inkNamed, platePens, presetAngle, readTones, hexLinear, linearHex, coverSteps, stemWithoutPlate, turnedCopy, turnedCrop, workingCopy, type AnglePreset, type Photo, type PhotoPart, type Plate, type PlateSet, PLATE_SETS, plateSetOf, platesOf,
 } from "../../shared/lib/drawing/photo";
 import { boxOf, newLayerId, newShapeId, type Layer, type Page, type Shape } from "../../shared/lib/drawing/shapes";
 import { samplePhoto, type Candidate } from "./choosePens";
@@ -123,34 +123,46 @@ export function photoActions(ctx: PhotoContext) {
   /**
     * Separations made elsewhere - a photo already split into greyscale plates, one file each - put in
     * as one photo on the page with a layer per plate, each drawing its own picture: darker where more
-    * of its pen goes. A file named for its plate ("_C", "cyan", "-K") gets the palette's pen nearest
-    * that plate and its screen angle; four files that don't say are taken as C, M, Y and K in the
-    * order given; anything else is its own ink, in the darkest pen. Sized by the first, and the rest
-    * over it, so they register. Layers stack by their pens' lightness, lightest at the bottom.
+    * of its pen goes. A file whose name says its ink (see inkNamed: "_C", "cyan", "PortraitMagenta",
+    * "orange", or a pen's own name) gets that plate's screen angle and the palette's pen nearest it -
+    * each plate's pen used once - or that pen; four files that don't say are taken as C, M, Y and K in
+    * the order given; anything else is its own ink, in the darkest pen. A file the browser can't read
+    * is left out and said so, rather than stopping the rest; so are `skipped`, the files a folder had
+    * that named no ink. Sized by the first, and the rest over it, so they register. Layers stack by
+    * their pens' lightness, lightest at the bottom.
     */
-  const addSeparations = async (files: File[]) => {
+  const addSeparations = async (files: File[], skipped: string[] = []) => {
     if (!active || !files.length) return;
     try {
-      const copies = await Promise.all(files.map(async (file) => {
+      const read = await Promise.allSettled(files.map(async (file) => {
         const copy = await workingCopy(file);
         await readTones(copy.src);
         return { file, copy };
       }));
+      const copies = read.flatMap((r) => (r.status === "fulfilled" ? [r.value] : []));
+      const unreadable = files.filter((_, i) => read[i].status === "rejected").map((f) => f.name);
+      if (!copies.length) {
+        setMessage({ text: `The browser couldn't read ${unreadable.join(", ")}. Save them as PNG or JPEG and try again.`, ok: false });
+        return;
+      }
       const pens = tool2?.palette ?? [];
-      const matched = pens.length >= 4 ? platePens(pens) : [];
-      const named = copies.map(({ file }) => plateNamed(file.name));
+      const inks = copies.map(({ file }) => inkNamed(file.name, pens));
       // Four files and none named: C, M, Y and K, in the order they came.
-      const plates = named.every((p) => !p) && copies.length === 4 ? [...PLATES] : named;
+      const plates = inks.every((ink) => !ink) && copies.length === 4 ? [...PLATES] : inks.map((ink) => ink?.plate);
+      // Each plate's pen, chosen together so no two plates share one.
+      const used = [...new Set(plates.filter((p): p is Plate => Boolean(p)))];
+      const matched = used.length ? platePens(pens, used) : [];
       const darkest = darkestPen(pens);
       const [first] = copies;
       const margin = 0.5;
       const { crop, ...box } = placeOnPage(first.copy.width / first.copy.height, page, "fit", margin);
-      const stem = stemWithoutPlate(first.file.name);
+      const stem = stemWithoutPlate(first.file.name, pens);
       const group = copies.length > 1 ? newShapeId() : undefined;
       const parts = copies.map(({ file, copy }, i) => {
         const plate = plates[i];
-        const pen = plate ? matched[PLATES.indexOf(plate)] ?? darkest : darkest;
-        const separation = plate ? PLATE_AIMS[plate].name : file.name.replace(/\.[^.]+$/, "");
+        const named = inks[i]?.pen;
+        const pen = plate ? matched[used.indexOf(plate)] ?? darkest : named ?? darkest;
+        const separation = plate ? PLATE_AIMS[plate].name : named?.name ?? file.name.replace(/\.[^.]+$/, "");
         return {
           pen,
           separation,
@@ -182,9 +194,15 @@ export function photoActions(ctx: PhotoContext) {
       // Pictures of other proportions are stretched over the first, which puts them out of register.
       const aspect = first.copy.width / first.copy.height;
       const odd = copies.filter(({ copy }) => Math.abs(copy.width / copy.height / aspect - 1) > 0.01).map(({ file }) => file.name);
+      const left = [
+        ...(unreadable.length ? [`couldn't read ${unreadable.join(", ")}`] : []),
+        ...(skipped.length ? [`left out ${skipped.join(", ")}, which ${skipped.length === 1 ? "names" : "name"} no ink`] : []),
+      ];
       setMessage(odd.length
         ? { text: `${odd.join(", ")} ${odd.length === 1 ? "isn't" : "aren't"} the same shape as ${first.file.name}, so ${odd.length === 1 ? "it's" : "they're"} stretched to it and won't line up`, ok: false }
-        : { text: `Added ${copies.length} separations: ${parts.map((p) => `${p.separation} in ${p.layerName}`).join(", ")}`, ok: true });
+        : unreadable.length
+          ? { text: `Added ${copies.length} separations, but ${left.join("; ")}. Save ${unreadable.length === 1 ? "it" : "them"} as PNG or JPEG to add ${unreadable.length === 1 ? "it" : "them"}.`, ok: false }
+          : { text: `Added ${copies.length} separations: ${parts.map((p) => `${p.separation} in ${p.layerName}`).join(", ")}${left.length ? `. ${left.join("; ").replace(/^./, (c) => c.toUpperCase())}` : ""}`, ok: true });
     } catch (err) {
       setMessage({ text: (err as Error).message, ok: false });
     }
@@ -197,9 +215,9 @@ export function photoActions(ctx: PhotoContext) {
   const setSeparationPlate = (plate: Plate | "other") => {
     if (!chosen?.photo?.separation) return;
     const pens = tool2?.palette ?? [];
-    const pen = plate !== "other" && pens.length >= 4 ? platePens(pens)[PLATES.indexOf(plate)] : undefined;
+    const pen = plate !== "other" ? platePens(pens, [plate])[0] : undefined;
     const was = chosen.photo.separation;
-    const wasPlate = PLATES.some((p) => PLATE_AIMS[p].name === was);
+    const wasPlate = Object.values(PLATE_AIMS).some((aim) => aim.name === was);
     const separation = plate === "other" ? (wasPlate ? "Color" : was) : PLATE_AIMS[plate].name;
     const name = chosen.name?.endsWith(` ${was}`) ? chosen.name.slice(0, -was.length - 1) : chosen.name ?? "Image";
     record();
@@ -321,7 +339,7 @@ export function photoActions(ctx: PhotoContext) {
         layerColor: pen.color,
         shapeName: `${name} ${pen.name}`,
         photo: {
-          band: undefined, key: undefined, keyInk: undefined, regions: undefined, region: undefined, regionInks: undefined,
+          band: undefined, side: undefined, paperTone: undefined, key: undefined, keyInk: undefined, regions: undefined, region: undefined, regionInks: undefined,
           // Best fit's own options don't carry over.
           fitPaper: undefined, fitPairs: undefined,
           plate, plates, ink: pen.color, angle: PLATE_AIMS[plate].angle,
@@ -380,10 +398,14 @@ export function photoActions(ctx: PhotoContext) {
     const base = members[0];
     const layer = layers.find((l) => l.id === base?.layerId);
     let name = base?.name ?? "Image";
-    if (base?.photo?.ink && layer && name.endsWith(` ${layer.name}`)) name = name.slice(0, -layer.name.length - 1);
-    else name = name.replace(words, "");
-    // From a colour or CMYK split, the palette's darkest pen; from B&W, the pen its layer has now.
-    if (base?.photo?.ink) {
+    // A layer named for its pen - a colour, a plate, a split around the paper - is the photo's name
+    // and the pen's: take the pen off, as often as it was put on.
+    if ((base?.photo?.ink || base?.photo?.side) && layer) {
+      while (name.endsWith(` ${layer.name}`)) name = name.slice(0, -layer.name.length - 1);
+    } else name = name.replace(words, "");
+    // From a colour or CMYK split, or one around the paper, the palette's darkest pen; from B&W, the
+    // pen its layer has now.
+    if (base?.photo?.ink || base?.photo?.side) {
       const pen = darkestPen(tool2?.palette ?? []);
       return { name, ink: pen?.name ?? "Black", color: pen?.color ?? "#262626" };
     }
@@ -408,11 +430,83 @@ export function photoActions(ctx: PhotoContext) {
         layerName: n > 1 ? `${ink} ${words[i]}` : ink,
         layerColor: color,
         shapeName: n > 1 ? `${name} ${words[i]}` : name,
-        photo: { band: n > 1 ? [i / n, (i + 1) / n] as [number, number] : undefined, ink: undefined, regions: undefined, region: undefined, key: undefined, keyInk: undefined, regionInks: undefined, plate: undefined, plates: undefined, fitPaper: undefined, fitPairs: undefined, ...extra },
+        photo: { band: n > 1 ? [i / n, (i + 1) / n] as [number, number] : undefined, side: undefined, paperTone: undefined, ink: undefined, regions: undefined, region: undefined, key: undefined, keyInk: undefined, regionInks: undefined, plate: undefined, plates: undefined, fitPaper: undefined, fitPairs: undefined, ...extra },
       })),
       n > 1 ? chosen.photo.group ?? newShapeId() : undefined,
       n > 1 ? `Split into ${n} tone layers` : "One layer, by value",
     );
+  };
+
+  /**
+   * Split the chosen photo around the paper (B&W, "Dark + light pens"): the paper is one of its tones,
+   * left bare - on gray paper, the midtones - with `dark` layers drawing the tones darker than it and
+   * `light` layers the tones lighter, each side cut into that many bands from the paper outwards. Each
+   * band draws its own region, its tones, in its own pen: black outermost on the dark side and white
+   * on the light, with grays mixed from them and the paper's color nearer the paper. The bare
+   * tones start around the paper's own lightness, a third of the picture's range, until set.
+   */
+  const splitAroundPaper = ({ dark, light, paperTone, extra = {} }: { dark: number; light: number; paperTone?: [number, number]; extra?: Partial<Photo> }) => {
+    if (!chosen?.photo) return;
+    const pens = tool2?.palette ?? [];
+    const paperL = lightness(paper) ?? 100;
+    const tone: [number, number] = paperTone ?? (() => {
+      const at = 1 - paperL / 100;
+      const lo = Math.max(0, Math.min(2 / 3, at - 1 / 6));
+      return [Math.round(lo * 100) / 100, Math.round((lo + 1 / 3) * 100) / 100];
+    })();
+    // The outermost band on each side is black, or white: the palette's own where it has one that
+    // near, or else plain black and white. The bands between are the paper mixed with it, evenly -
+    // two dark bands are black and a gray halfway from the paper to black.
+    const byLight = [...pens].sort((a, b) => (lightness(a.color) ?? 0) - (lightness(b.color) ?? 0));
+    const black = byLight[0] && (lightness(byLight[0].color) ?? 100) < 25 ? byLight[0] : { name: "Black", color: "#1a1a1a" };
+    const lightest = byLight[byLight.length - 1];
+    const white = lightest && (lightness(lightest.color) ?? 0) > 90 ? lightest : { name: "White", color: "#ffffff" };
+    const mix = (to: string, t: number) => {
+      const [a, b] = [paper, to].map((hex) => [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16)));
+      return `#${a.map((v, i) => Math.round(v + (b[i] - v) * t).toString(16).padStart(2, "0")).join("")}`;
+    };
+    const nd = Math.min(MOST_SIDE_LAYERS, Math.max(0, Math.round(dark)));
+    const nl = Math.min(MOST_SIDE_LAYERS, Math.max(0, Math.round(light)));
+    const { name } = photoStem();
+    const parts: (PhotoPart & { L: number; side: "dark" | "light"; i: number })[] = [];
+    const sideOf = (side: "dark" | "light", n: number) => {
+      const end = side === "dark" ? black : white;
+      // From the paper outwards: the grays, then black or white.
+      const grays = side === "dark" ? ["Dark gray", "Darker gray"] : ["Light gray", "Lighter gray"];
+      for (let i = 0; i < n; i++) {
+        const outer = i === n - 1;
+        const pen = outer ? end : { name: grays[i], color: mix(end.color, (i + 1) / n) };
+        parts.push({
+          L: lightness(pen.color) ?? 0, side, i,
+          layerName: pen.name,
+          layerColor: pen.color,
+          shapeName: `${name} ${pen.name}`,
+          photo: {
+            side, paperTone: tone, band: n > 1 ? [i / n, (i + 1) / n] : undefined,
+            ink: undefined, regions: undefined, region: undefined, key: undefined, keyInk: undefined, regionInks: undefined, plate: undefined, plates: undefined, fitPaper: undefined, fitPairs: undefined, ...extra,
+          },
+        });
+      }
+    };
+    sideOf("dark", nd);
+    sideOf("light", nl);
+    if (!parts.length) return;
+    // Lightest at the bottom.
+    parts.sort((a, b) => b.L - a.L);
+    rebuildPhoto(
+      parts.map(({ layerName, layerColor, shapeName, photo }) => ({ layerName, layerColor, shapeName, photo })),
+      parts.length > 1 ? chosen.photo.group ?? newShapeId() : undefined,
+      `Split around the paper: ${parts.map((p) => p.layerName).join(", ")}`,
+    );
+  };
+
+  /** Which of the picture's tones a photo split around the paper leaves bare: every layer of it, without splitting again. */
+  const setPaperTone = (tone: [number, number]) => {
+    if (!chosen?.photo?.side) return;
+    record();
+    const [a, b] = paperToneOf({ paperTone: tone });
+    const group = chosen.photo.group;
+    setShapes((list) => list.map((sh) => ((group ? sh.photo?.group === group : sh.id === chosen.id) && sh.photo?.side ? { ...sh, photo: { ...sh.photo, paperTone: [a, b] } } : sh)));
   };
 
   /**
@@ -454,13 +548,13 @@ export function photoActions(ctx: PhotoContext) {
           layerName: pen.name,
           layerColor: pen.color,
           shapeName: `${name} ${pen.name}`,
-          photo: { band: undefined, key: undefined, plate: undefined, plates: undefined, fitPaper: undefined, penMm: undefined, fitPairs: undefined, ink: pen.color, regions: groups, region, regionInks, keyInk: withKey ? keyPen!.color : undefined, ...extra },
+          photo: { band: undefined, side: undefined, paperTone: undefined, key: undefined, plate: undefined, plates: undefined, fitPaper: undefined, penMm: undefined, fitPairs: undefined, ink: pen.color, regions: groups, region, regionInks, keyInk: withKey ? keyPen!.color : undefined, ...extra },
         })),
         ...(withKey ? [{
           layerName: `${keyPen!.name} key`,
           layerColor: keyPen!.color,
           shapeName: `${name} ${keyPen!.name} key`,
-          photo: { band: undefined, key: true, plate: undefined, plates: undefined, fitPaper: undefined, penMm: undefined, fitPairs: undefined, ink: keyPen!.color, regions: groups, region: undefined, regionInks, keyInk: keyPen!.color, ...extra },
+          photo: { band: undefined, side: undefined, paperTone: undefined, key: true, plate: undefined, plates: undefined, fitPaper: undefined, penMm: undefined, fitPairs: undefined, ink: keyPen!.color, regions: groups, region: undefined, regionInks, keyInk: keyPen!.color, ...extra },
         }] : []),
       ],
       parts.length + (withKey ? 1 : 0) > 1 ? chosen.photo.group ?? newShapeId() : undefined,
@@ -552,7 +646,7 @@ export function photoActions(ctx: PhotoContext) {
         layerColor: pen.color,
         shapeName: `${name} ${pen.name}`,
         photo: {
-          band: undefined, key: undefined, keyInk: undefined, plate: undefined, plates: undefined,
+          band: undefined, side: undefined, paperTone: undefined, key: undefined, keyInk: undefined, plate: undefined, plates: undefined,
           ink: pen.color, regions, region, regionInks, fitPaper: paper, penMm: tool2.settings.pen_width ?? 0.5,
           fitPairs: pairs || undefined, fitOpaque: tool2.settings.ink_opaque === true || undefined,
           ...extra,
@@ -820,5 +914,6 @@ export function photoActions(ctx: PhotoContext) {
   return {
     addPhoto, addSeparations, setSeparationPlate, switchPhotoMode, setKeyLayer, splitPhoto, splitPhotoByColor, splitPhotoBestFit, bestPens,
     placePhoto, photoScale, setPhotoScale, setPhotoMargin, replacePhoto, turnPhoto, setPhotoOf, setAngles, photoStem, splitPhotoCmyk, setPlatePen, setLayerColor,
+    splitAroundPaper, setPaperTone,
   };
 }

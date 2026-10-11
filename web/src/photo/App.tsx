@@ -34,6 +34,7 @@ import { dropWork, keepWork, loadWork, type Work } from "./lib/workInProgress";
 import { PhotoCard } from "./components/PhotoCard";
 import { PhotoHeader } from "./components/PhotoHeader";
 import { GENERAL_PEN } from "./lib/generalPen";
+import { separationFiles } from "./lib/separationFolder";
 import styles from "./App.module.css";
 
 // NextDraw Photo: a photo turned into lines for the tool's pens, saved as an ordinary layered drawing
@@ -61,7 +62,7 @@ const NO_FILLS: Fill[] = [];
 const firstLayer = (): Layer => ({ id: newLayerId(), name: "Black", color: "#262626" });
 
 /** What waits on the question about unsaved work: a new drawing, photos opened, or a file opened. */
-type Next = { kind: "new" } | { kind: "photos"; files: File[] } | { kind: "open"; res: OpenResult };
+type Next = { kind: "new" } | { kind: "photos"; files: File[]; skipped?: string[] } | { kind: "open"; res: OpenResult };
 
 export default function App() {
   const [page, setPage] = useState<Page>({ w: 11, h: 8.5 });
@@ -268,6 +269,7 @@ export default function App() {
   const {
     addPhoto, addSeparations, setSeparationPlate, switchPhotoMode, setKeyLayer, splitPhoto, splitPhotoByColor, splitPhotoBestFit, bestPens,
     placePhoto, photoScale, setPhotoScale, setPhotoMargin, replacePhoto, turnPhoto, setPhotoOf, setAngles, photoStem, splitPhotoCmyk, setPlatePen, setLayerColor,
+    splitAroundPaper, setPaperTone,
   } = photoActions({
     chosen, shapes, setShapes, layers, setLayers, active, setActiveLayer, page, tool,
     spacingMm: tool?.hatch?.spacing_mm ?? 1.5, all: photoAll, paper: paperColor, record, addShape, pick, setMessage, setBusy,
@@ -287,19 +289,20 @@ export default function App() {
 
   // Photos opened: a new drawing named after them, and the photo put in once it's in place - one
   // photo, or several separations (…_C, …_M, …_Y, …_K) for a layer each.
-  const [pendingPhotos, setPendingPhotos] = useState<File[] | null>(null);
-  const startPhotos = (files: File[]) => {
+  const [pendingPhotos, setPendingPhotos] = useState<{ files: File[]; skipped: string[] } | null>(null);
+  const startPhotos = (files: File[], skipped: string[] = []) => {
     newDrawing();
     // A new photo is first seen as it is, before any effect: the first view in the bar.
     setConvertView("picture");
-    file.setName(files.length > 1 ? stemWithoutPlate(files[0].name) : files[0].name.replace(/\.[^.]+$/, ""));
-    setPendingPhotos(files);
+    file.setName(files.length > 1 || skipped.length ? stemWithoutPlate(files[0].name, tool.palette) : files[0].name.replace(/\.[^.]+$/, ""));
+    setPendingPhotos({ files, skipped });
   };
   useEffect(() => {
     if (!pendingPhotos || shapes.length) return;
-    const files = pendingPhotos;
+    const { files, skipped } = pendingPhotos;
     setPendingPhotos(null);
-    if (files.length > 1) addSeparations(files);
+    // From a folder, even one file is a separation: its name said its ink.
+    if (files.length > 1 || skipped.length) addSeparations(files, skipped);
     else addPhoto(files[0]);
   }, [pendingPhotos, shapes.length]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -391,7 +394,7 @@ export default function App() {
   const goOn = (next: Next) => {
     setConfirmNext(null);
     if (next.kind === "new") newDrawing();
-    else if (next.kind === "photos") startPhotos(next.files);
+    else if (next.kind === "photos") startPhotos(next.files, next.skipped);
     else openDrawing(next.res);
   };
   const ask = (next: Next) => (file.dirty && shapes.length ? setConfirmNext(next) : goOn(next));
@@ -462,6 +465,10 @@ export default function App() {
     else if (photo.ink && photo.regions) {
       if (photo.fitPaper) splitPhotoBestFit(inks);
       else splitPhotoByColor(inks);
+    } else if (photo.side) {
+      // Split around the paper: each band's pen chosen again, from the new pen's darker and lighter colors.
+      const members = photo.group ? shapes.filter((sh) => sh.photo?.group === photo.group) : [chosen!];
+      splitAroundPaper({ dark: members.filter((sh) => sh.photo?.side === "dark").length, light: members.filter((sh) => sh.photo?.side === "light").length, paperTone: photo.paperTone });
     }
   }, [toolName]); // eslint-disable-line react-hooks/exhaustive-deps
   const toolSection = <DrawingToolSection tools={presets} value={toolName} onPick={pickPen} none="None" collapsibleKey="photo-pen" disabled={busy} />;
@@ -528,6 +535,8 @@ export default function App() {
         splitCmyk: (set) => splitPhotoCmyk({}, set),
         setPlatePen,
         setColor: setLayerColor,
+        splitAround: (dark, light) => splitAroundPaper({ dark, light, paperTone: chosen.photo?.side ? chosen.photo.paperTone : undefined }),
+        setPaperTone,
         pickBand: (id, layerId) => {
           pick(id);
           setActiveLayer(layerId);
@@ -554,6 +563,11 @@ export default function App() {
               confirm={confirmBlock}
               onOpen={() => setBrowsing("drawing")}
               onOpenPhotos={(files) => files.length && ask({ kind: "photos", files })}
+              onOpenFolder={(files) => {
+                const { use, skipped } = separationFiles(files, tool.palette ?? []);
+                if (use.length) ask({ kind: "photos", files: use, skipped });
+                else setMessage({ text: "There are no images in that folder", ok: false });
+              }}
               onNew={() => ask({ kind: "new" })}
               onEditInStudio={editInStudio}
               onSendToPlot={file.sendToPlot}

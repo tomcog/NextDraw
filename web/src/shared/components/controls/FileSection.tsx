@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { ButtonRound, InputText, Segment, Toolbar, ToolbarExpander } from "@tomcoggia/ui";
-import { Camera, File as FileIcon, FileInput, FilePlus, FolderOpen, ImagePlus, PenTool, Save, Send } from "lucide-react";
+import { Camera, File as FileIcon, FileInput, FilePlus, FolderInput, FolderOpen, ImagePlus, PenTool, Save, Send } from "lucide-react";
 import { FileCard } from "./FileCard";
 import controls from "./controls.module.css";
 import styles from "./FileSection.module.css";
@@ -21,6 +21,8 @@ interface Props {
   onAddLayer?: () => void;
   /** Photo: a photo, or several separations, as a new drawing. */
   onOpenPhotos?: (files: File[]) => void;
+  /** Image: a folder of separations - a grayscale image per ink - every file in it, for a layer each. */
+  onOpenFolder?: (files: File[]) => void;
   onNew: () => void;
   /** Photo: save, then carry on with the drawing in Studio - crop marks, words, anything drawn. */
   onEditInStudio?: () => void;
@@ -37,8 +39,9 @@ interface Props {
  * opening, starting, sending and saving - in the File card every app has (FileCard). The buttons only
  * one app has are passed in by that app.
  */
-export function FileSection({ name, onName, saved, dirty, hasShapes, busy, confirm, onOpen, onAddLayer, onOpenPhotos, onNew, onEditInStudio, onSendToPlot, onSnapshot, onSave, collapsibleKey }: Props) {
+export function FileSection({ name, onName, saved, dirty, hasShapes, busy, confirm, onOpen, onAddLayer, onOpenPhotos, onOpenFolder, onNew, onEditInStudio, onSendToPlot, onSnapshot, onSave, collapsibleKey }: Props) {
   const photoInput = useRef<HTMLInputElement>(null);
+  const folderInput = useRef<HTMLInputElement>(null);
   // The drawer: its buttons each do one thing and fold it, so a click anywhere else in the app
   // folds it too, as the row menus do.
   const [drawerOpen, setDrawerOpen] = useState(false);
@@ -97,6 +100,17 @@ export function FileSection({ name, onName, saved, dirty, hasShapes, busy, confi
                 Open an image
               </Segment>
               )}
+              {onOpenFolder && (
+              <Segment
+                icon={<FolderInput />}
+                hideLabel
+                title="Open a folder of separations: a grayscale image per ink, its name saying which (Portrait_Cyan, portrait-magenta…), each converted the same way onto a layer in its ink"
+                disabled={busy}
+                onClick={() => folderInput.current?.click()}
+              >
+                Open a folder of separations
+              </Segment>
+              )}
               <Segment icon={<FilePlus />} hideLabel title="Close this drawing and start a new one" disabled={busy} onClick={onNew}>
                 New drawing
               </Segment>
@@ -126,6 +140,19 @@ export function FileSection({ name, onName, saved, dirty, hasShapes, busy, confi
               e.target.value = ""; // so the same photo can be opened again
             }}
           />
+          {onOpenFolder && (
+            <input
+              ref={folderInput}
+              type="file"
+              hidden
+              // The browser's folder picker: every file in the folder, and in any folders inside it.
+              {...{ webkitdirectory: "" }}
+              onChange={(e) => {
+                onOpenFolder([...(e.target.files ?? [])]);
+                e.target.value = ""; // so the same folder can be opened again
+              }}
+            />
+          )}
           {/* A safety-toned round button: the half of "are you sure?" that keeps the
             work, and the one button here that writes a file. */}
           <ButtonRound

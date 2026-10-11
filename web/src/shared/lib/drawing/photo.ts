@@ -213,6 +213,17 @@ export interface Photo {
   /** How dark this band is, from and to: 0 is white, 1 black. Absent, the whole photo. */
   band?: [number, number];
   /**
+   * Split around the paper (B&W, "Dark + light pens", 2026-10-11): the paper is one of the tones -
+   * black and white pens on gray paper, the midtones left bare. `paperTone` is the picture's tones
+   * left as paper, as darkness from and to (0 white, 1 black); `side` which way from it this layer
+   * draws: "dark", the tones darker than that in a pen darker than the paper, or "light", the tones
+   * lighter in a pen lighter than it. Either way more lines the further from the paper, none at its
+   * edge; `band` is then a share of the side, from the paper outwards. Absent, the paper is white
+   * and every layer draws darkness, as before.
+   */
+  side?: "dark" | "light";
+  paperTone?: [number, number];
+  /**
    * How far each band reaches into its neighbours, as a share of the whole range from white to black:
    * 0.05 takes a middle third from 33-67% to 28-72%. Where bands meet, both draw, so their lines
    * overlap there rather than stopping at a hard edge. The whole photo's, like its contrast.
@@ -413,25 +424,62 @@ function refinePlatePens<P extends { color: string }>(palette: P[], plates: Plat
   return out;
 }
 
+// The words a separation's file can name its plate by: CMYK and the extra inks.
+const PLATE_WORDS: [string, Plate][] = [
+  ["cyan", "c"], ["magenta", "m"], ["yellow", "y"], ["black", "k"], ["key", "k"],
+  ["orange", "o"], ["green", "g"], ["red", "r"], ["violet", "v"], ["purple", "v"],
+];
+// Long enough to find inside a run-together name - "portraitcyan" - without "red" turning up in "colored".
+const FINDABLE = new Set(["cyan", "magenta", "yellow", "black", "orange", "green", "violet", "purple"]);
+
+/** A file's name as lowercase words: its extension off, split at anything not a letter or digit and at camelCase. */
+const nameWords = (name: string) =>
+  name.replace(/\.[^.]+$/, "").replace(/([a-z])([A-Z])/g, "$1 $2").toLowerCase().split(/[^a-z0-9]+/).filter(Boolean);
+
 /**
- * Which plate a separation's file is, from the last word of its name that says: "portrait_C",
- * "portrait-cyan", "Portrait K". Undefined when none does.
+ * Which ink a separation's file is for, from its name however it's written - "Portrait_Cyan.png",
+ * "portrait-cyan-channel.tif", "PortraitMagenta.jpg", "img yellow 2.png", "portrait_K.png". In turn:
+ * a plate's name as a word of its own (CMYK and the extra inks: orange, green, red, violet), the
+ * last such word winning; a long plate name run into others ("portraitcyan"); one of the palette's
+ * pens by its name ("Pink", "Light gray"), the longest name found; or C, M, Y or K as a word of its
+ * own. Undefined when the name says no ink.
  */
-export function plateNamed(name: string): Plate | undefined {
-  const words = name.replace(/\.[^.]+$/, "").toLowerCase().split(/[\s_\-.()]+/).filter(Boolean);
+export function inkNamed<P extends { name: string }>(name: string, pens: P[] = []): { plate?: Plate; pen?: P } | undefined {
+  const words = nameWords(name);
   for (let i = words.length - 1; i >= 0; i--) {
-    const w = words[i];
-    if (w === "c" || w === "cyan") return "c";
-    if (w === "m" || w === "magenta") return "m";
-    if (w === "y" || w === "yellow") return "y";
-    if (w === "k" || w === "black" || w === "key") return "k";
+    const plate = PLATE_WORDS.find(([w]) => w === words[i])?.[1];
+    if (plate) return { plate };
+  }
+  const joined = words.join("");
+  const found = PLATE_WORDS.filter(([w]) => FINDABLE.has(w) && joined.includes(w))
+    .sort((a, b) => joined.lastIndexOf(b[0]) - joined.lastIndexOf(a[0]))[0];
+  if (found) return { plate: found[1] };
+  const spaced = ` ${words.join(" ")} `;
+  const pen = pens.filter((p) => nameWords(p.name).length && spaced.includes(` ${nameWords(p.name).join(" ")} `))
+    .sort((a, b) => b.name.length - a.name.length)[0];
+  if (pen) return { pen };
+  for (let i = words.length - 1; i >= 0; i--) {
+    const plate = (["c", "m", "y", "k"] as Plate[]).find((p) => p === words[i]);
+    if (plate) return { plate };
   }
   return undefined;
 }
 
-/** A separation file's name without its plate word, for naming the photo they make together. */
-export const stemWithoutPlate = (name: string) =>
-  name.replace(/\.[^.]+$/, "").replace(/[\s_\-.(]+(c|m|y|k|cyan|magenta|yellow|black|key)\)?$/i, "").trim() || name.replace(/\.[^.]+$/, "");
+/** Which plate a separation's file is, from its name (see inkNamed). Undefined when it names none. */
+export const plateNamed = (name: string): Plate | undefined => inkNamed(name)?.plate;
+
+/**
+ * A separation file's name without its ink, for naming the drawing they make together: "Portrait_Cyan"
+ * and "portrait-cyan-channel" are both "Portrait". The ink's word goes, and the words that say a file
+ * is a separation - channel, plate, separation, layer - with it.
+ */
+export const stemWithoutPlate = (name: string, pens: { name: string }[] = []) => {
+  const bare = name.replace(/\.[^.]+$/, "");
+  const inks = [...PLATE_WORDS.map(([w]) => w), ...pens.map((p) => p.name.toLowerCase()), "c", "m", "y", "k", "channel", "plate", "separation", "sep", "layer"];
+  const words = bare.replace(/([a-z])([A-Z])/g, "$1 $2").split(/[\s_\-.()]+/).filter(Boolean);
+  const kept = words.filter((w) => !inks.includes(w.toLowerCase()));
+  return kept.join(" ").trim() || bare;
+};
 
 /** How much of the colours' shared grey goes to the black plate unless set: half, as print often does. */
 export const BLACK_SHARE = 0.5;
@@ -447,8 +495,14 @@ export interface PhotoPart {
 /** The settings a layer of a photo keeps as its own, as opposed to the photo's: what a mode remembers. */
 export const LAYER_SETTINGS = [
   "style", "angle", "spacingMm", "levels", "hatchSmoothMm", "rowMm", "waveMm", "squiggleAmpMm", "squiggleHeight", "squiggleJoin", "squiggleLift", "squiggleSmooth", "squiggleDraw", "squiggleVersion", "squiggleInkscape", "squiggleAngle", "contours", "smoothMm", "centerFrom", "centerSmoothMm", "centerShortestMm", "silhouetteFrom", "silhouetteSmoothMm", "silhouetteSmallestMm", "streamWidestMm", "streamPasses", "streamFlowMm", "lineDots", "lineLiftMm", "lineCurve", "lineAngle", "lineBias", "lineGrain", "lineContrast", "hilbertCoarsestMm", "hilbertLift", "hilbertCurve", "hilbertRound", "hilbertBlend", "hilbertAngle", "offsetMm",
-  "band", "ink", "regions", "region", "key", "regionInks", "keyInk", "plate", "plates", "fitPaper", "penMm", "fitPairs", "fitOpaque",
+  "band", "side", "paperTone", "ink", "regions", "region", "key", "regionInks", "keyInk", "plate", "plates", "fitPaper", "penMm", "fitPairs", "fitOpaque",
 ] as const;
+
+/** The picture's tones a photo split around the paper leaves bare, as darkness from and to: unless set, the middle third. */
+export const paperToneOf = (photo: Pick<Photo, "paperTone">): [number, number] => {
+  const [a, b] = photo.paperTone ?? [1 / 3, 2 / 3];
+  return [Math.min(1, Math.max(0, Math.min(a, b))), Math.min(1, Math.max(0, Math.max(a, b)))];
+};
 
 /** What each band is called, lightest first, for a photo split into this many. */
 export const BAND_NAMES: Record<number, string[]> = {
@@ -461,6 +515,8 @@ export const BAND_NAMES: Record<number, string[]> = {
 
 /** The most tone layers a photo is split into. */
 export const MOST_LAYERS = 6;
+/** The most layers on each side of the paper, split around it: three each, the most there are names for. */
+export const MOST_SIDE_LAYERS = 3;
 
 /** The most colors a photo is split into, by best fit or by the photo's own colors. */
 export const MOST_COLORS = 8;
@@ -812,7 +868,7 @@ export function photoMarks(photo: Photo, w: number, h: number): PhotoMarks | nul
 
 /** Everything a photo's lines depend on, as one string: the same key, the same lines. */
 function marksKey(photo: Photo, w: number, h: number) {
-  return [photo.src.length, photo.src.slice(-32), w.toFixed(4), h.toFixed(4), photo.brightness, photo.contrast, photo.saturation ?? 0, photo.angle, photo.spacingMm, photo.levels, photo.hatchSmoothMm ?? "", photo.band?.join(",") ?? "", photo.crop?.join(",") ?? "", photo.bleed ?? 0, photo.style ?? "hatch", photo.rowMm ?? "", photo.waveMm ?? "", photo.squiggleAmpMm ?? "", photo.squiggleHeight ?? "", photo.squiggleJoin ? "join" : "", photo.squiggleLift ? "lift" : "", photo.squiggleSmooth ?? "", JSON.stringify(photo.squiggleDraw ?? {}), photo.squiggleVersion ?? "", JSON.stringify(photo.squiggleInkscape ?? {}), photo.squiggleAngle ?? "", photo.ink ?? "", photo.regions?.join(",") ?? "", photo.region ?? "", photo.contours ?? "", photo.smoothMm ?? "", photo.key ? "key" : "", photo.keyInk ?? "", photo.regionInks?.join(",") ?? "", photo.keyStrength ?? "", photo.keyFrom ?? "", photo.plate ?? "", photo.plates?.join(",") ?? "", photo.blackShare ?? "", photo.centerFrom ?? "", photo.centerSmoothMm ?? "", photo.centerShortestMm ?? "", photo.silhouetteFrom ?? "", photo.silhouetteSmoothMm ?? "", photo.silhouetteSmallestMm ?? "", photo.fitPaper ?? "", photo.penMm ?? "", photo.fitPairs ? "pairs" : "", photo.fitOpaque ? "opaque" : "", photo.streamWidestMm ?? "", photo.streamPasses ?? "", photo.streamFlowMm ?? "", photo.lineDots ?? "", photo.lineLiftMm ?? "", photo.lineCurve ?? "", photo.lineAngle ?? "", photo.lineBias ?? "", photo.lineGrain ?? "", photo.lineContrast ?? "", photo.hilbertCoarsestMm ?? "", photo.hilbertLift ? "hlift" : "", photo.hilbertCurve ?? "", photo.hilbertRound ?? "", photo.hilbertBlend ?? "", photo.hilbertAngle ?? ""].join("|");
+  return [photo.src.length, photo.src.slice(-32), w.toFixed(4), h.toFixed(4), photo.brightness, photo.contrast, photo.saturation ?? 0, photo.angle, photo.spacingMm, photo.levels, photo.hatchSmoothMm ?? "", photo.band?.join(",") ?? "", photo.side ?? "", photo.paperTone?.join(",") ?? "", photo.crop?.join(",") ?? "", photo.bleed ?? 0, photo.style ?? "hatch", photo.rowMm ?? "", photo.waveMm ?? "", photo.squiggleAmpMm ?? "", photo.squiggleHeight ?? "", photo.squiggleJoin ? "join" : "", photo.squiggleLift ? "lift" : "", photo.squiggleSmooth ?? "", JSON.stringify(photo.squiggleDraw ?? {}), photo.squiggleVersion ?? "", JSON.stringify(photo.squiggleInkscape ?? {}), photo.squiggleAngle ?? "", photo.ink ?? "", photo.regions?.join(",") ?? "", photo.region ?? "", photo.contours ?? "", photo.smoothMm ?? "", photo.key ? "key" : "", photo.keyInk ?? "", photo.regionInks?.join(",") ?? "", photo.keyStrength ?? "", photo.keyFrom ?? "", photo.plate ?? "", photo.plates?.join(",") ?? "", photo.blackShare ?? "", photo.centerFrom ?? "", photo.centerSmoothMm ?? "", photo.centerShortestMm ?? "", photo.silhouetteFrom ?? "", photo.silhouetteSmoothMm ?? "", photo.silhouetteSmallestMm ?? "", photo.fitPaper ?? "", photo.penMm ?? "", photo.fitPairs ? "pairs" : "", photo.fitOpaque ? "opaque" : "", photo.streamWidestMm ?? "", photo.streamPasses ?? "", photo.streamFlowMm ?? "", photo.lineDots ?? "", photo.lineLiftMm ?? "", photo.lineCurve ?? "", photo.lineAngle ?? "", photo.lineBias ?? "", photo.lineGrain ?? "", photo.lineContrast ?? "", photo.hilbertCoarsestMm ?? "", photo.hilbertLift ? "hlift" : "", photo.hilbertCurve ?? "", photo.hilbertRound ?? "", photo.hilbertBlend ?? "", photo.hilbertAngle ?? ""].join("|");
 }
 
 /**
@@ -911,7 +967,7 @@ function lab(r: number, g: number, b: number): [number, number, number] {
   const f = (t: number) => (t > 0.008856 ? Math.cbrt(t) : 7.787 * t + 16 / 116);
   return [116 * f(y) - 16, 500 * (f(x) - f(y)), 200 * (f(y) - f(z))];
 }
-const hexLab = (hex: string) => {
+export const hexLab = (hex: string) => {
   const n = parseInt(hex.replace("#", "").padEnd(6, "0").slice(0, 6), 16);
   return lab((n >> 16) & 255, (n >> 8) & 255, n & 255);
 };
@@ -1613,15 +1669,24 @@ function toneSampler(tones: Tones, photo: Photo, w: number, h: number, whole = f
   const bleed = photo.band ? Math.max(0, photo.bleed ?? 0) : 0;
   const lo = photo.band ? Math.max(0, photo.band[0] - (photo.band[0] > 0 ? bleed : 0)) : 0;
   const hi = photo.band ? Math.min(1, photo.band[1] + (photo.band[1] < 1 ? bleed : 0)) : 1;
+  // Split around the paper: the tone is how far past the paper's tones this layer's side reaches -
+  // 0 at the paper's edge, 1 at black for a dark pen, at white for a light one - and the band is a
+  // share of that, from the paper outwards. Nothing on the paper's side of its edge.
+  const [p0, p1] = photo.side ? paperToneOf(photo) : [0, 0];
+  const sided = (d: number) =>
+    photo.side === "light" ? (d < p0 ? (p0 - d) / p0 : -1) : photo.side === "dark" ? (d > p1 ? (p1 < 1 ? (d - p1) / (1 - p1) : 1) : -1) : d;
   const toneAt = (x: number, y: number) => {
     if (x < 0 || x > w || y < 0 || y > h) return -1;
-    const d = darknessAt(tones, c0 + (x / w) * (c2 - c0), c1 + (y / h) * (c3 - c1), lift, gain);
+    const d = sided(darknessAt(tones, c0 + (x / w) * (c2 - c0), c1 + (y / h) * (c3 - c1), lift, gain));
+    if (d < 0) return -1;
     if (d < lo || d > hi || (d === hi && hi < 1)) return -1;
     // `whole`: where it's this band's, the photo's own darkness rather than how far through the band.
     if (whole) return d;
     return hi > lo ? (d - lo) / (hi - lo) : 1;
   };
-  return { toneAt, fromWhite: lo <= 0 };
+  // Split around the paper, the paper's own tones are where nothing's drawn: every tone past them
+  // gets at least one pass, so a band is filled right up to the paper's edge.
+  return { toneAt, fromWhite: photo.side ? false : lo <= 0 };
 }
 
 /**
@@ -2975,7 +3040,9 @@ function hatch(tones: Tones, photo: Photo, w: number, h: number): PhotoMarks {
   // would, and the darks get the lighter bands' lines as well as their own. Run across its own band,
   // a light band was crosshatched black just under its top edge while the band above it started
   // sparse - the tones turned over at every edge between bands.
-  const band = photo.band && !photo.plate && !photo.ink ? photo.band : null;
+  // Split around the paper, each band is a pen of its own - black, a gray - and draws its own region
+  // whole, graded across it, rather than taking a share of one ink's passes.
+  const band = photo.band && !photo.plate && !photo.ink && !photo.side ? photo.band : null;
   const { toneAt, fromWhite } = toneSampler(tones, band ? { ...photo, band: undefined } : photo, w, h);
 
   for (let k = 0; k < levels; k++) {
@@ -3914,6 +3981,10 @@ export function photoFromData(raw: Record<string, unknown>): Photo | null {
     ...(raw.squiggle_inkscape && typeof raw.squiggle_inkscape === "object" ? { squiggleInkscape: Object.fromEntries(Object.entries(raw.squiggle_inkscape as Record<string, unknown>).filter(([k, v]) => k in SQUIGGLE_INKSCAPE && (k === "invert" ? typeof v === "boolean" : k === "path" ? v === "uni" || v === "bidi" || v === "join" : Number.isFinite(Number(v)))).map(([k, v]) => [k, k === "invert" || k === "path" ? v : Number(v)])) as Partial<SquiggleInkscape> } : {}),
     ...(Number.isFinite(Number(raw.bleed)) && raw.bleed !== undefined ? { bleed: Number(raw.bleed) } : {}),
     ...(Number.isFinite(Number(raw.margin)) && raw.margin !== undefined ? { margin: Number(raw.margin) } : {}),
+    ...(raw.side === "dark" || raw.side === "light" ? { side: raw.side } : {}),
+    ...(Array.isArray(raw.paper_tone) && raw.paper_tone.length === 2 && raw.paper_tone.every((v) => Number.isFinite(Number(v)))
+      ? { paperTone: [Number(raw.paper_tone[0]), Number(raw.paper_tone[1])] as [number, number] }
+      : {}),
     ...(Array.isArray(raw.band) && raw.band.length === 2 && raw.band.every((v) => Number.isFinite(Number(v)))
       ? { band: [Number(raw.band[0]), Number(raw.band[1])] as [number, number] }
       : {}),
@@ -3926,6 +3997,7 @@ export const photoData = (p: Photo) => ({
   angle: p.angle, spacing_mm: p.spacingMm, levels: p.levels,
   ...(p.group ? { group: p.group } : {}),
   ...(p.band ? { band: p.band } : {}),
+  ...(p.side ? { side: p.side, paper_tone: p.paperTone } : {}),
   ...(p.crop ? { crop: p.crop } : {}),
   ...(p.fit ? { fit: p.fit } : {}),
   ...(p.style === "waves" || p.style === "squiggle" || p.style === "streamlines" || p.style === "oneline" || p.style === "hilbert" || p.style === "outlines" || p.style === "centerlines" || p.style === "silhouette" ? { style: p.style } : {}),

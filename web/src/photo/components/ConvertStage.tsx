@@ -5,6 +5,7 @@ import type { Box, Zoom } from "../../shared/components/BedCanvas";
 import { InkGroup, InkLayer } from "../../shared/components/Ink";
 import { NextDrawCanvas } from "../../shared/components/NextDrawCanvas";
 import type { View } from "../../shared/components/PreviewToolbar";
+import { lightness } from "../../shared/lib/color";
 import { DEFAULT_SETTINGS, UNITS } from "../../shared/lib/constants";
 import { photoMarks, photoOrigin, type Photo } from "../../shared/lib/drawing/photo";
 import type { Page } from "../../shared/lib/drawing/shapes";
@@ -95,7 +96,9 @@ export function ConvertStage({ photo, parts, box, page, paperColor, model, ink, 
     <InkGroup sim={view === "preview"} penIn={ink.penWidthMm / 25.4} build={ink.build}>
       <g transform={`translate(${at.x} ${at.y})`}>
         {read && parts.map((part, k) => (
-          <InkLayer key={k} color={part.color} sim={view === "preview"} opacity={ink.opacity} build={ink.build} builds={ink.builds} opaque={ink.opaque}>
+          // An ink that shows lighter than the paper can only be opaque - white on gray - so it's drawn as
+          // one; so are a split around the paper's pens, whose grays are the colors they lay down.
+          <InkLayer key={k} color={part.color} sim={view === "preview"} opacity={ink.opacity} build={ink.build} builds={ink.builds} opaque={ink.opaque || Boolean(part.photo.side) || (lightness(part.color) ?? 0) > (lightness(paperColor) ?? 100)}>
             {photoMarks(part.photo, w, h)?.passes.map((d, i) => (d ? <path key={i} d={d} fill="none" /> : null))}
           </InkLayer>
         ))}
