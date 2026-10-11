@@ -618,7 +618,7 @@
     },
     "hatch": {
       "angle": 45,
-      "spacing_mm": 0.35
+      "spacing_mm": 0.4
     },
     "palette": [
       {
@@ -659,11 +659,11 @@
       },
       {
         "name": "Light Blue",
-        "color": "#3c9be0"
+        "color": "#38c8e5"
       },
       {
         "name": "Orange",
-        "color": "#f58025"
+        "color": "#faa052"
       },
       {
         "name": "Melon",
