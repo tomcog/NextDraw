@@ -248,12 +248,15 @@
 
 .paperRow > :first-child { flex: 1; min-width: 0; }
 
-/* A custom paper's width and height, side by side. */
+/* A custom paper's width and height, side by side, sharing the card's width. Each may shrink below
+   a number box's natural width (about 134px), which on its own pushed the pair out of the card. */
 .paperCustom {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   gap: 0.5rem;
 }
+
+.paperCustom > * { min-width: 0; }
 
 /* Scaling the drawing: the percent, with its label above, then the button that scales by it. */
 .scaleRow {
