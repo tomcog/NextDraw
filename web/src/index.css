@@ -168,16 +168,16 @@
   }
   .pv-true-width .pv-down path { stroke-width: var(--pen-in) !important; }
 
-  /* Glitter ink (Gelly Roll Stardust): clear gel with fine glitter in it. It changes no color - what's
+  /* The Varnish layer, in clear glitter gel (Gelly Roll Stardust): it changes no color - what's
      under it, ink or paper, sparkles - so it's drawn as specks along the stroke, pale silver, rather
      than a line: round dots a little under half the pen's width, a pen's width apart. Flat, so where
      glitter crosses glitter the specks just add up, as they do on paper. Outline shows the paths. */
-  .pv-colored .pv-layer[data-glitter="true"] {
+  .pv-colored .pv-layer[data-varnish="true"] {
     isolation: isolate;
     opacity: 1 !important;
     mix-blend-mode: normal;
   }
-  .pv-true-width.pv-colored .pv-layer[data-glitter="true"] :is(path, rect, circle, ellipse, line, polyline, polygon) {
+  .pv-true-width.pv-colored .pv-layer[data-varnish="true"] :is(path, rect, circle, ellipse, line, polyline, polygon) {
     stroke: #eef0f4 !important;
     stroke-opacity: 0.95 !important;
     stroke-width: calc(var(--pen-art) * 0.45) !important;
@@ -187,12 +187,12 @@
   }
   /* A second pass - the same lines glittered again, or a cross-hatch - lays its specks between the
      first's, so the preview gets denser with each, as the glitter does. */
-  .pv-true-width.pv-colored .pv-layer[data-glitter="true"] :nth-child(3n + 2) { stroke-dashoffset: calc(var(--pen-art) * 0.3) !important; }
-  .pv-true-width.pv-colored .pv-layer[data-glitter="true"] :nth-child(3n) { stroke-dashoffset: calc(var(--pen-art) * 0.6) !important; }
+  .pv-true-width.pv-colored .pv-layer[data-varnish="true"] :nth-child(3n + 2) { stroke-dashoffset: calc(var(--pen-art) * 0.3) !important; }
+  .pv-true-width.pv-colored .pv-layer[data-varnish="true"] :nth-child(3n) { stroke-dashoffset: calc(var(--pen-art) * 0.6) !important; }
   /* Glitter catches the light white over dark ink and glints grey on white paper: every other line's
      specks are a darker silver, so the sparkle shows on either. */
-  .pv-true-width.pv-colored .pv-layer[data-glitter="true"] :nth-child(2n + 1) { stroke: #b4bac4 !important; }
-  .pv-colored .pv-layer[data-glitter="true"] .pv-build { display: none; }
+  .pv-true-width.pv-colored .pv-layer[data-varnish="true"] :nth-child(2n + 1) { stroke: #b4bac4 !important; }
+  .pv-colored .pv-layer[data-varnish="true"] .pv-build { display: none; }
 
   /* Layer by layer (Layers card): every path as a thin line, whatever the pen's width, to see the paths
      themselves. Whole drawing shows them at the pen's width. */

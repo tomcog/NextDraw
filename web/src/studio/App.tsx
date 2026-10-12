@@ -16,7 +16,7 @@ import { DEFAULT_SETTINGS, PAPER_SIZES } from "../shared/lib/constants";
 import type { Info, PenColor, PlotterModel, Preset } from "../shared/lib/types";
 import { listOf } from "../shared/lib/format";
 import { lightness } from "../shared/lib/color";
-import { glitterPens, joinLayerName, labelAfter, splitLayerName } from "../shared/lib/ink";
+import { isVarnishLayer, joinLayerName, labelAfter, splitLayerName, VARNISH, VARNISH_COLOR } from "../shared/lib/ink";
 import { HistoryToolbar, type View } from "../shared/components/PreviewToolbar";
 import { StatusBanner } from "../shared/components/StatusBanner";
 import { AppSwitch } from "../shared/components/AppSwitch";
@@ -49,7 +49,8 @@ import { GridSection } from "./components/panels/GridSection";
 import { SIMPLIFIER_START, SimplifierSection, type SimplifierState } from "./components/panels/SimplifierSection";
 import { ToolPicker } from "./components/panels/ToolPicker";
 import { LayersSection } from "../shared/components/controls/LayersSection";
-import { boxAround, boxOf, clampToPage, groupLabel, groupsOf, moveBy, newGroupId, newLayerId, newShapeId, resizeTo, shapeName, turnAround, withWholeGroups, type Layer, type Page, type Shape } from "../shared/lib/drawing/shapes";
+import { boxAround, boxOf, clampToPage, groupLabel, groupsOf, moveBy, newGroupId, newLayerId, newShapeId, pointsBox, resizeTo, shapeName, turnAround, withWholeGroups, type Layer, type Page, type Shape } from "../shared/lib/drawing/shapes";
+import { silhouetteOf } from "../shared/lib/drawing/silhouette";
 import { buildSvg, svgForMarks } from "../shared/lib/drawing/svg";
 import { drawnMiddle, fitToPage, reshapeDrawing, runsOffPage, turnDrawingLeft } from "./lib/drawing";
 import styles from "./App.module.css";
@@ -823,8 +824,6 @@ export default function App() {
  const inkOpacity = tool2?.settings.ink_opacity ?? 1;
  const inkBuilds = tool2?.settings.ink_builds !== false;
  const inkOpaque = tool2?.settings.ink_opaque === true;
- // Glitter pens, from every preset: a layer named for one is previewed as sparkle over what's under it.
- const glitter = useMemo(() => glitterPens(presets), [presets]);
  const inkBuild = tool2?.settings.ink_build ?? 1;
 
  // A fill starts from the chosen tool's own measured numbers when it has them - and follows that
@@ -1226,34 +1225,71 @@ export default function App() {
   setActiveLayer(copy.id);
  };
 
- // Glitter over: the exact lines of some shapes again, in a glitter pen (Gelly Roll Stardust - clear
- // gel with fine glitter), on a layer of their own at the top of the stack, so they're plotted last,
- // over finished ink, and what's under them sparkles. Named for the glitter pen and what it goes over -
- // "Clear Star - over Red" - and added to when the same thing is glittered again. For a varnish over
- // an area instead, draw its outline on a glitter layer and hatch it with no outline.
- const glitterOver = (ids: string[], over: string) => {
-  const pen = presets.find((p) => p.settings.ink_glitter && p.palette?.length)?.palette![0];
-  if (!pen) {
-   setMessage({ text: "No pen preset has glitter ink: add one (ink_glitter) to presets.json", ok: false });
-   return;
-  }
-  const picked = shapes.filter((sh) => ids.includes(sh.id));
+ // The Varnish layer: clear glitter gel (Gelly Roll Stardust) over the finished drawing, so what's
+ // under it sparkles. Not a pen - it goes over whatever pen the drawing is made with - but a layer of
+ // the drawing, always on top and so plotted last. Filled three ways: the whole drawing (its
+ // silhouette, hatched), over chosen lines (the same lines again), or inside a shape moved onto it
+ // and hatched. How sparkly is the hatching's spacing and passes, or how many times lines are gone over.
+ const varnishLayer = layers.find((l) => isVarnishLayer(l.name));
+ // Kept on top: it goes over everything, so it's plotted after everything.
+ useEffect(() => {
+  const at = layers.findIndex((l) => isVarnishLayer(l.name));
+  if (at >= 0 && at !== layers.length - 1) setLayers((list) => [...list.filter((l) => !isVarnishLayer(l.name)), list[at]]);
+ }, [layers]);
+ /** The Varnish layer, made if there isn't one. Call inside a change that has already been recorded. */
+ const ensureVarnish = (): Layer => {
+  if (varnishLayer) return varnishLayer;
+  const made: Layer = { id: newLayerId(), name: VARNISH, color: VARNISH_COLOR };
+  setLayers((list) => [...list, made]);
+  return made;
+ };
+ // A varnish hatch's spacing to start from: lines a little apart, a light even sparkle, from the
+ // gel's 0.5 mm line. Tighter, or a cross-hatch, for more.
+ const VARNISH_SPACING_MM = 1;
+
+ // Over chosen lines: the exact lines of these shapes again, and their hatching, on the Varnish layer.
+ // Gone over again, they're another pass, and sparkle more.
+ const varnishOver = (ids: string[]) => {
+  const picked = shapes.filter((sh) => ids.includes(sh.id) && !isVarnishLayer(layers.find((l) => l.id === sh.layerId)?.name ?? ""));
   if (!picked.length) return;
   record();
-  const name = joinLayerName(pen.name, `over ${over}`);
-  const existing = layers.find((l) => l.name === name);
-  const target: Layer = existing ?? { id: newLayerId(), name, color: pen.color };
+  const target = ensureVarnish();
   const shapeIds = new Map(picked.map((sh) => [sh.id, newShapeId()]));
   const groupIds = new Map(picked.filter((sh) => sh.group).map((sh) => [sh.group!, newGroupId()]));
-  if (!existing) setLayers((list) => [...list, target]);
   setShapes((list) => [...list, ...picked.map((sh) => ({ ...sh, id: shapeIds.get(sh.id)!, layerId: target.id, group: sh.group && groupIds.get(sh.group) }))]);
-  // Their hatching too: a filled area's sparkle follows its lines.
   setFills((list) => [
    ...list,
    ...list.filter((f) => shapeIds.has(f.shapeId)).map((f) => ({ ...f, id: newFillId(), shapeId: shapeIds.get(f.shapeId)! })),
    ...list.filter((f) => groupIds.has(f.shapeId)).map((f) => ({ ...f, id: newFillId(), shapeId: groupIds.get(f.shapeId)! })),
   ]);
-  setMessage({ text: `${picked.length} ${picked.length === 1 ? "path" : "paths"} in ${pen.name}, on ${name}: plotted last, over the ink`, ok: true });
+  setMessage({ text: `${picked.length} ${picked.length === 1 ? "path" : "paths"} gone over on the ${VARNISH} layer: plotted last, over the ink`, ok: true });
+ };
+
+ // The whole drawing: its silhouette - the outline round everything on the other layers that shows,
+ // holes and paper inside filled in - as one mask path on the Varnish layer, hatched with no outline.
+ // A start to tweak, not a final answer: the mask is a path like any other.
+ const varnishWhole = () => {
+  const drawn = shapes.filter((sh) => {
+   const layer = layers.find((l) => l.id === sh.layerId);
+   return layer && !layer.hidden && !isVarnishLayer(layer.name);
+  });
+  const runs = silhouetteOf(drawn, { penMm: tool2?.settings.pen_width ?? 0.5 });
+  if (!runs.length) {
+   setMessage({ text: "There's nothing drawn yet to varnish", ok: false });
+   return;
+  }
+  record();
+  const target = ensureVarnish();
+  const b = pointsBox(runs.flat());
+  const mask: Shape = {
+   id: newShapeId(), layerId: target.id, kind: "path", runs, x: b.x0, y: b.y0, x2: b.x1, y2: b.y1,
+   name: "Silhouette", outline: false,
+  };
+  setShapes((list) => [...list, mask]);
+  setFills((list) => [...list, { id: newFillId(), shapeId: mask.id, angle: 45, spacingMm: VARNISH_SPACING_MM, scale: 100, custom: true }]);
+  setActiveLayer(target.id);
+  setSelected([mask.id]);
+  setMessage({ text: `The drawing's silhouette, hatched on the ${VARNISH} layer${runs.length > 1 ? ` (${runs.length} parts)` : ""}: set Spacing or Cross-hatch for more sparkle`, ok: true });
  };
 
  // Merge with the layer below: its shapes, and the fills on them, move up onto this layer and take on
@@ -1587,14 +1623,7 @@ export default function App() {
        },
        { label: "Ungroup", icon: <Ungroup />, onSelect: () => ungroupShapes(membersOf(rowMenu.id).map((s) => s.id)) },
        { label: "Duplicate shape", icon: <Copy />, onSelect: () => duplicateGroup(rowMenu.id) },
-       {
-        label: "Glitter over",
-        icon: <Sparkles />,
-        onSelect: () => {
-         const members = membersOf(rowMenu.id);
-         glitterOver(members.map((m) => m.id), members[0]?.groupName ?? layers.find((l) => l.id === members[0]?.layerId)?.name ?? "shape");
-        },
-       },
+       { label: "Varnish over", icon: <Sparkles />, onSelect: () => varnishOver(membersOf(rowMenu.id).map((m) => m.id)) },
        ...layers
         .filter((l) => l.id !== membersOf(rowMenu.id)[0]?.layerId)
         .map((l) => ({
@@ -1635,11 +1664,11 @@ export default function App() {
         onSelect: () => pasteShape(rowMenu.id),
        },
        { label: "Duplicate layer", icon: <Copy />, onSelect: () => duplicateLayer(rowMenu.id) },
-       {
-        label: "Glitter over",
+       ...(isVarnishLayer(layers.find((l) => l.id === rowMenu.id)?.name ?? "") ? [] : [{
+        label: "Varnish over",
         icon: <Sparkles />,
-        onSelect: () => glitterOver(shapes.filter((sh) => sh.layerId === rowMenu.id).map((sh) => sh.id), layers.find((l) => l.id === rowMenu.id)?.name ?? "layer"),
-       },
+        onSelect: () => varnishOver(shapes.filter((sh) => sh.layerId === rowMenu.id).map((sh) => sh.id)),
+       }]),
        {
         label: "Merge with below",
         icon: <LayersArrowDown />,
@@ -1695,14 +1724,7 @@ export default function App() {
         onSelect: () => flattenShape(rowMenu.id),
        },
        { label: "Duplicate path", icon: <Copy />, onSelect: () => duplicateShape(rowMenu.id) },
-       {
-        label: "Glitter over",
-        icon: <Sparkles />,
-        onSelect: () => {
-         const s = shapes.find((sh) => sh.id === rowMenu.id);
-         glitterOver([rowMenu.id], s?.name || layers.find((l) => l.id === s?.layerId)?.name || "path");
-        },
-       },
+       { label: "Varnish over", icon: <Sparkles />, onSelect: () => varnishOver([rowMenu.id]) },
        // One entry per other layer: a layer is a pen, so this is "draw this in that pen".
        ...layers
         .filter((l) => l.id !== shapes.find((s) => s.id === rowMenu.id)?.layerId)
@@ -1800,7 +1822,6 @@ export default function App() {
       inkOpacity={inkOpacity}
       inkBuilds={inkBuilds}
       inkOpaque={inkOpaque}
-      glitter={glitter}
       inkBuild={inkBuild}
       view={view}
       tool={tool}
@@ -1875,6 +1896,7 @@ export default function App() {
         renaming={renamingLayer}
         onSort={sortLayersByLightness}
         onAdd={addLayer}
+        onVarnish={varnishWhole}
         onSwitch={switchLayer}
         onVisible={(id, visible) => patchLayer(id, { hidden: !visible })}
         onColorMenu={(id, anchor) => setColorMenu((open) => (open?.id === id ? null : { id, anchor }))}

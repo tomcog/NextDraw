@@ -1,7 +1,7 @@
-import { memo, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
+import { memo, useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
 import {
-  angleFromCenter, boxAround, boxOf, clampToPage, dragHandleTurned, handlePoints, isDegenerate,
-  drawnNodes, moveBy, newShapeId, scaleInto, turnAround, turnAttr, turnGrip, CURSOR,
+  allPoints, angleFromCenter, boxAround, boxOf, centerOf, clampToPage, dragHandleTurned, handlePoints, insertPoint, isDegenerate,
+  drawnNodes, moveBy, newShapeId, pathRuns, removePoint, scaleInto, turnAround, turnAttr, turnGrip, turnPoint, CURSOR, POINT_HANDLE_LIMIT,
   type Handle, type Page, type Shape, type ShapeKind,
 } from "../../shared/lib/drawing/shapes";
 import { fillRuns, shapeAsOne, type Fill } from "../../shared/lib/drawing/hatch";
@@ -15,7 +15,7 @@ import type { Layer } from "../../shared/lib/drawing/shapes";
 import { type BedCanvasHandle, type Box } from "../../shared/components/BedCanvas";
 import { NextDrawCanvas } from "../../shared/components/NextDrawCanvas";
 import { InkGroup, InkLayer } from "../../shared/components/Ink";
-import { isGlitterLayer } from "../../shared/lib/ink";
+import { isVarnishLayer, VARNISH_LINE_MM } from "../../shared/lib/ink";
 import type { PreviewToolbarProps, View } from "../../shared/components/PreviewToolbar";
 import { DEFAULT_SETTINGS, UNITS } from "../../shared/lib/constants";
 import type { PlotterModel } from "../../shared/lib/types";
@@ -71,8 +71,6 @@ interface Props {
   inkBuilds: boolean;
   /** The ink covers what's under it, paper and other inks alike, rather than blending with them. */
   inkOpaque?: boolean;
-  /** The glitter pens, by name (glitterPens): a layer in one is previewed as sparkle. */
-  glitter?: Set<string>;
   inkBuild: number;
   /** Simulate the ink, or draw each layer flat. Off is also much cheaper on a heavy hatch. */
   /** Outline: every path a thin line in its layer's colour. Preview: the ink, at the pen's width. */
@@ -340,7 +338,7 @@ const LayerMarks = memo(function LayerMarks({ shapes, fills, fonts, photos }: { 
 // The page at true proportions, with a one-inch grid. It keeps the page's own proportions and is
 // sized to them (--canvas-aspect), so the drawing gets as large as the space allows - the same way
 // Plot's preview fills its column.
-export function Canvas({ bar, page, paperColor, shapes, fills, layers, activeLayer, targetLayers, model, toolbar, fonts, font, snap, penWidthMm, inkOpacity, inkBuilds, inkOpaque = false, glitter, inkBuild, view, tool, selected, onSelect, onAdd, onUpdate, onUpdateMany, onEditStart }: Props) {
+export function Canvas({ bar, page, paperColor, shapes, fills, layers, activeLayer, targetLayers, model, toolbar, fonts, font, snap, penWidthMm, inkOpacity, inkBuilds, inkOpaque = false, inkBuild, view, tool, selected, onSelect, onAdd, onUpdate, onUpdateMany, onEditStart }: Props) {
   const bed = useRef<BedCanvasHandle>(null);
   const [drag, setDrag] = useState<Drag | null>(null);
   const pointer = useRef<number | null>(null);
@@ -521,10 +519,11 @@ export function Canvas({ bar, page, paperColor, shapes, fills, layers, activeLay
       : { mode: "groupScale", handle, origins: group, box });
   };
 
-  // Started on a handle: reshape.
+  // Started on a handle: reshape. A path's point is picked as well, for Delete to take out.
   const onHandleDown = (e: ReactPointerEvent, shape: Shape, handle: Handle) => {
     if (e.button !== 0) return;
     e.stopPropagation();
+    setPointPick(handle.startsWith("p") ? Number(handle.slice(1)) : null);
     onEditStart();
     begin(e, { mode: "handle", id: shape.id, handle, origin: shape });
   };
@@ -636,6 +635,47 @@ export function Canvas({ bar, page, paperColor, shapes, fills, layers, activeLay
 
   // The cards edit the last shape picked; its handles are shown while it is the only one.
   const chosen = selected.length === 1 ? shapes.find((s) => s.id === selected[0]) ?? null : null;
+
+  // Editing a path's points: its grips move them (dragHandle), a double-click on its line adds one
+  // there, and Delete takes out the one last picked - before the app's own Delete, which would throw
+  // the whole path away. The pick goes when the path does.
+  const [pointPick, setPointPick] = useState<number | null>(null);
+  const editable = chosen && pathRuns(chosen).length && allPoints(chosen).length <= POINT_HANDLE_LIMIT ? chosen : null;
+  useEffect(() => setPointPick(null), [chosen?.id]);
+  const editRef = useRef({ editable, pointPick, onEditStart, onUpdate });
+  editRef.current = { editable, pointPick, onEditStart, onUpdate };
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const { editable: path, pointPick: at, onEditStart: start, onUpdate: update } = editRef.current;
+      if ((e.key !== "Delete" && e.key !== "Backspace") || !path || at === null) return;
+      // Not while typing - a row's switch or a button keeping the focus doesn't count.
+      const el = document.activeElement;
+      const typing = (el instanceof HTMLInputElement && !["radio", "checkbox", "button"].includes(el.type))
+        || el instanceof HTMLTextAreaElement || (el as HTMLElement)?.isContentEditable;
+      if (typing) return;
+      e.preventDefault();
+      e.stopImmediatePropagation();
+      const next = removePoint(path, at);
+      if (next !== path) {
+        start();
+        update(next);
+      }
+      setPointPick(null);
+    };
+    window.addEventListener("keydown", onKey, true);
+    return () => window.removeEventListener("keydown", onKey, true);
+  }, []);
+  const onPathDoubleClick = (e: ReactMouseEvent) => {
+    if (!editable || tool !== "select") return;
+    const at = bed.current?.at(e.clientX, e.clientY);
+    if (!at) return;
+    e.stopPropagation();
+    // A turned path's points are kept unturned: the pointer is turned back into their frame.
+    const p = { x: at.x / UNITS, y: at.y / UNITS };
+    const own = editable.rotation ? turnPoint(p, centerOf(editable), -editable.rotation) : p;
+    onEditStart();
+    onUpdate(insertPoint(editable, own.x, own.y));
+  };
   const group = useMemo(() => (selected.length > 1 ? shapes.filter((s) => picked.has(s.id)) : []), [shapes, selected, picked]);
   const groupBox = useMemo(() => (group.length ? boxAround(group) : null), [group]);
   // A selection holding marks with no grips of their own is picked up by its box instead.
@@ -712,7 +752,8 @@ export function Canvas({ bar, page, paperColor, shapes, fills, layers, activeLay
                     build={inkBuild}
                     builds={inkBuilds}
                     opaque={inkOpaque}
-                    glitter={glitter ? isGlitterLayer(layer.name, glitter) : false}
+                    varnish={isVarnishLayer(layer.name)}
+                    varnishPen={VARNISH_LINE_MM / 25.4}
                     hidden={layer.hidden}
                     skipped={layer.name.startsWith("%")}
                   >
@@ -744,6 +785,8 @@ export function Canvas({ bar, page, paperColor, shapes, fills, layers, activeLay
                       className: styles.grab,
                       "data-selected": picked.has(sh.id) ? "true" : undefined,
                       onPointerDown: (e: ReactPointerEvent) => onShapeDown(e, sh),
+                      // The path being edited: a double-click on its line adds a point there.
+                      ...(editable?.id === sh.id ? { onDoubleClick: onPathDoubleClick } : {}),
                     })}
                   </g>
                 );
@@ -841,6 +884,7 @@ export function Canvas({ bar, page, paperColor, shapes, fills, layers, activeLay
                       <circle
                         key={h.id}
                         className={h.point ? styles.point : undefined}
+                        data-picked={h.point && pointPick === Number(h.id.slice(1)) ? "true" : undefined}
                         cx={x}
                         cy={y}
                         r={h.point ? handleR * 0.7 : handleR}

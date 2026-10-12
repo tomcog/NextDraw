@@ -420,6 +420,66 @@ export const handlesOf = (s: Shape): { id: Handle; x: number; y: number; point?:
   ];
 };
 
+/** Whether a run ends where it began - the same point written twice - and so is a closed outline. */
+const isShut = (run: Node[]) => run.length > 2
+  && Math.abs(run[0].x - run[run.length - 1].x) < 1e-9
+  && Math.abs(run[0].y - run[run.length - 1].y) < 1e-9;
+
+/** A path with these runs, its box following them. */
+const withRuns = (s: Shape, runs: Node[][]): Shape => {
+  const b = pointsBox(runs.flatMap((run) => flattenRun(run)));
+  return { ...s, ...(s.runs ? { runs } : { points: runs[0] }), x: b.x0, y: b.y0, x2: b.x1, y2: b.y1 };
+};
+
+/**
+ * A point added to a path where it's nearest to (x, y): on the segment between two of its points
+ * that passes closest, so the outline keeps its shape and gains a point to drag. The segment is
+ * taken as straight between its points; on a curve the new point sits on the chord.
+ */
+export const insertPoint = (s: Shape, x: number, y: number): Shape => {
+  const runs = pathRuns(s);
+  let best = { run: -1, at: 0, d: Infinity, x, y };
+  runs.forEach((run, r) => {
+    for (let i = 0; i < run.length - 1; i++) {
+      const a = run[i];
+      const b = run[i + 1];
+      const dx = b.x - a.x;
+      const dy = b.y - a.y;
+      const t = dx || dy ? Math.max(0, Math.min(1, ((x - a.x) * dx + (y - a.y) * dy) / (dx * dx + dy * dy))) : 0;
+      const px = a.x + t * dx;
+      const py = a.y + t * dy;
+      const d = Math.hypot(x - px, y - py);
+      if (d < best.d) best = { run: r, at: i + 1, d, x: px, y: py };
+    }
+  });
+  if (best.run < 0) return s;
+  return withRuns(s, runs.map((run, r) => (r === best.run ? [...run.slice(0, best.at), { x: best.x, y: best.y }, ...run.slice(best.at)] : run)));
+};
+
+/**
+ * One point of a path taken out, counted straight through the runs as the grips are. A closed
+ * outline's first point is also its last, so taking it out closes the outline on the next one. A run
+ * is never left too short to draw: two points for a line, three corners for an outline.
+ */
+export const removePoint = (s: Shape, wanted: number): Shape => {
+  let seen = 0;
+  let changed = false;
+  const runs = pathRuns(s).map((run) => {
+    const i = wanted - seen;
+    seen += run.length;
+    if (i < 0 || i >= run.length) return run;
+    const shut = isShut(run);
+    if (run.length <= (shut ? 4 : 2)) return run;
+    changed = true;
+    if (shut && (i === 0 || i === run.length - 1)) {
+      const rest = run.slice(1, -1);
+      return [...rest, { ...rest[0] }];
+    }
+    return run.filter((_, k) => k !== i);
+  });
+  return changed ? withRuns(s, runs) : s;
+};
+
 /** Put one corner (or one end of a line) where the pointer is. */
 export const dragHandle = (s: Shape, handle: Handle, x: number, y: number): Shape => {
   // One point of a path: the point moves, and the box follows it rather than the other way round.

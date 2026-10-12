@@ -2,6 +2,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { drawnBox } from "../src/studio/lib/drawing";
+import { insertPoint, removePoint } from "../src/shared/lib/drawing/shapes";
 import type { Fill } from "../src/shared/lib/drawing/hatch";
 import { bakedCopies, flattened, handOutFills, joined, markRuns, pointCount, simplified, simplifyDrawing, splitApart } from "../src/studio/lib/shapeEdits";
 import { pathRuns, type Shape } from "../src/shared/lib/drawing/shapes";
@@ -182,4 +183,21 @@ test("Merge joins overlapping dashes into strokes all one way round, only where 
   assert.deepEqual(runs.map((r) => [r[0].x, r[1].x, r[0].y]).map((v) => v.map((n) => Math.round(n * 1000) / 1000)), [[0, 1.5, 1], [0, 2, 2]]);
   // The other layer was left out of it.
   assert.equal(merged.shapes.find((s) => s.layerId === "m"), other);
+});
+
+
+test("points: a double-click adds a point on the nearest segment; Delete takes one out", () => {
+  const square = { id: "s", layerId: "a", kind: "path" as const, x: 0, y: 0, x2: 1, y2: 1,
+    points: [{ x: 0, y: 0 }, { x: 1, y: 0 }, { x: 1, y: 1 }, { x: 0, y: 1 }, { x: 0, y: 0 }] };
+  const more = insertPoint(square, 0.5, -0.05);
+  assert.equal(more.points!.length, 6);
+  assert.deepEqual(more.points![1], { x: 0.5, y: 0 });
+  const less = removePoint(more, 1);
+  assert.deepEqual(less.points, square.points);
+  // A closed outline's first point is its last too: taking it out keeps the outline closed.
+  const shut = removePoint(square, 0);
+  assert.equal(shut.points!.length, 4);
+  assert.deepEqual(shut.points![0], shut.points![3]);
+  // Never too short to draw.
+  assert.equal(removePoint(shut, 1), shut);
 });

@@ -1,4 +1,4 @@
-import type { Ink, PenColor, Preset } from "./types";
+import type { Ink, PenColor } from "./types";
 
 // How a tool's ink is shown in the preview, shared by Plot and Studio so a drawing looks the same in
 // both. The rules themselves live in index.css (`.pv-colored .pv-layer`, `.pv-build`, `.pv-flat`),
@@ -126,16 +126,17 @@ export const penNameAt = (color: string | null, palette: PenColor[]) =>
 export const LABEL_SEPARATOR = " - ";
 
 /**
- * The pens whose ink is glitter - clear gel with fine glitter in it (Gelly Roll Stardust) - by name,
- * lowercase, from every preset that says its ink is: a layer drawn in one of them is previewed as
- * sparkle over what's under it, in whichever app shows it and whichever pen the drawing is made with.
+ * The Varnish layer: a drawing's last layer, gone over in a clear glitter gel (Gelly Roll Stardust)
+ * once everything else is down, so what's under it sparkles. Not a pen of any preset - it goes on top
+ * of whatever pen the drawing is made with - but a layer of the drawing, known by its name in every
+ * app: "Varnish", or "Varnish - " and a label. Previewed as sparkle; plotted last.
  */
-export const glitterPens = (presets: Preset[]) =>
-  new Set(presets.filter((p) => p.settings.ink_glitter).flatMap((p) => (p.palette ?? []).map((c) => c.name.toLowerCase())));
-
-/** Whether a layer draws in glitter: its pen - its name, before any label after it - is a glitter pen. */
-export const isGlitterLayer = (name: string, pens: Set<string>) =>
-  pens.size > 0 && pens.has(name.split(LABEL_SEPARATOR)[0].trim().toLowerCase());
+export const VARNISH = "Varnish";
+/** What the Varnish layer's swatch shows: the gel is clear, so a pale silver for its glitter. */
+export const VARNISH_COLOR = "#e6e8ec";
+/** The glitter gel's line, mm (Gelly Roll Stardust: a 1 mm ball, a 0.5 mm line), whatever pen the rest is in. */
+export const VARNISH_LINE_MM = 0.5;
+export const isVarnishLayer = (name: string) => name.split(LABEL_SEPARATOR)[0].trim().toLowerCase() === VARNISH.toLowerCase();
 
 /**
  * The pen and the label in a layer's name. The pen is the longest of the palette's pens the name

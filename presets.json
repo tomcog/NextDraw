@@ -419,34 +419,6 @@
     ]
   },
   {
-    "name": "Gelly Roll Stardust",
-    "settings": {
-      "handling": 1,
-      "speed_pendown": 50,
-      "speed_penup": 75,
-      "accel": 50,
-      "pen_pos_down": 30,
-      "pen_pos_up": 60,
-      "pen_setup": 60,
-      "pen_rate_lower": 12,
-      "pen_rate_raise": 100,
-      "pen_width": 0.5,
-      "ink_opacity": 1,
-      "ink_builds": false,
-      "ink_glitter": true
-    },
-    "hatch": {
-      "angle": 45,
-      "spacing_mm": 0.5
-    },
-    "palette": [
-      {
-        "name": "Clear Star",
-        "color": "#e6e8ec"
-      }
-    ]
-  },
-  {
     "name": "Paper-Mate Flair",
     "settings": {
       "handling": 1,

@@ -10,7 +10,7 @@ import { parsePlotPaths, type PlotPaths } from "../shared/lib/progressPaths";
 import { parsePreview, type Preview } from "../shared/lib/preview";
 import { load, save } from "../shared/lib/storage";
 import type { Confirmation, Estimate, Info, Ink, Layer, PenColor, LayerView, Message, Placement, Preset, Settings, Status, Plot } from "../shared/lib/types";
-import { glitterPens, inkHex, isGlitterLayer, isPalettePen, joinLayerName, penNameAt, penNameOf, splitLayerName } from "../shared/lib/ink";
+import { inkHex, isPalettePen, isVarnishLayer, joinLayerName, penNameAt, penNameOf, splitLayerName } from "../shared/lib/ink";
 import { Hints } from "../shared/components/controls/Hints";
 import { Header } from "./components/Header";
 import { Bed, type Zoom } from "../shared/components/Bed";
@@ -1475,15 +1475,8 @@ export default function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [layerViews, secondTool, secondToolLayers, secondPreset, active],
   );
-  // Glitter: a layer drawn with a glitter tool, or named for a glitter pen, sparkles over what's under it.
-  const layerGlitter = useMemo(() => {
-    const pens = glitterPens(presets);
-    return Object.fromEntries(layerViews.map((l) => [l.id,
-      (usesSecond(l.id) ? secondPreset : active)?.settings.ink_glitter === true || isGlitterLayer(l.name, pens)]));
-  },
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [layerViews, secondTool, secondToolLayers, secondPreset, active, presets],
-  );
+  // The Varnish layer: clear glitter gel over the rest, previewed as sparkle.
+  const layerVarnish = useMemo(() => Object.fromEntries(layerViews.map((l) => [l.id, isVarnishLayer(l.name)])), [layerViews]);
   const layerInkOpacity = useMemo(
     () => Object.fromEntries(layerViews.map((l) => [l.id, (usesSecond(l.id) ? secondPreset : active)?.settings.ink_opacity])),
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -1723,7 +1716,7 @@ export default function App() {
               inkSim={view === "preview"}
               layerInkBuilds={secondTool ? layerInkBuilds : undefined}
               layerInkOpaque={secondTool ? layerInkOpaque : undefined}
-              layerGlitter={layerGlitter}
+              layerVarnish={layerVarnish}
               layerPenWidths={secondTool ? layerPenWidths : undefined}
               plotPaths={shownPlotPaths}
               hairlines={view === "outline" || layerMode === "work"}

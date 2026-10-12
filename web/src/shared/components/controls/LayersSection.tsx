@@ -1,6 +1,6 @@
 import { useRef, type ReactNode } from "react";
 import { ButtonRound, LayerController } from "@tomcoggia/ui";
-import { EllipsisVertical, LayersArrowUp, Plus } from "lucide-react";
+import { EllipsisVertical, LayersArrowUp, Plus, Sparkles } from "lucide-react";
 import { Section } from "./Section";
 import { isPalettePen, labelAfter, LABEL_SEPARATOR } from "../../lib/ink";
 import type { Preset } from "../../lib/types";
@@ -32,6 +32,8 @@ interface Props {
   onSort: () => void;
   /** Studio: one more layer. Image's layers are the image's, made by splitting it. */
   onAdd?: () => void;
+  /** Studio: varnish the whole drawing - its silhouette, hatched on the Varnish layer. */
+  onVarnish?: () => void;
   /** Target this layer alone, or with `add` put it in with the others or take it out. */
   onSwitch: (id: string, add?: boolean) => void;
   onVisible: (id: string, visible: boolean) => void;
@@ -84,6 +86,11 @@ export function LayersSection(props: Props) {
             <ButtonRound size="sm" icon={<LayersArrowUp />} aria-label="Sort layers by darkness"
               title="Sort by darkness: the lightest color is layer 1 and drawn first, with darker colors over it"
               disabled={busy} onClick={props.onSort} />
+          )}
+          {props.onVarnish && (
+            <ButtonRound size="sm" icon={<Sparkles />} aria-label="Varnish the whole drawing"
+              title="Varnish the whole drawing: its silhouette, hatched in glitter gel on the Varnish layer, plotted last"
+              disabled={busy || layers.length === 0} onClick={props.onVarnish} />
           )}
           {props.onAdd && (
             <ButtonRound size="sm" icon={<Plus />} aria-label="Add a layer"

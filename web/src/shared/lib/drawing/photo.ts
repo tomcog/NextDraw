@@ -2233,7 +2233,7 @@ function blurGrid(v: Float32Array, gw: number, gh: number, r: number) {
  * The lines along which a grid crosses a level - marching squares - joined up into runs: each run a
  * list of grid points, closed where it comes back round to its start.
  */
-function contour(v: Float32Array, gw: number, gh: number, level: number): number[][][] {
+export function contour(v: Float32Array, gw: number, gh: number, level: number): number[][][] {
   // A point on the edge between two grid points, where the level falls between them. Keyed by the
   // edge, so the two cells that share an edge find the same point and the pieces join up.
   const points = new Map<number, number[]>();
@@ -3883,7 +3883,7 @@ function flowField(tones: Tones, photo: Photo, w: number, h: number) {
 }
 
 /** A line with the points dropped that lie within `tolerance` of the straight line past them (Douglas-Peucker). */
-function simplified(pts: number[][], tolerance: number): number[][] {
+export function simplified(pts: number[][], tolerance: number): number[][] {
   if (pts.length < 3) return pts;
   const keep = new Uint8Array(pts.length);
   keep[0] = keep[pts.length - 1] = 1;

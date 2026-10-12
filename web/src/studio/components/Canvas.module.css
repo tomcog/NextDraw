@@ -69,6 +69,12 @@
   stroke-width: 1;
 }
 
+/* The point last picked, the one Delete takes out: in the action color, as the turn grip is. */
+.handles circle.point[data-picked="true"] {
+  fill: var(--ui-action);
+  stroke: #ffffff;
+}
+
 /* The turn grip and the stalk it stands on: the same grip as a corner, filled instead of hollow so
    it says it does something else. */
 .handles circle.turn {
