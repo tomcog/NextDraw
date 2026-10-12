@@ -2074,18 +2074,16 @@ function squiggleInkscape(tones: Tones, photo: Photo, w: number, h: number): Pho
     return Math.min(255, Math.max(0, Math.round(v)));
   };
 
-  // Whether this layer draws a cell of a row: most of it is its tone (and, lifting, not white).
+  // Whether this layer draws at a point along a row: its tone (and, lifting, not white). Asked of each
+  // half-wave's middle, so a run stops at the half-wave where the tone does - asked of a whole cell,
+  // a run reaching white ran on to the cell's end and spilled into it.
   const xinc = L / (cols - 1);
   const rowH = A / rows;
-  const draws = (x: number, oMid: number) => {
-    let on = 0;
-    for (let j = 0; j < 3; j++) {
-      const p = at((x + (j + 0.5) / 3) * xinc, oMid);
-      if (!inside(p)) continue;
-      const tone = toneAt(p.x, p.y);
-      if (tone >= 0 && !(photo.squiggleLift && fromWhite && tone < 0.03)) on++;
-    }
-    return on >= 2;
+  const drawsAt = (t: number, oMid: number) => {
+    const p = at(t, oMid);
+    if (!inside(p)) return false;
+    const tone = toneAt(p.x, p.y);
+    return tone >= 0 && !(photo.squiggleLift && fromWhite && tone < 0.03);
   };
 
   // Each run: its cubics' points, from the row's middle at a cell's edge to another.
@@ -2105,26 +2103,25 @@ function squiggleInkscape(tones: Tones, photo: Photo, w: number, h: number): Pho
     const runs: Run[] = [];
     let run: Run | null = null;
     for (const [i, x] of order.entries()) {
-      if (!draws(x, oMid)) {
-        if (run) runs.push(run);
-        run = null;
-        continue;
-      }
       let amp = sqMax - read(Math.floor(x * (L / MM / cols)), Math.floor(r * (A / MM / rows))) / divisor;
       if (reversed) amp *= -1;
       const sign = reversed ? -1 : 1;
       const t0 = (reversed ? x + 1 : x) * xinc;
-      if (!run) run = { start: at(t0, oMid), segs: [], fromStart: i === 0, toEnd: false, row: r };
-      // `freq` waves to the cell, each a hump out and its reflection back: a quadratic, then the extension's smooth 't'.
+      // `freq` waves to the cell, each a hump out and its reflection back: a quadratic, then the
+      // extension's smooth 't'. Each half drawn only where the tone is, so runs end with it.
       const half = (sign * xinc) / 2 / freq;
-      for (let f = 0; f < freq; f++) {
-        const s = t0 + 2 * half * f;
-        const p0 = at(s, oMid);
-        run.segs.push(quad(p0, at(s + half / 2, oMid + (amp / 2) * MM), at(s + half, oMid)));
-        const p1 = at(s + half, oMid);
-        run.segs.push(quad(p1, at(s + (3 * half) / 2, oMid - (amp / 2) * MM), at(s + 2 * half, oMid)));
+      for (let k = 0; k < 2 * freq; k++) {
+        const s = t0 + half * k;
+        if (!drawsAt(s + half / 2, oMid)) {
+          if (run) runs.push(run);
+          run = null;
+          continue;
+        }
+        if (!run) run = { start: at(s, oMid), segs: [], fromStart: i === 0 && k === 0, toEnd: false, row: r };
+        const swing = (k % 2 === 0 ? amp : -amp) / 2;
+        run.segs.push(quad(at(s, oMid), at(s + half / 2, oMid + swing * MM), at(s + half, oMid)));
       }
-      if (i === order.length - 1) run.toEnd = true;
+      if (i === order.length - 1 && run) run.toEnd = true;
     }
     if (run) runs.push(run);
     for (const runNow of runs) {
@@ -2299,7 +2296,9 @@ function squiggle(tones: Tones, photo: Photo, w: number, h: number): PhotoMarks 
     }
 
     // Runs of the vertices this layer draws, each starting and ending on the row's middle - at the
-    // row's own ends where they reach them, as the sketch's do.
+    // row's own ends where they reach them, as the sketch's do, and elsewhere where the tone itself
+    // starts and stops, found a step at a time. Vertices are a quarter wave apart, which in pale
+    // tones is far: ended at the next one, a run spilled that far into white as a flat tail.
     const runs: Run[] = [];
     let run: Run | null = null;
     // Where the tone starts after `from`, or stops before `to`, a step at a time - the row's own end where it's drawn to.
@@ -2309,7 +2308,7 @@ function squiggle(tones: Tones, photo: Photo, w: number, h: number): PhotoMarks 
       const v = verts[i];
       if (v?.on) {
         if (!run) {
-          const from = i === 0 ? startOn(0, v.x) : verts[i - 1].x;
+          const from = startOn(i === 0 ? 0 : verts[i - 1].x, v.x);
           run = { points: [inBox(at(from, 0))], fromStart: from === 0, toEnd: false };
         }
         run.points.push(inBox(at(v.x, v.y)));
@@ -2317,7 +2316,7 @@ function squiggle(tones: Tones, photo: Photo, w: number, h: number): PhotoMarks 
       }
       if (run) {
         const last = verts[i - 1].x;
-        const to = i === verts.length ? stopOn(last, length) : v.x;
+        const to = stopOn(last, i === verts.length ? length : v.x);
         run.toEnd = to === length;
         run.points.push(inBox(at(to, 0)));
         runs.push(run);
