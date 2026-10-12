@@ -719,6 +719,8 @@ export default function App() {
    try {
     const res = await api<OpenResult>(`/api/studio/read?path=${encodeURIComponent(last)}`);
     if (!cancelled) openDrawing(res, (n) => `${handed ? "Opened" : "Picked up"} ${res.name} - ${n} ${n === 1 ? "path" : "paths"}`);
+    // Said at the top, where it's seen: the file has gone, and this is Plot's copy of it.
+    if (!cancelled && res.note) setMessage({ text: res.note, ok: false });
    } catch (err) {
     // Start clean but keep the pointer: the file may be fine and the server merely unreachable,
     // and throwing the only record of what was being worked on is the one unrecoverable move.
@@ -751,6 +753,7 @@ export default function App() {
    try {
     const res = await api<OpenResult>(`/api/studio/read?path=${encodeURIComponent(path)}`);
     openDrawing(res, (n) => `Opened ${res.name} - ${n} ${n === 1 ? "path" : "paths"}`);
+    if (res.note) setMessage({ text: res.note, ok: false });
    } catch (err) {
     setMessage({ text: (err as Error).message, ok: false });
    }

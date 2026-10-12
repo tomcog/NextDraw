@@ -3560,6 +3560,19 @@ def studio_read():
     file browser lists .ai files in both apps, so refusing them here only looked like a broken picker.
     """
     path = allowed_path(request.args.get("path", ""))
+    if path is not None and not path.exists() and path.suffix.lower() == ".svg":
+        # Gone since it was opened - moved, renamed or thrown away. If it's the drawing Plot has
+        # loaded, Plot's own copy is handed over instead, so "Edit in Studio" still opens what Plot
+        # shows; saving puts it back where it was. Anything else is said plainly, not as a refusal.
+        loaded = CURRENT_PATH.read_text().strip() if CURRENT_PATH.exists() else ""
+        if CURRENT_SVG.exists() and loaded and Path(loaded).resolve() == path:
+            try:
+                svg = CURRENT_SVG.read_text(encoding="utf-8", errors="replace")
+            except OSError as exc:
+                return jsonify(error=f"Couldn't read Plot's copy of {path.name}: {exc.strerror or exc}"), 500
+            return jsonify(name=path.name, path=str(path), folder=display_path(path.parent), svg=svg,
+                           note=f"{path.name} is no longer in {display_path(path.parent)}, so this is Plot's copy of it. Saving puts it back there.")
+        return jsonify(error=f"{path.name} is no longer in {display_path(path.parent)}: it was moved, renamed or deleted."), 404
     if path is None or not path.is_file() or path.suffix.lower() not in (".svg", ".ai"):
         return jsonify(error="That isn't a drawing the app can open."), 403
     if path.suffix.lower() == ".ai":

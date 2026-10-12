@@ -32,6 +32,7 @@ export interface OpenResult {
   plot?: Plot | null; // Plot's own route loads the drawing and answers with its settings
   svg?: string; // Studio's route reads the file instead, so picking one to edit doesn't load it
   opened?: string; // which opening this is, to tell it from any other load of the same file
+  note?: string; // something to say about it: the file is gone, so this is Plot's copy of it
 }
 
 /** Several files stacked into one drawing, a layer each (the server's combine routes). */
