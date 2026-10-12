@@ -1,4 +1,5 @@
-import { useRef, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
+import { api } from "../../shared/lib/api";
 import { Button, ButtonRound, Card, Checkbox, InputSelect, Segment, SegmentedControl } from "@tomcoggia/ui";
 import { RotateCcwSquare, RotateCwSquare } from "lucide-react";
 import { Section } from "../../shared/components/controls/Section";
@@ -14,8 +15,12 @@ import { EFFECTS, effectOf } from "./EffectToolbar";
 export interface PhotoActions {
   turn: (quarter: 1 | -1) => void;
   replace: (file: File | undefined) => void;
-  /** Lay an edge mask over the whole image, from a picture whose black is paper; no file takes it off. */
-  setEdgeMask: (file: File | undefined) => void;
+  /** Add a picture to the edge mask library - its black is paper - and lay it over the whole image. */
+  addEdgeMask: (file: File, taken: string[]) => Promise<void>;
+  /** Lay a mask from the library over the whole image; no name takes it off. */
+  chooseEdgeMask: (name: string | undefined) => Promise<void>;
+  /** Take a mask out of the library; drawings that use it keep their copy. */
+  deleteEdgeMask: (name: string) => Promise<void>;
   switchMode: (to: "value" | "colour" | "cmyk") => void;
   /** Change settings of the photo - this layer's, or every layer's when "All layers" is on. */
   set: (patch: Partial<Photo>) => void;
@@ -83,7 +88,13 @@ interface Props {
 export function PhotoCard({ shape, title, shapes, busy, targeted, layerCount, shownName, scale, estimates, actions, penWidthMm = 0.5, palette = [], anyColor = false, infoCard = true, effectCards = true, layersCard }: Props) {
   const replaceInput = useRef<HTMLInputElement>(null);
   const maskInput = useRef<HTMLInputElement>(null);
+  // The edge mask library, shared between Macs; read when the card opens and after each change to it.
+  const [masks, setMasks] = useState<string[]>([]);
+  const readMasks = () => api<{ masks: string[] }>("/api/edge-masks").then((r) => setMasks(r.masks)).catch(() => {});
+  useEffect(() => { readMasks(); }, []);
   const photo = shape.photo;
+  // A mask this drawing carries that isn't in the library: added before there was one, or taken out since.
+  const ownMask = Boolean(photo.edgeMask) && !masks.includes(photo.edgeMaskName ?? "");
   // How many inks a photo split by colour is in: its layers, not counting the key.
   const inks = photo.group ? shapes.filter((sh) => sh.photo?.group === photo.group && !sh.photo?.key).length : 1;
   const b = boxOf(shape);
@@ -401,36 +412,59 @@ export function PhotoCard({ shape, title, shapes, busy, targeted, layerCount, sh
               </div>
               {/* An edge mask: a grunge border, a torn edge. A picture laid over the part of the image
                 that shows, stretched to it; where it's black the image is left as paper, before any
-                effect reads it. */}
+                effect reads it. Chosen from a library; the drawing keeps a copy of the one it uses. */}
+              <InputSelect
+                size="md"
+                label="Edge mask"
+                value={!photo.edgeMask ? "" : ownMask ? "__own__" : photo.edgeMaskName}
+                disabled={busy}
+                title="Lay a mask over the image: a picture, stretched to the part that shows, whose black is left as paper - a grunge border, a torn edge"
+                onChange={(e) => {
+                  if (e.target.value !== "__own__") actions.chooseEdgeMask(e.target.value || undefined);
+                }}
+              >
+                <option value="">None</option>
+                {ownMask && <option value={"__own__"}>{`${photo.edgeMaskName ?? "Edge mask"} (this drawing's own)`}</option>}
+                {masks.map((name) => <option key={name} value={name}>{name}</option>)}
+              </InputSelect>
               <div className={styles.fillRow}>
-                <Button size="sm" variant="secondary" disabled={busy} title="Lay a mask over the image: a picture, stretched to the part that shows, whose black is left as paper - a grunge border, a torn edge" onClick={() => maskInput.current?.click()}>
-                  {photo.edgeMask ? "Change mask…" : "Edge mask…"}
+                <Button size="sm" variant="secondary" disabled={busy} title="Add a picture to the edge masks - black border, white middle - and lay it over this image" onClick={() => maskInput.current?.click()}>
+                  Add mask…
                 </Button>
                 {photo.edgeMask && (
-                  <>
-                    <Checkbox
-                      checked={Boolean(photo.edgeMaskInvert)}
-                      label="Invert"
-                      title="Read the mask the other way: white is paper, black keeps the image"
-                      onChange={(e) => actions.set({ edgeMaskInvert: e.target.checked || undefined })}
-                    />
-                    <Button size="sm" variant="secondary" disabled={busy} title="Take the edge mask off" onClick={() => actions.setEdgeMask(undefined)}>
-                      Remove
-                    </Button>
-                  </>
+                  <Checkbox
+                    checked={Boolean(photo.edgeMaskInvert)}
+                    label="Invert"
+                    title="Read the mask the other way: white is paper, black keeps the image"
+                    onChange={(e) => actions.set({ edgeMaskInvert: e.target.checked || undefined })}
+                  />
                 )}
-                <input
-                  ref={maskInput}
-                  type="file"
-                  accept="image/*"
-                  hidden
-                  onChange={(e) => {
-                    actions.setEdgeMask(e.target.files?.[0]);
-                    e.target.value = "";
-                  }}
-                />
+                {photo.edgeMask && !ownMask && (
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    disabled={busy}
+                    title="Take this mask out of the edge masks. Drawings that use it keep it"
+                    onClick={() => {
+                      const name = photo.edgeMaskName!;
+                      if (window.confirm(`Take “${name}” out of the edge masks? Drawings that use it keep it.`)) actions.deleteEdgeMask(name).then(readMasks);
+                    }}
+                  >
+                    Delete
+                  </Button>
+                )}
               </div>
-              {photo.edgeMask && <p className={controls.fileWhere} title={photo.edgeMaskName}>{`Mask: ${photo.edgeMaskName ?? "edge mask"}`}</p>}
+              <input
+                ref={maskInput}
+                type="file"
+                accept="image/*"
+                hidden
+                onChange={(e) => {
+                  const file = e.target.files?.[0];
+                  e.target.value = "";
+                  if (file) actions.addEdgeMask(file, masks).then(readMasks);
+                }}
+              />
             </Section>
           </div>
         </Card>

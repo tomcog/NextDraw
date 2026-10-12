@@ -4,6 +4,7 @@
 // which it is handed, so App.tsx keeps the state and this keeps what is done with it.
 
 import type { Dispatch, SetStateAction } from "react";
+import { api, postJSON } from "../../shared/lib/api";
 import { lightness } from "../../shared/lib/color";
 import type { PenColor, Preset } from "../../shared/lib/types";
 import {
@@ -891,21 +892,50 @@ export function photoActions(ctx: PhotoContext) {
   };
 
   /**
-    * Lay an edge mask over the chosen photo - a picture whose black is paper, stretched over the part
-    * of the image that shows - or take it off, with no file. Kept small: a border only has to be rough.
-    */
-  const setEdgeMask = async (file: File | undefined) => {
+   * Edge masks come from a library shared between Macs: a picture added is kept there under its file
+   * name, and any of them can be chosen for this drawing. The drawing keeps its own copy of the one
+   * it uses, so a mask taken out of the library, or replaced, never changes a drawing already made.
+   */
+  /** Add a picture to the edge mask library - its black is paper - and lay it over the chosen photo. */
+  const addEdgeMask = async (file: File, taken: string[]) => {
     if (!chosen?.photo) return;
-    if (!file) {
+    try {
+      const copy = await workingCopy(file, MASK_EDGE_PX);
+      await readTones(copy.src);
+      const stem = file.name.replace(/\.[^.]+$/, "").replace(/[/\\:]/g, "-").trim().slice(0, 100) || "Edge mask";
+      let name = stem;
+      for (let n = 2; taken.includes(name); n++) name = `${stem} ${n}`;
+      await postJSON(`/api/edge-masks/${encodeURIComponent(name)}`, { src: copy.src }, "PUT");
+      setPhotoOf({ edgeMask: copy.src, edgeMaskName: name, edgeMaskInvert: undefined });
+      setMessage({ text: `${name} added to the edge masks and laid over the image: where it's black is left as paper`, ok: true });
+    } catch (err) {
+      setMessage({ text: (err as Error).message, ok: false });
+    }
+  };
+
+  /** Lay a mask from the library over the chosen photo, or take the mask off, with no name. */
+  const chooseEdgeMask = async (name: string | undefined) => {
+    if (!chosen?.photo) return;
+    if (!name) {
       setPhotoOf({ edgeMask: undefined, edgeMaskName: undefined, edgeMaskInvert: undefined });
       setMessage({ text: "Edge mask taken off", ok: true });
       return;
     }
     try {
-      const copy = await workingCopy(file, MASK_EDGE_PX);
-      await readTones(copy.src);
-      setPhotoOf({ edgeMask: copy.src, edgeMaskName: file.name, edgeMaskInvert: undefined });
-      setMessage({ text: `${file.name} laid over the image: where it's black is left as paper`, ok: true });
+      const { src } = await api<{ src: string }>(`/api/edge-masks/${encodeURIComponent(name)}`);
+      await readTones(src);
+      setPhotoOf({ edgeMask: src, edgeMaskName: name });
+      setMessage({ text: `${name} laid over the image`, ok: true });
+    } catch (err) {
+      setMessage({ text: (err as Error).message, ok: false });
+    }
+  };
+
+  /** Take a mask out of the library. Drawings that use it keep their own copy. */
+  const deleteEdgeMask = async (name: string) => {
+    try {
+      await api(`/api/edge-masks/${encodeURIComponent(name)}`, { method: "DELETE" });
+      setMessage({ text: `${name} taken out of the edge masks; drawings that use it keep it`, ok: true });
     } catch (err) {
       setMessage({ text: (err as Error).message, ok: false });
     }
@@ -943,7 +973,7 @@ export function photoActions(ctx: PhotoContext) {
 
   return {
     addPhoto, addSeparations, switchPhotoMode, setKeyLayer, splitPhoto, splitPhotoByColor, splitPhotoBestFit, bestPens,
-    placePhoto, photoScale, setPhotoScale, setPhotoMargin, replacePhoto, turnPhoto, setPhotoOf, setEdgeMask, setAngles, photoStem, splitPhotoCmyk, setPlatePen, setLayerColor,
+    placePhoto, photoScale, setPhotoScale, setPhotoMargin, replacePhoto, turnPhoto, setPhotoOf, addEdgeMask, chooseEdgeMask, deleteEdgeMask, setAngles, photoStem, splitPhotoCmyk, setPlatePen, setLayerColor,
     splitAroundPaper, setPaperTone,
   };
 }

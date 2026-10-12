@@ -7,6 +7,7 @@ Then open http://127.0.0.1:5055
 Add --lan to also serve the page to phones, tablets and other computers on the same network.
 """
 
+import base64
 import copy
 import inspect
 import hashlib
@@ -4101,6 +4102,61 @@ def delete_preset(name):
         presets = [p for p in saved if p.get("name") != name]
     save_presets(presets)
     return jsonify(presets=resolve_presets(presets))
+
+
+# ---- Edge masks ----
+# Image's edge masks - a grunge border, a torn edge - kept as a library to choose from, beside the
+# presets in iCloud Drive so both Macs share them. Each is the small JPEG Image makes of the picture.
+# A drawing keeps its own copy of the mask it uses, so deleting one here never changes a drawing.
+EDGE_MASKS = (ICLOUD_DRIVE / "NextDraw Studio" / "Edge masks") if ICLOUD_DRIVE.is_dir() else (ROOT / "edge-masks")
+MAX_EDGE_MASK = 5 * 1024 * 1024
+
+
+def edge_mask_file(name):
+    """The file a mask of this name is kept in, or None for a name that isn't one."""
+    name = (name or "").strip()
+    if not name or len(name) > 120 or not re.fullmatch(r"[^/\\:\x00-\x1f]+", name) or name.startswith("."):
+        return None
+    return EDGE_MASKS / f"{name}.jpg"
+
+
+@app.get("/api/edge-masks")
+def list_edge_masks():
+    names = sorted((f.stem for f in EDGE_MASKS.glob("*.jpg")), key=str.lower) if EDGE_MASKS.is_dir() else []
+    return jsonify(masks=names)
+
+
+@app.get("/api/edge-masks/<name>")
+def get_edge_mask(name):
+    path = edge_mask_file(name)
+    if path is None or not path.is_file():
+        return jsonify(error=f"There's no edge mask called {name}."), 404
+    return jsonify(name=path.stem, src="data:image/jpeg;base64," + base64.b64encode(path.read_bytes()).decode())
+
+
+@app.put("/api/edge-masks/<name>")
+def save_edge_mask(name):
+    path = edge_mask_file(name)
+    if path is None:
+        return jsonify(error="That name can't be used for an edge mask."), 400
+    src = (request.json or {}).get("src") or ""
+    m = re.match(r"^data:image/jpeg;base64,([A-Za-z0-9+/=]+)$", src)
+    if not m:
+        return jsonify(error="An edge mask has to be a JPEG."), 400
+    data = base64.b64decode(m.group(1))
+    if len(data) > MAX_EDGE_MASK:
+        return jsonify(error="That edge mask is too big to keep."), 400
+    EDGE_MASKS.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(data)
+    return list_edge_masks()
+
+
+@app.delete("/api/edge-masks/<name>")
+def delete_edge_mask(name):
+    path = edge_mask_file(name)
+    if path is not None and path.is_file():
+        path.unlink()
+    return list_edge_masks()
 
 
 # ---- Ink colors by name, from Claude ----

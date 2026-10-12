@@ -15,3 +15,6 @@ jobs/
 
 # The plotter driver, packed from a working install (see requirements.txt)
 drivers/
+
+# Edge masks, on a Mac without iCloud Drive
+edge-masks/
