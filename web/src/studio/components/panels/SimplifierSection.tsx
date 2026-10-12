@@ -146,6 +146,12 @@ export function SimplifierSection({ value, onChange, scope, onScope, layerName, 
         {anyOn ? `${before.toLocaleString()} → ${after.toLocaleString()} points` : `${before.toLocaleString()} points`}
         {images > 0 && ` - not counting ${images === 1 ? "the image layer" : `the ${images} image layers`}, which a snapshot would bake into paths`}
       </p>
+      {/* Image layers alongside the paths: the same way on as when there are only images. */}
+      {images > 0 && onSnapshot && (
+        <Button size="sm" variant="secondary" disabled={busy} title="Save a snapshot of this drawing with its images baked into paths, and open it to simplify everything" onClick={onSnapshot}>
+          Work on a snapshot
+        </Button>
+      )}
       <Button size="sm" variant="secondary" disabled={busy || !anyOn || (fewer <= 0 && !removed)} onClick={onApply}>
         Simplify
       </Button>
