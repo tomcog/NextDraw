@@ -2,8 +2,6 @@
 // preset and its numbers, and a seed. The drawing keeps just those, so the same edge comes back every time
 // it is opened, and New edge is only a new seed. It is made at the shape of the part of the image that
 // shows, so nothing is stretched, and only on the sides asked for.
-//
-// The presets are the looks of the first saved masks (web/scripts/make-edge-masks.mjs).
 
 export type EdgeStyle = "torn" | "brush" | "grunge" | "spray" | "thin" | "dry";
 
