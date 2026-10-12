@@ -5,7 +5,7 @@ import { RefreshCw, RotateCcwSquare, RotateCwSquare } from "lucide-react";
 import { Section } from "../../shared/components/controls/Section";
 import { NumberField } from "../../shared/components/controls/NumberField";
 import controls from "../../shared/components/controls/controls.module.css";
-import { BLACK_SHARE, CENTER_DEFAULTS, KEY_FROM, MOST_COLORS, MOST_LAYERS, MOST_SIDE_LAYERS, MOST_PASSES, paperToneOf, OUTLINE_DEFAULTS, PLATE_AIMS, PLATE_OFF, SILHOUETTE_DEFAULTS, STREAM_DEFAULTS, ONE_LINE_DEFAULTS, ONE_LINE_MOST, HILBERT_DEFAULTS, WAVE_DEFAULTS, ANGLE_PRESETS, hatchShortestOf, MASK_SIDES, PLATE_SETS, SQUIGGLE_DRAW, SQUIGGLE_INKSCAPE, SQUIGGLE_INKSCAPE_RANGES, SQUIGGLE_RANGES, coverSteps, plateSetOf, platesOf, squiggleDrawOf, squiggleInkscapeOf, type AnglePreset, type SquiggleDraw, type SquiggleInkscape, type PlateSet, photoMarks, photoMode, type Photo, type Plate } from "../../shared/lib/drawing/photo";
+import { BLACK_SHARE, CENTER_DEFAULTS, KEY_FROM, MOST_COLORS, MOST_LAYERS, MOST_SIDE_LAYERS, MOST_PASSES, paperToneOf, OUTLINE_DEFAULTS, PLATE_AIMS, PLATE_OFF, SILHOUETTE_DEFAULTS, STREAM_DEFAULTS, ONE_LINE_DEFAULTS, ONE_LINE_MOST, HILBERT_DEFAULTS, WAVE_DEFAULTS, ANGLE_PRESETS, centerModeOf, hatchShortestOf, MASK_SIDES, PLATE_SETS, SQUIGGLE_DRAW, SQUIGGLE_INKSCAPE, SQUIGGLE_INKSCAPE_RANGES, SQUIGGLE_RANGES, coverSteps, plateSetOf, platesOf, squiggleDrawOf, squiggleInkscapeOf, type AnglePreset, type SquiggleDraw, type SquiggleInkscape, type PlateSet, photoMarks, photoMode, type Photo, type Plate } from "../../shared/lib/drawing/photo";
 import { EDGE_FIELDS, EDGE_STYLES, MOST_VARY, newEdge, newSeed, type EdgeGen, type EdgeStyle } from "../../shared/lib/drawing/edgeMask";
 import { boxOf, type Shape } from "../../shared/lib/drawing/shapes";
 import type { PenColor } from "../../shared/lib/types";
@@ -114,8 +114,8 @@ export function PhotoCard({ shape, title, shapes, busy, targeted, layerCount, sh
   // Silhouette reads the picture as paint or paper and nothing between, so it has no tones or colours
   // to split by: a photo drawn that way is one layer. Separations stay as they are, a plate each.
   const splits = photo.separation || effect.key !== "silhouette";
-  // How the photo is split into pens: B&W, CMYK or Colour, with that mode's own settings. The
-  // whole drawing's - at the top of the Hatching card, in the Layers card for the other effects.
+  // How the photo is split into pens: B&W, CMYK or Colour, with that mode's own settings. The whole
+  // drawing's - in the Color mode card, above every effect's own card.
   const colourMode = (
     <>
       {photo.separation ? (
@@ -570,10 +570,25 @@ export function PhotoCard({ shape, title, shapes, busy, targeted, layerCount, sh
         </Card>
       )}
       {layersCard}
-      {/* The effect's own cards - its card, then Split - put away by clicking its button again. */}
+      {/* The effect's own cards - Color mode, then its card - put away by clicking its button again. */}
       {effectCards && (
         <>
-          {/* The effect's card first in the photo's stack, its Split under it. */}
+          {/* Color mode first in the photo's stack - how the picture is divided into layers and pens - then the effect's own card under it. */}
+          {splits && (
+            <Card variant="flat" className={styles.controls}>
+              <div className={`${styles.cardBody} ${controls.cardSections}`}>
+                <Section title={photo.separation ? "Separation" : "Color mode"} collapsibleKey="photo-layers">
+                  {/* How many layers the photo is split into by tone. Each band layer has its own settings
+                    below; the photo's picture, brightness and contrast are what the bands are cut from. */}
+                  {/* By value: read as black and white, split into tone bands. By colour: split into groups
+                    of similar colours, each drawn in the tool's nearest pen. Either way, a layer each, with
+                    its own lines. */}
+                  {colourMode}
+                  {photo.group && bleed}
+                </Section>
+              </div>
+            </Card>
+          )}
           <Card variant="flat" className={styles.controls}>
             <div className={`${styles.cardBody} ${controls.cardSections}`}>
               {/* The effect's own numbers, under its name: the toolbar on the left chooses which. */}
@@ -591,30 +606,48 @@ export function PhotoCard({ shape, title, shapes, busy, targeted, layerCount, sh
                       <NumberField label="Smoothing" unit="mm" min={0} max={5} step={0.05} value={photo.centerSmoothMm ?? CENTER_DEFAULTS.smoothMm} onChange={(centerSmoothMm) => actions.set({ centerSmoothMm })} />
                       <NumberField label="Shortest" unit="mm" min={0} max={20} step={0.25} value={photo.centerShortestMm ?? CENTER_DEFAULTS.shortestMm} onChange={(centerShortestMm) => actions.set({ centerShortestMm })} />
                     </div>
-                    {/* Curves, with the corners kept sharp past an angle; or straight lines, for drawings
-                      of things - buildings, furniture - whose edges are straight and corners sharp. */}
-                    <SegmentedControl size="sm" variant="dark" aria-label="Lines drawn as">
-                      <Segment selected={!photo.centerStraightMm} title="Lines drawn as smooth curves" onClick={() => actions.set({ centerStraightMm: undefined })}>Curves</Segment>
-                      <Segment selected={Boolean(photo.centerStraightMm)} title="Lines drawn as straight segments: straight edges dead straight, every corner sharp. A circle is still a circle" onClick={() => !photo.centerStraightMm && actions.set({ centerStraightMm: CENTER_DEFAULTS.straightMm })}>Straight</Segment>
-                    </SegmentedControl>
-                    <div className={styles.fillRow}>
-                      {photo.centerStraightMm ? (
-                        <div title="How far a straight segment may stray from the traced line: more makes fewer, longer segments">
-                          <NumberField label="Straight within" unit="mm" min={0.05} max={5} step={0.05} value={photo.centerStraightMm} onChange={(v) => actions.set({ centerStraightMm: Math.max(0.05, v) })} />
-                        </div>
-                      ) : (
+                    {/* Curves; straight lines, for drawings of things whose edges are straight and corners
+                      sharp; or mixed, straight where a line runs straight and curved where it bends - most
+                      line art is both. */}
+                    {(() => {
+                      const mode = centerModeOf(photo);
+                      const corners = (
                         <div title="Where a line turns more than this, it keeps a sharp corner rather than being rounded through it. 0 rounds every turn">
                           <NumberField label="Sharp corners over" unit="°" min={0} max={179} step={5} value={photo.centerCornerDeg ?? 0} onChange={(v) => actions.set({ centerCornerDeg: v > 0 ? Math.min(179, v) : undefined })} />
                         </div>
-                      )}
-                    </div>
+                      );
+                      const within = (
+                        <div title="How far a straight segment may stray from the traced line: more makes fewer, longer straight lines">
+                          <NumberField label="Straight within" unit="mm" min={0.05} max={5} step={0.05} value={photo.centerStraightMm ?? CENTER_DEFAULTS.straightMm} onChange={(v) => actions.set({ centerStraightMm: Math.max(0.05, v) })} />
+                        </div>
+                      );
+                      return (
+                        <>
+                          <SegmentedControl size="sm" variant="dark" aria-label="Lines drawn as">
+                            <Segment selected={mode === "curves"} title="Lines drawn as smooth curves" onClick={() => actions.set({ centerMode: "curves" })}>Curves</Segment>
+                            <Segment selected={mode === "mixed"} title="Straight where a line runs straight, curved where it bends" onClick={() => actions.set({ centerMode: "mixed" })}>Mixed</Segment>
+                            <Segment selected={mode === "straight"} title="Lines drawn as straight segments: straight edges dead straight, every corner sharp. A circle is still a circle" onClick={() => actions.set({ centerMode: "straight" })}>Straight</Segment>
+                          </SegmentedControl>
+                          <div className={styles.fillRow}>
+                            {mode === "curves" && corners}
+                            {mode === "straight" && within}
+                            {mode === "mixed" && (
+                              <>
+                                {within}
+                                <div title="A straight stretch at least this long is drawn as a straight line; shorter ones are where the line bends, and are drawn as curves">
+                                  <NumberField label="Straight longer than" unit="mm" min={0.5} max={50} step={0.5} value={photo.centerLongMm ?? CENTER_DEFAULTS.longMm} onChange={(v) => actions.set({ centerLongMm: Math.max(0.5, v) })} />
+                                </div>
+                                {corners}
+                              </>
+                            )}
+                          </div>
+                        </>
+                      );
+                    })()}
                   </>
                 ) : photo.style === "streamlines" ? (
                   <>
-                    {/* As Hatching: the color mode first, then the layers' angles - which the lines settle
-                      to wherever the image has no shape to follow. */}
-                    {colourMode}
-                    {photo.group && bleed}
+                    {/* The layers' angles - which the lines settle to wherever the image has no shape to follow. */}
                     {anglePresets}
                     <div className={`${styles.fillRow} ${styles.oneRow}`}>
                       {angleField}
@@ -630,9 +663,7 @@ export function PhotoCard({ shape, title, shapes, busy, targeted, layerCount, sh
                   </>
                 ) : photo.style === "oneline" ? (
                   <>
-                    {/* As the other tonal effects: the color mode first. No angles: the line goes where the dots are. */}
-                    {colourMode}
-                    {photo.group && bleed}
+                    {/* No angles: the line goes where the dots are. */}
                     <div className={styles.fillRow}>
                       <NumberField label="Dots" min={50} max={ONE_LINE_MOST} step={500} value={photo.lineDots ?? ONE_LINE_DEFAULTS.dots} onChange={(lineDots) => actions.set({ lineDots })} />
                       {/* 0 keeps it one unbroken line; more, and the pen lifts over jumps that long, leaving white as paper. */}
@@ -655,9 +686,7 @@ export function PhotoCard({ shape, title, shapes, busy, targeted, layerCount, sh
                   </>
                 ) : photo.style === "hilbert" ? (
                   <>
-                    {/* As the other tonal effects: the color mode first. No angles: the curve runs square to the picture. */}
-                    {colourMode}
-                    {photo.group && bleed}
+                    {/* No angles: the curve runs square to the picture. */}
                     <div className={styles.fillRow}>
                       <NumberField label="Spacing mm" min={0.1} max={5} step={0.05} value={photo.spacingMm} onChange={(spacingMm) => actions.set({ spacingMm })} />
                       {/* How big the curve's squares get in the lightest parts, so they still meander. */}
@@ -680,10 +709,7 @@ export function PhotoCard({ shape, title, shapes, busy, targeted, layerCount, sh
                   </>
                 ) : photo.style === "outlines" ? (
                   <>
-                    {/* The color mode first, as in the other effects. No angles: contours follow the
-                      photo, not a direction. */}
-                    {colourMode}
-                    {photo.group && bleed}
+                    {/* No angles: contours follow the photo, not a direction. */}
                     <div className={styles.fillRow}>
                       <NumberField label="Lines" min={1} max={40} step={1} value={photo.contours ?? OUTLINE_DEFAULTS.contours} onChange={(contours) => actions.set({ contours })} />
                       <NumberField label="Smoothing mm" min={0} max={20} step={0.25} value={photo.smoothMm ?? OUTLINE_DEFAULTS.smoothMm} onChange={(smoothMm) => actions.set({ smoothMm })} />
@@ -692,9 +718,7 @@ export function PhotoCard({ shape, title, shapes, busy, targeted, layerCount, sh
                   </>
                 ) : photo.style === "squiggle" ? (
                   <>
-                    {/* As Hatching: the color mode first. The rows are level, every layer alike, unless turned here. */}
-                    {colourMode}
-                    {photo.group && bleed}
+                    {/* The rows are level, every layer alike, unless turned here. */}
                     {/* Which SquiggleDraw: the Processing sketch, whose waves tighten in the darks, or the
                       Inkscape extension's grid, whose waves keep their frequency and only grow. */}
                     <SegmentedControl size="sm" variant="dark" aria-label="SquiggleDraw version">
@@ -759,9 +783,7 @@ export function PhotoCard({ shape, title, shapes, busy, targeted, layerCount, sh
                   </>
                 ) : photo.style === "waves" ? (
                   <>
-                    {/* As Hatching and Squiggle: the color mode first, then the layers' angles. */}
-                    {colourMode}
-                    {photo.group && bleed}
+                    {/* The layers' angles first, as Hatching's. */}
                     {anglePresets}
                     <div className={`${styles.fillRow} ${styles.oneRow}`}>
                       {angleField}
@@ -772,9 +794,6 @@ export function PhotoCard({ shape, title, shapes, busy, targeted, layerCount, sh
                   </>
                 ) : (
                   <>
-                    {/* The colour mode first: it changes everything under it. */}
-                    {colourMode}
-                    {photo.group && bleed}
                     {anglePresets}
                     <div className={`${styles.fillRow} ${styles.oneRow}`}>
                       {angleField}
@@ -839,21 +858,6 @@ export function PhotoCard({ shape, title, shapes, busy, targeted, layerCount, sh
               </Section>
             </div>
           </Card>
-          {splits && effect.key !== "hatch" && effect.key !== "squiggle" && effect.key !== "waves" && effect.key !== "streamlines" && effect.key !== "oneline" && effect.key !== "hilbert" && effect.key !== "outlines" && (
-            <Card variant="flat" className={styles.controls}>
-              <div className={`${styles.cardBody} ${controls.cardSections}`}>
-                <Section title={photo.separation ? "Separation" : "Split"} collapsibleKey="photo-layers">
-                  {/* How many layers the photo is split into by tone. Each band layer has its own settings
-                    below; the photo's picture, brightness and contrast are what the bands are cut from. */}
-                  {/* By value: read as black and white, split into tone bands. By colour: split into groups
-                    of similar colours, each drawn in the tool's nearest pen. Either way, a layer each, with
-                    its own lines. */}
-                  {colourMode}
-                  {bleed}
-                </Section>
-              </div>
-            </Card>
-          )}
         </>
       )}
     </>
