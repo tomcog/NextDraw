@@ -1,4 +1,4 @@
-import { useRef } from "react";
+import { useRef, type ReactNode } from "react";
 import { Button, ButtonRound, Card, Checkbox, InputSelect, Segment, SegmentedControl } from "@tomcoggia/ui";
 import { RotateCcwSquare, RotateCwSquare } from "lucide-react";
 import { Section } from "../../shared/components/controls/Section";
@@ -49,9 +49,12 @@ interface Props {
   title: string;
   shapes: Shape[];
   busy: boolean;
-  /** Whether the settings go to all the photo's layers at once. */
-  all: boolean;
-  onAll: (all: boolean) => void;
+  /** How many of the photo's layers are targeted in the Layers card - where a layer's settings go -
+   *  and how many it has. */
+  targeted: number;
+  layerCount: number;
+  /** The layer whose settings the card shows. */
+  shownName: string;
   /** The photo's size as a percent of what Fit gives it. */
   scale: number;
   /** Split by best fit: how near the photo the best pens come, one fewer, as many and one more (ΔE). */
@@ -65,15 +68,17 @@ interface Props {
   palette?: PenColor[];
   /** No pen preset is chosen: the palette is general colors, and a layer can take any color at all. */
   anyColor?: boolean;
-  /** Whether the effect's cards - its own and Layers - are out. */
+  /** Whether the effect's cards - its own and Split - are out. */
   effectCards?: boolean;
+  /** The Layers card, the app's: under the Image card, above the effect's. */
+  layersCard?: ReactNode;
 }
 
 /**
  * The chosen photo's card - in the drawing's rail, and in image conversion's under its own: how it is
  * split into layers, sized to the page, and what each layer's lines are drawn as.
  */
-export function PhotoCard({ shape, title, shapes, busy, all, onAll, scale, estimates, actions, penWidthMm = 0.5, palette = [], anyColor = false, infoCard = true, effectCards = true }: Props) {
+export function PhotoCard({ shape, title, shapes, busy, targeted, layerCount, shownName, scale, estimates, actions, penWidthMm = 0.5, palette = [], anyColor = false, infoCard = true, effectCards = true, layersCard }: Props) {
   const replaceInput = useRef<HTMLInputElement>(null);
   const photo = shape.photo;
   // How many inks a photo split by colour is in: its layers, not counting the key.
@@ -92,7 +97,7 @@ export function PhotoCard({ shape, title, shapes, busy, all, onAll, scale, estim
         // Separations made elsewhere: each layer is its own picture, so there's nothing to split.
         // Which plate each is, and its pen, came from its file's name; its color is its swatch's.
         <>
-          <p className={styles.empty}>A separation: this layer draws its own grayscale picture, more of its color where it's darker. Pick a layer in the Layers card to see its picture and set it; Replace swaps that plate alone.</p>
+          <p className={styles.empty}>A separation: this layer draws its own grayscale picture, more of its color where it's darker. Click a layer's name in the Layers card to see its picture; the targeted layers are the ones the settings change. Replace swaps the shown plate alone.</p>
         </>
       ) : (
         <>
@@ -297,7 +302,7 @@ export function PhotoCard({ shape, title, shapes, busy, all, onAll, scale, estim
   // This layer's angle. For the whole drawing - or with Uniform, which keeps every layer at one angle -
   // changing it turns every layer with it.
   const angleField = (
-    <NumberField label="Angle" unit="°" min={-180} max={180} step={5} value={photo.angle} onChange={(angle) => ((all || photo.anglePreset === "uniform") && photo.group ? actions.setAngles({ by: angle - photo.angle }) : actions.set({ angle }))} />
+    <NumberField label="Angle" unit="°" min={-180} max={180} step={5} value={photo.angle} onChange={(angle) => ((targeted === layerCount || photo.anglePreset === "uniform") && photo.group ? actions.setAngles({ by: angle - photo.angle }) : actions.set({ angle }))} />
   );
   // Squiggle's own angle: every layer level, left to right, unless turned - not hatching's angles by color.
   const squiggleAngleField = (
@@ -323,16 +328,16 @@ export function PhotoCard({ shape, title, shapes, busy, all, onAll, scale, estim
     const r = SQUIGGLE_INKSCAPE_RANGES[key];
     return <NumberField label={r.label} min={r.min} max={r.max} step={r.step} value={squiggleInkscapeOf(photo)[key]} onChange={(v) => setInkscape({ [key]: v })} />;
   };
-  // Rarely wanted: the effect's settings for one layer at a time, `which` saying which they are.
+  // Where the effect's settings for each layer go: the layers targeted in the Layers card, `which`
+  // saying which settings they are. Said only when that isn't every layer.
   const eachLayer = (which: string) => (
-    <>
-      {photo.group && (
-        <Checkbox checked={!all} label="Set each layer on its own" onChange={(e) => onAll(!e.target.checked)} />
-      )}
-      {photo.group && !all && (
-        <p className={styles.empty}>{which} above are this layer's alone. Pick another in the Layers card to set it.</p>
-      )}
-    </>
+    photo.group && targeted < layerCount ? (
+      <p className={styles.empty}>
+        {targeted
+          ? `${which} above go to the ${targeted === 1 ? "layer" : `${targeted} layers`} targeted in the Layers card, and show ${shownName ? `${shownName}'s` : "its"} values.`
+          : `No layers are targeted, so ${which.toLowerCase()} above change nothing: target some in the Layers card.`}
+      </p>
+    ) : null
   );
   return (
     <>
@@ -395,10 +400,11 @@ export function PhotoCard({ shape, title, shapes, busy, all, onAll, scale, estim
           </div>
         </Card>
       )}
-      {/* The effect's own cards - its card, then Layers - put away by clicking its button again. */}
+      {layersCard}
+      {/* The effect's own cards - its card, then Split - put away by clicking its button again. */}
       {effectCards && (
         <>
-          {/* The effect's card first in the photo's stack, its Layers under it. */}
+          {/* The effect's card first in the photo's stack, its Split under it. */}
           <Card variant="flat" className={styles.controls}>
             <div className={`${styles.cardBody} ${controls.cardSections}`}>
               {/* The effect's own numbers, under its name: the toolbar on the left chooses which. */}
@@ -643,16 +649,6 @@ export function PhotoCard({ shape, title, shapes, busy, all, onAll, scale, estim
                     of similar colours, each drawn in the tool's nearest pen. Either way, a layer each, with
                     its own lines. */}
                   {colourMode}
-                  {/* Which band's lines the rest of the card sets. The bands lie on top of each other, so
-                    this is how to reach each one; its layer in the list does the same. */}
-                  {photo.group && (
-                    // Where the settings below go: to the layer picked in the switch under this, or to every
-                    // layer of the photo at once. The switch still says whose settings are showing.
-                    <SegmentedControl size="sm" variant="dark" aria-label="Settings for">
-                      <Segment selected={!all} title="The settings below go to the layer picked here" onClick={() => onAll(false)}>This layer</Segment>
-                      <Segment selected={all} title="The settings below go to all the image's layers at once" onClick={() => onAll(true)}>All layers</Segment>
-                    </SegmentedControl>
-                  )}
                   {bleed}
                 </Section>
               </div>

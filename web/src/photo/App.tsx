@@ -264,9 +264,15 @@ export default function App() {
   const [zoom, setZoom] = useState<Zoom>("paper");
   const [loupe, setLoupe] = useState(false);
 
-  // Whether a photo's settings go to all its layers at once - the whole drawing, as they do unless
-  // "Set each layer on its own" is ticked - or to the layer being set.
-  const [photoAll, setPhotoAll] = useState(true);
+  // Which layers are targeted in the Layers card: where a layer's settings go. Each target toggles on
+  // its own - all, some or none. Kept as the layers turned off, so every layer, a new one included,
+  // starts targeted, as settings went to every layer before.
+  const [untargeted, setUntargeted] = useState<Set<string>>(() => new Set());
+  const targets = useMemo(() => new Set(layers.map((l) => l.id).filter((id) => !untargeted.has(id))), [layers, untargeted]);
+  // The chosen photo's layers, bottom first.
+  const photoLayerIds = chosen?.photo
+    ? layers.filter((l) => shapes.some((sh) => sh.layerId === l.id && sh.kind === "photo" && (sh.id === chosen.id || (chosen.photo!.group && sh.photo?.group === chosen.photo!.group)))).map((l) => l.id)
+    : [];
 
   const addShape = useCallback((shape: Shape) => {
     record();
@@ -280,7 +286,7 @@ export default function App() {
     splitAroundPaper, setPaperTone,
   } = photoActions({
     chosen, shapes, setShapes, layers, setLayers, active, setActiveLayer, page, tool,
-    spacingMm: tool?.hatch?.spacing_mm ?? 1.5, all: photoAll, paper: paperColor, record, addShape, pick, setMessage, setBusy,
+    spacingMm: tool?.hatch?.spacing_mm ?? 1.5, targets, paper: paperColor, record, addShape, pick, setMessage, setBusy,
   });
 
   // A new, empty drawing on the paper as it is.
@@ -504,6 +510,85 @@ export default function App() {
       .catch(() => mine === asked.current && setEstimates(undefined));
   }, [chosen?.photo?.src, chosen?.photo?.brightness, chosen?.photo?.contrast, chosen?.photo?.fitPaper, chosen?.photo?.fitPairs, chosen?.photo?.spacingMm, chosen?.photo?.levels, convertRead, inks, tool, paperColor]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // The Layers card: the image's layers top first, the one being set ringed. Clicking one sets it;
+  // its swatch opens the pen's colors (any color, with no preset); the eye hides it from the lines;
+  // dragging restacks, which is the order they plot in - and with opaque ink, which shows on top.
+  const [colorMenu, setColorMenu] = useState<{ id: string; anchor: HTMLElement } | null>(null);
+  const colorInput = useRef<HTMLInputElement>(null);
+  const [customFor, setCustomFor] = useState<string | null>(null);
+  const pickCustomColor = (id: string, near: HTMLElement) => {
+    setCustomFor(id);
+    const input = colorInput.current;
+    if (!input) return;
+    // The picker opens where its input is, so the input goes to the layer's swatch first.
+    const at = near.getBoundingClientRect();
+    input.style.left = `${at.left}px`;
+    input.style.top = `${at.bottom}px`;
+    input.value = layers.find((l) => l.id === id)?.color ?? "#808080";
+    input.click();
+  };
+  const pickLayer = (id: string) => {
+    const group = chosen?.photo?.group;
+    const on = shapes.find((sh) => sh.layerId === id && sh.kind === "photo" && sh.photo && (group ? sh.photo.group === group : sh.id === chosen?.id));
+    if (on) pick(on.id);
+    setActiveLayer(id);
+  };
+  const layersSection = chosen?.photo && layersCard ? (
+    <Card variant="flat" className={styles.controls}>
+      <div className={`${styles.cardBody} ${controls.cardSections}`}>
+        <LayersSection
+          collapsibleKey="photo-layer-list"
+          verb="Set"
+          nameTitle="Click to target this layer alone; its target beside it turns it on or off with the others"
+          layers={layers}
+          active={active}
+          targets={targets}
+          tool={preset}
+          busy={busy}
+          colorMenuId={colorMenu?.id}
+          rowMenuId={undefined}
+          onSort={() => {
+            record();
+            // Lightest at the bottom, drawn first, darker over it.
+            setLayers((list) => [...list].sort((a, b) => (lightness(b.color) ?? 0) - (lightness(a.color) ?? 0)));
+          }}
+          onSwitch={(id, add) => {
+            if (!add) {
+              // The name: this layer alone, its settings shown.
+              setUntargeted(new Set(layers.map((l) => l.id).filter((l) => l !== id)));
+              pickLayer(id);
+              return;
+            }
+            // The target: this one on or off, the others as they are. Turned on, its settings show;
+            // turned off while showing, another targeted layer's do, if there is one.
+            const on = !targets.has(id);
+            setUntargeted((was) => {
+              const next = new Set(was);
+              if (on) next.delete(id);
+              else next.add(id);
+              return next;
+            });
+            if (on) pickLayer(id);
+            else if (active?.id === id) {
+              const other = photoLayerIds.find((l) => l !== id && targets.has(l));
+              if (other) pickLayer(other);
+            }
+          }}
+          onVisible={(id, visible) => setLayers((list) => list.map((l) => (l.id === id ? { ...l, hidden: !visible } : l)))}
+          onColorMenu={(id, anchor) => setColorMenu((open) => (open?.id === id ? null : { id, anchor }))}
+          onRestackStart={record}
+          onRestack={(id, to) => setLayers((list) => {
+            const from = list.findIndex((l) => l.id === id);
+            if (from < 0 || from === to) return list;
+            const next = [...list];
+            next.splice(to, 0, next.splice(from, 1)[0]);
+            return next;
+          })}
+        />
+      </div>
+    </Card>
+  ) : null;
+
   // The chosen photo's card: how it's turned into lines.
   const photoCard = chosen?.photo ? (
     <PhotoCard
@@ -512,14 +597,16 @@ export default function App() {
       title={photoStem().name}
       shapes={shapes}
       busy={busy}
-      all={photoAll}
-      onAll={setPhotoAll}
+      targeted={photoLayerIds.filter((id) => targets.has(id)).length}
+      layerCount={photoLayerIds.length}
+      shownName={active?.name ?? ""}
       estimates={estimates}
       palette={tool?.palette ?? []}
       anyColor={!preset}
       penWidthMm={penWidthMm}
       infoCard={infoCard}
       effectCards={effectCards}
+      layersCard={layersSection}
       scale={(() => {
         const { b, fitW } = photoScale(chosen);
         return Math.round(((b.x1 - b.x0) / fitW) * 100);
@@ -551,63 +638,6 @@ export default function App() {
     />
   ) : null;
 
-  // The Layers card: the image's layers top first, the one being set ringed. Clicking one sets it;
-  // its swatch opens the pen's colors (any color, with no preset); the eye hides it from the lines;
-  // dragging restacks, which is the order they plot in - and with opaque ink, which shows on top.
-  const [colorMenu, setColorMenu] = useState<{ id: string; anchor: HTMLElement } | null>(null);
-  const colorInput = useRef<HTMLInputElement>(null);
-  const [customFor, setCustomFor] = useState<string | null>(null);
-  const pickCustomColor = (id: string, near: HTMLElement) => {
-    setCustomFor(id);
-    const input = colorInput.current;
-    if (!input) return;
-    // The picker opens where its input is, so the input goes to the layer's swatch first.
-    const at = near.getBoundingClientRect();
-    input.style.left = `${at.left}px`;
-    input.style.top = `${at.bottom}px`;
-    input.value = layers.find((l) => l.id === id)?.color ?? "#808080";
-    input.click();
-  };
-  const pickLayer = (id: string) => {
-    const group = chosen?.photo?.group;
-    const on = shapes.find((sh) => sh.layerId === id && sh.kind === "photo" && sh.photo && (group ? sh.photo.group === group : sh.id === chosen?.id));
-    if (on) pick(on.id);
-    setActiveLayer(id);
-  };
-  const layersSection = chosen?.photo && layersCard ? (
-    <Card variant="flat" className={styles.controls}>
-      <div className={`${styles.cardBody} ${controls.cardSections}`}>
-        <LayersSection
-          collapsibleKey="photo-layer-list"
-          verb="Set"
-          nameTitle="Click to set this layer: the effect's per-layer settings change it"
-          layers={layers}
-          active={active}
-          targets={new Set(active ? [active.id] : [])}
-          tool={preset}
-          busy={busy}
-          colorMenuId={colorMenu?.id}
-          rowMenuId={undefined}
-          onSort={() => {
-            record();
-            // Lightest at the bottom, drawn first, darker over it.
-            setLayers((list) => [...list].sort((a, b) => (lightness(b.color) ?? 0) - (lightness(a.color) ?? 0)));
-          }}
-          onSwitch={(id) => pickLayer(id)}
-          onVisible={(id, visible) => setLayers((list) => list.map((l) => (l.id === id ? { ...l, hidden: !visible } : l)))}
-          onColorMenu={(id, anchor) => setColorMenu((open) => (open?.id === id ? null : { id, anchor }))}
-          onRestackStart={record}
-          onRestack={(id, to) => setLayers((list) => {
-            const from = list.findIndex((l) => l.id === id);
-            if (from < 0 || from === to) return list;
-            const next = [...list];
-            next.splice(to, 0, next.splice(from, 1)[0]);
-            return next;
-          })}
-        />
-      </div>
-    </Card>
-  ) : null;
 
   const photoInput = useRef<HTMLInputElement>(null);
   const mainRail = (
@@ -642,7 +672,6 @@ export default function App() {
         </Card>
       )}
       {photoCard}
-      {layersSection}
       {/* The image card with no photo yet: the way to open one, where its settings will be. */}
       {!chosen?.photo && infoCard && (
         <Card variant="flat" className={styles.controls}>

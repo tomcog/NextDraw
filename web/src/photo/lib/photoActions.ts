@@ -30,8 +30,8 @@ export interface PhotoContext {
   tool: Preset | null;
   /** The fill spacing the tool solid-fills at, which a photo's closest lines start from. */
   spacingMm: number;
-  /** Whether a change of settings goes to all the photo's layers, not just the one picked. */
-  all: boolean;
+  /** The layers targeted in the Layers card, by id: where a change of a layer's settings goes. */
+  targets: Set<string>;
   /** The paper being printed on: pens are chosen for how they come out on it. */
   paper: string;
   /** Take an undo snapshot before a change. */
@@ -50,7 +50,7 @@ const colorStep = { layer: "", at: 0 };
 const turnedBy = (angle: number, by: number) => Math.round(((((angle + by) % 180) + 180) % 180) * 10) / 10;
 
 export function photoActions(ctx: PhotoContext) {
-  const { chosen, shapes, setShapes, layers, setLayers, active, setActiveLayer, page, tool: tool2, all: photoAll, paper, record, addShape, pick, setMessage, setBusy } = ctx;
+  const { chosen, shapes, setShapes, layers, setLayers, active, setActiveLayer, page, tool: tool2, targets, paper, record, addShape, pick, setMessage, setBusy } = ctx;
   const defaults = { spacingMm: ctx.spacingMm };
 
   // A photo, from a file on this Mac: made into a working copy, fitted to the page inside a half-inch
@@ -907,12 +907,12 @@ export function photoActions(ctx: PhotoContext) {
     if (patch.blackShare !== undefined) whole.blackShare = patch.blackShare;
     // The effect is the whole photo's: chosen in the toolbar, every layer drawn the same way.
     if ("style" in patch) whole.style = patch.style;
-    // Set for all its layers: everything changed here goes to every one of them.
-    const toAll = photoAll ? patch : whole;
+    // A layer's own settings go to the layers targeted in the Layers card - all of them, some, or
+    // none - and the photo's to every layer.
     setShapes((list) => list.map((sh) => {
-      if (sh.id === chosen.id) return { ...sh, photo: { ...sh.photo!, ...patch } };
-      if (group && sh.photo?.group === group && Object.keys(toAll).length) return { ...sh, photo: { ...sh.photo, ...toAll } };
-      return sh;
+      if (sh.id !== chosen.id && !(group && sh.photo?.group === group)) return sh;
+      const goes = targets.has(sh.layerId) ? patch : whole;
+      return Object.keys(goes).length ? { ...sh, photo: { ...sh.photo!, ...goes } } : sh;
     }));
   };
 
