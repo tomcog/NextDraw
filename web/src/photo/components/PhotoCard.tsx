@@ -5,7 +5,7 @@ import { RefreshCw, RotateCcwSquare, RotateCwSquare } from "lucide-react";
 import { Section } from "../../shared/components/controls/Section";
 import { NumberField } from "../../shared/components/controls/NumberField";
 import controls from "../../shared/components/controls/controls.module.css";
-import { BLACK_SHARE, CENTER_DEFAULTS, KEY_FROM, MOST_COLORS, MOST_LAYERS, MOST_SIDE_LAYERS, MOST_PASSES, paperToneOf, OUTLINE_DEFAULTS, PLATE_AIMS, PLATE_OFF, SILHOUETTE_DEFAULTS, STREAM_DEFAULTS, ONE_LINE_DEFAULTS, ONE_LINE_MOST, HILBERT_DEFAULTS, WAVE_DEFAULTS, ANGLE_PRESETS, centerModeOf, hatchShortestOf, MASK_SIDES, PLATE_SETS, SQUIGGLE_DRAW, SQUIGGLE_INKSCAPE, SQUIGGLE_INKSCAPE_RANGES, SQUIGGLE_RANGES, coverSteps, plateSetOf, platesOf, squiggleDrawOf, squiggleInkscapeOf, type AnglePreset, type SquiggleDraw, type SquiggleInkscape, type PlateSet, photoMarks, photoMode, type Photo, type Plate } from "../../shared/lib/drawing/photo";
+import { BLACK_SHARE, CENTER_DEFAULTS, KEY_FROM, MOST_COLORS, MOST_LAYERS, MOST_SIDE_LAYERS, MOST_PASSES, paperToneOf, OUTLINE_DEFAULTS, PLATE_AIMS, PLATE_OFF, SILHOUETTE_DEFAULTS, STREAM_DEFAULTS, ONE_LINE_DEFAULTS, ONE_LINE_MOST, HILBERT_DEFAULTS, WAVE_DEFAULTS, ANGLE_PRESETS, centerModeOf, EDGE_DEFAULTS, hatchShortestOf, MASK_SIDES, PLATE_SETS, SQUIGGLE_DRAW, SQUIGGLE_INKSCAPE, SQUIGGLE_INKSCAPE_RANGES, SQUIGGLE_RANGES, coverSteps, plateSetOf, platesOf, squiggleDrawOf, squiggleInkscapeOf, type AnglePreset, type SquiggleDraw, type SquiggleInkscape, type PlateSet, photoMarks, photoMode, type Photo, type Plate } from "../../shared/lib/drawing/photo";
 import { EDGE_FIELDS, EDGE_STYLES, MOST_VARY, newEdge, newSeed, type EdgeGen, type EdgeStyle } from "../../shared/lib/drawing/edgeMask";
 import { boxOf, type Shape } from "../../shared/lib/drawing/shapes";
 import type { PenColor } from "../../shared/lib/types";
@@ -18,6 +18,12 @@ export interface PhotoActions {
   replace: (file: File | undefined) => void;
   /** Read the photo's file again, where it was opened from NextDraw's file browser and so is known. */
   reload: () => void;
+  /** Another pass over the image - drawn as Edges to start with, on a layer of its own on top. */
+  addPass: () => void;
+  /** The chosen pass taken off the image (never the last). */
+  removePass: () => void;
+  /** Work on another pass: one of its layers' shapes, by id. */
+  pickPass: (id: string) => void;
   /** Add a picture to the edge mask library - its black is paper - and lay it over the whole image. */
   addEdgeMask: (file: File, taken: string[]) => Promise<void>;
   /** Lay a mask from the library over the whole image; no name takes it off. */
@@ -113,7 +119,59 @@ export function PhotoCard({ shape, title, shapes, busy, targeted, layerCount, sh
   const effect = EFFECTS.find((e) => e.key === effectOf(photo))!;
   // Silhouette reads the picture as paint or paper and nothing between, so it has no tones or colours
   // to split by: a photo drawn that way is one layer. Separations stay as they are, a plate each.
-  const splits = photo.separation || effect.key !== "silhouette";
+  // The image's passes, in the order they were added: each its own effect and layers over one picture.
+  const passes = (() => {
+    const members = photo.link ? shapes.filter((sh) => sh.photo?.link === photo.link) : [shape];
+    const byPass = new Map<string, Shape[]>();
+    for (const sh of members) {
+      const key = sh.photo!.group ?? sh.id;
+      byPass.set(key, [...(byPass.get(key) ?? []), sh]);
+    }
+    return [...byPass.values()].map((list) => ({
+      id: list[0].id,
+      effect: EFFECTS.find((e) => e.key === effectOf(list[0].photo!))!,
+      layers: list.length,
+      mine: list.some((sh) => sh.id === shape.id || (photo.group && sh.photo?.group === photo.group)),
+    }));
+  })();
+  // How traced lines are drawn - Centerlines' and Edges': curves, straight lines, or mixed.
+  const lineModes = (() => {
+                      const mode = photo.style === "edges" ? photo.centerMode ?? "mixed" : centerModeOf(photo);
+                      const corners = (
+                        <div title="Where a line turns more than this, it keeps a sharp corner rather than being rounded through it. 0 rounds every turn">
+                          <NumberField label="Sharp corners over" unit="°" min={0} max={179} step={5} value={photo.centerCornerDeg ?? 0} onChange={(v) => actions.set({ centerCornerDeg: v > 0 ? Math.min(179, v) : undefined })} />
+                        </div>
+                      );
+                      const within = (
+                        <div title="How far a straight segment may stray from the traced line: more makes fewer, longer straight lines">
+                          <NumberField label="Straight within" unit="mm" min={0.05} max={5} step={0.05} value={photo.centerStraightMm ?? CENTER_DEFAULTS.straightMm} onChange={(v) => actions.set({ centerStraightMm: Math.max(0.05, v) })} />
+                        </div>
+                      );
+                      return (
+                        <>
+                          <SegmentedControl size="sm" variant="dark" aria-label="Lines drawn as">
+                            <Segment selected={mode === "curves"} title="Lines drawn as smooth curves" onClick={() => actions.set({ centerMode: "curves" })}>Curves</Segment>
+                            <Segment selected={mode === "mixed"} title="Straight where a line runs straight, curved where it bends" onClick={() => actions.set({ centerMode: "mixed" })}>Mixed</Segment>
+                            <Segment selected={mode === "straight"} title="Lines drawn as straight segments: straight edges dead straight, every corner sharp. A circle is still a circle" onClick={() => actions.set({ centerMode: "straight" })}>Straight</Segment>
+                          </SegmentedControl>
+                          <div className={styles.fillRow}>
+                            {mode === "curves" && corners}
+                            {mode === "straight" && within}
+                            {mode === "mixed" && (
+                              <>
+                                {within}
+                                <div title="A straight stretch at least this long is drawn as a straight line; shorter ones are where the line bends, and are drawn as curves">
+                                  <NumberField label="Straight longer than" unit="mm" min={0.5} max={50} step={0.5} value={photo.centerLongMm ?? CENTER_DEFAULTS.longMm} onChange={(v) => actions.set({ centerLongMm: Math.max(0.5, v) })} />
+                                </div>
+                                {corners}
+                              </>
+                            )}
+                          </div>
+                        </>
+                      );
+                    })();
+  // Silhouette and Edges are one layer each: no tones or colors to divide.
+  const splits = photo.separation || (effect.key !== "silhouette" && effect.key !== "edges");
   // How the photo is split into pens: B&W, CMYK or Colour, with that mode's own settings. The whole
   // drawing's - in the Color mode card, above every effect's own card.
   const colourMode = (
@@ -432,6 +490,28 @@ export function PhotoCard({ shape, title, shapes, busy, targeted, layerCount, sh
                 <NumberField label="Margin" unit="in" min={0} max={4} step={0.25} value={photo.margin ?? 0.5} onChange={actions.setMargin} />
                 <NumberField label="Scale" unit="%" min={5} max={1000} step={5} value={scale} onChange={actions.setScale} />
               </div>
+              {/* Passes over the picture: hatching for the shading and edges over it, say - each its own
+                effect, settings and layers, the picture and its place shared. Which one the cards below
+                are about, and adding or taking one off. */}
+              {passes.length > 1 && (
+                <SegmentedControl size="sm" variant="dark" aria-label="Passes">
+                  {passes.map((p, i) => (
+                    <Segment key={p.id} selected={p.mine} title={`Pass ${i + 1}: ${p.effect.label}, ${p.layers === 1 ? "1 layer" : `${p.layers} layers`}`} onClick={() => !p.mine && actions.pickPass(p.id)}>
+                      {`${i + 1} ${p.effect.label}`}
+                    </Segment>
+                  ))}
+                </SegmentedControl>
+              )}
+              <div className={styles.fillRow}>
+                <Button size="sm" variant="secondary" disabled={busy} title="Another pass over this picture, on a layer of its own on top: Edges to start with - lines where the tone changes sharply - or any effect" onClick={actions.addPass}>
+                  Add pass
+                </Button>
+                {passes.length > 1 && (
+                  <Button size="sm" variant="secondary" disabled={busy} title="Take this pass and its layers off the image. The other passes stay" onClick={actions.removePass}>
+                    Remove pass
+                  </Button>
+                )}
+              </div>
               {/* Mask edges: ticked, the mask's controls; unticked, none of them, and no mask on the
                 image - so a mask never stays on out of sight. */}
               <Checkbox size="md"
@@ -599,6 +679,22 @@ export function PhotoCard({ shape, title, shapes, busy, targeted, layerCount, sh
                     <NumberField label="Smoothing" unit="mm" min={0} max={5} step={0.05} value={photo.silhouetteSmoothMm ?? SILHOUETTE_DEFAULTS.smoothMm} onChange={(silhouetteSmoothMm) => actions.set({ silhouetteSmoothMm })} />
                     <NumberField label="Smallest" unit="mm" min={0} max={50} step={0.5} value={photo.silhouetteSmallestMm ?? SILHOUETTE_DEFAULTS.smallestMm} onChange={(silhouetteSmallestMm) => actions.set({ silhouetteSmallestMm })} />
                   </div>
+                ) : photo.style === "edges" ? (
+                  <>
+                    {/* Edges: where the tone changes sharply, traced as Centerlines traces strokes. */}
+                    <div className={styles.fillRow}>
+                      <div title="How sharp a change of tone counts as an edge, against the picture's sharpest: lower finds fainter edges">
+                        <NumberField label="Edge strength" unit="%" min={1} max={100} step={5} value={Math.round((photo.edgeFrom ?? EDGE_DEFAULTS.from) * 100)} onChange={(v) => actions.set({ edgeFrom: Math.max(0.01, v / 100) })} />
+                      </div>
+                      <div title="How much the picture is smoothed first, so texture and grain aren't taken for edges">
+                        <NumberField label="Smoothing" unit="mm" min={0} max={5} step={0.1} value={photo.edgeSmoothMm ?? EDGE_DEFAULTS.smoothMm} onChange={(edgeSmoothMm) => actions.set({ edgeSmoothMm })} />
+                      </div>
+                      <div title="Edges shorter than this are left out">
+                        <NumberField label="Shortest" unit="mm" min={0} max={50} step={0.5} value={photo.edgeShortestMm ?? EDGE_DEFAULTS.shortestMm} onChange={(edgeShortestMm) => actions.set({ edgeShortestMm })} />
+                      </div>
+                    </div>
+                    {lineModes}
+                  </>
                 ) : photo.style === "centerlines" ? (
                   <>
                     <div className={styles.fillRow}>
@@ -606,44 +702,7 @@ export function PhotoCard({ shape, title, shapes, busy, targeted, layerCount, sh
                       <NumberField label="Smoothing" unit="mm" min={0} max={5} step={0.05} value={photo.centerSmoothMm ?? CENTER_DEFAULTS.smoothMm} onChange={(centerSmoothMm) => actions.set({ centerSmoothMm })} />
                       <NumberField label="Shortest" unit="mm" min={0} max={20} step={0.25} value={photo.centerShortestMm ?? CENTER_DEFAULTS.shortestMm} onChange={(centerShortestMm) => actions.set({ centerShortestMm })} />
                     </div>
-                    {/* Curves; straight lines, for drawings of things whose edges are straight and corners
-                      sharp; or mixed, straight where a line runs straight and curved where it bends - most
-                      line art is both. */}
-                    {(() => {
-                      const mode = centerModeOf(photo);
-                      const corners = (
-                        <div title="Where a line turns more than this, it keeps a sharp corner rather than being rounded through it. 0 rounds every turn">
-                          <NumberField label="Sharp corners over" unit="°" min={0} max={179} step={5} value={photo.centerCornerDeg ?? 0} onChange={(v) => actions.set({ centerCornerDeg: v > 0 ? Math.min(179, v) : undefined })} />
-                        </div>
-                      );
-                      const within = (
-                        <div title="How far a straight segment may stray from the traced line: more makes fewer, longer straight lines">
-                          <NumberField label="Straight within" unit="mm" min={0.05} max={5} step={0.05} value={photo.centerStraightMm ?? CENTER_DEFAULTS.straightMm} onChange={(v) => actions.set({ centerStraightMm: Math.max(0.05, v) })} />
-                        </div>
-                      );
-                      return (
-                        <>
-                          <SegmentedControl size="sm" variant="dark" aria-label="Lines drawn as">
-                            <Segment selected={mode === "curves"} title="Lines drawn as smooth curves" onClick={() => actions.set({ centerMode: "curves" })}>Curves</Segment>
-                            <Segment selected={mode === "mixed"} title="Straight where a line runs straight, curved where it bends" onClick={() => actions.set({ centerMode: "mixed" })}>Mixed</Segment>
-                            <Segment selected={mode === "straight"} title="Lines drawn as straight segments: straight edges dead straight, every corner sharp. A circle is still a circle" onClick={() => actions.set({ centerMode: "straight" })}>Straight</Segment>
-                          </SegmentedControl>
-                          <div className={styles.fillRow}>
-                            {mode === "curves" && corners}
-                            {mode === "straight" && within}
-                            {mode === "mixed" && (
-                              <>
-                                {within}
-                                <div title="A straight stretch at least this long is drawn as a straight line; shorter ones are where the line bends, and are drawn as curves">
-                                  <NumberField label="Straight longer than" unit="mm" min={0.5} max={50} step={0.5} value={photo.centerLongMm ?? CENTER_DEFAULTS.longMm} onChange={(v) => actions.set({ centerLongMm: Math.max(0.5, v) })} />
-                                </div>
-                                {corners}
-                              </>
-                            )}
-                          </div>
-                        </>
-                      );
-                    })()}
+                    {lineModes}
                   </>
                 ) : photo.style === "streamlines" ? (
                   <>

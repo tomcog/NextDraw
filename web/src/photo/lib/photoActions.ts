@@ -74,6 +74,15 @@ export const pictureSources = new WeakMap<File, string>();
 
 export function photoActions(ctx: PhotoContext) {
   const { chosen, shapes, setShapes, layers, setLayers, active, setActiveLayer, page, tool: tool2, targets, paper, record, addShape, pick, setMessage, setBusy } = ctx;
+  /**
+   * Whether a shape is part of the chosen image: the chosen layer, its pass's other layers, and the
+   * other passes over the same picture. What moves, sizes, crops, turns and changes picture together.
+   */
+  const sameImage = (sh: Shape) => {
+    const c = chosen?.photo;
+    if (!chosen || !c || !sh.photo) return sh.id === chosen?.id;
+    return sh.id === chosen.id || Boolean(c.group && sh.photo.group === c.group) || Boolean(c.link && sh.photo.link === c.link);
+  };
   const defaults = { spacingMm: ctx.spacingMm };
 
   // A photo, from a file on this Mac: made into a working copy, fitted to the page inside a half-inch
@@ -674,11 +683,10 @@ export function photoActions(ctx: PhotoContext) {
   const placePhoto = (how: "fit" | "fill", margin: number, align?: FitAlign) => {
     if (!chosen?.photo) return;
     record();
-    const group = chosen.photo.group;
     // Fitted against an edge stays against it - as Fit to paper chose, or as it was last fitted.
     const at = align ?? chosen.photo.align;
     const { crop, ...box } = placeOnPage(chosen.photo.width / chosen.photo.height, page, how, margin, at);
-    setShapes((list) => list.map((sh) => (sh.id === chosen.id || (group && sh.photo?.group === group)
+    setShapes((list) => list.map((sh) => (sameImage(sh)
       ? { ...sh, ...box, rotation: undefined, photo: { ...sh.photo!, crop, fit: how, margin, align: at } }
       : sh)));
   };
@@ -702,8 +710,7 @@ export function photoActions(ctx: PhotoContext) {
     const cy = (b.y0 + b.y1) / 2;
     const box = { x: cx - w / 2, y: cy - h / 2, x2: cx + w / 2, y2: cy + h / 2 };
     record();
-    const group = chosen.photo.group;
-    setShapes((list) => list.map((sh) => (sh.id === chosen.id || (group && sh.photo?.group === group)
+    setShapes((list) => list.map((sh) => (sameImage(sh)
       ? { ...sh, ...box, photo: { ...sh.photo!, fit: undefined } }
       : sh)));
   };
@@ -763,8 +770,7 @@ export function photoActions(ctx: PhotoContext) {
       const { box, crop } = same ? { box: undefined, crop: was.crop } : placedInstead(chosen!, copy.width / copy.height);
       record();
       // A separation is one plate with a file of its own; a split photo's layers share one picture.
-      const group = was.separation ? undefined : was.group;
-      setShapes((list) => list.map((sh) => (sh.id === chosen!.id || (group && sh.photo?.group === group)
+      setShapes((list) => list.map((sh) => ((was.separation ? sh.id === chosen!.id : sameImage(sh))
         ? { ...sh, ...(box ?? {}), photo: { ...sh.photo!, src: copy.src, width: copy.width, height: copy.height, crop } }
         : sh)));
       setMessage(same
@@ -796,8 +802,7 @@ export function photoActions(ctx: PhotoContext) {
           : { text: `Replaced the ${was.separation} plate with ${file.name}`, ok: true });
         return;
       }
-      const group = was.group;
-      setShapes((list) => list.map((sh) => (sh.id === chosen.id || (group && sh.photo?.group === group)
+      setShapes((list) => list.map((sh) => (sameImage(sh)
         ? { ...sh, ...box, photo: { ...sh.photo!, src: copy.src, width: copy.width, height: copy.height, crop, source: pictureSources.get(file), quarterTurns: undefined } }
         : sh)));
       setMessage({ text: `Replaced the image with ${file.name}, keeping its settings`, ok: true });
@@ -813,8 +818,7 @@ export function photoActions(ctx: PhotoContext) {
     */
   const turnPhoto = async (quarter: 1 | -1) => {
     if (!chosen?.photo) return;
-    const group = chosen.photo.group;
-    const members = shapes.filter((sh) => sh.id === chosen.id || (group && sh.photo?.group === group));
+    const members = shapes.filter(sameImage);
     try {
       // Each picture once: a split's layers share one, a separation's each have their own.
       const turned = new Map<string, Pick<Photo, "src" | "width" | "height">>();
@@ -1043,6 +1047,58 @@ export function photoActions(ctx: PhotoContext) {
     }
   };
 
+  /**
+   * Another pass over the chosen image: a layer of its own, on top, in the palette's darkest pen,
+   * drawn as Edges - lines where the tone changes sharply - over whatever the image already draws.
+   * It shares the picture and its place with the image's other passes and keeps its own settings;
+   * its effect can be changed like any other's, and it can be split into layers of its own.
+   */
+  const addPass = () => {
+    const was = chosen?.photo;
+    if (!chosen || !was) return;
+    record();
+    const link = was.link ?? newShapeId();
+    const pen = darkestPen(tool2?.palette ?? []) ?? { name: "Black", color: "#1a1a1a" };
+    const layer: Layer = { id: newLayerId(), name: pen.name, color: pen.color };
+    const { name } = photoStem();
+    const pass: Shape = {
+      ...chosen,
+      id: newShapeId(),
+      layerId: layer.id,
+      name: `${name} edges`,
+      photo: {
+        // The picture and its place, from the image; everything else fresh.
+        src: was.src, width: was.width, height: was.height, crop: was.crop, fit: was.fit, margin: was.margin, align: was.align,
+        source: was.source, quarterTurns: was.quarterTurns,
+        edgeMask: was.edgeMask, edgeMaskName: was.edgeMaskName, edgeMaskInvert: was.edgeMaskInvert, edgeMaskSides: was.edgeMaskSides, edgeGen: was.edgeGen,
+        ...PHOTO_DEFAULTS, spacingMm: was.spacingMm,
+        style: "edges", centerMode: "mixed", link,
+      },
+    };
+    setLayers((list) => [...list, layer]); // on top: drawn last, over the shading
+    setShapes((list) => [...list.map((sh) => (sameImage(sh) && !sh.photo?.link ? { ...sh, photo: { ...sh.photo!, link } } : sh)), pass]);
+    pick(pass.id);
+    setActiveLayer(layer.id);
+    setMessage({ text: `A second pass over the image, drawn as Edges in ${pen.name}: choose its effect in the toolbar`, ok: true });
+  };
+
+  /** The chosen pass taken off the image - its layers too, where nothing else is on them. The image keeps its other passes. */
+  const removePass = () => {
+    const was = chosen?.photo;
+    if (!chosen || !was?.link) return;
+    const mine = (sh: Shape) => sh.id === chosen.id || Boolean(was.group && sh.photo?.group === was.group);
+    const rest = shapes.filter((sh) => sh.photo?.link === was.link && !mine(sh));
+    if (!rest.length) return; // the last pass is the image itself
+    record();
+    const gone = new Set(shapes.filter(mine).map((sh) => sh.id));
+    const emptied = new Set(shapes.filter((sh) => gone.has(sh.id)).map((sh) => sh.layerId)
+      .filter((id) => !shapes.some((sh) => sh.layerId === id && !gone.has(sh.id))));
+    setShapes((list) => list.filter((sh) => !gone.has(sh.id)));
+    setLayers((list) => list.filter((l) => !emptied.has(l.id)));
+    pick(rest[0].id);
+    setMessage({ text: "Pass taken off the image", ok: true });
+  };
+
   /** Change how the chosen photo is turned into lines. */
   const setPhotoOf = (patch: Partial<Photo>) => {
     if (!chosen?.photo) return;
@@ -1066,10 +1122,16 @@ export function photoActions(ctx: PhotoContext) {
     if ("edgeMaskInvert" in patch) whole.edgeMaskInvert = patch.edgeMaskInvert;
     if ("edgeMaskSides" in patch) whole.edgeMaskSides = patch.edgeMaskSides;
     if ("edgeGen" in patch) whole.edgeGen = patch.edgeGen;
+    // What frames the picture itself - the edge mask - goes to the image's other passes too.
+    const image: Partial<Photo> = {};
+    for (const k of ["edgeMask", "edgeMaskName", "edgeMaskInvert", "edgeMaskSides", "edgeGen"] as const) if (k in whole) (image as Record<string, unknown>)[k] = whole[k];
+    const link = chosen.photo.link;
     // A layer's own settings go to the layers targeted in the Layers card - all of them, some, or
     // none - and the photo's to every layer.
     setShapes((list) => list.map((sh) => {
-      if (sh.id !== chosen.id && !(group && sh.photo?.group === group)) return sh;
+      if (sh.id !== chosen.id && !(group && sh.photo?.group === group)) {
+        return link && sh.photo?.link === link && Object.keys(image).length ? { ...sh, photo: { ...sh.photo, ...image } } : sh;
+      }
       const goes = targets.has(sh.layerId) ? patch : whole;
       return Object.keys(goes).length ? { ...sh, photo: { ...sh.photo!, ...goes } } : sh;
     }));
@@ -1078,6 +1140,6 @@ export function photoActions(ctx: PhotoContext) {
   return {
     addPhoto, addSeparations, switchPhotoMode, setKeyLayer, splitPhoto, splitPhotoByColor, splitPhotoBestFit, bestPens,
     placePhoto, photoScale, setPhotoScale, setPhotoMargin, replacePhoto, reloadPhoto, turnPhoto, setPhotoOf, addEdgeMask, chooseEdgeMask, deleteEdgeMask, setEdgeGen, saveEdgeGen, setAngles, photoStem, splitPhotoCmyk, setPlatePen, setLayerColor,
-    splitAroundPaper, setPaperTone,
+    splitAroundPaper, setPaperTone, addPass, removePass,
   };
 }

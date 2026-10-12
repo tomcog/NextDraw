@@ -1,5 +1,5 @@
 import { Segment, SegmentedControl, Toolbar } from "@tomcoggia/ui";
-import { AudioWaveform, FingerprintPattern, Hash, Route, Grid2x2, Signature, Squircle, Wind, ZodiacAquarius } from "lucide-react";
+import { AudioWaveform, FingerprintPattern, Frame, Hash, Route, Grid2x2, Signature, Squircle, Wind, ZodiacAquarius } from "lucide-react";
 import type { ReactNode } from "react";
 import type { Photo } from "../../shared/lib/drawing/photo";
 
@@ -20,6 +20,7 @@ export const EFFECTS: { key: Effect; label: string; icon: ReactNode; about: stri
   { key: "hilbert", label: "Hilbert curve", icon: <Grid2x2 />, about: "One line folding into itself, square within square, finer where it's darker - a mechanical halftone" },
   { key: "outlines", label: "Outlines", icon: <FingerprintPattern />, about: "The image traced as contour lines, following its edges and shapes" },
   { key: "centerlines", label: "Centerlines", icon: <Signature />, about: "Each dark stroke of a line drawing drawn once, down its middle, so a ring is one circle" },
+  { key: "edges", label: "Edges", icon: <Frame />, about: "Lines where the image's tone changes sharply - a wall against a ceiling, round a window - straight, curved or both. A pass to lay over shading" },
   { key: "silhouette", label: "Silhouette", icon: <Squircle />, about: "The line round a shape on white paper - its outline, and each hole in it" },
 ];
 

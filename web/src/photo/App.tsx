@@ -242,13 +242,17 @@ export default function App() {
 
   // All of the photo's layers, bottom first, each in its pen: the lines it comes out as, together.
   const convertBox = chosen ? boxOf(chosen) : null;
+  // The chosen image: its chosen pass's layers, and every other pass over the same picture.
+  const ofImage = (sh: Shape) => Boolean(chosen && sh.kind === "photo" && sh.photo && (sh.id === chosen.id
+    || (chosen.photo?.group && sh.photo.group === chosen.photo.group)
+    || (chosen.photo?.link && sh.photo.link === chosen.photo.link)));
   const convertParts = useMemo(
     () =>
       chosen
         ? layers.flatMap((l) =>
             shapes
               // A layer hidden in the Layers card is left out of the lines, so the rest can be judged without it.
-              .filter((sh) => !l.hidden && sh.layerId === l.id && sh.kind === "photo" && sh.photo && (sh.id === chosen.id || (chosen.photo!.group && sh.photo.group === chosen.photo!.group)))
+              .filter((sh) => !l.hidden && sh.layerId === l.id && ofImage(sh))
               .map((sh) => ({ photo: sh.photo!, color: l.color, name: l.name })),
           )
         : [],
@@ -279,7 +283,7 @@ export default function App() {
   const targets = useMemo(() => new Set(layers.map((l) => l.id).filter((id) => !untargeted.has(id))), [layers, untargeted]);
   // The chosen photo's layers, bottom first.
   const photoLayerIds = chosen?.photo
-    ? layers.filter((l) => shapes.some((sh) => sh.layerId === l.id && sh.kind === "photo" && (sh.id === chosen.id || (chosen.photo!.group && sh.photo?.group === chosen.photo!.group)))).map((l) => l.id)
+    ? layers.filter((l) => shapes.some((sh) => sh.layerId === l.id && ofImage(sh))).map((l) => l.id)
     : [];
 
   const addShape = useCallback((shape: Shape) => {
@@ -291,7 +295,7 @@ export default function App() {
   const {
     addPhoto, addSeparations, switchPhotoMode, setKeyLayer, splitPhoto, splitPhotoByColor, splitPhotoBestFit, bestPens,
     placePhoto, photoScale, setPhotoScale, setPhotoMargin, replacePhoto, reloadPhoto, turnPhoto, setPhotoOf, addEdgeMask, chooseEdgeMask, deleteEdgeMask, setEdgeGen, saveEdgeGen, setAngles, photoStem, splitPhotoCmyk, setPlatePen, setLayerColor,
-    splitAroundPaper, setPaperTone,
+    splitAroundPaper, setPaperTone, addPass, removePass,
   } = photoActions({
     chosen, shapes, setShapes, layers, setLayers, active, setActiveLayer, page, tool,
     spacingMm: tool?.hatch?.spacing_mm ?? 1.5, targets, paper: paperColor, record, addShape, pick, setMessage, setBusy,
@@ -549,9 +553,9 @@ export default function App() {
     input.value = layers.find((l) => l.id === id)?.color ?? "#808080";
     input.click();
   };
+  // A layer of any of the image's passes: picking it picks that pass.
   const pickLayer = (id: string) => {
-    const group = chosen?.photo?.group;
-    const on = shapes.find((sh) => sh.layerId === id && sh.kind === "photo" && sh.photo && (group ? sh.photo.group === group : sh.id === chosen?.id));
+    const on = shapes.find((sh) => sh.layerId === id && ofImage(sh));
     if (on) pick(on.id);
     setActiveLayer(id);
   };
@@ -637,6 +641,9 @@ export default function App() {
         turn: turnPhoto,
         replace: replacePhoto,
         reload: reloadPhoto,
+        addPass,
+        removePass,
+        pickPass: (id: string) => pick(id),
         addEdgeMask,
         chooseEdgeMask,
         deleteEdgeMask,
@@ -724,7 +731,8 @@ export default function App() {
   const setEffect = (effect: Effect) => {
     setEffectCards(true);
     const style = effect === "hatch" ? undefined : effect;
-    if (effect === "silhouette" && chosen?.photo?.group && !chosen.photo.separation) splitPhoto(1, { style });
+    // One line round a shape, or the edges: one layer, not tone bands or colors.
+    if ((effect === "silhouette" || effect === "edges") && chosen?.photo?.group && !chosen.photo.separation) splitPhoto(1, { style });
     else setPhotoOf({ style });
   };
 
