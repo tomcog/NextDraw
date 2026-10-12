@@ -5,7 +5,7 @@ import { RotateCcwSquare, RotateCwSquare } from "lucide-react";
 import { Section } from "../../shared/components/controls/Section";
 import { NumberField } from "../../shared/components/controls/NumberField";
 import controls from "../../shared/components/controls/controls.module.css";
-import { BLACK_SHARE, CENTER_DEFAULTS, KEY_FROM, MOST_COLORS, MOST_LAYERS, MOST_SIDE_LAYERS, MOST_PASSES, paperToneOf, OUTLINE_DEFAULTS, PLATE_AIMS, PLATE_OFF, SILHOUETTE_DEFAULTS, STREAM_DEFAULTS, ONE_LINE_DEFAULTS, ONE_LINE_MOST, HILBERT_DEFAULTS, WAVE_DEFAULTS, ANGLE_PRESETS, PLATE_SETS, SQUIGGLE_DRAW, SQUIGGLE_INKSCAPE, SQUIGGLE_INKSCAPE_RANGES, SQUIGGLE_RANGES, coverSteps, plateSetOf, platesOf, squiggleDrawOf, squiggleInkscapeOf, type AnglePreset, type SquiggleDraw, type SquiggleInkscape, type PlateSet, photoMarks, photoMode, type Photo, type Plate } from "../../shared/lib/drawing/photo";
+import { BLACK_SHARE, CENTER_DEFAULTS, KEY_FROM, MOST_COLORS, MOST_LAYERS, MOST_SIDE_LAYERS, MOST_PASSES, paperToneOf, OUTLINE_DEFAULTS, PLATE_AIMS, PLATE_OFF, SILHOUETTE_DEFAULTS, STREAM_DEFAULTS, ONE_LINE_DEFAULTS, ONE_LINE_MOST, HILBERT_DEFAULTS, WAVE_DEFAULTS, ANGLE_PRESETS, MASK_SIDES, PLATE_SETS, SQUIGGLE_DRAW, SQUIGGLE_INKSCAPE, SQUIGGLE_INKSCAPE_RANGES, SQUIGGLE_RANGES, coverSteps, plateSetOf, platesOf, squiggleDrawOf, squiggleInkscapeOf, type AnglePreset, type SquiggleDraw, type SquiggleInkscape, type PlateSet, photoMarks, photoMode, type Photo, type Plate } from "../../shared/lib/drawing/photo";
 import { boxOf, type Shape } from "../../shared/lib/drawing/shapes";
 import type { PenColor } from "../../shared/lib/types";
 import styles from "../App.module.css";
@@ -454,6 +454,27 @@ export function PhotoCard({ shape, title, shapes, busy, targeted, layerCount, sh
                   </Button>
                 )}
               </div>
+              {/* Which sides it works on: a drawing that bleeds off only one or two edges is masked
+                on those, and the others left as they are. */}
+              {photo.edgeMask && (
+                <div className={styles.fillRow}>
+                  {MASK_SIDES.map((side) => {
+                    const sides = photo.edgeMaskSides ?? MASK_SIDES;
+                    return (
+                      <Checkbox
+                        key={side}
+                        checked={sides.includes(side)}
+                        label={side[0].toUpperCase() + side.slice(1)}
+                        title={`Mask the ${side} edge. Leave it off where the drawing doesn't bleed off that side`}
+                        onChange={(e) => {
+                          const next = MASK_SIDES.filter((x) => (x === side ? e.target.checked : sides.includes(x)));
+                          actions.set({ edgeMaskSides: next.length === MASK_SIDES.length ? undefined : next });
+                        }}
+                      />
+                    );
+                  })}
+                </div>
+              )}
               <input
                 ref={maskInput}
                 type="file"

@@ -917,7 +917,7 @@ export function photoActions(ctx: PhotoContext) {
   const chooseEdgeMask = async (name: string | undefined) => {
     if (!chosen?.photo) return;
     if (!name) {
-      setPhotoOf({ edgeMask: undefined, edgeMaskName: undefined, edgeMaskInvert: undefined });
+      setPhotoOf({ edgeMask: undefined, edgeMaskName: undefined, edgeMaskInvert: undefined, edgeMaskSides: undefined });
       setMessage({ text: "Edge mask taken off", ok: true });
       return;
     }
@@ -962,6 +962,7 @@ export function photoActions(ctx: PhotoContext) {
     if ("edgeMask" in patch) whole.edgeMask = patch.edgeMask;
     if ("edgeMaskName" in patch) whole.edgeMaskName = patch.edgeMaskName;
     if ("edgeMaskInvert" in patch) whole.edgeMaskInvert = patch.edgeMaskInvert;
+    if ("edgeMaskSides" in patch) whole.edgeMaskSides = patch.edgeMaskSides;
     // A layer's own settings go to the layers targeted in the Layers card - all of them, some, or
     // none - and the photo's to every layer.
     setShapes((list) => list.map((sh) => {
