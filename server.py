@@ -823,12 +823,14 @@ def inset_outline(outline, box, by):
     return [(cx + (px - cx) * kx, cy + (py - cy) * ky) for px, py in outline]
 
 
-def hatch_lines(kind, box, angle, step, outline=None, inset=0):
+def hatch_lines(kind, box, angle, step, outline=None, inset=0, rows=None):
     """hatchLines: the lines across a rect or ellipse box (x0, y0, x1, y1), `step` apart, swept out
     from the middle. Each is (x1, y1, x2, y2), running in the direction of the angle. A "polygon"
     is clipped to `outline` - the shape's own points - rather than to the box around it.
     `inset` brings the region the lines are cut to inward all round, which is what keeps a wave's
-    crests inside the shape instead of across its outline."""
+    crests inside the shape instead of across its outline.
+    Given a list as `rows`, a polygon's lines also put in it, one for each, (row, edge, edge): the row
+    the line is on and the outline edge each end crosses - what outline_strokes joins them by."""
     whole = box
     box = inset_box(box, inset)
     outline = inset_outline(outline, whole, inset)
@@ -875,7 +877,7 @@ def hatch_lines(kind, box, angle, step, outline=None, inset=0):
         could land a hair past one edge and a hair before the next, drop out of both, and lose the
         whole line from the middle of the fill."""
         hits = []
-        for (ax, ay), (bx, by) in zip(outline, outline[1:]):
+        for e, ((ax, ay), (bx, by)) in enumerate(zip(outline, outline[1:])):
             # How far off the line each end sits; a point exactly on it counts as the far side, so a
             # corner the outline passes through counts once and one it only touches counts twice.
             sa = (ax - px) * nx + (ay - py) * ny
@@ -883,10 +885,10 @@ def hatch_lines(kind, box, angle, step, outline=None, inset=0):
             if (sa < 0) == (sb < 0):
                 continue  # both ends the same side, edges along the line included
             u = sa / (sa - sb)
-            hits.append((ax + (bx - ax) * u - px) * dx + (ay + (by - ay) * u - py) * dy)
-        hits.sort()
-        return [(px + dx * a, py + dy * a, px + dx * b, py + dy * b)
-                for a, b in zip(hits[0::2], hits[1::2])]
+            hits.append(((ax + (bx - ax) * u - px) * dx + (ay + (by - ay) * u - py) * dy, e))
+        hits.sort(key=lambda h: h[0])
+        return [((px + dx * a, py + dy * a, px + dx * b, py + dy * b), (ea, eb))
+                for (a, ea), (b, eb) in zip(hits[0::2], hits[1::2])]
 
     lines = []
     n = math.ceil(reach / step)
@@ -896,9 +898,11 @@ def hatch_lines(kind, box, angle, step, outline=None, inset=0):
         if kind == "polygon":
             if not outline or len(outline) < 3:
                 continue
-            for seg in clip_outline(px, py):
+            for seg, edges in clip_outline(px, py):
                 if math.hypot(seg[2] - seg[0], seg[3] - seg[1]) > 1e-6:
                     lines.append(seg)
+                    if rows is not None:
+                        rows.append((i, *edges))
             continue
         seg = (clip_box if kind == "rect" else clip_ellipse)(px, py)
         if seg and math.hypot(seg[2] - seg[0], seg[3] - seg[1]) > 1e-6:
@@ -998,41 +1002,29 @@ def fill_runs(kind, box, fill, step, outline=None):
                  else inches(round(step * 25.4 * float(fill.get("scale") or 100) / 100 * 0.4, 2)))
         # Cut to a shape brought in by the swing, so the crests land on the outline, not across it.
         return [waved(seg, wave, swing) for seg in hatch_lines(kind, box, angle, step, outline, swing)]
-    lines = hatch_lines(kind, box, angle, step, outline)
+    rows = []
+    lines = hatch_lines(kind, box, angle, step, outline, rows=rows)
     if what == "dashes":
         dash = inches(fill.get("dash_mm", 3))
         gap = inches(fill.get("gap_mm", 2))
         return [[(d[0], d[1]), (d[2], d[3])] for seg in lines for d in dashed(seg, dash, gap)]
     if fill.get("connected"):
+        if kind == "polygon":
+            return outline_strokes(box, angle, step, lines, rows, outline)
         stroke = hatch_stroke(kind, box, lines, outline)
         return [stroke] if len(stroke) > 1 else []
     return [[(x1, y1), (x2, y2)] for x1, y1, x2, y2 in lines]
 
 
 def hatch_stroke(kind, box, lines, outline=None):
-    """hatchStroke: the lines as one zigzag, each end joined to the next line's start along the
-    shape's edge - by the corner of a rect, along the curve of an ellipse, round the outline itself
-    for a polygon. A list of (x, y)."""
+    """hatchStroke: a rect's or ellipse's lines as one zigzag, each end joined to the next line's
+    start along the shape's edge - by the corner of a rect, along the curve of an ellipse. A list of
+    (x, y). A polygon is joined by outline_strokes."""
     x0, y0, x1, y1 = box
     cx, cy, rx, ry = (x0 + x1) / 2, (y0 + y1) / 2, (x1 - x0) / 2, (y1 - y0) / 2
     eps = 1e-6
 
-    def walk_outline(a, b):
-        """Along the shape's own outline, the short way round, so a join never cuts across a notch."""
-        if not outline or len(outline) < 3:
-            return []
-        nearest = lambda p: min(range(len(outline)),  # noqa: E731
-                                key=lambda i: (outline[i][0] - p[0]) ** 2 + (outline[i][1] - p[1]) ** 2)
-        start, end = nearest(a), nearest(b)
-        n = len(outline) - 1  # the last point repeats the first
-        forward = (end - start + n) % n
-        step_dir = 1 if forward <= n - forward else -1
-        count = forward if step_dir == 1 else n - forward
-        return [outline[(start + step_dir * k) % n] for k in range(1, count)]
-
     def join(a, b):
-        if kind == "polygon":
-            return walk_outline(a, b)
         if kind == "rect":
             side = lambda p: x0 if abs(p[0] - x0) < eps else x1 if abs(p[0] - x1) < eps else None  # noqa: E731
             cap = lambda p: y0 if abs(p[1] - y0) < eps else y1 if abs(p[1] - y1) < eps else None  # noqa: E731
@@ -1059,6 +1051,72 @@ def hatch_stroke(kind, box, lines, outline=None):
             points.extend(join(points[-1], start))
         points += [start, end]
     return points
+
+
+def outline_strokes(box, angle, step, lines, rows, outline):
+    """outlineStrokes: a polygon's lines in as few strokes as its outline allows. An end joins a line
+    on the next row only where the outline runs between them without leaving the strip between the
+    two rows; anywhere else the pen lifts. A list of runs of (x, y)."""
+    x0, y0, x1, y1 = box
+    cx, cy = (x0 + x1) / 2, (y0 + y1) / 2
+    rad = angle * math.pi / 180
+    nx, ny = -math.sin(rad), math.cos(rad)
+    eps = 1e-9
+    n = len(outline) - 1  # the last point repeats the first
+
+    def along(frm, to, way, lo, hi):
+        count = (to - frm + n) % n if way == 1 else (frm - to + n) % n
+        out = []
+        for k in range(count):
+            p = outline[(frm + 1 + k) % n if way == 1 else (frm - k + n) % n]
+            across = (p[0] - cx) * nx + (p[1] - cy) * ny
+            if across < lo - eps or across > hi + eps:
+                return None
+            out.append(p)
+        return out
+
+    def walk(frm, to, row):
+        lo, hi = row * step, (row + 1) * step
+        fwd, back = along(frm, to, 1, lo, hi), along(frm, to, -1, lo, hi)
+        if fwd is not None and back is not None:
+            return fwd if len(fwd) <= len(back) else back
+        return fwd if fwd is not None else back
+
+    by_row = {}
+    for k, (row, _, _) in enumerate(rows):
+        by_row.setdefault(row, []).append(k)
+    used = set()
+    strokes = []
+    for first in range(len(lines)):
+        if first in used:
+            continue
+        used.add(first)
+        ax, ay, bx, by = lines[first]
+        stroke = [(ax, ay), (bx, by)]
+        row, exit_edge = rows[first][0], rows[first][2]
+        while True:
+            nxt = None
+            for k in by_row.get(row + 1, []):
+                if k in used:
+                    continue
+                for end in (0, 1):
+                    path = walk(exit_edge, rows[k][1 + end], row)
+                    if path is not None:
+                        nxt = (k, end, path)
+                        break
+                if nxt:
+                    break
+            if not nxt:
+                break
+            k, end, path = nxt
+            used.add(k)
+            sx, sy, ex, ey = lines[k]
+            ends = [(sx, sy), (ex, ey)]
+            stroke += path + [ends[end], ends[1 - end]]
+            exit_edge = rows[k][2 - end]
+            row += 1
+        strokes.append(stroke)
+    return strokes
 
 
 # Reading path data, as web/src/shared/lib/drawing/path.ts reads it - a port, kept in step by

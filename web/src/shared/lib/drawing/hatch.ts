@@ -66,6 +66,15 @@ export interface Seg {
   y1: number;
   x2: number;
   y2: number;
+  /** A curve's line: which row of the fill it is on, and the outline edge each end crosses. */
+  row?: number;
+  at?: [OutlineEdge, OutlineEdge];
+}
+
+/** An edge of a shape's outline: which outline (`o`), and the edge from its point `e` to the next. */
+interface OutlineEdge {
+  o: number;
+  e: number;
 }
 
 /**
@@ -154,8 +163,8 @@ function clipToOutline(px: number, py: number, dx: number, dy: number, outlines:
   // once and a corner it only touches count twice, for a span of no length that is dropped later.
   const nx = -dy;
   const ny = dx;
-  const hits: number[] = [];
-  for (const pts of outlines) {
+  const hits: { at: number; edge: OutlineEdge }[] = [];
+  outlines.forEach((pts, o) => {
     for (let i = 0; i < pts.length - 1; i++) {
       const a = pts[i];
       const b = pts[i + 1];
@@ -164,13 +173,14 @@ function clipToOutline(px: number, py: number, dx: number, dy: number, outlines:
       if ((sa < 0) === (sb < 0)) continue; // both ends the same side, edges along the line included
       // Where between the ends it crosses, and so how far along the line that is.
       const u = sa / (sa - sb);
-      hits.push((a.x + (b.x - a.x) * u - px) * dx + (a.y + (b.y - a.y) * u - py) * dy);
+      hits.push({ at: (a.x + (b.x - a.x) * u - px) * dx + (a.y + (b.y - a.y) * u - py) * dy, edge: { o, e: i } });
     }
-  }
-  hits.sort((m, n) => m - n);
+  });
+  hits.sort((m, n) => m.at - n.at);
   const segs: Seg[] = [];
   for (let i = 0; i + 1 < hits.length; i += 2) {
-    segs.push({ x1: px + dx * hits[i], y1: py + dy * hits[i], x2: px + dx * hits[i + 1], y2: py + dy * hits[i + 1] });
+    const [a, b] = [hits[i].at, hits[i + 1].at];
+    segs.push({ x1: px + dx * a, y1: py + dy * a, x2: px + dx * b, y2: py + dy * b, at: [hits[i].edge, hits[i + 1].edge] });
   }
   return segs;
 }
@@ -363,7 +373,7 @@ export function hatchLines(shape: Shape, fill: Fill, inset = 0): Seg[] {
     const py = cy + ny * t;
     if (shape.curve || shape.kind === "path") {
       for (const seg of clipToOutline(px, py, dx, dy, outlines)) {
-        if (Math.hypot(seg.x2 - seg.x1, seg.y2 - seg.y1) > 1e-6) segs.push(seg);
+        if (Math.hypot(seg.x2 - seg.x1, seg.y2 - seg.y1) > 1e-6) segs.push({ ...seg, row: i });
       }
       continue;
     }
@@ -403,6 +413,7 @@ export function fillRuns(shape: Shape, fill: Fill): Point[][] {
     return lines.flatMap((seg) => dashed(seg, dash, gap).map((d) => [{ x: d.x1, y: d.y1 }, { x: d.x2, y: d.y2 }]));
   }
   if (fill.connected) {
+    if (shape.curve || shape.kind === "path") return outlineStrokes(shape, fill, lines);
     const stroke = hatchStroke(shape, fill);
     return stroke.length > 1 ? [stroke] : [];
   }
@@ -413,10 +424,11 @@ export function fillRuns(shape: Shape, fill: Fill): Point[][] {
 export const canConnect = (fill: Fill) => (fill.kind ?? "hatch") === "hatch";
 
 /**
- * A connected fill as one stroke, in inches on the page: the lines taken alternately forwards and
- * backwards, each end joined to the next line's start along the shape's own edge - round the corner
- * of a rectangle where the two ends fall on different sides, along the curve of an ellipse - so the
- * joins never cut across the inside of the shape.
+ * A connected fill on a rectangle or an ellipse as one stroke, in inches on the page: the lines taken
+ * alternately forwards and backwards, each end joined to the next line's start along the shape's own
+ * edge - round the corner of a rectangle where the two ends fall on different sides, along the curve
+ * of an ellipse - so the joins never cut across the inside of the shape. A curve or a path is joined
+ * by outlineStrokes instead.
  */
 export function hatchStroke(shape: Shape, fill: Fill): { x: number; y: number }[] {
   const lines = hatchLines(shape, fill);
@@ -427,35 +439,7 @@ export function hatchStroke(shape: Shape, fill: Fill): { x: number; y: number }[
   const ry = (b.y1 - b.y0) / 2;
   const eps = 1e-6;
 
-  // A curve joins along its own outline, the short way round, so the join never cuts across a
-  // star's notch or through the middle of a spirograph.
-  // A join follows the outline its ends belong to; with several, the first is the one walked.
-  const outline = outlinesOf(shape)[0] ?? [];
-  const walkOutline = (from: Point, to: Point) => {
-    if (outline.length < 3) return [];
-    // Where each end sits on the outline, as the corner it is nearest to.
-    const nearest = (p: Point) => {
-      let best = 0;
-      let dist = Infinity;
-      outline.forEach((q, i) => {
-        const d = (q.x - p.x) ** 2 + (q.y - p.y) ** 2;
-        if (d < dist) { dist = d; best = i; }
-      });
-      return best;
-    };
-    const a = nearest(from);
-    const b2 = nearest(to);
-    const n = outline.length - 1; // the last point repeats the first
-    const forward = (b2 - a + n) % n;
-    const step = forward <= n - forward ? 1 : -1;
-    const count = step === 1 ? forward : n - forward;
-    const points: Point[] = [];
-    for (let k = 1; k < count; k++) points.push(outline[(a + step * k + n * 2) % n]);
-    return points;
-  };
-
   const join = (from: { x: number; y: number }, to: { x: number; y: number }) => {
-    if (shape.curve || shape.kind === "path") return walkOutline(from, to);
     if (shape.kind === "rect") {
       // One end on a side (x0 or x1) and the other on the top or bottom: go by the corner they share.
       const side = (p: { x: number; y: number }) =>
@@ -487,4 +471,79 @@ export function hatchStroke(shape: Shape, fill: Fill): { x: number; y: number }[
     points.push(start, end);
   });
   return points;
+}
+
+/**
+ * A connected fill on a curve or a path, as few strokes as its outline allows, in inches on the page.
+ * A line's end is joined to a line on the next row only where the outline runs between the two
+ * without leaving the strip between those rows - the bit of edge a pen would follow anyway. Anywhere
+ * else the pen lifts and a new stroke starts. A concave shape, or one in several pieces, has rows cut
+ * into several lines, and joining them in turn walked the outline from one piece to the next: half
+ * the shape's outline drawn over its own fill, on a layer meant to be hatching only.
+ */
+function outlineStrokes(shape: Shape, fill: Fill, lines: Seg[]): Point[][] {
+  const outlines = outlinesOf(shape);
+  const b = boxOf(shape);
+  const cx = (b.x0 + b.x1) / 2;
+  const cy = (b.y0 + b.y1) / 2;
+  const rad = (fill.angle * Math.PI) / 180;
+  const nx = -Math.sin(rad); // across the lines, as hatchLines steps them
+  const ny = Math.cos(rad);
+  const step = stepInches(fill);
+  const eps = 1e-9;
+
+  // The outline's points from one edge to another, one way round, or null if any leaves the strip.
+  const along = (from: OutlineEdge, to: OutlineEdge, dir: 1 | -1, lo: number, hi: number): Point[] | null => {
+    const pts = outlines[from.o];
+    const n = pts.length - 1; // the last point repeats the first
+    const count = dir === 1 ? (to.e - from.e + n) % n : (from.e - to.e + n) % n;
+    const out: Point[] = [];
+    for (let k = 0; k < count; k++) {
+      const p = pts[dir === 1 ? (from.e + 1 + k) % n : (from.e - k + n) % n];
+      const across = (p.x - cx) * nx + (p.y - cy) * ny;
+      if (across < lo - eps || across > hi + eps) return null;
+      out.push(p);
+    }
+    return out;
+  };
+  const walk = (from: OutlineEdge, to: OutlineEdge, row: number): Point[] | null => {
+    if (from.o !== to.o) return null;
+    const [lo, hi] = [row * step, (row + 1) * step];
+    const fwd = along(from, to, 1, lo, hi);
+    const back = along(from, to, -1, lo, hi);
+    if (fwd && back) return fwd.length <= back.length ? fwd : back;
+    return fwd ?? back;
+  };
+
+  const byRow = new Map<number, Seg[]>();
+  for (const l of lines) byRow.set(l.row!, [...(byRow.get(l.row!) ?? []), l]);
+  const used = new Set<Seg>();
+  const strokes: Point[][] = [];
+  for (const first of lines) {
+    if (used.has(first)) continue;
+    used.add(first);
+    const stroke: Point[] = [{ x: first.x1, y: first.y1 }, { x: first.x2, y: first.y2 }];
+    let exit = first.at![1];
+    let row = first.row!;
+    for (;;) {
+      let next: { seg: Seg; end: 0 | 1; path: Point[] } | null = null;
+      for (const seg of byRow.get(row + 1) ?? []) {
+        if (used.has(seg)) continue;
+        for (const end of [0, 1] as const) {
+          const path = walk(exit, seg.at![end], row);
+          if (path) { next = { seg, end, path }; break; }
+        }
+        if (next) break;
+      }
+      if (!next) break;
+      const { seg, end, path } = next;
+      used.add(seg);
+      const ends = [{ x: seg.x1, y: seg.y1 }, { x: seg.x2, y: seg.y2 }];
+      stroke.push(...path, ends[end], ends[1 - end]);
+      exit = seg.at![1 - end];
+      row += 1;
+    }
+    strokes.push(stroke);
+  }
+  return strokes;
 }
