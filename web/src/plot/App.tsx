@@ -1433,12 +1433,17 @@ export default function App() {
     }, 500);
   };
 
+  // The Varnish layer is gone over with the glitter gel, upright in its own holder - not the drawing's
+  // pen - so the pen's tilt and barrel offsets aren't the gel's: applied to it, they put the gel a
+  // tilt's length (tens of millimetres) away from where the preview shows it.
+  const isVarnishId = (id: string | null) => Boolean(id && isVarnishLayer(layerViews.find((l) => l.id === id)?.name ?? ""));
   const tipOffsetFor = (id: string | null) => {
+    if (isVarnishId(id)) return 0;
     const tool = usesSecond(id) ? secondPreset : active;
     return tiltOn(tool) ? tool!.tilt!.offset_mm : 0;
   };
   // A fat barrel puts the tip further down the page than the pen the paper is lined up for.
-  const tipOffsetYFor = (id: string | null) => barrelOffsetMm((usesSecond(id) ? secondPreset : active)?.barrel_mm);
+  const tipOffsetYFor = (id: string | null) => (isVarnishId(id) ? 0 : barrelOffsetMm((usesSecond(id) ? secondPreset : active)?.barrel_mm));
   // Small paths slows everything that makes tiny marks violent: how hard the carriage starts and stops,
   // how fast it travels and draws, and how hard the pen is raised and lowered. Pen heights don't change.
   const slowForSmallPaths = (s: Settings): Settings => {
