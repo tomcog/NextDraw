@@ -14,6 +14,8 @@ import { EFFECTS, effectOf } from "./EffectToolbar";
 export interface PhotoActions {
   turn: (quarter: 1 | -1) => void;
   replace: (file: File | undefined) => void;
+  /** Lay an edge mask over the whole image, from a picture whose black is paper; no file takes it off. */
+  setEdgeMask: (file: File | undefined) => void;
   switchMode: (to: "value" | "colour" | "cmyk") => void;
   /** Change settings of the photo - this layer's, or every layer's when "All layers" is on. */
   set: (patch: Partial<Photo>) => void;
@@ -80,6 +82,7 @@ interface Props {
  */
 export function PhotoCard({ shape, title, shapes, busy, targeted, layerCount, shownName, scale, estimates, actions, penWidthMm = 0.5, palette = [], anyColor = false, infoCard = true, effectCards = true, layersCard }: Props) {
   const replaceInput = useRef<HTMLInputElement>(null);
+  const maskInput = useRef<HTMLInputElement>(null);
   const photo = shape.photo;
   // How many inks a photo split by colour is in: its layers, not counting the key.
   const inks = photo.group ? shapes.filter((sh) => sh.photo?.group === photo.group && !sh.photo?.key).length : 1;
@@ -396,6 +399,38 @@ export function PhotoCard({ shape, title, shapes, busy, targeted, layerCount, sh
                 <NumberField label="Margin" unit="in" min={0} max={4} step={0.25} value={photo.margin ?? 0.5} onChange={actions.setMargin} />
                 <NumberField label="Scale" unit="%" min={5} max={1000} step={5} value={scale} onChange={actions.setScale} />
               </div>
+              {/* An edge mask: a grunge border, a torn edge. A picture laid over the part of the image
+                that shows, stretched to it; where it's black the image is left as paper, before any
+                effect reads it. */}
+              <div className={styles.fillRow}>
+                <Button size="sm" variant="secondary" disabled={busy} title="Lay a mask over the image: a picture, stretched to the part that shows, whose black is left as paper - a grunge border, a torn edge" onClick={() => maskInput.current?.click()}>
+                  {photo.edgeMask ? "Change mask…" : "Edge mask…"}
+                </Button>
+                {photo.edgeMask && (
+                  <>
+                    <Checkbox
+                      checked={Boolean(photo.edgeMaskInvert)}
+                      label="Invert"
+                      title="Read the mask the other way: white is paper, black keeps the image"
+                      onChange={(e) => actions.set({ edgeMaskInvert: e.target.checked || undefined })}
+                    />
+                    <Button size="sm" variant="secondary" disabled={busy} title="Take the edge mask off" onClick={() => actions.setEdgeMask(undefined)}>
+                      Remove
+                    </Button>
+                  </>
+                )}
+                <input
+                  ref={maskInput}
+                  type="file"
+                  accept="image/*"
+                  hidden
+                  onChange={(e) => {
+                    actions.setEdgeMask(e.target.files?.[0]);
+                    e.target.value = "";
+                  }}
+                />
+              </div>
+              {photo.edgeMask && <p className={controls.fileWhere} title={photo.edgeMaskName}>{`Mask: ${photo.edgeMaskName ?? "edge mask"}`}</p>}
             </Section>
           </div>
         </Card>

@@ -8,7 +8,7 @@ import { lightness } from "../../shared/lib/color";
 import type { PenColor, Preset } from "../../shared/lib/types";
 import {
   BAND_NAMES, LAYER_SETTINGS, MOST_SIDE_LAYERS, paperToneOf, MOST_COLORS, MOST_LAYERS, PHOTO_DEFAULTS, PLATES, PLATE_AIMS, PLATE_OFF, colourGroups, isColourful, matchPens, photoMode,
-  placeOnPage, inkNamed, platePens, presetAngle, readTones, hexLinear, linearHex, coverSteps, stemWithoutPlate, turnedCopy, turnedCrop, workingCopy, type AnglePreset, type Photo, type PhotoPart, type Plate, type PlateSet, PLATE_SETS, plateSetOf, platesOf,
+  placeOnPage, inkNamed, platePens, presetAngle, readTones, hexLinear, linearHex, coverSteps, stemWithoutPlate, turnedCopy, turnedCrop, workingCopy, MASK_EDGE_PX, type AnglePreset, type Photo, type PhotoPart, type Plate, type PlateSet, PLATE_SETS, plateSetOf, platesOf,
 } from "../../shared/lib/drawing/photo";
 import { boxOf, newLayerId, newShapeId, type Layer, type Page, type Shape } from "../../shared/lib/drawing/shapes";
 import { samplePhoto, type Candidate } from "./choosePens";
@@ -890,6 +890,27 @@ export function photoActions(ctx: PhotoContext) {
     setLayers((list) => list.map((l) => (l.id === target.layerId ? { ...l, color, ...(name ? { name } : {}) } : l)));
   };
 
+  /**
+    * Lay an edge mask over the chosen photo - a picture whose black is paper, stretched over the part
+    * of the image that shows - or take it off, with no file. Kept small: a border only has to be rough.
+    */
+  const setEdgeMask = async (file: File | undefined) => {
+    if (!chosen?.photo) return;
+    if (!file) {
+      setPhotoOf({ edgeMask: undefined, edgeMaskName: undefined, edgeMaskInvert: undefined });
+      setMessage({ text: "Edge mask taken off", ok: true });
+      return;
+    }
+    try {
+      const copy = await workingCopy(file, MASK_EDGE_PX);
+      await readTones(copy.src);
+      setPhotoOf({ edgeMask: copy.src, edgeMaskName: file.name, edgeMaskInvert: undefined });
+      setMessage({ text: `${file.name} laid over the image: where it's black is left as paper`, ok: true });
+    } catch (err) {
+      setMessage({ text: (err as Error).message, ok: false });
+    }
+  };
+
   /** Change how the chosen photo is turned into lines. */
   const setPhotoOf = (patch: Partial<Photo>) => {
     if (!chosen?.photo) return;
@@ -907,6 +928,10 @@ export function photoActions(ctx: PhotoContext) {
     if (patch.blackShare !== undefined) whole.blackShare = patch.blackShare;
     // The effect is the whole photo's: chosen in the toolbar, every layer drawn the same way.
     if ("style" in patch) whole.style = patch.style;
+    // The edge mask frames the whole picture, so every layer - and every plate - is masked alike.
+    if ("edgeMask" in patch) whole.edgeMask = patch.edgeMask;
+    if ("edgeMaskName" in patch) whole.edgeMaskName = patch.edgeMaskName;
+    if ("edgeMaskInvert" in patch) whole.edgeMaskInvert = patch.edgeMaskInvert;
     // A layer's own settings go to the layers targeted in the Layers card - all of them, some, or
     // none - and the photo's to every layer.
     setShapes((list) => list.map((sh) => {
@@ -918,7 +943,7 @@ export function photoActions(ctx: PhotoContext) {
 
   return {
     addPhoto, addSeparations, switchPhotoMode, setKeyLayer, splitPhoto, splitPhotoByColor, splitPhotoBestFit, bestPens,
-    placePhoto, photoScale, setPhotoScale, setPhotoMargin, replacePhoto, turnPhoto, setPhotoOf, setAngles, photoStem, splitPhotoCmyk, setPlatePen, setLayerColor,
+    placePhoto, photoScale, setPhotoScale, setPhotoMargin, replacePhoto, turnPhoto, setPhotoOf, setEdgeMask, setAngles, photoStem, splitPhotoCmyk, setPlatePen, setLayerColor,
     splitAroundPaper, setPaperTone,
   };
 }

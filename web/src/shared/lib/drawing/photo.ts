@@ -236,6 +236,17 @@ export interface Photo {
    * drawing lines past the paper's edge.
    */
   crop?: [number, number, number, number];
+  /**
+   * An edge mask: a picture laid over the part of the image that shows, stretched to it, whose black
+   * is paper - a grunge border, a torn edge. Where it's black the image fades to white before any
+   * effect reads it, so every layer and every style leaves it bare; grey fades it part way. A data
+   * URL, read like the image itself. The whole photo's. Absent, none.
+   */
+  edgeMask?: string;
+  /** The mask's file name, to say which it is. */
+  edgeMaskName?: string;
+  /** The mask read the other way: white is paper, black keeps the image. */
+  edgeMaskInvert?: boolean;
   /** Sized to the page: all of it as large as it fits, or filling the page and cropped. Absent once
    *  it has been moved or sized by hand. A photo sized to the page is sized again when the page is. */
   fit?: "fit" | "fill";
@@ -532,6 +543,8 @@ export const MOST_COLORS = 8;
 
 /** The longer side of the working copy, in pixels: enough for lines a pen width apart across a big sheet. */
 export const WORKING_EDGE = 1600;
+/** An edge mask's copy: smaller than the image's, since a border only has to be rough, and every layer keeps one. */
+export const MASK_EDGE_PX = 1000;
 
 export const PHOTO_DEFAULTS = { brightness: 0, contrast: 0, angle: 45, levels: 4 };
 
@@ -662,6 +675,8 @@ interface Tones {
   blur?: number;
   /** A copy with its saturation changed, by how much (-100 to 100), kept in what's worked out from it likewise. */
   sat?: number;
+  /** A copy faded to paper under an edge mask: which mask, and how it lay, kept in what's worked out from it likewise. */
+  mask?: string;
 }
 
 const saturatedCache = new Map<string, Tones>();
@@ -697,11 +712,82 @@ function saturatedTones(src: string, tones: Tones, sat: number): Tones {
 /** A photo's pixels with a saturation applied, for reading its colours: undefined until it's been read. */
 export const saturatedOf = (src: string, saturation: number) => photoTones({ src, saturation });
 
-/** A photo as its layers read it: its pixels, with its saturation applied. Undefined until it's been read. */
-const photoTones = (photo: Pick<Photo, "src" | "saturation">) => {
+/** A photo as its layers read it: its pixels, with its saturation applied and its edge mask laid over. Undefined until both have been read. */
+const photoTones = (photo: Pick<Photo, "src" | "saturation" | "edgeMask" | "edgeMaskInvert" | "crop">) => {
   const tones = tonesOf(photo.src);
-  return tones && saturatedTones(photo.src, tones, photo.saturation ?? 0);
+  if (!tones) return undefined;
+  const saturated = saturatedTones(photo.src, tones, photo.saturation ?? 0);
+  if (!photo.edgeMask) return saturated;
+  const mask = tonesOf(photo.edgeMask);
+  if (!mask) {
+    // Read now, and whatever is drawing the photo told when it can be drawn masked. Until then nothing,
+    // rather than lines drawn over the border that then vanish.
+    if (!maskReading.has(photo.edgeMask)) {
+      const src = photo.edgeMask;
+      maskReading.add(src);
+      readTones(src).then(() => separationListeners.forEach((heard) => heard())).catch(() => {}).finally(() => maskReading.delete(src));
+    }
+    return undefined;
+  }
+  return maskedTones(photo.src, saturated, mask, photo);
 };
+
+const maskedCache = new Map<string, Tones>();
+const maskReading = new Set<string>();
+
+/**
+ * The photo faded to paper under its edge mask. The mask is stretched over the part of the picture
+ * that shows - inside the crop - so its border frames what's drawn, whatever the crop; how much of
+ * each pixel is kept is the mask's lightness there (its darkness, inverted), and the pixel is taken
+ * that far back toward white. Worked out once for each photo, mask and crop.
+ */
+function maskedTones(src: string, tones: Tones, mask: Tones, photo: Pick<Photo, "edgeMask" | "edgeMaskInvert" | "crop">): Tones {
+  const [c0, c1, c2, c3] = photo.crop ?? [0, 0, 1, 1];
+  const id = `${photo.edgeMask!.length}|${photo.edgeMask!.slice(-32)}|${photo.edgeMaskInvert ? "inv" : ""}|${c0},${c1},${c2},${c3}`;
+  const key = `${src.length}|${src.slice(-32)}|${tones.sat ?? 0}|${id}`;
+  const known = maskedCache.get(key);
+  if (known) return known;
+  const { w, h } = tones;
+  const light = new Float32Array(w * h);
+  const rgba = new Uint8ClampedArray(tones.rgba.length);
+  const cw = Math.max(1e-6, c2 - c0);
+  const ch = Math.max(1e-6, c3 - c1);
+  for (let y = 0; y < h; y++) {
+    const mv = ((y + 0.5) / h - c1) / ch;
+    for (let x = 0; x < w; x++) {
+      const i = y * w + x;
+      const mu = ((x + 0.5) / w - c0) / cw;
+      // Outside the crop nothing is drawn anyway: left as it is.
+      let keep = 1;
+      if (mu >= 0 && mu <= 1 && mv >= 0 && mv <= 1) {
+        const m = lightAt(mask, mu, mv);
+        keep = photo.edgeMaskInvert ? 1 - m : m;
+      }
+      light[i] = 1 - (1 - tones.light[i]) * keep;
+      for (let c = 0; c < 3; c++) rgba[i * 4 + c] = 255 - (255 - tones.rgba[i * 4 + c]) * keep;
+      rgba[i * 4 + 3] = tones.rgba[i * 4 + 3];
+    }
+  }
+  const made = { w, h, light, rgba, sat: tones.sat, mask: id };
+  if (maskedCache.size > 4) maskedCache.delete(maskedCache.keys().next().value!);
+  maskedCache.set(key, made);
+  return made;
+}
+
+/** A picture's lightness at a point of it, 0 to 1 across and down, blended between its four nearest pixels. */
+function lightAt(t: Tones, u: number, v: number): number {
+  const x = Math.min(t.w - 1, Math.max(0, u * t.w - 0.5));
+  const y = Math.min(t.h - 1, Math.max(0, v * t.h - 0.5));
+  const x0 = Math.floor(x);
+  const y0 = Math.floor(y);
+  const x1 = Math.min(t.w - 1, x0 + 1);
+  const y1 = Math.min(t.h - 1, y0 + 1);
+  const fx = x - x0;
+  const fy = y - y0;
+  const top = t.light[y0 * t.w + x0] * (1 - fx) + t.light[y0 * t.w + x1] * fx;
+  const bottom = t.light[y1 * t.w + x0] * (1 - fx) + t.light[y1 * t.w + x1] * fx;
+  return top * (1 - fy) + bottom * fy;
+}
 
 const smoothCache = new Map<string, Tones>();
 
@@ -712,7 +798,7 @@ const smoothCache = new Map<string, Tones>();
 function smoothedTones(src: string, tones: Tones, r: number): Tones {
   const k = Math.round(r * 2) / 2;
   if (k < 0.5) return tones;
-  const key = `${src.length}|${src.slice(-32)}|${tones.sat ?? 0}|${k}`;
+  const key = `${src.length}|${src.slice(-32)}|${tones.sat ?? 0}|${tones.mask ?? ""}|${k}`;
   const known = smoothCache.get(key);
   if (known) return known;
   const n = tones.w * tones.h;
@@ -725,7 +811,7 @@ function smoothedTones(src: string, tones: Tones, r: number): Tones {
     if (c < 3) blurGrid(channel, tones.w, tones.h, k);
     for (let i = 0; i < n; i++) rgba[i * 4 + c] = channel[i];
   }
-  const made = { w: tones.w, h: tones.h, light, rgba, blur: k, sat: tones.sat };
+  const made = { w: tones.w, h: tones.h, light, rgba, blur: k, sat: tones.sat, mask: tones.mask };
   if (smoothCache.size > 4) smoothCache.delete(smoothCache.keys().next().value!);
   smoothCache.set(key, made);
   return made;
@@ -771,7 +857,7 @@ export function readTones(src: string): Promise<Tones> {
  * so a drawing that carries it stays a size a browser opens without a pause. Rejects with a sentence
  * to show when the browser can't read the file - an iPhone's HEIC, in most of them.
  */
-export async function workingCopy(file: File): Promise<Pick<Photo, "src" | "width" | "height">> {
+export async function workingCopy(file: File, edge = WORKING_EDGE): Promise<Pick<Photo, "src" | "width" | "height">> {
   let img: ImageBitmap;
   try {
     img = await createImageBitmap(file);
@@ -779,7 +865,7 @@ export async function workingCopy(file: File): Promise<Pick<Photo, "src" | "widt
     throw new Error(`${file.name} is a kind of picture this browser can’t read. Save it as a JPEG or PNG and add that.`);
   }
   try {
-    const scale = Math.min(1, WORKING_EDGE / Math.max(img.width, img.height));
+    const scale = Math.min(1, edge / Math.max(img.width, img.height));
     const width = Math.max(1, Math.round(img.width * scale));
     const height = Math.max(1, Math.round(img.height * scale));
     const canvas = document.createElement("canvas");
@@ -877,7 +963,7 @@ export function photoMarks(photo: Photo, w: number, h: number): PhotoMarks | nul
 
 /** Everything a photo's lines depend on, as one string: the same key, the same lines. */
 function marksKey(photo: Photo, w: number, h: number) {
-  return [photo.src.length, photo.src.slice(-32), w.toFixed(4), h.toFixed(4), photo.brightness, photo.contrast, photo.saturation ?? 0, photo.angle, photo.spacingMm, photo.levels, photo.hatchSmoothMm ?? "", photo.band?.join(",") ?? "", photo.side ?? "", photo.paperTone?.join(",") ?? "", photo.crop?.join(",") ?? "", photo.bleed ?? 0, photo.style ?? "hatch", photo.rowMm ?? "", photo.waveMm ?? "", photo.squiggleAmpMm ?? "", photo.squiggleHeight ?? "", photo.squiggleJoin ? "join" : "", photo.squiggleLift ? "lift" : "", photo.squiggleSmooth ?? "", JSON.stringify(photo.squiggleDraw ?? {}), photo.squiggleVersion ?? "", JSON.stringify(photo.squiggleInkscape ?? {}), photo.squiggleAngle ?? "", photo.ink ?? "", photo.regions?.join(",") ?? "", photo.region ?? "", photo.contours ?? "", photo.smoothMm ?? "", photo.key ? "key" : "", photo.keyInk ?? "", photo.regionInks?.join(",") ?? "", photo.keyStrength ?? "", photo.keyFrom ?? "", photo.plate ?? "", photo.plates?.join(",") ?? "", photo.blackShare ?? "", photo.centerFrom ?? "", photo.centerSmoothMm ?? "", photo.centerShortestMm ?? "", photo.silhouetteFrom ?? "", photo.silhouetteSmoothMm ?? "", photo.silhouetteSmallestMm ?? "", photo.fitPaper ?? "", photo.penMm ?? "", photo.fitPairs ? "pairs" : "", photo.fitOpaque ? "opaque" : "", photo.streamWidestMm ?? "", photo.streamPasses ?? "", photo.streamFlowMm ?? "", photo.lineDots ?? "", photo.lineLiftMm ?? "", photo.lineCurve ?? "", photo.lineAngle ?? "", photo.lineBias ?? "", photo.lineGrain ?? "", photo.lineContrast ?? "", photo.hilbertCoarsestMm ?? "", photo.hilbertLift ? "hlift" : "", photo.hilbertCurve ?? "", photo.hilbertRound ?? "", photo.hilbertBlend ?? "", photo.hilbertAngle ?? ""].join("|");
+  return [photo.src.length, photo.src.slice(-32), w.toFixed(4), h.toFixed(4), photo.brightness, photo.contrast, photo.saturation ?? 0, photo.angle, photo.spacingMm, photo.levels, photo.hatchSmoothMm ?? "", photo.band?.join(",") ?? "", photo.side ?? "", photo.paperTone?.join(",") ?? "", photo.crop?.join(",") ?? "", photo.bleed ?? 0, photo.style ?? "hatch", photo.rowMm ?? "", photo.waveMm ?? "", photo.squiggleAmpMm ?? "", photo.squiggleHeight ?? "", photo.squiggleJoin ? "join" : "", photo.squiggleLift ? "lift" : "", photo.squiggleSmooth ?? "", JSON.stringify(photo.squiggleDraw ?? {}), photo.squiggleVersion ?? "", JSON.stringify(photo.squiggleInkscape ?? {}), photo.squiggleAngle ?? "", photo.ink ?? "", photo.regions?.join(",") ?? "", photo.region ?? "", photo.contours ?? "", photo.smoothMm ?? "", photo.key ? "key" : "", photo.keyInk ?? "", photo.regionInks?.join(",") ?? "", photo.keyStrength ?? "", photo.keyFrom ?? "", photo.plate ?? "", photo.plates?.join(",") ?? "", photo.blackShare ?? "", photo.centerFrom ?? "", photo.centerSmoothMm ?? "", photo.centerShortestMm ?? "", photo.silhouetteFrom ?? "", photo.silhouetteSmoothMm ?? "", photo.silhouetteSmallestMm ?? "", photo.fitPaper ?? "", photo.penMm ?? "", photo.fitPairs ? "pairs" : "", photo.fitOpaque ? "opaque" : "", photo.streamWidestMm ?? "", photo.streamPasses ?? "", photo.streamFlowMm ?? "", photo.lineDots ?? "", photo.lineLiftMm ?? "", photo.lineCurve ?? "", photo.lineAngle ?? "", photo.lineBias ?? "", photo.lineGrain ?? "", photo.lineContrast ?? "", photo.hilbertCoarsestMm ?? "", photo.hilbertLift ? "hlift" : "", photo.hilbertCurve ?? "", photo.hilbertRound ?? "", photo.hilbertBlend ?? "", photo.hilbertAngle ?? "", photo.edgeMask ? `${photo.edgeMask.length}|${photo.edgeMask.slice(-32)}` : "", photo.edgeMaskInvert ? "inv" : ""].join("|");
 }
 
 /**
@@ -1240,7 +1326,7 @@ export function coverSteps(penMm: number, spacingMm: number, levels: number): nu
  * photo there: a pen's area is wherever that colour uses it, and `menu` says how many passes.
  */
 function areasOf(tones: Tones, groups: string[], brightness: number, contrast: number, fit?: Fit): Areas {
-  const key = [tones.w, tones.h, tones.blur ?? 0, tones.sat ?? 0, tones.light[0], tones.light[tones.light.length >> 1], groups.join(","), brightness, contrast, fit ? JSON.stringify(fit) : ""].join("|");
+  const key = [tones.w, tones.h, tones.blur ?? 0, tones.sat ?? 0, tones.mask ?? "", tones.light[0], tones.light[tones.light.length >> 1], groups.join(","), brightness, contrast, fit ? JSON.stringify(fit) : ""].join("|");
   const known = areasCache.get(key);
   if (known) return known;
   const adjust = adjuster(brightness, contrast);
@@ -1340,7 +1426,7 @@ function separationOf(tones: Tones, photo: Photo): Separation | null {
   const levels = Math.min(MOST_PASSES, Math.max(1, Math.round(photo.levels)));
   const penMm = photo.penMm ?? 0.5;
   const spacingMm = photo.spacingMm;
-  const key = [tones.w, tones.h, tones.blur ?? 0, tones.sat ?? 0, tones.light[0], tones.light[tones.light.length >> 1], plates.join(","), brightness, contrast, blackShare, levels, penMm, spacingMm].join("|");
+  const key = [tones.w, tones.h, tones.blur ?? 0, tones.sat ?? 0, tones.mask ?? "", tones.light[0], tones.light[tones.light.length >> 1], plates.join(","), brightness, contrast, blackShare, levels, penMm, spacingMm].join("|");
   const known = separationCache.get(key);
   if (known) return known;
   const keep = (made: Separation) => {
@@ -1768,7 +1854,7 @@ const processingBlurCache = new Map<string, Tones>();
  * weighted (7 - distance) squared - across then down, the edges weighed by what's inside the picture.
  */
 function processingBlurred(src: string, tones: Tones): Tones {
-  const key = `${src.length}|${src.slice(-32)}|${tones.sat ?? 0}|${tones.w}x${tones.h}`;
+  const key = `${src.length}|${src.slice(-32)}|${tones.sat ?? 0}|${tones.mask ?? ""}|${tones.w}x${tones.h}`;
   const known = processingBlurCache.get(key);
   if (known) return known;
   const radius = 7;
@@ -1801,7 +1887,7 @@ function processingBlurred(src: string, tones: Tones): Tones {
     const done = c < 3 ? pass(pass(channel, true), false) : channel;
     for (let i = 0; i < w * h; i++) rgba[i * 4 + c] = done[i];
   }
-  const made = { w, h, light, rgba, blur: -2, sat: tones.sat };
+  const made = { w, h, light, rgba, blur: -2, sat: tones.sat, mask: tones.mask };
   if (processingBlurCache.size > 4) processingBlurCache.delete(processingBlurCache.keys().next().value!);
   processingBlurCache.set(key, made);
   return made;
@@ -3926,6 +4012,9 @@ export function photoFromData(raw: Record<string, unknown>): Photo | null {
     spacingMm: num(raw.spacing_mm, 0.3),
     levels: num(raw.levels, PHOTO_DEFAULTS.levels),
     ...(typeof raw.group === "string" ? { group: raw.group } : {}),
+    ...(typeof raw.edgeMask === "string" && raw.edgeMask.startsWith("data:image/") ? { edgeMask: raw.edgeMask } : {}),
+    ...(typeof raw.edgeMaskName === "string" ? { edgeMaskName: raw.edgeMaskName } : {}),
+    ...(raw.edgeMaskInvert === true ? { edgeMaskInvert: true } : {}),
     ...(Array.isArray(raw.crop) && raw.crop.length === 4 && raw.crop.every((v) => Number.isFinite(Number(v)))
       ? { crop: raw.crop.map(Number) as [number, number, number, number] }
       : {}),
@@ -4008,6 +4097,7 @@ export const photoData = (p: Photo) => ({
   ...(p.band ? { band: p.band } : {}),
   ...(p.side ? { side: p.side, paper_tone: p.paperTone } : {}),
   ...(p.crop ? { crop: p.crop } : {}),
+  ...(p.edgeMask ? { edgeMask: p.edgeMask, ...(p.edgeMaskName ? { edgeMaskName: p.edgeMaskName } : {}), ...(p.edgeMaskInvert ? { edgeMaskInvert: true } : {}) } : {}),
   ...(p.fit ? { fit: p.fit } : {}),
   ...(p.style === "waves" || p.style === "squiggle" || p.style === "streamlines" || p.style === "oneline" || p.style === "hilbert" || p.style === "outlines" || p.style === "centerlines" || p.style === "silhouette" ? { style: p.style } : {}),
   ...(p.centerFrom !== undefined ? { center_from: p.centerFrom } : {}),
