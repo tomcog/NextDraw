@@ -33,13 +33,15 @@ interface LayerProps {
   builds: boolean;
   /** The ink covers what's under it, rather than blending. */
   opaque: boolean;
+  /** Clear glitter gel: what's under it sparkles, its color unchanged. */
+  glitter?: boolean;
   hidden?: boolean;
   skipped?: boolean;
   children: ReactNode;
 }
 
 /** One layer of ink in its pen, and - where its ink builds - the same marks again, multiplying, so a crossing darkens. */
-export function InkLayer({ id, color, sim, opacity, build, builds, opaque, hidden, skipped, children }: LayerProps) {
+export function InkLayer({ id, color, sim, opacity, build, builds, opaque, glitter, hidden, skipped, children }: LayerProps) {
   const { base, buildPass } = inkLayer(color, build, builds && !opaque, sim);
   return (
     <g
@@ -47,6 +49,7 @@ export function InkLayer({ id, color, sim, opacity, build, builds, opaque, hidde
       className="pv-layer"
       data-builds={String(builds && sim)}
       data-opaque={String(opaque && sim)}
+      data-glitter={glitter && sim ? "true" : undefined}
       data-hidden={hidden ? "true" : undefined}
       data-skipped={skipped ? "true" : undefined}
       style={{ "--layer-color": base, "--ink-opacity": String(opacity) } as CSSProperties}

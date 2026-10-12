@@ -5,7 +5,7 @@ import "../shared/lib/drawing/separationWorker";
 import { PaperSection } from "../shared/components/controls/PaperSection";
 import { PanelToolbar } from "../shared/components/PanelToolbar";
 import { Button, Card } from "@tomcoggia/ui";
-import { ArrowDownToLine, ClipboardCopy, ClipboardPaste, Copy, Layers2, LayersArrowDown, MousePointer2, PenLine, Spline, SquareDimensions, Trash2, Ungroup } from "lucide-react";
+import { ArrowDownToLine, ClipboardCopy, ClipboardPaste, Copy, Layers2, LayersArrowDown, MousePointer2, PenLine, Sparkles, Spline, SquareDimensions, Trash2, Ungroup } from "lucide-react";
 import { FileBrowser, type CombineResult, type OpenResult } from "../shared/components/FileBrowser";
 import { Section } from "../shared/components/controls/Section";
 import controls from "../shared/components/controls/controls.module.css";
@@ -16,7 +16,7 @@ import { DEFAULT_SETTINGS, PAPER_SIZES } from "../shared/lib/constants";
 import type { Info, PenColor, PlotterModel, Preset } from "../shared/lib/types";
 import { listOf } from "../shared/lib/format";
 import { lightness } from "../shared/lib/color";
-import { joinLayerName, labelAfter, splitLayerName } from "../shared/lib/ink";
+import { glitterPens, joinLayerName, labelAfter, splitLayerName } from "../shared/lib/ink";
 import { HistoryToolbar, type View } from "../shared/components/PreviewToolbar";
 import { StatusBanner } from "../shared/components/StatusBanner";
 import { AppSwitch } from "../shared/components/AppSwitch";
@@ -820,6 +820,8 @@ export default function App() {
  const inkOpacity = tool2?.settings.ink_opacity ?? 1;
  const inkBuilds = tool2?.settings.ink_builds !== false;
  const inkOpaque = tool2?.settings.ink_opaque === true;
+ // Glitter pens, from every preset: a layer named for one is previewed as sparkle over what's under it.
+ const glitter = useMemo(() => glitterPens(presets), [presets]);
  const inkBuild = tool2?.settings.ink_build ?? 1;
 
  // A fill starts from the chosen tool's own measured numbers when it has them - and follows that
@@ -1221,6 +1223,36 @@ export default function App() {
   setActiveLayer(copy.id);
  };
 
+ // Glitter over: the exact lines of some shapes again, in a glitter pen (Gelly Roll Stardust - clear
+ // gel with fine glitter), on a layer of their own at the top of the stack, so they're plotted last,
+ // over finished ink, and what's under them sparkles. Named for the glitter pen and what it goes over -
+ // "Clear Star - over Red" - and added to when the same thing is glittered again. For a varnish over
+ // an area instead, draw its outline on a glitter layer and hatch it with no outline.
+ const glitterOver = (ids: string[], over: string) => {
+  const pen = presets.find((p) => p.settings.ink_glitter && p.palette?.length)?.palette![0];
+  if (!pen) {
+   setMessage({ text: "No pen preset has glitter ink: add one (ink_glitter) to presets.json", ok: false });
+   return;
+  }
+  const picked = shapes.filter((sh) => ids.includes(sh.id));
+  if (!picked.length) return;
+  record();
+  const name = joinLayerName(pen.name, `over ${over}`);
+  const existing = layers.find((l) => l.name === name);
+  const target: Layer = existing ?? { id: newLayerId(), name, color: pen.color };
+  const shapeIds = new Map(picked.map((sh) => [sh.id, newShapeId()]));
+  const groupIds = new Map(picked.filter((sh) => sh.group).map((sh) => [sh.group!, newGroupId()]));
+  if (!existing) setLayers((list) => [...list, target]);
+  setShapes((list) => [...list, ...picked.map((sh) => ({ ...sh, id: shapeIds.get(sh.id)!, layerId: target.id, group: sh.group && groupIds.get(sh.group) }))]);
+  // Their hatching too: a filled area's sparkle follows its lines.
+  setFills((list) => [
+   ...list,
+   ...list.filter((f) => shapeIds.has(f.shapeId)).map((f) => ({ ...f, id: newFillId(), shapeId: shapeIds.get(f.shapeId)! })),
+   ...list.filter((f) => groupIds.has(f.shapeId)).map((f) => ({ ...f, id: newFillId(), shapeId: groupIds.get(f.shapeId)! })),
+  ]);
+  setMessage({ text: `${picked.length} ${picked.length === 1 ? "path" : "paths"} in ${pen.name}, on ${name}: plotted last, over the ink`, ok: true });
+ };
+
  // Merge with the layer below: its shapes, and the fills on them, move up onto this layer and take on
  // its name, colour and visibility; the layer below goes. This layer stays where it is in the stack.
  const mergeDown = (id: string) => {
@@ -1552,6 +1584,14 @@ export default function App() {
        },
        { label: "Ungroup", icon: <Ungroup />, onSelect: () => ungroupShapes(membersOf(rowMenu.id).map((s) => s.id)) },
        { label: "Duplicate shape", icon: <Copy />, onSelect: () => duplicateGroup(rowMenu.id) },
+       {
+        label: "Glitter over",
+        icon: <Sparkles />,
+        onSelect: () => {
+         const members = membersOf(rowMenu.id);
+         glitterOver(members.map((m) => m.id), members[0]?.groupName ?? layers.find((l) => l.id === members[0]?.layerId)?.name ?? "shape");
+        },
+       },
        ...layers
         .filter((l) => l.id !== membersOf(rowMenu.id)[0]?.layerId)
         .map((l) => ({
@@ -1592,6 +1632,11 @@ export default function App() {
         onSelect: () => pasteShape(rowMenu.id),
        },
        { label: "Duplicate layer", icon: <Copy />, onSelect: () => duplicateLayer(rowMenu.id) },
+       {
+        label: "Glitter over",
+        icon: <Sparkles />,
+        onSelect: () => glitterOver(shapes.filter((sh) => sh.layerId === rowMenu.id).map((sh) => sh.id), layers.find((l) => l.id === rowMenu.id)?.name ?? "layer"),
+       },
        {
         label: "Merge with below",
         icon: <LayersArrowDown />,
@@ -1647,6 +1692,14 @@ export default function App() {
         onSelect: () => flattenShape(rowMenu.id),
        },
        { label: "Duplicate path", icon: <Copy />, onSelect: () => duplicateShape(rowMenu.id) },
+       {
+        label: "Glitter over",
+        icon: <Sparkles />,
+        onSelect: () => {
+         const s = shapes.find((sh) => sh.id === rowMenu.id);
+         glitterOver([rowMenu.id], s?.name || layers.find((l) => l.id === s?.layerId)?.name || "path");
+        },
+       },
        // One entry per other layer: a layer is a pen, so this is "draw this in that pen".
        ...layers
         .filter((l) => l.id !== shapes.find((s) => s.id === rowMenu.id)?.layerId)
@@ -1744,6 +1797,7 @@ export default function App() {
       inkOpacity={inkOpacity}
       inkBuilds={inkBuilds}
       inkOpaque={inkOpaque}
+      glitter={glitter}
       inkBuild={inkBuild}
       view={view}
       tool={tool}

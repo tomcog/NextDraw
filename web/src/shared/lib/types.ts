@@ -13,6 +13,7 @@ export interface Settings {
   ink_opacity?: number; // app-only: how solid this tool's ink is, so the preview darkens where strokes cross
   ink_builds?: boolean; // app-only: more of the same ink darkens (a brush), or adds nothing (gel)
   ink_opaque?: boolean; // app-only: the ink covers what's under it, paper and other inks alike
+  ink_glitter?: boolean; // app-only: clear gel with fine glitter in it - what's under it sparkles, its color unchanged
   ink_build?: number; // app-only: 0-1, how much a second pass of a building ink adds
   drag_only?: boolean; // app-only: cut and turn the paths so a soft tip is always pulled
   pen_rate_lower: number;

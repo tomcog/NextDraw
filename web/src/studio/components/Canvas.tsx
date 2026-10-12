@@ -15,6 +15,7 @@ import type { Layer } from "../../shared/lib/drawing/shapes";
 import { type BedCanvasHandle, type Box } from "../../shared/components/BedCanvas";
 import { NextDrawCanvas } from "../../shared/components/NextDrawCanvas";
 import { InkGroup, InkLayer } from "../../shared/components/Ink";
+import { isGlitterLayer } from "../../shared/lib/ink";
 import type { PreviewToolbarProps, View } from "../../shared/components/PreviewToolbar";
 import { DEFAULT_SETTINGS, UNITS } from "../../shared/lib/constants";
 import type { PlotterModel } from "../../shared/lib/types";
@@ -70,6 +71,8 @@ interface Props {
   inkBuilds: boolean;
   /** The ink covers what's under it, paper and other inks alike, rather than blending with them. */
   inkOpaque?: boolean;
+  /** The glitter pens, by name (glitterPens): a layer in one is previewed as sparkle. */
+  glitter?: Set<string>;
   inkBuild: number;
   /** Simulate the ink, or draw each layer flat. Off is also much cheaper on a heavy hatch. */
   /** Outline: every path a thin line in its layer's colour. Preview: the ink, at the pen's width. */
@@ -337,7 +340,7 @@ const LayerMarks = memo(function LayerMarks({ shapes, fills, fonts, photos }: { 
 // The page at true proportions, with a one-inch grid. It keeps the page's own proportions and is
 // sized to them (--canvas-aspect), so the drawing gets as large as the space allows - the same way
 // Plot's preview fills its column.
-export function Canvas({ bar, page, paperColor, shapes, fills, layers, activeLayer, targetLayers, model, toolbar, fonts, font, snap, penWidthMm, inkOpacity, inkBuilds, inkOpaque = false, inkBuild, view, tool, selected, onSelect, onAdd, onUpdate, onUpdateMany, onEditStart }: Props) {
+export function Canvas({ bar, page, paperColor, shapes, fills, layers, activeLayer, targetLayers, model, toolbar, fonts, font, snap, penWidthMm, inkOpacity, inkBuilds, inkOpaque = false, glitter, inkBuild, view, tool, selected, onSelect, onAdd, onUpdate, onUpdateMany, onEditStart }: Props) {
   const bed = useRef<BedCanvasHandle>(null);
   const [drag, setDrag] = useState<Drag | null>(null);
   const pointer = useRef<number | null>(null);
@@ -709,6 +712,7 @@ export function Canvas({ bar, page, paperColor, shapes, fills, layers, activeLay
                     build={inkBuild}
                     builds={inkBuilds}
                     opaque={inkOpaque}
+                    glitter={glitter ? isGlitterLayer(layer.name, glitter) : false}
                     hidden={layer.hidden}
                     skipped={layer.name.startsWith("%")}
                   >

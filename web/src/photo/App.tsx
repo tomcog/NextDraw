@@ -26,7 +26,7 @@ import { parseDrawing } from "../shared/lib/drawing/parse";
 import { photoMarks, placeOnPage, plateSetOf, stemWithoutPlate, type Photo } from "../shared/lib/drawing/photo";
 import { boxOf, newLayerId, type Layer, type Page, type Shape } from "../shared/lib/drawing/shapes";
 import { useDrawingFile } from "../shared/lib/drawing/useDrawingFile";
-import { usePhotoRead } from "../shared/lib/drawing/usePhotoRead";
+import { usePhotoRead, usePhotosRead } from "../shared/lib/drawing/usePhotoRead";
 import { photoActions } from "./lib/photoActions";
 import { ConvertStage, type ConvertView } from "./components/ConvertStage";
 import { EffectToolbar, effectOf, type Effect } from "./components/EffectToolbar";
@@ -249,6 +249,8 @@ export default function App() {
     [shapes, layers, chosen],
   );
   usePhotoRead(chosen?.photo?.src);
+  // And every other layer's picture: separations are a picture each.
+  usePhotosRead(convertParts.map((part) => part.photo.src));
   const convertMarks = convertBox ? convertParts.map((part) => photoMarks(part.photo, convertBox.x1 - convertBox.x0, convertBox.y1 - convertBox.y0)) : [];
   const convertRead = convertMarks.length > 0 && convertMarks.every(Boolean);
   const [convertView, setConvertView] = useState<ConvertView>("picture");
