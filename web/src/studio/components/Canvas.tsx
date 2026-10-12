@@ -88,6 +88,9 @@ interface Props {
   /** A move or reshape is about to start. One call per gesture, before anything changes, so undo
    *  steps back over the whole drag rather than over each of the hundreds of updates it makes. */
   onEditStart: () => void;
+  /** Picking areas: a click anywhere on the page is a point to pick at, and nothing is drawn, picked
+   *  up or moved. */
+  onPick?: (p: { x: number; y: number }) => void;
 }
 
 // One drag at a time, and what it means depends on where it started: on the page it draws a new
@@ -338,7 +341,7 @@ const LayerMarks = memo(function LayerMarks({ shapes, fills, fonts, photos }: { 
 // The page at true proportions, with a one-inch grid. It keeps the page's own proportions and is
 // sized to them (--canvas-aspect), so the drawing gets as large as the space allows - the same way
 // Plot's preview fills its column.
-export function Canvas({ bar, page, paperColor, shapes, fills, layers, activeLayer, targetLayers, model, toolbar, fonts, font, snap, penWidthMm, inkOpacity, inkBuilds, inkOpaque = false, inkBuild, view, tool, selected, onSelect, onAdd, onUpdate, onUpdateMany, onEditStart }: Props) {
+export function Canvas({ bar, page, paperColor, shapes, fills, layers, activeLayer, targetLayers, model, toolbar, fonts, font, snap, penWidthMm, inkOpacity, inkBuilds, inkOpaque = false, inkBuild, view, tool, selected, onSelect, onAdd, onUpdate, onUpdateMany, onEditStart, onPick }: Props) {
   const bed = useRef<BedCanvasHandle>(null);
   const [drag, setDrag] = useState<Drag | null>(null);
   const pointer = useRef<number | null>(null);
@@ -434,6 +437,10 @@ export function Canvas({ bar, page, paperColor, shapes, fills, layers, activeLay
     if (e.button !== 0) return;
     const p = pointAt(e);
     if (!p) return;
+    if (onPick) {
+      onPick(p);
+      return;
+    }
     if (tool === "select") {
       // Shift keeps what's already picked, so a band can gather more onto it.
       if (!e.shiftKey) onSelect([]);
@@ -697,7 +704,7 @@ export function Canvas({ bar, page, paperColor, shapes, fills, layers, activeLay
       handle={bed}
       toolbar={toolbar}
       wrapClassName={styles.wrap}
-      wrapData={{ "data-tool": tool, "data-drag": drag?.mode }}
+      wrapData={{ "data-tool": onPick ? "pick" : tool, "data-drag": drag?.mode }}
       onPointerDown={onPointerDown}
       onPointerMove={onPointerMove}
       onPointerUp={onPointerUp}

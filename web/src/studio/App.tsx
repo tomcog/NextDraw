@@ -50,7 +50,7 @@ import { SIMPLIFIER_START, SimplifierSection, type SimplifierState } from "./com
 import { ToolPicker } from "./components/panels/ToolPicker";
 import { LayersSection } from "../shared/components/controls/LayersSection";
 import { addPointOnLongest, boxAround, boxOf, clampToPage, groupLabel, groupsOf, moveBy, newGroupId, newLayerId, newShapeId, pointsBox, resizeTo, shapeName, turnAround, withWholeGroups, type Layer, type Page, type Shape } from "../shared/lib/drawing/shapes";
-import { silhouetteOf } from "../shared/lib/drawing/silhouette";
+import { areaPicker, silhouetteOf } from "../shared/lib/drawing/silhouette";
 import { buildSvg, svgForMarks } from "../shared/lib/drawing/svg";
 import { drawnMiddle, fitToPage, reshapeDrawing, runsOffPage, turnDrawingLeft } from "./lib/drawing";
 import styles from "./App.module.css";
@@ -1298,6 +1298,74 @@ export default function App() {
   setMessage({ text: `${what}, hatched on the ${VARNISH} layer${runs.length > 1 ? ` (${runs.length} parts)` : ""}: set Spacing or Cross-hatch for more sparkle`, ok: true });
  };
 
+ // Picking areas: one layer's solid patches - a stripe filled in with packed hatching - clicked one
+ // at a time, each a hatched mask on the Varnish layer, while the looser hatching of the same pen
+ // round them is left alone. On until Escape, or until it's chosen again from the menu.
+ const [picking, setPicking] = useState<string | null>(null);
+ const pickingLayer = picking ? layers.find((l) => l.id === picking) : undefined;
+ // The layer's ink read once for clicking in, and read again only when its shapes change.
+ const pickerFor = useRef<{ shapes: Shape[]; picker: ReturnType<typeof areaPicker> } | null>(null);
+ // The masks this round of picking has made: kept selected, so the card under Layers is their fill
+ // and one Spacing sets all of them.
+ const pickedMasks = useRef<string[]>([]);
+ const sameList = (a: Shape[], b: Shape[]) => a.length === b.length && a.every((x, i) => x === b[i]);
+ const startPicking = (id: string) => {
+  if (picking === id) {
+   setPicking(null);
+   setMessage({ text: "Done picking areas", ok: true });
+   return;
+  }
+  const layer = layers.find((l) => l.id === id);
+  if (!layer) return;
+  pickerFor.current = null;
+  pickedMasks.current = [];
+  setPicking(id);
+  setSelected([]);
+  setMessage({ text: `Click inside a solid area of ${layer.name} to varnish it. Escape when done`, ok: true });
+ };
+ const pickArea = (p: { x: number; y: number }) => {
+  if (!pickingLayer) return;
+  const own = shapes.filter((sh) => sh.layerId === pickingLayer.id);
+  const cached = pickerFor.current;
+  const picker = cached && sameList(cached.shapes, own) ? cached.picker : areaPicker(own);
+  pickerFor.current = { shapes: own, picker };
+  const runs = picker?.at(p) ?? [];
+  if (!runs.length) {
+   setMessage({ text: `No solid ${pickingLayer.name} there: click inside a filled-in area. Escape when done`, ok: false });
+   return;
+  }
+  record();
+  const target = ensureVarnish();
+  const name = joinLayerName("Area", pickingLayer.name);
+  // A part each: every one its own path, with a grip on every point.
+  const masks: Shape[] = runs.map((run) => {
+   const b = pointsBox(run);
+   return { id: newShapeId(), layerId: target.id, kind: "path", runs: [run], x: b.x0, y: b.y0, x2: b.x1, y2: b.y1, name, outline: false };
+  });
+  setShapes((list) => [...list, ...masks]);
+  setFills((list) => [...list, ...masks.map((m) => ({ id: newFillId(), shapeId: m.id, angle: 45, spacingMm: VARNISH_SPACING_MM, scale: 100, custom: true }))]);
+  // Any undone since are left out.
+  pickedMasks.current = [...pickedMasks.current.filter((mid) => shapes.some((sh) => sh.id === mid)), ...masks.map((m) => m.id)];
+  setSelected(pickedMasks.current);
+  const n = pickedMasks.current.length;
+  setMessage({ text: `${n} ${n === 1 ? "area" : "areas"} of ${pickingLayer.name} hatched on the ${VARNISH} layer, selected: set their Spacing below. Click for more, Escape when done`, ok: true });
+ };
+ // Escape puts it down; so does the layer going.
+ useEffect(() => {
+  if (!picking) return;
+  if (!pickingLayer) {
+   setPicking(null);
+   return;
+  }
+  const onKey = (e: KeyboardEvent) => {
+   if (e.key !== "Escape") return;
+   setPicking(null);
+   setMessage({ text: "Done picking areas", ok: true });
+  };
+  window.addEventListener("keydown", onKey);
+  return () => window.removeEventListener("keydown", onKey);
+ }, [picking, pickingLayer]);
+
  // Merge with the layer below: its shapes, and the fills on them, move up onto this layer and take on
  // its name, colour and visibility; the layer below goes. This layer stays where it is in the stack.
  const mergeDown = (id: string) => {
@@ -1679,6 +1747,12 @@ export default function App() {
         label: "Varnish silhouette",
         icon: <Sparkles />,
         onSelect: () => varnishLayerSilhouette(rowMenu.id),
+       }, {
+        // Its solid patches only, one click each: a bandana's stripes and not the same pen's
+        // shading round them.
+        label: picking === rowMenu.id ? "Stop picking areas" : "Varnish areas…",
+        icon: <Sparkles />,
+        onSelect: () => startPicking(rowMenu.id),
        }]),
        {
         label: "Merge with below",
@@ -1845,6 +1919,7 @@ export default function App() {
       onAdd={simplifierShowing ? keepAsIs : addShape}
       onUpdate={simplifierShowing ? keepAsIs : updateShape}
       onEditStart={simplifierShowing ? keepAsIs : record}
+      onPick={pickingLayer ? pickArea : undefined}
      />
     </section>
 
@@ -1948,6 +2023,7 @@ export default function App() {
          onTurn={targetLayers.every((l) => isVarnishLayer(l.name)) ? undefined : turnLayer}
          hidden={hiddenShapes}
          onVisible={showShapes}
+         onSelectAll={() => setSelected(onActive.map((sh) => sh.id))}
          onDeleteAll={() => {
           record();
           const gone = onActive.map((sh) => sh.id);

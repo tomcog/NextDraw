@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Button, ButtonRound, LayerController } from "@tomcoggia/ui";
-import { EllipsisVertical, Image as ImageIcon, RotateCcwSquare, RotateCwSquare, Shapes, Trash2 } from "lucide-react";
+import { EllipsisVertical, Image as ImageIcon, MousePointer2, RotateCcwSquare, RotateCwSquare, Shapes, Trash2 } from "lucide-react";
 import { NumberField } from "../../../shared/components/controls/NumberField";
 import { Section } from "../../../shared/components/controls/Section";
 import controls from "../../../shared/components/controls/controls.module.css";
@@ -26,6 +26,9 @@ interface Props {
    *  which picks the whole shape. */
   onPick: (id: string, add: boolean) => void;
   onDeleteAll: () => void;
+  /** Pick every path on the layer: one fill setting for all of a Varnish layer's masks, or a whole
+   *  layer to drag. */
+  onSelectAll: () => void;
   /** The paths hidden from view in Studio - not from the file, or the plot - by their row's eye. */
   hidden: Set<string>;
   onVisible: (ids: string[], visible: boolean) => void;
@@ -67,7 +70,7 @@ function rowsOf(shapes: Shape[]): Row[] {
  * Only while there is something on the layer: a heading over a line saying there is nothing under
  * it is two lines to say one thing.
  */
-export function ShapeList({ layers, shapes, picked, busy, renaming, rowMenuId, onPick, onDeleteAll, hidden, onVisible, onTurn, onRenameType, onRenameCancel, onRenameDone, onRowMenu, onGroupMenu }: Props) {
+export function ShapeList({ layers, shapes, picked, busy, renaming, rowMenuId, onPick, onDeleteAll, onSelectAll, hidden, onVisible, onTurn, onRenameType, onRenameCancel, onRenameDone, onRowMenu, onGroupMenu }: Props) {
   const [turnBy, setTurnBy] = useState(15);
   if (!shapes.length) return null;
   // One layer is named; several, worked on as one, are said by their dots alone.
@@ -100,8 +103,12 @@ export function ShapeList({ layers, shapes, picked, busy, renaming, rowMenuId, o
       key={layers.map((l) => l.id).join("|")}
       forget
       action={
-        <ButtonRound size="sm" icon={<Trash2 />} aria-label={`Delete everything on ${one ? "this layer" : "these layers"}`}
-          title={`Delete every path on ${one ? "this layer" : "the targeted layers"}`} disabled={busy} onClick={onDeleteAll} />
+        <span className={styles.headerTools}>
+          <ButtonRound size="sm" icon={<MousePointer2 />} aria-label={`Select everything on ${one ? "this layer" : "these layers"}`}
+            title={`Select every path on ${one ? "this layer" : "the targeted layers"}`} disabled={busy} onClick={onSelectAll} />
+          <ButtonRound size="sm" icon={<Trash2 />} aria-label={`Delete everything on ${one ? "this layer" : "these layers"}`}
+            title={`Delete every path on ${one ? "this layer" : "the targeted layers"}`} disabled={busy} onClick={onDeleteAll} />
+        </span>
       }
     >
       {/* The layer turned as one, about its middle: a quarter either way, or by an angle typed in,
