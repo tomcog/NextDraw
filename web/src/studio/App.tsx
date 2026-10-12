@@ -1609,6 +1609,33 @@ export default function App() {
   />
  );
 
+ /**
+  * The Simplifier's way on from a drawing of image layers: a snapshot with them baked into paths,
+  * opened to simplify. Here, when this drawing is saved as it is - it stays on disk, untouched; in a
+  * new tab when it has changes not saved, so they're kept. The tab is asked for before the snapshot
+  * is made, while the click still counts as the user's: a tab opened after waiting is blocked.
+  */
+ const workOnSnapshot = async () => {
+  const tab = dirty ? window.open("", "_blank") : null;
+  const res = await takeSnapshot();
+  if (!res) {
+   tab?.close();
+   return;
+  }
+  const label = res.name.replace(/\.svg$/i, "");
+  if (dirty) {
+   if (tab) tab.location.href = `${APP_URL.studio}?open=${encodeURIComponent(res.path)}`;
+   else setSnapped({ name: label, path: res.path }); // the tab was blocked: the banner offers it instead
+   return;
+  }
+  try {
+   const read = await api<OpenResult>(`/api/studio/read?path=${encodeURIComponent(res.path)}`);
+   openDrawing(read, (n) => `Working on the snapshot ${label} - ${n} ${n === 1 ? "path" : "paths"}, ready to simplify`);
+  } catch (err) {
+   setMessage({ text: (err as Error).message, ok: false });
+  }
+ };
+
  // A snapshot just saved: said at the top, with the ways on from it, until something else is said. In
  // Studio it opens in a tab of its own: the drawing here may have changes not saved.
  const [snapped, setSnapped] = useState<{ name: string; path: string } | null>(null);
@@ -2059,6 +2086,9 @@ export default function App() {
         removed={simplifierPreview.gone.length}
         busy={busy}
         onApply={applySimplifier}
+        images={shapes.filter((sh) => sh.kind === "photo").length}
+        hasPaths={pointCount(shapes) > 0}
+        onSnapshot={shapes.some((sh) => sh.kind === "photo") ? workOnSnapshot : undefined}
        />
       </div>
      </Card>

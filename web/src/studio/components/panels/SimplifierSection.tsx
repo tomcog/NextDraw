@@ -4,6 +4,7 @@ import { Section } from "../../../shared/components/controls/Section";
 import { NumberField } from "../../../shared/components/controls/NumberField";
 import controls from "../../../shared/components/controls/controls.module.css";
 import type { PruneMode } from "../../lib/shapeEdits";
+import styles from "../../App.module.css";
 
 export type SimplifyKey = "mergeShort" | "straighten" | "joinEnds" | "dropTiny";
 
@@ -46,6 +47,12 @@ interface Props {
   removed: number;
   busy: boolean;
   onApply: () => void;
+  /** The drawing's image layers: worked out from their pictures, with no points of their own to take out. */
+  images: number;
+  /** Whether the drawing has any path at all - anything the Simplifier can work on, on any layer. */
+  hasPaths: boolean;
+  /** Bake the image layers into a snapshot and carry on there. Absent with no images to bake. */
+  onSnapshot?: () => void;
 }
 
 /**
@@ -56,12 +63,34 @@ interface Props {
  */
 const newSeed = () => Math.floor(Math.random() * 2 ** 31);
 
-export function SimplifierSection({ value, onChange, scope, onScope, layerName, before, after, removed, busy, onApply }: Props) {
+export function SimplifierSection({ value, onChange, scope, onScope, layerName, before, after, removed, busy, onApply, images, hasPaths, onSnapshot }: Props) {
   const anyOn = Object.values(value.on).some(Boolean) || value.prune.on || value.merge;
   const prune = (patch: Partial<SimplifierState["prune"]>) => onChange({ ...value, prune: { ...value.prune, ...patch } });
   const fewer = before - after;
+  const title = <span className={controls.iconTitle}><Spline />Simplifier</span>;
+  // Nothing in the drawing it can work on: no settings that would seem to do something and do
+  // nothing. Image layers are drawn from their pictures, so they have no points until baked into a
+  // snapshot; shapes, curves and words are drawn from their numbers.
+  if (!hasPaths) {
+    return (
+      <Section title={title} collapsibleKey="simplifier">
+        <div className={styles.confirm} role="alert">
+          <p>
+            {images
+              ? `This drawing can’t be simplified: its ${images === 1 ? "image layer is" : `${images} image layers are`} worked out from ${images === 1 ? "its picture" : "their pictures"} each time, so there are no points to take out. A snapshot bakes ${images === 1 ? "it" : "them"} into paths that can be simplified. This drawing stays as it is.`
+              : "This drawing can’t be simplified: shapes, curves and text are drawn from their numbers, and only paths have points to take out."}
+          </p>
+          {onSnapshot && (
+            <Button size="sm" disabled={busy} title="Save a snapshot of this drawing with its images baked into paths, and open it to simplify" onClick={onSnapshot}>
+              Work on a snapshot
+            </Button>
+          )}
+        </div>
+      </Section>
+    );
+  }
   return (
-    <Section title={<span className={controls.iconTitle}><Spline />Simplifier</span>} collapsibleKey="simplifier">
+    <Section title={title} collapsibleKey="simplifier">
       <SegmentedControl size="sm" variant="dark" aria-label="What to simplify">
         <Segment selected={scope === "drawing"} title="Every path in the drawing" onClick={() => onScope("drawing")}>Whole drawing</Segment>
         <Segment selected={scope === "layer"} title={`Only the paths on ${layerName}`} onClick={() => onScope("layer")}>This layer</Segment>
@@ -115,6 +144,7 @@ export function SimplifierSection({ value, onChange, scope, onScope, layerName, 
       {/* Only the count: what there is, and once anything is ticked, what it comes to. */}
       <p className={controls.hint}>
         {anyOn ? `${before.toLocaleString()} → ${after.toLocaleString()} points` : `${before.toLocaleString()} points`}
+        {images > 0 && ` - not counting ${images === 1 ? "the image layer" : `the ${images} image layers`}, which a snapshot would bake into paths`}
       </p>
       <Button size="sm" variant="secondary" disabled={busy || !anyOn || (fewer <= 0 && !removed)} onClick={onApply}>
         Simplify
