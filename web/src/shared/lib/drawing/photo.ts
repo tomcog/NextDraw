@@ -4,6 +4,7 @@
 // line: a photo is tens of thousands of strokes, and it is the photo and its numbers that are edited.
 
 import { colorNamed } from "../colorNames";
+import { FIT_CENTERED, type FitAlign } from "../geometry";
 import { edgeGenFromData, edgeGenKey, edgeKeep, type EdgeGen } from "./edgeMask";
 import type { Point } from "./parametric";
 import { fitNodes, pathData, type Node } from "./path";
@@ -264,6 +265,8 @@ export interface Photo {
   fit?: "fit" | "fill";
   /** The margin, in inches, it is fitted or filled inside. */
   margin?: number;
+  /** Where a fitted photo sits in the room the margin leaves: against an edge, or centred. Absent, centred. */
+  align?: FitAlign;
 }
 
 /** How a photo is split: by value, into colour groups, into CMYK plates, or already split into separations elsewhere. */
@@ -273,7 +276,7 @@ export const photoMode = (p: Photo) => (p.separation ? "separations" : p.plate ?
  * Where a photo goes to fit or fill a page, inside a margin: its box, and the part of it that shows.
  * `aspect` is the picture's width over its height.
  */
-export function placeOnPage(aspect: number, page: { w: number; h: number }, how: "fit" | "fill", margin: number) {
+export function placeOnPage(aspect: number, page: { w: number; h: number }, how: "fit" | "fill", margin: number, align: FitAlign = FIT_CENTERED) {
   const m = Math.max(0, Math.min(margin, page.w / 2 - 0.1, page.h / 2 - 0.1));
   const aw = page.w - m * 2;
   const ah = page.h - m * 2;
@@ -281,8 +284,9 @@ export function placeOnPage(aspect: number, page: { w: number; h: number }, how:
     const k = Math.min(aw / aspect, ah);
     const w = aspect * k;
     const h = k;
-    const x = (page.w - w) / 2;
-    const y = (page.h - h) / 2;
+    // What it doesn't fill one way goes where the alignment says: before it, after it, or both halves.
+    const x = m + (aw - w) * align.x;
+    const y = m + (ah - h) * align.y;
     return { x, y, x2: x + w, y2: y + h, crop: undefined };
   }
   // Filling: the whole area inside the margin, with the picture cropped evenly on the sides that
@@ -4081,6 +4085,9 @@ export function photoFromData(raw: Record<string, unknown>): Photo | null {
       ? { crop: raw.crop.map(Number) as [number, number, number, number] }
       : {}),
     ...(raw.fit === "fit" || raw.fit === "fill" ? { fit: raw.fit } : {}),
+    ...(raw.align && typeof raw.align === "object"
+      && [0, 0.5, 1].includes((raw.align as FitAlign).x) && [0, 0.5, 1].includes((raw.align as FitAlign).y)
+      ? { align: { x: (raw.align as FitAlign).x, y: (raw.align as FitAlign).y } } : {}),
     ...(raw.style === "waves" || raw.style === "squiggle" || raw.style === "streamlines" || raw.style === "oneline" || raw.style === "hilbert" || raw.style === "outlines" || raw.style === "centerlines" || raw.style === "silhouette" ? { style: raw.style } : {}),
     ...(Number.isFinite(Number(raw.center_from)) && raw.center_from !== undefined ? { centerFrom: Number(raw.center_from) } : {}),
     ...(Number.isFinite(Number(raw.center_smooth_mm)) && raw.center_smooth_mm !== undefined ? { centerSmoothMm: Number(raw.center_smooth_mm) } : {}),
@@ -4163,6 +4170,7 @@ export const photoData = (p: Photo) => ({
   ...(p.edgeGen ? { edgeGen: p.edgeGen } : {}),
   ...((p.edgeMask || p.edgeGen) && p.edgeMaskSides ? { edgeMaskSides: p.edgeMaskSides } : {}),
   ...(p.fit ? { fit: p.fit } : {}),
+  ...(p.align && (p.align.x !== 0.5 || p.align.y !== 0.5) ? { align: p.align } : {}),
   ...(p.style === "waves" || p.style === "squiggle" || p.style === "streamlines" || p.style === "oneline" || p.style === "hilbert" || p.style === "outlines" || p.style === "centerlines" || p.style === "silhouette" ? { style: p.style } : {}),
   ...(p.centerFrom !== undefined ? { center_from: p.centerFrom } : {}),
   ...(p.centerSmoothMm !== undefined ? { center_smooth_mm: p.centerSmoothMm } : {}),

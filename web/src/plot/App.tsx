@@ -5,7 +5,7 @@ import { api, postJSON } from "../shared/lib/api";
 import { barrelOffsetMm, BUSY_STATES, DEFAULT_SETTINGS, IDRAW_MODEL, PAPER_SIZES, PLOT_CHANNEL, PLOTTING_STATES, PRESET_FIELD_NAMES, PRESET_FIELDS, STEPS, STORAGE } from "../shared/lib/constants";
 import { cleanNote, listOf } from "../shared/lib/format";
 import { lightness } from "../shared/lib/color";
-import { fitsOnBed, fitsOnPaper, footprint, minPlacement } from "../shared/lib/geometry";
+import { fitsOnBed, fitsOnPaper, footprint, minPlacement, type FitAlign } from "../shared/lib/geometry";
 import { parsePlotPaths, type PlotPaths } from "../shared/lib/progressPaths";
 import { parsePreview, type Preview } from "../shared/lib/preview";
 import { load, save } from "../shared/lib/storage";
@@ -514,11 +514,12 @@ export default function App() {
     setScaleState(next);
   }, []);
 
-  // Fit the drawing's lines to the paper inside a margin all round (mm), centred: the scale that
-  // fills the room on its tighter side, and the start that centres the lines at that scale. The
-  // drawing's page scales about its corner, so its lines keep their share of it at any scale.
+  // Fit the drawing's lines to the paper inside a margin all round (mm): the scale that fills the
+  // room on its tighter side, and the start that puts the lines where `align` says in what's left -
+  // centred, or against a margin. The drawing's page scales about its corner, so its lines keep
+  // their share of it at any scale.
   const fitToPaper = preview && settings.paper_w > 0 && settings.paper_h > 0
-    ? (marginMm: number) => {
+    ? (marginMm: number, align: FitAlign) => {
       const f = preview.ink ?? { x0: 0, y0: 0, x1: 1, y1: 1 };
       const pageMm = { w: (preview.widthIn * 25.4 * 100) / previewScale, h: (preview.heightIn * 25.4 * 100) / previewScale }; // at 100%
       const ink = { w: (f.x1 - f.x0) * pageMm.w, h: (f.y1 - f.y0) * pageMm.h };
@@ -529,14 +530,16 @@ export default function App() {
       // Down to a tenth of a percent, so the lines come out inside the margin rather than a hair over.
       const next = Math.min(1000, Math.max(1, Math.floor(fits * 1000) / 10));
       const k = next / 100;
-      const at = (paperAt: number, paperSize: number, inkSize: number, inkFrom: number, pageSize: number) =>
-        Math.round((paperAt + (paperSize - inkSize * k) / 2 - inkFrom * pageSize * k) * 10) / 10;
+      // The room left over is shared out as the alignment says: none of it before the lines when
+      // they go against the near margin, all of it when against the far one.
+      const at = (paperAt: number, paperSize: number, inkSize: number, inkFrom: number, pageSize: number, share: number) =>
+        Math.round((paperAt + marginMm + (paperSize - 2 * marginMm - inkSize * k) * share - inkFrom * pageSize * k) * 10) / 10;
       setScale(next);
       // Straight to the state: setPlacement's floor is worked out at the old scale. Its lines never
       // start before home, as setPlacement's floor would have them.
       setPlacementState({
-        x: Math.max(-f.x0 * pageMm.w * k, at(settings.paper_x, settings.paper_w, ink.w, f.x0, pageMm.w)),
-        y: Math.max(-f.y0 * pageMm.h * k, at(settings.paper_y, settings.paper_h, ink.h, f.y0, pageMm.h)),
+        x: Math.max(-f.x0 * pageMm.w * k, at(settings.paper_x, settings.paper_w, ink.w, f.x0, pageMm.w, align.x)),
+        y: Math.max(-f.y0 * pageMm.h * k, at(settings.paper_y, settings.paper_h, ink.h, f.y0, pageMm.h, align.y)),
       });
     }
     : undefined;

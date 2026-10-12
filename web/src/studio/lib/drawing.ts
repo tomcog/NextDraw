@@ -7,6 +7,7 @@ import { type Point } from "../../shared/lib/drawing/parametric";
 import { mapNode, type Node } from "../../shared/lib/drawing/path";
 import { placements } from "../../shared/lib/drawing/repeat";
 import { boxOf, centerOf, drawnRuns, newShapeId, outlinePoints, shiftShape, turnPoint, type Page, type Shape } from "../../shared/lib/drawing/shapes";
+import { FIT_CENTERED, type FitAlign } from "../../shared/lib/geometry";
 
 export interface Box {
   x0: number;
@@ -148,11 +149,12 @@ export function drawnMiddle(shapes: Shape[]): Point {
 }
 
 /**
- * How to fit the drawing to the page inside a margin all round (inches), centred: the scale, and the
- * point it is scaled about and the move after it, for reshapeDrawing. Nothing when it can't be done -
- * no drawing, a margin that leaves no page, or a drawing that is a single point.
+ * How to fit the drawing to the page inside a margin all round (inches), placed in the room left over
+ * as `align` says (centred unless told otherwise): the scale, and the point it is scaled about and the
+ * move after it, for reshapeDrawing. Nothing when it can't be done - no drawing, a margin that leaves
+ * no page, or a drawing that is a single point.
  */
-export function fitToPage(shapes: Shape[], page: Page, margin: number): { k: number; about: Point; by: Point } | null {
+export function fitToPage(shapes: Shape[], page: Page, margin: number, align: FitAlign = FIT_CENTERED): { k: number; about: Point; by: Point } | null {
   if (!shapes.length) return null;
   const d = drawnBox(shapes);
   const dw = d.x1 - d.x0, dh = d.y1 - d.y0;
@@ -162,5 +164,8 @@ export function fitToPage(shapes: Shape[], page: Page, margin: number): { k: num
   const k = Math.min(dw > 1e-9 ? room.w / dw : Infinity, dh > 1e-9 ? room.h / dh : Infinity);
   if (!Number.isFinite(k)) return null;
   const about = { x: (d.x0 + d.x1) / 2, y: (d.y0 + d.y1) / 2 };
-  return { k, about, by: { x: page.w / 2 - about.x, y: page.h / 2 - about.y } };
+  // Scaled about its middle, the drawing is dw * k wide; its middle goes that far in from the margin,
+  // plus the alignment's share of the room it doesn't fill.
+  const middle = (room: number, size: number, share: number) => margin + (room - size * k) * share + (size * k) / 2;
+  return { k, about, by: { x: middle(room.w, dw, align.x) - about.x, y: middle(room.h, dh, align.y) - about.y } };
 }

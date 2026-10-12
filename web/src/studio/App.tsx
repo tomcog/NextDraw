@@ -11,6 +11,7 @@ import { Section } from "../shared/components/controls/Section";
 import controls from "../shared/components/controls/controls.module.css";
 import { api } from "../shared/lib/api";
 import { APP_URL, openInPhoto, STUDIO_CHANNEL } from "../shared/lib/apps";
+import type { FitAlign } from "../shared/lib/geometry";
 import { load, save as remember } from "../shared/lib/storage";
 import { DEFAULT_SETTINGS, PAPER_SIZES } from "../shared/lib/constants";
 import type { Info, PenColor, PlotterModel, Preset } from "../shared/lib/types";
@@ -320,7 +321,7 @@ export default function App() {
    const next = list.map((sh) => {
     const p = sh.photo;
     if (!p?.fit) return sh;
-    const { crop, ...box } = placeOnPage(p.width / p.height, page, p.fit, p.margin ?? 0.5);
+    const { crop, ...box } = placeOnPage(p.width / p.height, page, p.fit, p.margin ?? 0.5, p.align);
     if (Math.abs(box.x - sh.x) < 1e-6 && Math.abs(box.y - sh.y) < 1e-6 && Math.abs(box.x2 - sh.x2) < 1e-6 && Math.abs(box.y2 - sh.y2) < 1e-6) return sh;
     changed = true;
     return { ...sh, ...box, rotation: undefined, photo: { ...p, crop } };
@@ -1014,8 +1015,8 @@ export default function App() {
  };
 
  /** Scale the drawing as big as the paper allows inside a margin all round, and centre it there. */
- const fitDrawing = (marginMm: number) => {
-  const fit = fitToPage(shapes, page, marginMm / 25.4);
+ const fitDrawing = (marginMm: number, align: FitAlign) => {
+  const fit = fitToPage(shapes, page, marginMm / 25.4, align);
   if (fit) reshape(fit.k, fit.about, fit.by);
  };
 

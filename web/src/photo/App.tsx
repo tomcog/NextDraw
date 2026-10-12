@@ -210,7 +210,7 @@ export default function App() {
       const next = list.map((sh) => {
         const p = sh.photo;
         if (!p?.fit) return sh;
-        const { crop, ...box } = placeOnPage(p.width / p.height, page, p.fit, p.margin ?? 0.5);
+        const { crop, ...box } = placeOnPage(p.width / p.height, page, p.fit, p.margin ?? 0.5, p.align);
         if (Math.abs(box.x - sh.x) < 1e-6 && Math.abs(box.y - sh.y) < 1e-6 && Math.abs(box.x2 - sh.x2) < 1e-6 && Math.abs(box.y2 - sh.y2) < 1e-6) return sh;
         changed = true;
         return { ...sh, ...box, rotation: undefined, photo: { ...p, crop } };
@@ -462,6 +462,9 @@ export default function App() {
         setPage({ w: w / 25.4, h: h / 25.4 });
       }}
       onColor={setPaperColor}
+      // Fit to paper is the Image card's Fit, with the Paper card's margin and alignment: the photo
+      // keeps both, so the Image card's own Margin shows the same number afterwards.
+      onFit={chosen?.photo ? (marginMm, align) => placePhoto("fit", marginMm / 25.4, align) : undefined}
     />
   );
   // A pen chosen by hand: the photo's colors are chosen again from its palette - each plate, or each

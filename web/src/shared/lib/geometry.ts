@@ -54,3 +54,14 @@ export function maxPlacement(fp: Footprint | null, model: PlotterModel | undefin
     y: Math.max(0, (model.travel_in[1] - fp.h) * 25.4),
   };
 }
+
+/**
+ * Where Fit to paper puts the drawing in the room the margin leaves, across and down: 0 against the
+ * left (top) margin, 0.5 centred, 1 against the right (bottom). A drawing of another proportion than
+ * the paper fills it one way only; this says where the spare room goes the other way.
+ */
+export interface FitAlign {
+  x: 0 | 0.5 | 1;
+  y: 0 | 0.5 | 1;
+}
+export const FIT_CENTERED: FitAlign = { x: 0.5, y: 0.5 };

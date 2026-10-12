@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Button, ButtonRound, InputSelect, Segment, SegmentedControl } from "@tomcoggia/ui";
-import { MoveHorizontal, MoveVertical, Pipette, RotateCcw } from "lucide-react";
+import { AlignHorizontalJustifyCenter, AlignHorizontalJustifyEnd, AlignHorizontalJustifyStart, AlignVerticalJustifyCenter, AlignVerticalJustifyEnd, AlignVerticalJustifyStart, MoveHorizontal, MoveVertical, Pipette, RotateCcw } from "lucide-react";
 import styles from "./controls.module.css";
 import { LengthField } from "./LengthField";
 import { NumberField } from "./NumberField";
@@ -9,6 +9,7 @@ import { Section } from "./Section";
 import { PAPER_SIZES } from "../../lib/constants";
 import { fmtLen } from "../../lib/format";
 import type { Units } from "../../lib/types";
+import { FIT_CENTERED, type FitAlign } from "../../lib/geometry";
 
 interface Props {
   /** The paper in mm, as it lies: its width across, its height down. */
@@ -35,14 +36,16 @@ interface Props {
    *  the drawing about its middle straight away. Plot scales a drawing elsewhere. */
   drawingScale?: number;
   onScaleDrawing?: (percent: number) => void;
-  /** Both apps: scale the drawing to fill the paper less a margin all round (in mm), and centre it.
-   *  Left out while there is no drawing to fit. */
-  onFit?: (marginMm: number) => void;
+  /** Scale the drawing to fill the paper less a margin all round (in mm), placed in the room left
+   *  over as `align` says - centred, or against an edge. Left out while there is no drawing to fit. */
+  onFit?: (marginMm: number, align: FitAlign) => void;
 }
 
 // Common paper colours, plus any colour from the picker. The paper is drawn in this colour whatever
 // the app's theme, so light or dark mode never changes how a print looks.
 const MARGIN_KEY = "nextdraw.fitMargin";
+const ALIGN_KEY = "nextdraw.fitAlign";
+const ALIGN_STEPS = [0, 0.5, 1] as const;
 
 const PAPER_COLORS = [
   { name: "White", color: "#ffffff" },
@@ -79,6 +82,19 @@ export function PaperSection({ w, h, sizeId, units, color, collapsibleKey, disab
   const keepMargin = (mm: number) => {
     setMargin(mm);
     try { localStorage.setItem(MARGIN_KEY, String(mm)); } catch { /* kept for this visit only */ }
+  };
+  // Where the fitted drawing goes in the room left over, kept between visits like the margin.
+  const [align, setAlign] = useState<FitAlign>(() => {
+    try {
+      const saved = JSON.parse(localStorage.getItem(ALIGN_KEY) ?? "null");
+      return ALIGN_STEPS.includes(saved?.x) && ALIGN_STEPS.includes(saved?.y) ? saved : FIT_CENTERED;
+    } catch {
+      return FIT_CENTERED;
+    }
+  });
+  const keepAlign = (next: FitAlign) => {
+    setAlign(next);
+    try { localStorage.setItem(ALIGN_KEY, JSON.stringify(next)); } catch { /* kept for this visit only */ }
   };
   // A margin that leaves no paper between them has nothing to fit into.
   const roomLeft = w - 2 * margin > 0 && h - 2 * margin > 0;
@@ -183,21 +199,45 @@ export function PaperSection({ w, h, sizeId, units, color, collapsibleKey, disab
         </div>
       )}
 
-      {/* Fit: as big as the paper allows inside the margin, the drawing's lines centred on it. */}
+      {/* Fit: as big as the paper allows inside the margin. A drawing of another proportion than the
+          paper fills it only one way; the alignment says where it sits the other way - centred, or
+          against an edge, for a composition that wants to sit to one side. */}
       <div className={styles.scaleRow}>
         <LengthField label="Margin" mm={margin} units={units} min={0} disabled={disabled} onChange={keepMargin} />
         <Button
           size="md"
           variant="secondary"
           title={roomLeft
-            ? `Scale the drawing to fill the paper inside a ${fmtLen(margin, units)} margin, and center it`
+            ? `Scale the drawing to fill the paper inside a ${fmtLen(margin, units)} margin, placed as the alignment below says`
             : "The margin leaves no paper to fit the drawing into"}
           disabled={disabled || !onFit || !roomLeft}
-          onClick={() => onFit?.(margin)}
+          onClick={() => onFit?.(margin, align)}
         >
           Fit to paper
         </Button>
       </div>
+      {onFit && (
+        <div className={styles.fitAlign}>
+          <SegmentedControl size="sm" variant="dark" aria-label="Fit across: left, center or right">
+            {[
+              { x: 0 as const, icon: <AlignHorizontalJustifyStart />, label: "Left", hint: "Fit against the left margin" },
+              { x: 0.5 as const, icon: <AlignHorizontalJustifyCenter />, label: "Center", hint: "Fit centered across the paper" },
+              { x: 1 as const, icon: <AlignHorizontalJustifyEnd />, label: "Right", hint: "Fit against the right margin" },
+            ].map(({ x, icon, label, hint }) => (
+              <Segment key={label} selected={align.x === x} icon={icon} aria-label={label} title={hint} disabled={disabled} onClick={() => keepAlign({ ...align, x })} />
+            ))}
+          </SegmentedControl>
+          <SegmentedControl size="sm" variant="dark" aria-label="Fit down: top, middle or bottom">
+            {[
+              { y: 0 as const, icon: <AlignVerticalJustifyStart />, label: "Top", hint: "Fit against the top margin" },
+              { y: 0.5 as const, icon: <AlignVerticalJustifyCenter />, label: "Middle", hint: "Fit centered down the paper" },
+              { y: 1 as const, icon: <AlignVerticalJustifyEnd />, label: "Bottom", hint: "Fit against the bottom margin" },
+            ].map(({ y, icon, label, hint }) => (
+              <Segment key={label} selected={align.y === y} icon={icon} aria-label={label} title={hint} disabled={disabled} onClick={() => keepAlign({ ...align, y })} />
+            ))}
+          </SegmentedControl>
+        </div>
+      )}
 
       {colorsOpen && (
         <div className={styles.paperColors} role="radiogroup" aria-label="Paper color">

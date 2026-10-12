@@ -7,6 +7,7 @@ import type { Dispatch, SetStateAction } from "react";
 import { api, postJSON } from "../../shared/lib/api";
 import { EDGE_STYLES, edgeKeep, type EdgeGen } from "../../shared/lib/drawing/edgeMask";
 import { lightness } from "../../shared/lib/color";
+import type { FitAlign } from "../../shared/lib/geometry";
 import type { PenColor, Preset } from "../../shared/lib/types";
 import {
   BAND_NAMES, LAYER_SETTINGS, MOST_SIDE_LAYERS, paperToneOf, MOST_COLORS, MOST_LAYERS, PHOTO_DEFAULTS, PLATES, PLATE_AIMS, PLATE_OFF, colourGroups, isColourful, matchPens, photoMode,
@@ -655,13 +656,15 @@ export function photoActions(ctx: PhotoContext) {
     * Size the chosen photo - all its bands - to the page: all of it as large as it fits, or filling the
     * page and cropped, inside a margin. Square to the page again, whatever it was turned to.
     */
-  const placePhoto = (how: "fit" | "fill", margin: number) => {
+  const placePhoto = (how: "fit" | "fill", margin: number, align?: FitAlign) => {
     if (!chosen?.photo) return;
     record();
     const group = chosen.photo.group;
-    const { crop, ...box } = placeOnPage(chosen.photo.width / chosen.photo.height, page, how, margin);
+    // Fitted against an edge stays against it - as Fit to paper chose, or as it was last fitted.
+    const at = align ?? chosen.photo.align;
+    const { crop, ...box } = placeOnPage(chosen.photo.width / chosen.photo.height, page, how, margin, at);
     setShapes((list) => list.map((sh) => (sh.id === chosen.id || (group && sh.photo?.group === group)
-      ? { ...sh, ...box, rotation: undefined, photo: { ...sh.photo!, crop, fit: how, margin } }
+      ? { ...sh, ...box, rotation: undefined, photo: { ...sh.photo!, crop, fit: how, margin, align: at } }
       : sh)));
   };
   /**
@@ -714,7 +717,7 @@ export function photoActions(ctx: PhotoContext) {
       let box: { x: number; y: number; x2: number; y2: number };
       let crop: Photo["crop"];
       if (was.fit) {
-        const placed = placeOnPage(aspect, page, was.fit, was.margin ?? 0.5);
+        const placed = placeOnPage(aspect, page, was.fit, was.margin ?? 0.5, was.align);
         crop = placed.crop;
         box = { x: placed.x, y: placed.y, x2: placed.x2, y2: placed.y2 };
       } else {
@@ -767,7 +770,7 @@ export function photoActions(ctx: PhotoContext) {
       let box: { x: number; y: number; x2: number; y2: number };
       let crop: Photo["crop"];
       if (was.fit) {
-        const placed = placeOnPage(aspect, page, was.fit, was.margin ?? 0.5);
+        const placed = placeOnPage(aspect, page, was.fit, was.margin ?? 0.5, was.align);
         crop = placed.crop;
         box = { x: placed.x, y: placed.y, x2: placed.x2, y2: placed.y2 };
       } else {
