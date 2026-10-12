@@ -681,6 +681,11 @@ export function Canvas({ bar, page, paperColor, shapes, fills, layers, activeLay
   // A selection holding marks with no grips of their own is picked up by its box instead.
   const boxCarries = group.some((sh) => bigLayers.has(sh.layerId));
   const showHandles = chosen && drag?.mode !== "new" && drag?.mode !== "move";
+  // A shape on the Varnish layer is only ever filled: it's moved and its points dragged, but it has no
+  // turn grip and no corners to scale it by. Nor does a selection with one in it.
+  const onVarnish = (sh: Shape) => isVarnishLayer(layers.find((l) => l.id === sh.layerId)?.name ?? "");
+  const chosenVarnish = chosen ? onVarnish(chosen) : false;
+  const groupVarnish = group.some(onVarnish);
   // Far enough off the edge that the grip never sits on a corner handle, in the page's inches.
 
   return (
@@ -824,7 +829,7 @@ export function Canvas({ bar, page, paperColor, shapes, fills, layers, activeLay
                       transform={shift}
                       onPointerDown={boxCarries ? onBoxDown : undefined}
                     />
-                    {drag?.mode !== "move" && (
+                    {drag?.mode !== "move" && !groupVarnish && (
                       <g className={styles.handles}>
                         <line className={styles.stalk} x1={grip.x} y1={b.y0} x2={grip.x} y2={grip.y} />
                         <circle
@@ -855,7 +860,7 @@ export function Canvas({ bar, page, paperColor, shapes, fills, layers, activeLay
                 <g className={styles.handles}>
                   {/* The turn grip, on a stalk from the top edge so it reads as turning rather than
                       as another corner to drag. */}
-                  {(() => {
+                  {!chosenVarnish && (() => {
                     const grip = turnGrip(chosen, handleR * 4);
                     const top = turnGrip(chosen, 0);
                     return (
@@ -875,7 +880,7 @@ export function Canvas({ bar, page, paperColor, shapes, fills, layers, activeLay
                   {/* Two kinds of grip on a path: the corners of its box, which scale the whole of
                       it, and a smaller one on each point. A path's own points often sit exactly on
                       those corners, so the corners stand a little outside the box to stay reachable. */}
-                  {handlePoints(chosen).map((h) => {
+                  {handlePoints(chosen).filter((h) => !chosenVarnish || h.point).map((h) => {
                     const out = chosen.points?.length && !h.point ? handleR * 1.1 : 0;
                     const b = boxOf(chosen);
                     const x = out ? h.x + (h.x <= (b.x0 + b.x1) / 2 ? -out : out) : h.x;

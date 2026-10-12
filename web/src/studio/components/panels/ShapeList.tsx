@@ -30,7 +30,8 @@ interface Props {
   hidden: Set<string>;
   onVisible: (ids: string[], visible: boolean) => void;
   /** Turn everything on the layer about its middle, in degrees clockwise. */
-  onTurn: (deg: number) => void;
+  /** Turn the layers as one. Absent for the Varnish layer, which is only ever filled. */
+  onTurn?: (deg: number) => void;
   onRenameType: (id: string, name: string) => void;
   /** Escape: put back the name it had before. */
   onRenameCancel: (id: string) => void;
@@ -105,12 +106,12 @@ export function ShapeList({ layers, shapes, picked, busy, renaming, rowMenuId, o
     >
       {/* The layer turned as one, about its middle: a quarter either way, or by an angle typed in,
         clockwise and negative for the other way. */}
-      <div className={styles.turnRow}>
+      {onTurn && <div className={styles.turnRow}>
         <ButtonRound size="sm" icon={<RotateCcwSquare />} aria-label={`Turn ${what} left`} title={`Turn ${what} 90° left, about their middle`} disabled={busy} onClick={() => onTurn(-90)} />
         <ButtonRound size="sm" icon={<RotateCwSquare />} aria-label={`Turn ${what} right`} title={`Turn ${what} 90° right, about their middle`} disabled={busy} onClick={() => onTurn(90)} />
         <NumberField label="Turn by" unit="°" min={-359} max={359} step={1} value={turnBy} disabled={busy} onChange={setTurnBy} />
         <Button size="md" variant="secondary" title={`Turn ${what} by ${turnBy}°, clockwise - a negative angle turns it the other way`} disabled={busy || !turnBy} onClick={() => onTurn(turnBy)}>Turn</Button>
-      </div>
+      </div>}
       {/* The layer's card holds its paths under a heading of their own, a row each, folded to start
         with - a layer of hundreds of paths would otherwise unroll them all - and folded again when
         another layer is picked, as the card is. */}

@@ -39,6 +39,8 @@ export interface ShapeActions {
   setRotation: (deg: number) => void;
   setRepeat: (repeat: Repeat | undefined) => void;
   bake: (id: string) => void;
+  /** A varnish mask: a point halfway along its longest edge, to drag where it's wanted. */
+  addPoint?: () => void;
 }
 
 interface Props {
@@ -55,13 +57,37 @@ interface Props {
   simplifyMm: number;
   onSimplifyMm: (mm: number) => void;
   actions: ShapeActions;
+  /** A shape on the Varnish layer: only ever filled, so the card is its fill and nothing else. */
+  varnish?: boolean;
 }
 
 /**
  * What the shape itself is made of: the numbers that draw it, and what can be done to it - simplified,
  * hatched, turned, repeated. Named after the shape it is about.
  */
-export function ShapeCard({ shape, title, busy, hasFill, canPaste, panel, onPanel, fillPanel, simplifyMm, onSimplifyMm, actions }: Props) {
+export function ShapeCard({ shape, title, busy, hasFill, canPaste, panel, onPanel, fillPanel, simplifyMm, onSimplifyMm, actions, varnish }: Props) {
+  // On the Varnish layer a shape is a mask the glitter gel fills, or lines it goes over again: its
+  // fill is all there is to set. Turning, repeating, simplifying and the rest don't apply - its
+  // points are shaped by dragging them on the page.
+  if (varnish) {
+    return (
+      <Card variant="flat" className={styles.controls}>
+        <div className={`${styles.cardBody} ${controls.cardSections}`}>
+          <Section title={title} collapsibleKey="shape">
+            {canFill(shape)
+              ? fillPanel
+              : <p className={styles.empty}>Only a closed shape can be filled. This one is gone over as it is.</p>}
+            {shape.kind === "path" && actions.addPoint && (
+              <Button size="md" variant="secondary" disabled={busy} title="Add a point halfway along the longest edge, then drag it where it's wanted" onClick={actions.addPoint}>
+                Add point
+              </Button>
+            )}
+            <p className={styles.empty}>Drag its points on the page to shape it. Add point puts one on the longest edge - or double-click right on the outline to add one there. Click a point and press Delete to take it out.</p>
+          </Section>
+        </div>
+      </Card>
+    );
+  }
   const simplifying = panel === "simplify";
   const filling = panel === "fill";
   const repeating = panel === "repeat";

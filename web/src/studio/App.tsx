@@ -49,7 +49,7 @@ import { GridSection } from "./components/panels/GridSection";
 import { SIMPLIFIER_START, SimplifierSection, type SimplifierState } from "./components/panels/SimplifierSection";
 import { ToolPicker } from "./components/panels/ToolPicker";
 import { LayersSection } from "../shared/components/controls/LayersSection";
-import { boxAround, boxOf, clampToPage, groupLabel, groupsOf, moveBy, newGroupId, newLayerId, newShapeId, pointsBox, resizeTo, shapeName, turnAround, withWholeGroups, type Layer, type Page, type Shape } from "../shared/lib/drawing/shapes";
+import { addPointOnLongest, boxAround, boxOf, clampToPage, groupLabel, groupsOf, moveBy, newGroupId, newLayerId, newShapeId, pointsBox, resizeTo, shapeName, turnAround, withWholeGroups, type Layer, type Page, type Shape } from "../shared/lib/drawing/shapes";
 import { silhouetteOf } from "../shared/lib/drawing/silhouette";
 import { buildSvg, svgForMarks } from "../shared/lib/drawing/svg";
 import { drawnMiddle, fitToPage, reshapeDrawing, runsOffPage, turnDrawingLeft } from "./lib/drawing";
@@ -1265,17 +1265,23 @@ export default function App() {
   setMessage({ text: `${picked.length} ${picked.length === 1 ? "path" : "paths"} gone over on the ${VARNISH} layer: plotted last, over the ink`, ok: true });
  };
 
- // The whole drawing: its silhouette - the outline round everything on the other layers that shows,
- // holes and paper inside filled in - as one mask path on the Varnish layer, hatched with no outline.
- // A start to tweak, not a final answer: the mask is a path like any other.
- const varnishWhole = () => {
-  const drawn = shapes.filter((sh) => {
-   const layer = layers.find((l) => l.id === sh.layerId);
-   return layer && !layer.hidden && !isVarnishLayer(layer.name);
-  });
+ // A silhouette - the outline round what's drawn, holes and paper inside filled in - as one mask
+ // path on the Varnish layer, hatched with no outline: of the whole drawing (everything on the other
+ // layers that shows), or of one layer's shapes alone. A start to tweak, not a final answer: the mask
+ // is a path like any other, its points dragged on the page.
+ const varnishWhole = () => varnishSilhouette(shapes.filter((sh) => {
+  const layer = layers.find((l) => l.id === sh.layerId);
+  return layer && !layer.hidden && !isVarnishLayer(layer.name);
+ }), "Silhouette", "The drawing's silhouette");
+ const varnishLayerSilhouette = (id: string) => {
+  const layer = layers.find((l) => l.id === id);
+  if (!layer) return;
+  varnishSilhouette(shapes.filter((sh) => sh.layerId === id), joinLayerName("Silhouette", layer.name), `${layer.name}'s silhouette`);
+ };
+ const varnishSilhouette = (drawn: Shape[], name: string, what: string) => {
   const runs = silhouetteOf(drawn, { penMm: tool2?.settings.pen_width ?? 0.5 });
   if (!runs.length) {
-   setMessage({ text: "There's nothing drawn yet to varnish", ok: false });
+   setMessage({ text: "There's nothing drawn there yet to varnish", ok: false });
    return;
   }
   record();
@@ -1283,13 +1289,13 @@ export default function App() {
   const b = pointsBox(runs.flat());
   const mask: Shape = {
    id: newShapeId(), layerId: target.id, kind: "path", runs, x: b.x0, y: b.y0, x2: b.x1, y2: b.y1,
-   name: "Silhouette", outline: false,
+   name, outline: false,
   };
   setShapes((list) => [...list, mask]);
   setFills((list) => [...list, { id: newFillId(), shapeId: mask.id, angle: 45, spacingMm: VARNISH_SPACING_MM, scale: 100, custom: true }]);
   setActiveLayer(target.id);
   setSelected([mask.id]);
-  setMessage({ text: `The drawing's silhouette, hatched on the ${VARNISH} layer${runs.length > 1 ? ` (${runs.length} parts)` : ""}: set Spacing or Cross-hatch for more sparkle`, ok: true });
+  setMessage({ text: `${what}, hatched on the ${VARNISH} layer${runs.length > 1 ? ` (${runs.length} parts)` : ""}: set Spacing or Cross-hatch for more sparkle`, ok: true });
  };
 
  // Merge with the layer below: its shapes, and the fills on them, move up onto this layer and take on
@@ -1668,6 +1674,11 @@ export default function App() {
         label: "Varnish over",
         icon: <Sparkles />,
         onSelect: () => varnishOver(shapes.filter((sh) => sh.layerId === rowMenu.id).map((sh) => sh.id)),
+       }, {
+        // This layer's silhouette, hatched: the area it draws sparkles, not just its lines.
+        label: "Varnish silhouette",
+        icon: <Sparkles />,
+        onSelect: () => varnishLayerSilhouette(rowMenu.id),
        }]),
        {
         label: "Merge with below",
@@ -1933,7 +1944,8 @@ export default function App() {
          renaming={renaming}
          rowMenuId={rowMenu?.id}
          onPick={pickFromRow}
-         onTurn={turnLayer}
+         // The Varnish layer is only ever filled: no turning it.
+         onTurn={targetLayers.every((l) => isVarnishLayer(l.name)) ? undefined : turnLayer}
          hidden={hiddenShapes}
          onVisible={showShapes}
          onDeleteAll={() => {
@@ -2007,6 +2019,7 @@ export default function App() {
        panel={panel}
        onPanel={showPanel}
        fillPanel={fillPanel}
+       varnish={isVarnishLayer(layers.find((l) => l.id === chosen.layerId)?.name ?? "")}
        simplifyMm={simplifyMm}
        onSimplifyMm={setSimplifyMm}
        actions={{
@@ -2018,6 +2031,10 @@ export default function App() {
         pasteFill,
         setRotation,
         setRepeat,
+        addPoint: () => {
+         record();
+         setShapes((list) => list.map((sh) => (sh.id === chosen.id ? addPointOnLongest(sh) : sh)));
+        },
         bake: bakeRepeat,
        }}
       />

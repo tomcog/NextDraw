@@ -457,6 +457,21 @@ export const insertPoint = (s: Shape, x: number, y: number): Shape => {
 };
 
 /**
+ * A point added halfway along a path's longest segment: the place a new point is most often wanted
+ * on a mask, and somewhere to drag it from - for a button, where a double-click would need aim.
+ */
+export const addPointOnLongest = (s: Shape): Shape => {
+  let best = { d: -1, x: 0, y: 0 };
+  for (const run of pathRuns(s)) {
+    for (let i = 0; i < run.length - 1; i++) {
+      const d = Math.hypot(run[i + 1].x - run[i].x, run[i + 1].y - run[i].y);
+      if (d > best.d) best = { d, x: (run[i].x + run[i + 1].x) / 2, y: (run[i].y + run[i + 1].y) / 2 };
+    }
+  }
+  return best.d > 0 ? insertPoint(s, best.x, best.y) : s;
+};
+
+/**
  * One point of a path taken out, counted straight through the runs as the grips are. A closed
  * outline's first point is also its last, so taking it out closes the outline on the next one. A run
  * is never left too short to draw: two points for a line, three corners for an outline.
