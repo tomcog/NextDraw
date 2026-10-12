@@ -4104,6 +4104,47 @@ def delete_preset(name):
     return jsonify(presets=resolve_presets(presets))
 
 
+# ---- Pictures the browser can't read ----
+# A TIFF - a layered one saved from Photoshop included - or an iPhone's HEIC: Chrome reads neither.
+# macOS's own converter does, and it reads what Photoshop saves for other programs to see: the picture
+# flattened, adjustment layers and all. It comes back as one PNG, no larger than Image ever needs.
+FLAT_IMAGE_EDGE = 2400
+FLAT_IMAGE_SUFFIXES = {".tif", ".tiff", ".heic", ".heif", ".psd", ".bmp", ".jp2", ".gif", ".webp", ".png", ".jpg", ".jpeg"}
+SRGB_PROFILE = Path("/System/Library/ColorSync/Profiles/sRGB Profile.icc")
+
+
+@app.post("/api/flat-image")
+def flat_image():
+    """The picture sent, as a flat sRGB PNG: the whole body is the file, its name in ?name=."""
+    from flask import Response
+    suffix = Path(request.args.get("name") or "").suffix.lower()
+    if suffix not in FLAT_IMAGE_SUFFIXES:
+        suffix = ".tif"
+    data = request.get_data()
+    if not data:
+        return jsonify(error="No picture was sent."), 400
+    if not shutil.which("sips"):
+        return jsonify(error="This computer can't convert that picture. Save it as a JPEG or PNG and add that."), 400
+    with tempfile.TemporaryDirectory() as tmp:
+        src, out = Path(tmp) / f"in{suffix}", Path(tmp) / "out.png"
+        src.write_bytes(data)
+        cmd = ["sips", "-s", "format", "png"]
+        # Made smaller if it's bigger than Image needs, never larger: sips's -Z scales up as well.
+        size = subprocess.run(["sips", "-g", "pixelWidth", "-g", "pixelHeight", str(src)], capture_output=True, text=True, timeout=60).stdout
+        edges = [int(v) for v in re.findall(r"pixel(?:Width|Height):\s*(\d+)", size)]
+        if edges and max(edges) > FLAT_IMAGE_EDGE:
+            cmd += ["-Z", str(FLAT_IMAGE_EDGE)]
+        if SRGB_PROFILE.is_file():
+            cmd += ["--matchTo", str(SRGB_PROFILE)]
+        try:
+            subprocess.run(cmd + [str(src), "--out", str(out)], capture_output=True, timeout=120, check=True)
+        except (subprocess.CalledProcessError, subprocess.TimeoutExpired):
+            return jsonify(error="That picture couldn't be read. Save it as a JPEG or PNG and add that."), 400
+        if not out.is_file():
+            return jsonify(error="That picture couldn't be read. Save it as a JPEG or PNG and add that."), 400
+        return Response(out.read_bytes(), mimetype="image/png")
+
+
 # ---- Edge masks ----
 # Image's edge masks - a grunge border, a torn edge - kept as a library to choose from, beside the
 # presets in iCloud Drive so both Macs share them. Each is the small JPEG Image makes of the picture.

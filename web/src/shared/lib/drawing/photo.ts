@@ -931,12 +931,7 @@ export function readTones(src: string): Promise<Tones> {
  * to show when the browser can't read the file - an iPhone's HEIC, in most of them.
  */
 export async function workingCopy(file: File, edge = WORKING_EDGE): Promise<Pick<Photo, "src" | "width" | "height">> {
-  let img: ImageBitmap;
-  try {
-    img = await createImageBitmap(file);
-  } catch {
-    throw new Error(`${file.name} is a kind of picture this browser can’t read. Save it as a JPEG or PNG and add that.`);
-  }
+  const img = await readPicture(file);
   try {
     const scale = Math.min(1, edge / Math.max(img.width, img.height));
     const width = Math.max(1, Math.round(img.width * scale));
@@ -952,6 +947,35 @@ export async function workingCopy(file: File, edge = WORKING_EDGE): Promise<Pick
   } finally {
     img.close();
   }
+}
+
+/**
+ * A picture file as pixels. A TIFF goes to the server, which flattens it on this Mac - a layered one
+ * from Photoshop comes back as the picture Photoshop shows, adjustment layers applied - since Chrome
+ * can't read TIFFs at all. Anything else the browser can't read (an iPhone's HEIC, in Chrome) gets
+ * the same treatment before it's turned away.
+ */
+async function readPicture(file: File): Promise<ImageBitmap> {
+  const tiff = /\.tiff?$/i.test(file.name) || file.type === "image/tiff";
+  if (!tiff) {
+    try {
+      return await createImageBitmap(file);
+    } catch {
+      /* the server may read it */
+    }
+  }
+  let flat: Response;
+  try {
+    flat = await fetch(`/api/flat-image?name=${encodeURIComponent(file.name)}`, { method: "POST", body: file });
+  } catch {
+    throw new Error(`${file.name} needs the server to read it, and the server can't be reached.`);
+  }
+  if (flat.status === 413) throw new Error(`${file.name} is too big to send (50 MB at most). Save a smaller copy and add that.`);
+  if (!flat.ok) {
+    const said = await flat.json().catch(() => ({}));
+    throw new Error(said.error ? `${file.name}: ${said.error}` : `${file.name} is a kind of picture this browser can’t read. Save it as a JPEG or PNG and add that.`);
+  }
+  return createImageBitmap(await flat.blob());
 }
 
 /**
