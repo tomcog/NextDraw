@@ -154,7 +154,7 @@ export function PhotoCard({ shape, title, shapes, busy, targeted, layerCount, sh
                       value={photo.plates![i] === PLATE_OFF ? PLATE_OFF : palette.find((p) => p.color.toLowerCase() === photo.plates![i]?.toLowerCase())?.name ?? ""}
                       onChange={(e) => actions.setPlatePen(plate, e.target.value)}
                     >
-                      {photo.plates![i] !== PLATE_OFF && !palette.some((p) => p.color.toLowerCase() === photo.plates![i]?.toLowerCase()) && <option value="">{anyColor ? "Custom" : "Not in this palette"}</option>}
+                      {photo.plates![i] !== PLATE_OFF && !palette.some((p) => p.color.toLowerCase() === photo.plates![i]?.toLowerCase()) && <option value="">{anyColor ? "Custom" : "N/A"}</option>}
                       {/* None leaves the channel out: the other plates make up the photo without it. */}
                       <option value={PLATE_OFF}>None</option>
                       {palette.map((p) => <option key={p.name} value={p.name}>{p.name}</option>)}
