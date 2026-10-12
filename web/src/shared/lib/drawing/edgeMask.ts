@@ -31,6 +31,12 @@ export interface EdgeGen extends EdgeLook {
   /** The preset it started from. Its numbers may since have been changed. */
   style: EdgeStyle;
   seed: number;
+  /**
+   * How much each layer's edge differs from the others, as a percentage: every number nudged up or
+   * down by up to this much, differently for each layer, the edge itself the same - so the layers'
+   * borders sit close together without lining up exactly, as hand-printed colours do. Absent, 0.
+   */
+  vary?: number;
 }
 
 /** The presets: each a look to start from, the same as the masks first made for the library. */
@@ -75,10 +81,40 @@ export function edgeGenFromData(raw: unknown): EdgeGen | undefined {
     if (r[f.key] !== undefined && Number.isFinite(v)) look[f.key] = Math.min(f.max, Math.max(f.min, v));
   }
   const seed = Number(r.seed);
-  return { style, seed: Number.isFinite(seed) ? Math.floor(Math.abs(seed)) % 1e9 : 1, ...look };
+  const vary = Number(r.vary);
+  return {
+    style, seed: Number.isFinite(seed) ? Math.floor(Math.abs(seed)) % 1e9 : 1, ...look,
+    ...(vary > 0 ? { vary: Math.min(MOST_VARY, vary) } : {}),
+  };
 }
 
-export const edgeGenKey = (g: EdgeGen) => [g.seed, ...EDGE_FIELDS.map((f) => g[f.key])].join("|");
+export const edgeGenKey = (g: EdgeGen) => [g.seed, ...EDGE_FIELDS.map((f) => g[f.key]), g.vary ?? 0].join("|");
+
+/** The most a layer's edge may vary from the others, as a percentage. */
+export const MOST_VARY = 50;
+
+/**
+ * One layer's own version of a varied edge: each number moved up or down by up to `vary` percent, by
+ * an amount worked out from the layer and the number, so a layer comes out the same every time and no
+ * two layers alike. A number at nothing stays at nothing - a style without specks gets none.
+ */
+export function edgeForLayer(gen: EdgeGen, layer: string): EdgeGen {
+  const vary = (gen.vary ?? 0) / 100;
+  if (!(vary > 0)) return gen;
+  const out = { ...gen };
+  for (const f of EDGE_FIELDS) {
+    const r = textHash(`${gen.seed}|${layer}|${f.key}`) * 2 - 1;
+    out[f.key] = Math.min(f.max, Math.max(f.min, gen[f.key] * (1 + vary * r)));
+  }
+  return out;
+}
+
+/** A string as a number from 0 to 1, the same every time (FNV-1a). */
+function textHash(text: string) {
+  let h = 2166136261;
+  for (let i = 0; i < text.length; i++) h = Math.imul(h ^ text.charCodeAt(i), 16777619);
+  return (h >>> 0) / 4294967296;
+}
 
 // Smooth noise from a table of random values, a different table for each seed.
 function rng(seed: number) {
@@ -214,7 +250,7 @@ export function edgeKeep(gen: EdgeGen, sides: Side[], gw: number, gh: number): F
     }
     keep.set(spread);
   }
-  if (cache.size > 4) cache.delete(cache.keys().next().value!);
+  if (cache.size > 8) cache.delete(cache.keys().next().value!);
   cache.set(key, keep);
   return keep;
 }

@@ -5,7 +5,7 @@
 
 import { colorNamed } from "../colorNames";
 import { FIT_CENTERED, type FitAlign } from "../geometry";
-import { edgeGenFromData, edgeGenKey, edgeKeep, type EdgeGen } from "./edgeMask";
+import { edgeForLayer, edgeGenFromData, edgeGenKey, edgeKeep, type EdgeGen } from "./edgeMask";
 import type { Point } from "./parametric";
 import { fitNodes, pathData, type Node } from "./path";
 
@@ -732,7 +732,7 @@ function saturatedTones(src: string, tones: Tones, sat: number): Tones {
 export const saturatedOf = (src: string, saturation: number) => photoTones({ src, saturation });
 
 /** A photo as its layers read it: its pixels, with its saturation applied and its edge mask laid over. Undefined until both have been read. */
-const photoTones = (photo: Pick<Photo, "src" | "saturation" | "edgeMask" | "edgeMaskInvert" | "edgeMaskSides" | "edgeGen" | "crop">) => {
+const photoTones = (photo: Pick<Photo, "src" | "saturation" | "edgeMask" | "edgeMaskInvert" | "edgeMaskSides" | "edgeGen" | "crop" | "band" | "side" | "plate" | "ink" | "region" | "key" | "separation">) => {
   const tones = tonesOf(photo.src);
   if (!tones) return undefined;
   const saturated = saturatedTones(photo.src, tones, photo.saturation ?? 0);
@@ -761,10 +761,19 @@ const maskReading = new Set<string>();
  * each pixel is kept is the mask's lightness there (its darkness, inverted), and the pixel is taken
  * that far back toward white. Worked out once for each photo, mask and crop.
  */
-function maskedTones(src: string, tones: Tones, mask: Tones | null, photo: Pick<Photo, "edgeMask" | "edgeMaskInvert" | "edgeMaskSides" | "edgeGen" | "crop">): Tones {
+/**
+ * Which layer of a photo this is, as text: what tells its layers apart - the band, the plate, the
+ * colour group, the separation, the key. The same for a layer every time, so its varied edge is too.
+ */
+const layerOf = (p: Partial<Photo>) =>
+  JSON.stringify([p.band, p.side, p.plate, p.ink, p.region, p.key ? 1 : 0, p.separation ? `${p.separation.length}|${p.separation.slice(-24)}` : ""]);
+
+function maskedTones(src: string, tones: Tones, mask: Tones | null, photo: Pick<Photo, "edgeMask" | "edgeMaskInvert" | "edgeMaskSides" | "edgeGen" | "crop" | "band" | "side" | "plate" | "ink" | "region" | "key" | "separation">): Tones {
   const [c0, c1, c2, c3] = photo.crop ?? [0, 0, 1, 1];
   const sides = photo.edgeMaskSides ?? MASK_SIDES;
-  const what = photo.edgeGen ? `gen:${edgeGenKey(photo.edgeGen)}` : `${photo.edgeMask!.length}|${photo.edgeMask!.slice(-32)}|${photo.edgeMaskInvert ? "inv" : ""}`;
+  // A made edge varied by layer: this layer's own version of it.
+  const gen = photo.edgeGen && edgeForLayer(photo.edgeGen, layerOf(photo));
+  const what = gen ? `gen:${edgeGenKey(gen)}` : `${photo.edgeMask!.length}|${photo.edgeMask!.slice(-32)}|${photo.edgeMaskInvert ? "inv" : ""}`;
   const id = `${what}|${c0},${c1},${c2},${c3}|${sides.join(",")}`;
   const key = `${src.length}|${src.slice(-32)}|${tones.sat ?? 0}|${id}`;
   const known = maskedCache.get(key);
@@ -777,7 +786,7 @@ function maskedTones(src: string, tones: Tones, mask: Tones | null, photo: Pick<
   // A made edge: worked out over the pixels that show, on the sides chosen.
   const gw = Math.max(1, Math.round(w * cw));
   const gh = Math.max(1, Math.round(h * ch));
-  const made = photo.edgeGen ? edgeKeep(photo.edgeGen, sides, gw, gh) : null;
+  const made = gen ? edgeKeep(gen, sides, gw, gh) : null;
   // A side left out of a loaded mask: its border there is cut off and the rest stretched to the edge.
   const depth = mask ? borderDepths(mask, photo.edgeMaskInvert) : null;
   const off = (side: MaskSide) => (!depth || sides.includes(side) ? 0 : depth[side]);
@@ -804,7 +813,7 @@ function maskedTones(src: string, tones: Tones, mask: Tones | null, photo: Pick<
     }
   }
   const out = { w, h, light, rgba, sat: tones.sat, mask: id };
-  if (maskedCache.size > 4) maskedCache.delete(maskedCache.keys().next().value!);
+  if (maskedCache.size > 8) maskedCache.delete(maskedCache.keys().next().value!);
   maskedCache.set(key, out);
   return out;
 }
