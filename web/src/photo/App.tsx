@@ -27,7 +27,7 @@ import { photoMarks, placeOnPage, plateSetOf, stemWithoutPlate, type Photo } fro
 import { boxOf, newLayerId, type Layer, type Page, type Shape } from "../shared/lib/drawing/shapes";
 import { useDrawingFile } from "../shared/lib/drawing/useDrawingFile";
 import { usePhotoRead, usePhotosRead } from "../shared/lib/drawing/usePhotoRead";
-import { photoActions } from "./lib/photoActions";
+import { photoActions, pictureSources } from "./lib/photoActions";
 import { ConvertStage, type ConvertView } from "./components/ConvertStage";
 import { EffectToolbar, effectOf, type Effect } from "./components/EffectToolbar";
 import { PanelToolbar } from "../shared/components/PanelToolbar";
@@ -290,7 +290,7 @@ export default function App() {
 
   const {
     addPhoto, addSeparations, switchPhotoMode, setKeyLayer, splitPhoto, splitPhotoByColor, splitPhotoBestFit, bestPens,
-    placePhoto, photoScale, setPhotoScale, setPhotoMargin, replacePhoto, turnPhoto, setPhotoOf, addEdgeMask, chooseEdgeMask, deleteEdgeMask, setEdgeGen, saveEdgeGen, setAngles, photoStem, splitPhotoCmyk, setPlatePen, setLayerColor,
+    placePhoto, photoScale, setPhotoScale, setPhotoMargin, replacePhoto, reloadPhoto, turnPhoto, setPhotoOf, addEdgeMask, chooseEdgeMask, deleteEdgeMask, setEdgeGen, saveEdgeGen, setAngles, photoStem, splitPhotoCmyk, setPlatePen, setLayerColor,
     splitAroundPaper, setPaperTone,
   } = photoActions({
     chosen, shapes, setShapes, layers, setLayers, active, setActiveLayer, page, tool,
@@ -636,6 +636,7 @@ export default function App() {
       actions={{
         turn: turnPhoto,
         replace: replacePhoto,
+        reload: reloadPhoto,
         addEdgeMask,
         chooseEdgeMask,
         deleteEdgeMask,
@@ -736,6 +737,22 @@ export default function App() {
         open={browsing !== null}
         endpoint="/api/studio/read"
         onClose={() => setBrowsing(null)}
+        // Pictures are listed too, and one opens as a picture picked in the Mac's dialog would - but
+        // with its place on disk remembered, for Reload.
+        onImage={async ({ name, path }) => {
+          setMessage({ text: `Opening ${name}…`, ok: true, progress: true });
+          try {
+            const res = await fetch(`/api/image-file?path=${encodeURIComponent(path)}`);
+            if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error ?? `${name} couldn't be read`);
+            const blob = await res.blob();
+            const picked = new File([blob], name, { type: blob.type });
+            pictureSources.set(picked, path);
+            setMessage({ text: "", ok: true });
+            ask({ kind: "photos", files: [picked] });
+          } catch (err) {
+            setMessage({ text: (err as Error).message, ok: false });
+          }
+        }}
         onOpened={(res) => ask({ kind: "open", res })}
       />
       <PhotoHeader plotterFound={plotterFound} />

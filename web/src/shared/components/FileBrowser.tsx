@@ -9,7 +9,7 @@ import { load, save } from "../lib/storage";
 interface Entry {
   name: string;
   path: string;
-  kind?: "svg" | "ai";
+  kind?: "svg" | "ai" | "image";
   size?: number;
   modified?: number;
   has_svg?: boolean;
@@ -68,6 +68,8 @@ interface Props {
   /** Studio's "Add as a layer": picking a file puts it on top of the open drawing, a layer of its
    * own, rather than opening it. Needs combine. */
   addMode?: boolean;
+  /** Image: pictures are listed too - TIFFs and all - and picking one hands it here. */
+  onImage?: (file: { name: string; path: string }) => void;
 }
 
 // Where the browser opens, in both apps: the last folder browsed, or the folder of the drawing last
@@ -81,7 +83,7 @@ const fmtDate = (seconds = 0) =>
   new Date(seconds * 1000).toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
 
 // Browse the folders the server allows and open an SVG, or import an Illustrator file as SVG.
-export function FileBrowser({ open, onClose, onOpened, endpoint = "/api/open", combine, addMode = false }: Props) {
+export function FileBrowser({ open, onClose, onOpened, endpoint = "/api/open", combine, addMode = false, onImage }: Props) {
   const dialog = useRef<HTMLDialogElement>(null);
   const [listing, setListing] = useState<Listing | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -97,8 +99,8 @@ export function FileBrowser({ open, onClose, onOpened, endpoint = "/api/open", c
   const browse = async (path?: string) => {
     setError(null);
     try {
-      const query = path ? `?path=${encodeURIComponent(path)}` : "";
-      const next = await api<Listing>(`/api/browse${query}`);
+      const query = new URLSearchParams({ ...(path ? { path } : {}), ...(onImage ? { images: "1" } : {}) }).toString();
+      const next = await api<Listing>(`/api/browse${query ? `?${query}` : ""}`);
       setListing(next);
       save(LAST_FOLDER_KEY, next.path);
     } catch (err) {
@@ -356,13 +358,23 @@ export function FileBrowser({ open, onClose, onOpened, endpoint = "/api/open", c
                   onChange={(e) => tick(file, e.target.checked)}
                 />
               )}
-              <button type="button" className={styles.row} onClick={() => (addMode ? stack(true, undefined, [file]) : openFile(file))}>
+              <button
+                type="button"
+                className={styles.row}
+                onClick={() => {
+                  if (file.kind === "image") {
+                    onImage?.({ name: file.name, path: file.path });
+                    onClose();
+                  } else if (addMode) stack(true, undefined, [file]);
+                  else openFile(file);
+                }}
+              >
                 {file.kind === "ai"
                   ? <PenTool className={styles.icon} aria-hidden="true" />
                   : <FileImage className={styles.icon} aria-hidden="true" />}
                 <span className={styles.name}>{file.name}</span>
                 <span className={styles.meta} data-layer={at >= 0 || undefined}>
-                  {at >= 0 ? `Layer ${at + 1}` : file.kind === "ai" ? "Illustrator, imports as SVG" : "SVG"}
+                  {at >= 0 ? `Layer ${at + 1}` : file.kind === "ai" ? "Illustrator, imports as SVG" : file.kind === "image" ? "Picture" : "SVG"}
                 </span>
                 <span className={styles.meta}>{`${fmtSize(file.size)}, ${fmtDate(file.modified)}`}</span>
               </button>
@@ -370,7 +382,7 @@ export function FileBrowser({ open, onClose, onOpened, endpoint = "/api/open", c
             );
           })}
           {listing && !listing.folders.length && !listing.files.length && (
-            <li className={styles.empty}>No SVG or Illustrator files in this folder.</li>
+            <li className={styles.empty}>{onImage ? "No pictures or drawings in this folder." : "No SVG or Illustrator files in this folder."}</li>
           )}
         </ul>
       )}

@@ -2578,8 +2578,10 @@ def display_path(path):
 
 @app.get("/api/browse")
 def browse():
-    """List the folders, SVG files and Illustrator files in an allowed folder."""
+    """List the folders, SVG files and Illustrator files in an allowed folder - and with ?images=1,
+    the pictures too (Image opens those, TIFFs and all)."""
     folder = allowed_path(request.args.get("path") or allowed_folders()[0])
+    images = request.args.get("images") == "1"
     if folder is None or not folder.is_dir():
         return jsonify(error="That folder isn't one the app can open drawings from."), 403
     folders, files = [], []
@@ -2604,6 +2606,10 @@ def browse():
                     "modified": info.st_mtime,
                     "has_svg": entry.suffix.lower() == ".ai" and entry.with_suffix(".svg").exists(),
                 })
+            elif images and entry.suffix.lower() in PICTURE_SUFFIXES:
+                info = entry.stat()
+                files.append({"name": entry.name, "path": str(entry), "kind": "image",
+                              "size": info.st_size, "modified": info.st_mtime})
         except OSError:
             continue
     names = folder_names()
@@ -4113,16 +4119,40 @@ FLAT_IMAGE_SUFFIXES = {".tif", ".tiff", ".heic", ".heif", ".psd", ".bmp", ".jp2"
 SRGB_PROFILE = Path("/System/Library/ColorSync/Profiles/sRGB Profile.icc")
 
 
+# Pictures the file browser lists for Image: what it can open, the browser reading some and the
+# converter the rest.
+PICTURE_SUFFIXES = {".tif", ".tiff", ".png", ".jpg", ".jpeg", ".gif", ".webp", ".heic", ".heif", ".psd", ".bmp"}
+BROWSER_PICTURES = {".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".gif": "image/gif", ".webp": "image/webp"}
+
+
 @app.post("/api/flat-image")
 def flat_image():
     """The picture sent, as a flat sRGB PNG: the whole body is the file, its name in ?name=."""
-    from flask import Response
-    suffix = Path(request.args.get("name") or "").suffix.lower()
-    if suffix not in FLAT_IMAGE_SUFFIXES:
-        suffix = ".tif"
     data = request.get_data()
     if not data:
         return jsonify(error="No picture was sent."), 400
+    return flattened_picture(data, Path(request.args.get("name") or "").suffix.lower())
+
+
+@app.get("/api/image-file")
+def image_file():
+    """A picture from one of the allowed folders, by its path: as it is where the browser reads it,
+    flattened to a PNG where it doesn't (a TIFF, a HEIC). What Image opens from the file browser, and
+    reads again to reload a picture from its file."""
+    from flask import Response
+    path = allowed_path(request.args.get("path"))
+    if path is None or not path.is_file() or path.suffix.lower() not in PICTURE_SUFFIXES:
+        return jsonify(error="That picture isn't in a folder the app can open, or it's gone."), 404
+    data = path.read_bytes()
+    kind = BROWSER_PICTURES.get(path.suffix.lower())
+    return Response(data, mimetype=kind) if kind else flattened_picture(data, path.suffix.lower())
+
+
+def flattened_picture(data, suffix):
+    """A picture's bytes as a flat sRGB PNG, by macOS's converter, or an error response."""
+    from flask import Response
+    if suffix not in FLAT_IMAGE_SUFFIXES:
+        suffix = ".tif"
     if not shutil.which("sips"):
         return jsonify(error="This computer can't convert that picture. Save it as a JPEG or PNG and add that."), 400
     with tempfile.TemporaryDirectory() as tmp:

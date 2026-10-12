@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { api } from "../../shared/lib/api";
 import { Button, ButtonRound, Card, Checkbox, InputSelect, Segment, SegmentedControl } from "@tomcoggia/ui";
-import { RotateCcwSquare, RotateCwSquare } from "lucide-react";
+import { RefreshCw, RotateCcwSquare, RotateCwSquare } from "lucide-react";
 import { Section } from "../../shared/components/controls/Section";
 import { NumberField } from "../../shared/components/controls/NumberField";
 import controls from "../../shared/components/controls/controls.module.css";
@@ -16,6 +16,8 @@ import { EFFECTS, effectOf } from "./EffectToolbar";
 export interface PhotoActions {
   turn: (quarter: 1 | -1) => void;
   replace: (file: File | undefined) => void;
+  /** Read the photo's file again, where it was opened from NextDraw's file browser and so is known. */
+  reload: () => void;
   /** Add a picture to the edge mask library - its black is paper - and lay it over the whole image. */
   addEdgeMask: (file: File, taken: string[]) => Promise<void>;
   /** Lay a mask from the library over the whole image; no name takes it off. */
@@ -379,6 +381,17 @@ export function PhotoCard({ shape, title, shapes, busy, targeted, layerCount, sh
                     buttons as Plot's for turning a drawing. */}
                   <ButtonRound size="sm" icon={<RotateCcwSquare />} aria-label="Turn the image left" title="Turn the image 90° left" disabled={busy} onClick={() => actions.turn(-1)} />
                   <ButtonRound size="sm" icon={<RotateCwSquare />} aria-label="Turn the image right" title="Turn the image 90° right" disabled={busy} onClick={() => actions.turn(1)} />
+                  {/* Only for a picture opened from NextDraw's file browser: its file is known. */}
+                  {photo.source && (
+                    <ButtonRound
+                      size="sm"
+                      icon={<RefreshCw />}
+                      aria-label="Reload the image"
+                      title={`Reload ${photo.source.slice(photo.source.lastIndexOf("/") + 1)} from its file, keeping every setting - after editing it elsewhere`}
+                      disabled={busy}
+                      onClick={actions.reload}
+                    />
+                  )}
                   <Button size="sm" variant="secondary" title={photo.separation ? "Put a different picture in for this plate, keeping its settings" : "Put a different image in, keeping every setting"} onClick={() => replaceInput.current?.click()}>
                     Replace…
                   </Button>

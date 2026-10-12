@@ -66,6 +66,12 @@ export function autoPaperTone(paper: string, dark: number, light: number): [numb
   return [Math.round(lo * 100) / 100, Math.round((lo + 1 / 3) * 100) / 100];
 }
 
+/**
+ * Where a picture came from, for one opened from NextDraw's own file browser: the browser's file
+ * has no path of its own, so it's kept beside it, and the photo made from it remembers it for Reload.
+ */
+export const pictureSources = new WeakMap<File, string>();
+
 export function photoActions(ctx: PhotoContext) {
   const { chosen, shapes, setShapes, layers, setLayers, active, setActiveLayer, page, tool: tool2, targets, paper, record, addShape, pick, setMessage, setBusy } = ctx;
   const defaults = { spacingMm: ctx.spacingMm };
@@ -80,7 +86,7 @@ export function photoActions(ctx: PhotoContext) {
       const margin = 0.5;
       const { crop, ...box } = placeOnPage(copy.width / copy.height, page, "fit", margin);
       const stem = file.name.replace(/\.[^.]+$/, "");
-      const photo: Photo = { ...copy, ...PHOTO_DEFAULTS, spacingMm: defaults.spacingMm, crop, fit: "fit", margin };
+      const photo: Photo = { ...copy, ...PHOTO_DEFAULTS, spacingMm: defaults.spacingMm, crop, fit: "fit", margin, source: pictureSources.get(file) };
       const pens = tool2?.palette ?? [];
       // Matched to the tool's pens as it comes in. A colour photo is split by its colours, each group in
       // the nearest pen; a black and white one is one layer, in the pen nearest its darkest shade. With
@@ -190,7 +196,7 @@ export function photoActions(ctx: PhotoContext) {
           layerName: pen?.name ?? separation,
           layerColor: pen?.color ?? active.color,
           photo: {
-            ...copy, ...PHOTO_DEFAULTS, spacingMm: defaults.spacingMm, crop, fit: "fit" as const, margin, group, separation,
+            ...copy, ...PHOTO_DEFAULTS, spacingMm: defaults.spacingMm, crop, fit: "fit" as const, margin, group, separation, source: pictureSources.get(file),
             angle: plate ? PLATE_AIMS[plate].angle : PHOTO_DEFAULTS.angle + 15 * i,
           } as Photo,
         };
@@ -716,6 +722,61 @@ export function photoActions(ctx: PhotoContext) {
     * Split by colour, the new picture is sorted into the same colour groups, so the layers stay as
     * they are.
     */
+  /**
+   * Where a new picture of this proportion goes in place of the chosen one: sized to the page as it
+   * was, or as wide as it was, about the same middle - uncropped either way.
+   */
+  const placedInstead = (sh: Shape, aspect: number) => {
+    const was = sh.photo!;
+    if (was.fit) {
+      const placed = placeOnPage(aspect, page, was.fit, was.margin ?? 0.5, was.align);
+      return { box: { x: placed.x, y: placed.y, x2: placed.x2, y2: placed.y2 }, crop: placed.crop };
+    }
+    const b = boxOf(sh);
+    const w = b.x1 - b.x0;
+    const h = w / aspect;
+    const cy = (b.y0 + b.y1) / 2;
+    return { box: { x: b.x0, y: cy - h / 2, x2: b.x1, y2: cy + h / 2 }, crop: undefined as Photo["crop"] };
+  };
+
+  /**
+   * Read the chosen photo's file again - one opened from NextDraw's file browser, which remembers it -
+   * and put it in place of the working copy: an edit made to the picture since, in Photoshop say.
+   * Turned as it was turned here. The same shape as before, everything stays, crop and place
+   * included; another shape, it's placed as Replace places a picture. Every setting stays either way.
+   */
+  const reloadPhoto = async () => {
+    const was = chosen?.photo;
+    if (!was?.source) return;
+    const name = was.source.slice(was.source.lastIndexOf("/") + 1);
+    setBusy(true);
+    try {
+      const res = await fetch(`/api/image-file?path=${encodeURIComponent(was.source)}`);
+      if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error ?? `${name} couldn't be read`);
+      const blob = await res.blob();
+      let copy = await workingCopy(new File([blob], name, { type: blob.type }));
+      const turns = was.quarterTurns ?? 0;
+      if (turns === 3) copy = await turnedCopy(copy.src, -1);
+      else for (let i = 0; i < turns; i++) copy = await turnedCopy(copy.src, 1);
+      await readTones(copy.src);
+      const same = Math.abs(copy.width / copy.height / (was.width / was.height) - 1) < 0.01;
+      const { box, crop } = same ? { box: undefined, crop: was.crop } : placedInstead(chosen!, copy.width / copy.height);
+      record();
+      // A separation is one plate with a file of its own; a split photo's layers share one picture.
+      const group = was.separation ? undefined : was.group;
+      setShapes((list) => list.map((sh) => (sh.id === chosen!.id || (group && sh.photo?.group === group)
+        ? { ...sh, ...(box ?? {}), photo: { ...sh.photo!, src: copy.src, width: copy.width, height: copy.height, crop } }
+        : sh)));
+      setMessage(same
+        ? { text: `Reloaded ${name}`, ok: true }
+        : { text: `Reloaded ${name}: it's a different shape now, so it was placed again`, ok: true });
+    } catch (err) {
+      setMessage({ text: `Couldn't reload ${name}: ${(err as Error).message}`, ok: false });
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const replacePhoto = async (file: File | undefined) => {
     if (!file || !chosen?.photo) return;
     try {
@@ -723,25 +784,12 @@ export function photoActions(ctx: PhotoContext) {
       await readTones(copy.src);
       const aspect = copy.width / copy.height;
       const was = chosen.photo;
-      let box: { x: number; y: number; x2: number; y2: number };
-      let crop: Photo["crop"];
-      if (was.fit) {
-        const placed = placeOnPage(aspect, page, was.fit, was.margin ?? 0.5, was.align);
-        crop = placed.crop;
-        box = { x: placed.x, y: placed.y, x2: placed.x2, y2: placed.y2 };
-      } else {
-        const b = boxOf(chosen);
-        const w = b.x1 - b.x0;
-        const h = w / aspect;
-        const cy = (b.y0 + b.y1) / 2;
-        box = { x: b.x0, y: cy - h / 2, x2: b.x1, y2: cy + h / 2 };
-        crop = undefined;
-      }
+      const { box, crop } = placedInstead(chosen, aspect);
       record();
       if (was.separation) {
         // A separation is one plate of the photo: only its own picture changes, in the same place, so it
         // stays in register with the rest.
-        setShapes((list) => list.map((sh) => (sh.id === chosen.id ? { ...sh, photo: { ...sh.photo!, src: copy.src, width: copy.width, height: copy.height } } : sh)));
+        setShapes((list) => list.map((sh) => (sh.id === chosen.id ? { ...sh, photo: { ...sh.photo!, src: copy.src, width: copy.width, height: copy.height, source: pictureSources.get(file), quarterTurns: undefined } } : sh)));
         const aspect0 = was.width / was.height;
         setMessage(Math.abs(aspect / aspect0 - 1) > 0.01
           ? { text: `${file.name} isn't the same shape as the other plates, so it's stretched to them and won't line up`, ok: false }
@@ -750,7 +798,7 @@ export function photoActions(ctx: PhotoContext) {
       }
       const group = was.group;
       setShapes((list) => list.map((sh) => (sh.id === chosen.id || (group && sh.photo?.group === group)
-        ? { ...sh, ...box, photo: { ...sh.photo!, src: copy.src, width: copy.width, height: copy.height, crop } }
+        ? { ...sh, ...box, photo: { ...sh.photo!, src: copy.src, width: copy.width, height: copy.height, crop, source: pictureSources.get(file), quarterTurns: undefined } }
         : sh)));
       setMessage({ text: `Replaced the image with ${file.name}, keeping its settings`, ok: true });
     } catch (err) {
@@ -793,7 +841,7 @@ export function photoActions(ctx: PhotoContext) {
       }
       record();
       const ids = new Set(members.map((sh) => sh.id));
-      setShapes((list) => list.map((sh) => (ids.has(sh.id) ? { ...sh, ...box, photo: { ...sh.photo!, ...turned.get(sh.photo!.src)!, crop } } : sh)));
+      setShapes((list) => list.map((sh) => (ids.has(sh.id) ? { ...sh, ...box, photo: { ...sh.photo!, ...turned.get(sh.photo!.src)!, crop, quarterTurns: (((sh.photo!.quarterTurns ?? 0) + quarter) % 4 + 4) % 4 || undefined } } : sh)));
     } catch (err) {
       setMessage({ text: `Couldn’t turn the image: ${(err as Error).message}`, ok: false });
     }
@@ -1029,7 +1077,7 @@ export function photoActions(ctx: PhotoContext) {
 
   return {
     addPhoto, addSeparations, switchPhotoMode, setKeyLayer, splitPhoto, splitPhotoByColor, splitPhotoBestFit, bestPens,
-    placePhoto, photoScale, setPhotoScale, setPhotoMargin, replacePhoto, turnPhoto, setPhotoOf, addEdgeMask, chooseEdgeMask, deleteEdgeMask, setEdgeGen, saveEdgeGen, setAngles, photoStem, splitPhotoCmyk, setPlatePen, setLayerColor,
+    placePhoto, photoScale, setPhotoScale, setPhotoMargin, replacePhoto, reloadPhoto, turnPhoto, setPhotoOf, addEdgeMask, chooseEdgeMask, deleteEdgeMask, setEdgeGen, saveEdgeGen, setAngles, photoStem, splitPhotoCmyk, setPlatePen, setLayerColor,
     splitAroundPaper, setPaperTone,
   };
 }

@@ -16,6 +16,10 @@ export interface Photo {
   /** The working copy's size in pixels, so its proportions are known before it has been read. */
   width: number;
   height: number;
+  /** The file it was made from, where it was opened from NextDraw's own file browser: what Reload reads again. */
+  source?: string;
+  /** Quarter turns given it since it came from its file, clockwise, 0 to 3: what Reload turns the file again by. */
+  quarterTurns?: number;
   /** -100 to 100: lighter or darker overall. */
   brightness: number;
   /** -100 to 100: flatter or more contrasty. */
@@ -4108,6 +4112,8 @@ export function photoFromData(raw: Record<string, unknown>): Photo | null {
     contrast: num(raw.contrast, PHOTO_DEFAULTS.contrast),
     angle: num(raw.angle, PHOTO_DEFAULTS.angle),
     spacingMm: num(raw.spacing_mm, 0.3),
+    ...(typeof raw.source === "string" && raw.source ? { source: raw.source } : {}),
+    ...([1, 2, 3].includes(Number(raw.quarter_turns)) ? { quarterTurns: Number(raw.quarter_turns) } : {}),
     levels: num(raw.levels, PHOTO_DEFAULTS.levels),
     ...(typeof raw.group === "string" ? { group: raw.group } : {}),
     ...(typeof raw.edgeMask === "string" && raw.edgeMask.startsWith("data:image/") ? { edgeMask: raw.edgeMask } : {}),
@@ -4197,6 +4203,8 @@ export function photoFromData(raw: Record<string, unknown>): Photo | null {
 export const photoData = (p: Photo) => ({
   src: p.src, width: p.width, height: p.height, brightness: p.brightness, contrast: p.contrast,
   angle: p.angle, spacing_mm: p.spacingMm, levels: p.levels,
+  ...(p.source ? { source: p.source } : {}),
+  ...(p.quarterTurns ? { quarter_turns: p.quarterTurns } : {}),
   ...(p.group ? { group: p.group } : {}),
   ...(p.band ? { band: p.band } : {}),
   ...(p.side ? { side: p.side, paper_tone: p.paperTone, ...(p.paperToneSet ? { paper_tone_set: true } : {}) } : {}),
