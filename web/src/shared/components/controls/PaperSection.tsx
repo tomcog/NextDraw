@@ -205,7 +205,7 @@ export function PaperSection({ w, h, sizeId, units, color, collapsibleKey, disab
       <div className={styles.scaleRow}>
         <LengthField label="Margin" mm={margin} units={units} min={0} disabled={disabled} onChange={keepMargin} />
         <Button
-          size="md"
+          size="sm"
           variant="secondary"
           title={roomLeft
             ? `Scale the drawing to fill the paper inside a ${fmtLen(margin, units)} margin, placed as the alignment below says`

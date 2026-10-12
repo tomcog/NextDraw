@@ -21,7 +21,7 @@ export function GridSection({ snapping, onSnapping, step, onStep }: Props) {
       // Folded, the row says whether shapes are snapping, as Paper and Drawing tool say theirs.
       closedAction={snapping ? <span className={controls.toolInTitle}>On</span> : undefined}
     >
-      <Checkbox
+      <Checkbox size="md"
         checked={snapping}
         label="Snap to the grid"
         title="Round what is drawn, moved and resized to the grid"

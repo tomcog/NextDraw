@@ -52,7 +52,7 @@ export function FillPanel({ fills, outline, count = 1, asOne = false, actions }:
   const kind = first?.kind ?? "hatch";
   return (
     <>
-      <Checkbox
+      <Checkbox size="md"
         checked={fills.length > 0}
         label={asOne ? "Fill shape" : count > 1 ? "Fill each path" : "Fill path"}
         onChange={(e) => actions.setHatched(e.target.checked)}
@@ -146,14 +146,14 @@ export function FillPanel({ fills, outline, count = 1, asOne = false, actions }:
         </div>
       )}
       {first && (
-        <Checkbox
+        <Checkbox size="md"
           checked={fills.length > 1}
           label="Cross-hatch"
           onChange={(e) => actions.setCross(e.target.checked)}
         />
       )}
       {first && canConnect(first) && (
-        <Checkbox
+        <Checkbox size="md"
           checked={first.connected === true}
           label="Connect ends"
           // Each pass becomes one zigzag stroke, joined along the shape's edge. Both passes
@@ -164,7 +164,7 @@ export function FillPanel({ fills, outline, count = 1, asOne = false, actions }:
       {/* Only worth asking about while there is a hatch: a shape with no hatch is its
         outline, and nothing else. */}
       {first && (
-        <Checkbox
+        <Checkbox size="md"
           checked={outline}
           label="Draw the outline too"
           onChange={(e) => actions.setOutline(e.target.checked)}

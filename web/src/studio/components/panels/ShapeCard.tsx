@@ -302,7 +302,7 @@ export function ShapeCard({ shape, title, busy, hasFill, canPaste, panel, onPane
                 questions in the same order as a fill, which asks whether the shape is filled
                 before it asks what the filling is made of. A row is the plainest of the three,
                 so that is what ticking the box gives you to adjust. */}
-              <Checkbox
+              <Checkbox size="md"
                 checked={!!shape.repeat}
                 label="Duplicate"
                 onChange={(e) => actions.setRepeat(e.target.checked ? defaultRepeat("line", shape) : undefined)}
@@ -352,7 +352,7 @@ export function ShapeCard({ shape, title, busy, hasFill, canPaste, panel, onPane
                 </div>
               )}
               {shape.repeat?.kind === "ring" && (
-                <Checkbox
+                <Checkbox size="md"
                   checked={shape.repeat.facing}
                   label="Turn each copy to face out"
                   onChange={(e) => actions.setRepeat({ ...(shape.repeat as Repeat), facing: e.target.checked } as Repeat)}

@@ -67,7 +67,7 @@ export function SimplifierSection({ value, onChange, scope, onScope, layerName, 
         <Segment selected={scope === "layer"} title={`Only the paths on ${layerName}`} onClick={() => onScope("layer")}>This layer</Segment>
       </SegmentedControl>
       {/* Merge has no distance: lines are on the same line or they aren't. */}
-      <Checkbox
+      <Checkbox size="md"
         checked={value.merge}
         label="Merge overlapping lines"
         title="Straight lines that run over one another along the same line - a halftone's dashes, a line drawn twice - joined into single strokes, so each bit is drawn once"
@@ -75,7 +75,7 @@ export function SimplifierSection({ value, onChange, scope, onScope, layerName, 
       />
       {STEPS.map(({ key, label, hint, max, step }) => (
         <div key={key}>
-          <Checkbox
+          <Checkbox size="md"
             checked={value.on[key]}
             label={label}
             title={hint}
@@ -90,7 +90,7 @@ export function SimplifierSection({ value, onChange, scope, onScope, layerName, 
         across the page; Shuffled one line at random from each N; Random any one in N. The Randomizer
         picks another set for the last two. Unticked, it goes back to Evenly. */}
       <div>
-        <Checkbox
+        <Checkbox size="md"
           checked={value.prune.on}
           label="Prune paths"
           title="Take out one stroke in every so many: 2 takes out half, 3 a third"

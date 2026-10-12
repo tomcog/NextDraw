@@ -203,7 +203,7 @@ export function PhotoCard({ shape, title, shapes, busy, targeted, layerCount, sh
               {photo.fitPaper && (
                 // Two pens hatched across each other, for colours neither makes alone - an olive
                 // from a yellow under a dark green. Each pen's layer gets its own angle so the lines cross.
-                <Checkbox
+                <Checkbox size="md"
                   checked={Boolean(photo.fitPairs)}
                   label="Overlaid pairs, for colors no single color makes"
                   onChange={(e) => actions.setPairs(e.target.checked)}
@@ -216,7 +216,7 @@ export function PhotoCard({ shape, title, shapes, busy, targeted, layerCount, sh
               )}
               {/* A key ink over the colours, darkening shadows the colour layers can't reach alone.
                 Its pen is the layer's: change it with the layer's dot. */}
-              <Checkbox
+              <Checkbox size="md"
                 checked={Boolean(photo.keyInk)}
                 label="Key layer, to darken shadows"
                 onChange={(e) => actions.setKeyLayer(e.target.checked)}
@@ -404,7 +404,7 @@ export function PhotoCard({ shape, title, shapes, busy, targeted, layerCount, sh
                 <NumberField label="Saturation" min={-100} max={100} step={5} value={photo.saturation ?? 0} onChange={(v) => actions.set({ saturation: v || undefined })} />
               </div>
               {/* Black and white is Saturation all the way down: on sets it to -100, off back to the photo's own. */}
-              <Checkbox
+              <Checkbox size="md"
                 checked={photo.saturation === -100}
                 label="B&W"
                 onChange={(e) => actions.set({ saturation: e.target.checked ? -100 : undefined })}
@@ -421,7 +421,7 @@ export function PhotoCard({ shape, title, shapes, busy, targeted, layerCount, sh
               </div>
               {/* Mask edges: ticked, the mask's controls; unticked, none of them, and no mask on the
                 image - so a mask never stays on out of sight. */}
-              <Checkbox
+              <Checkbox size="md"
                 checked={masking}
                 label="Mask edges"
                 title="Leave the image's edges as paper: a grunge border, a torn edge"
@@ -496,7 +496,7 @@ export function PhotoCard({ shape, title, shapes, busy, targeted, layerCount, sh
                     Load image mask…
                   </Button>
                   {photo.edgeMask && (
-                    <Checkbox
+                    <Checkbox size="md"
                       checked={Boolean(photo.edgeMaskInvert)}
                       label="Invert"
                       title="Read the mask the other way: white is paper, black keeps the image"
@@ -525,7 +525,7 @@ export function PhotoCard({ shape, title, shapes, busy, targeted, layerCount, sh
                     {(["top", "right", "left", "bottom"] as const).map((side) => {
                       const sides = photo.edgeMaskSides ?? MASK_SIDES;
                       return (
-                        <Checkbox
+                        <Checkbox size="md"
                           key={side}
                           checked={sides.includes(side)}
                           label={side[0].toUpperCase() + side.slice(1)}
@@ -643,7 +643,7 @@ export function PhotoCard({ shape, title, shapes, busy, targeted, layerCount, sh
                       <NumberField label="Blend" unit="%" min={0} max={100} step={10} value={Math.round((photo.hilbertBlend ?? 0) * 100)} onChange={(v) => actions.set({ hilbertBlend: v > 0 ? v / 100 : undefined })} />
                       <NumberField label="Angle" unit="°" min={-180} max={180} step={15} value={photo.hilbertAngle ?? 0} onChange={(v) => actions.set({ hilbertAngle: v || undefined })} />
                     </div>
-                    <Checkbox checked={Boolean(photo.hilbertLift)} label="Lift the pen in white areas" onChange={(e) => actions.set({ hilbertLift: e.target.checked || undefined })} />
+                    <Checkbox size="md" checked={Boolean(photo.hilbertLift)} label="Lift the pen in white areas" onChange={(e) => actions.set({ hilbertLift: e.target.checked || undefined })} />
                     {eachLayer("These settings")}
                   </>
                 ) : photo.style === "outlines" ? (
@@ -688,8 +688,8 @@ export function PhotoCard({ shape, title, shapes, busy, targeted, layerCount, sh
                             <option value="join">Back-and-Forth with Joined Ends</option>
                           </InputSelect>
                         </div>
-                        <Checkbox checked={squiggleInkscapeOf(photo).invert} label="Invert colors" onChange={(e) => setInkscape({ invert: e.target.checked })} />
-                        <Checkbox checked={Boolean(photo.squiggleLift)} label="Lift the pen in white areas" onChange={(e) => actions.set({ squiggleLift: e.target.checked || undefined })} />
+                        <Checkbox size="md" checked={squiggleInkscapeOf(photo).invert} label="Invert colors" onChange={(e) => setInkscape({ invert: e.target.checked })} />
+                        <Checkbox size="md" checked={Boolean(photo.squiggleLift)} label="Lift the pen in white areas" onChange={(e) => actions.set({ squiggleLift: e.target.checked || undefined })} />
                         <Button size="sm" variant="secondary" onClick={() => actions.set({ squiggleInkscape: undefined })}>Default</Button>
                       </>
                     ) : (
@@ -717,9 +717,9 @@ export function PhotoCard({ shape, title, shapes, busy, targeted, layerCount, sh
                           {/* How round the waves are: 0 a zigzag, 100 as SquiggleDraw draws them, 200 broad round crests. */}
                           <NumberField label="Smoothness" unit="%" min={0} max={200} step={10} value={Math.round((photo.squiggleSmooth ?? 1) * 100)} onChange={(v) => actions.set({ squiggleSmooth: v / 100 })} />
                         </div>
-                        <Checkbox checked={squiggleDrawOf(photo).invert} label="Invert colors" onChange={(e) => setSquiggle({ invert: e.target.checked })} />
-                        <Checkbox checked={Boolean(photo.squiggleJoin)} label="Connect ends" onChange={(e) => actions.set({ squiggleJoin: e.target.checked || undefined })} />
-                        <Checkbox checked={Boolean(photo.squiggleLift)} label="Lift the pen in white areas" onChange={(e) => actions.set({ squiggleLift: e.target.checked || undefined })} />
+                        <Checkbox size="md" checked={squiggleDrawOf(photo).invert} label="Invert colors" onChange={(e) => setSquiggle({ invert: e.target.checked })} />
+                        <Checkbox size="md" checked={Boolean(photo.squiggleJoin)} label="Connect ends" onChange={(e) => actions.set({ squiggleJoin: e.target.checked || undefined })} />
+                        <Checkbox size="md" checked={Boolean(photo.squiggleLift)} label="Lift the pen in white areas" onChange={(e) => actions.set({ squiggleLift: e.target.checked || undefined })} />
                         <Button size="sm" variant="secondary" onClick={() => actions.set({ squiggleDraw: undefined, squiggleSmooth: undefined, squiggleJoin: undefined })}>Default</Button>
                       </>
                     )}
