@@ -5,7 +5,7 @@ import { RefreshCw, RotateCcwSquare, RotateCwSquare } from "lucide-react";
 import { Section } from "../../shared/components/controls/Section";
 import { NumberField } from "../../shared/components/controls/NumberField";
 import controls from "../../shared/components/controls/controls.module.css";
-import { BLACK_SHARE, CENTER_DEFAULTS, KEY_FROM, MOST_COLORS, MOST_LAYERS, MOST_SIDE_LAYERS, MOST_PASSES, paperToneOf, OUTLINE_DEFAULTS, PLATE_AIMS, PLATE_OFF, SILHOUETTE_DEFAULTS, STREAM_DEFAULTS, ONE_LINE_DEFAULTS, ONE_LINE_MOST, HILBERT_DEFAULTS, WAVE_DEFAULTS, ANGLE_PRESETS, MASK_SIDES, PLATE_SETS, SQUIGGLE_DRAW, SQUIGGLE_INKSCAPE, SQUIGGLE_INKSCAPE_RANGES, SQUIGGLE_RANGES, coverSteps, plateSetOf, platesOf, squiggleDrawOf, squiggleInkscapeOf, type AnglePreset, type SquiggleDraw, type SquiggleInkscape, type PlateSet, photoMarks, photoMode, type Photo, type Plate } from "../../shared/lib/drawing/photo";
+import { BLACK_SHARE, CENTER_DEFAULTS, KEY_FROM, MOST_COLORS, MOST_LAYERS, MOST_SIDE_LAYERS, MOST_PASSES, paperToneOf, OUTLINE_DEFAULTS, PLATE_AIMS, PLATE_OFF, SILHOUETTE_DEFAULTS, STREAM_DEFAULTS, ONE_LINE_DEFAULTS, ONE_LINE_MOST, HILBERT_DEFAULTS, WAVE_DEFAULTS, ANGLE_PRESETS, hatchShortestOf, MASK_SIDES, PLATE_SETS, SQUIGGLE_DRAW, SQUIGGLE_INKSCAPE, SQUIGGLE_INKSCAPE_RANGES, SQUIGGLE_RANGES, coverSteps, plateSetOf, platesOf, squiggleDrawOf, squiggleInkscapeOf, type AnglePreset, type SquiggleDraw, type SquiggleInkscape, type PlateSet, photoMarks, photoMode, type Photo, type Plate } from "../../shared/lib/drawing/photo";
 import { EDGE_FIELDS, EDGE_STYLES, MOST_VARY, newEdge, newSeed, type EdgeGen, type EdgeStyle } from "../../shared/lib/drawing/edgeMask";
 import { boxOf, type Shape } from "../../shared/lib/drawing/shapes";
 import type { PenColor } from "../../shared/lib/types";
@@ -585,11 +585,30 @@ export function PhotoCard({ shape, title, shapes, busy, targeted, layerCount, sh
                     <NumberField label="Smallest" unit="mm" min={0} max={50} step={0.5} value={photo.silhouetteSmallestMm ?? SILHOUETTE_DEFAULTS.smallestMm} onChange={(silhouetteSmallestMm) => actions.set({ silhouetteSmallestMm })} />
                   </div>
                 ) : photo.style === "centerlines" ? (
-                  <div className={styles.fillRow}>
-                    <NumberField label="Darker than" unit="%" min={1} max={99} step={5} value={Math.round((photo.centerFrom ?? CENTER_DEFAULTS.from) * 100)} onChange={(v) => actions.set({ centerFrom: v / 100 })} />
-                    <NumberField label="Smoothing" unit="mm" min={0} max={5} step={0.05} value={photo.centerSmoothMm ?? CENTER_DEFAULTS.smoothMm} onChange={(centerSmoothMm) => actions.set({ centerSmoothMm })} />
-                    <NumberField label="Shortest" unit="mm" min={0} max={20} step={0.25} value={photo.centerShortestMm ?? CENTER_DEFAULTS.shortestMm} onChange={(centerShortestMm) => actions.set({ centerShortestMm })} />
-                  </div>
+                  <>
+                    <div className={styles.fillRow}>
+                      <NumberField label="Darker than" unit="%" min={1} max={99} step={5} value={Math.round((photo.centerFrom ?? CENTER_DEFAULTS.from) * 100)} onChange={(v) => actions.set({ centerFrom: v / 100 })} />
+                      <NumberField label="Smoothing" unit="mm" min={0} max={5} step={0.05} value={photo.centerSmoothMm ?? CENTER_DEFAULTS.smoothMm} onChange={(centerSmoothMm) => actions.set({ centerSmoothMm })} />
+                      <NumberField label="Shortest" unit="mm" min={0} max={20} step={0.25} value={photo.centerShortestMm ?? CENTER_DEFAULTS.shortestMm} onChange={(centerShortestMm) => actions.set({ centerShortestMm })} />
+                    </div>
+                    {/* Curves, with the corners kept sharp past an angle; or straight lines, for drawings
+                      of things - buildings, furniture - whose edges are straight and corners sharp. */}
+                    <SegmentedControl size="sm" variant="dark" aria-label="Lines drawn as">
+                      <Segment selected={!photo.centerStraightMm} title="Lines drawn as smooth curves" onClick={() => actions.set({ centerStraightMm: undefined })}>Curves</Segment>
+                      <Segment selected={Boolean(photo.centerStraightMm)} title="Lines drawn as straight segments: straight edges dead straight, every corner sharp. A circle is still a circle" onClick={() => !photo.centerStraightMm && actions.set({ centerStraightMm: CENTER_DEFAULTS.straightMm })}>Straight</Segment>
+                    </SegmentedControl>
+                    <div className={styles.fillRow}>
+                      {photo.centerStraightMm ? (
+                        <div title="How far a straight segment may stray from the traced line: more makes fewer, longer segments">
+                          <NumberField label="Straight within" unit="mm" min={0.05} max={5} step={0.05} value={photo.centerStraightMm} onChange={(v) => actions.set({ centerStraightMm: Math.max(0.05, v) })} />
+                        </div>
+                      ) : (
+                        <div title="Where a line turns more than this, it keeps a sharp corner rather than being rounded through it. 0 rounds every turn">
+                          <NumberField label="Sharp corners over" unit="°" min={0} max={179} step={5} value={photo.centerCornerDeg ?? 0} onChange={(v) => actions.set({ centerCornerDeg: v > 0 ? Math.min(179, v) : undefined })} />
+                        </div>
+                      )}
+                    </div>
+                  </>
                 ) : photo.style === "streamlines" ? (
                   <>
                     {/* As Hatching: the color mode first, then the layers' angles - which the lines settle
@@ -780,8 +799,20 @@ export function PhotoCard({ shape, title, shapes, busy, targeted, layerCount, sh
                     {/* The photo smoothed before it's hatched, so busy patches read as tone rather than dashes. */}
                     <div className={styles.fillRow}>
                       <NumberField label="Smoothing mm" min={0} max={5} step={0.1} value={photo.hatchSmoothMm ?? 0} onChange={(v) => actions.set({ hatchSmoothMm: v > 0 ? v : undefined })} />
+                      {/* Strokes shorter than this are left out: dabs, not lines. Until it's set, one and
+                        a half line spacings, following the spacing. */}
+                      <div title="Leave out strokes shorter than this: a tap of the pen rather than a line. Until set, one and a half line spacings">
+                        <NumberField
+                          label="Shortest stroke mm"
+                          min={0}
+                          max={50}
+                          step={0.1}
+                          value={hatchShortestOf(photo)}
+                          onChange={(v) => actions.set({ hatchShortestMm: Math.abs(v - hatchShortestOf({ spacingMm: photo.spacingMm })) < 1e-9 ? undefined : Math.max(0, v) })}
+                        />
+                      </div>
                     </div>
-                    {eachLayer("Angle, spacing, passes and smoothing")}
+                    {eachLayer("Angle, spacing, passes, smoothing and shortest stroke")}
                   </>
                 )}
                 <p className={styles.empty}>

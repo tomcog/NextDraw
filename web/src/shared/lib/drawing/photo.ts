@@ -49,6 +49,11 @@ export interface Photo {
    */
   hatchSmoothMm?: number;
   /**
+   * Hatching: the shortest stroke drawn, in mm on the page - anything shorter is left out, a tap of
+   * the pen rather than a line. Absent, one and a half line spacings.
+   */
+  hatchShortestMm?: number;
+  /**
    * What the tone is drawn as: hatching, lines crossing and filling in as it darkens; or tone lines,
    * one line along each row that waves harder and tighter where it's darker; or squiggles, the same
    * drawn the way SquiggleDraw draws it - smooth curves, unbroken through white, rows joinable into
@@ -102,6 +107,17 @@ export interface Photo {
   centerSmoothMm?: number;
   /** Centerlines: lines and whiskers shorter than this are left out, in mm. */
   centerShortestMm?: number;
+  /**
+   * Centerlines as straight lines: each line simplified to straight segments that stay within this
+   * many mm of it - straight edges dead straight, every corner sharp; a circle is still a circle.
+   * Absent, lines are drawn as curves.
+   */
+  centerStraightMm?: number;
+  /**
+   * Centerlines as curves: where a line turns more than this many degrees it keeps a sharp corner
+   * rather than being rounded through it. Absent or 0, only a line's tips are sharp.
+   */
+  centerCornerDeg?: number;
   /**
    * Silhouette: how light, 0 to 1, a part of the picture is before it counts as paper. The shape is
    * drawn round where paint meets paper - its outline, and each hole in it as a loop of its own.
@@ -536,7 +552,7 @@ export interface PhotoPart {
 
 /** The settings a layer of a photo keeps as its own, as opposed to the photo's: what a mode remembers. */
 export const LAYER_SETTINGS = [
-  "style", "angle", "spacingMm", "levels", "hatchSmoothMm", "rowMm", "waveMm", "squiggleAmpMm", "squiggleHeight", "squiggleJoin", "squiggleLift", "squiggleSmooth", "squiggleDraw", "squiggleVersion", "squiggleInkscape", "squiggleAngle", "contours", "smoothMm", "centerFrom", "centerSmoothMm", "centerShortestMm", "silhouetteFrom", "silhouetteSmoothMm", "silhouetteSmallestMm", "streamWidestMm", "streamPasses", "streamFlowMm", "lineDots", "lineLiftMm", "lineCurve", "lineAngle", "lineBias", "lineGrain", "lineContrast", "hilbertCoarsestMm", "hilbertLift", "hilbertCurve", "hilbertRound", "hilbertBlend", "hilbertAngle", "offsetMm",
+  "style", "angle", "spacingMm", "levels", "hatchSmoothMm", "hatchShortestMm", "rowMm", "waveMm", "squiggleAmpMm", "squiggleHeight", "squiggleJoin", "squiggleLift", "squiggleSmooth", "squiggleDraw", "squiggleVersion", "squiggleInkscape", "squiggleAngle", "contours", "smoothMm", "centerFrom", "centerSmoothMm", "centerShortestMm", "centerStraightMm", "centerCornerDeg", "silhouetteFrom", "silhouetteSmoothMm", "silhouetteSmallestMm", "streamWidestMm", "streamPasses", "streamFlowMm", "lineDots", "lineLiftMm", "lineCurve", "lineAngle", "lineBias", "lineGrain", "lineContrast", "hilbertCoarsestMm", "hilbertLift", "hilbertCurve", "hilbertRound", "hilbertBlend", "hilbertAngle", "offsetMm",
   "band", "side", "paperTone", "ink", "regions", "region", "key", "regionInks", "keyInk", "plate", "plates", "fitPaper", "penMm", "fitPairs", "fitOpaque",
 ] as const;
 
@@ -562,6 +578,10 @@ export const MOST_SIDE_LAYERS = 3;
 
 /** The most colors a photo is split into, by best fit or by the photo's own colors. */
 export const MOST_COLORS = 8;
+
+/** Hatching's shortest stroke unless set: one and a half line spacings, in mm. */
+export const hatchShortestOf = (photo: Pick<Photo, "hatchShortestMm" | "spacingMm">) =>
+  photo.hatchShortestMm ?? Math.round(Math.max(0.05, photo.spacingMm) * 1.5 * 100) / 100;
 
 /** The longer side of the working copy, in pixels: enough for lines a pen width apart across a big sheet. */
 export const WORKING_EDGE = 1600;
@@ -682,7 +702,7 @@ export const STREAM_DEFAULTS = { widestMm: 3, passes: 1, flowMm: 2 };
 export const OUTLINE_DEFAULTS = { contours: 6, smoothMm: 1 };
 
 /** What centerlines start from: anything darker than half-way is a line; a fifth of a millimetre smoothed. */
-export const CENTER_DEFAULTS = { from: 0.5, smoothMm: 0.2, shortestMm: 1 };
+export const CENTER_DEFAULTS = { from: 0.5, smoothMm: 0.2, shortestMm: 1, straightMm: 0.3 };
 
 /** What a silhouette starts from: paper is lighter than 88% in every colour; a third of a millimetre smoothed; loops under 3 mm left out. */
 export const SILHOUETTE_DEFAULTS = { from: 0.88, smoothMm: 0.3, smallestMm: 3 };
@@ -1066,7 +1086,7 @@ export function photoMarks(photo: Photo, w: number, h: number): PhotoMarks | nul
 
 /** Everything a photo's lines depend on, as one string: the same key, the same lines. */
 function marksKey(photo: Photo, w: number, h: number) {
-  return [photo.src.length, photo.src.slice(-32), w.toFixed(4), h.toFixed(4), photo.brightness, photo.contrast, photo.saturation ?? 0, photo.angle, photo.spacingMm, photo.levels, photo.hatchSmoothMm ?? "", photo.band?.join(",") ?? "", photo.side ?? "", photo.paperTone?.join(",") ?? "", photo.crop?.join(",") ?? "", photo.bleed ?? 0, photo.style ?? "hatch", photo.rowMm ?? "", photo.waveMm ?? "", photo.squiggleAmpMm ?? "", photo.squiggleHeight ?? "", photo.squiggleJoin ? "join" : "", photo.squiggleLift ? "lift" : "", photo.squiggleSmooth ?? "", JSON.stringify(photo.squiggleDraw ?? {}), photo.squiggleVersion ?? "", JSON.stringify(photo.squiggleInkscape ?? {}), photo.squiggleAngle ?? "", photo.ink ?? "", photo.regions?.join(",") ?? "", photo.region ?? "", photo.contours ?? "", photo.smoothMm ?? "", photo.key ? "key" : "", photo.keyInk ?? "", photo.regionInks?.join(",") ?? "", photo.keyStrength ?? "", photo.keyFrom ?? "", photo.plate ?? "", photo.plates?.join(",") ?? "", photo.blackShare ?? "", photo.centerFrom ?? "", photo.centerSmoothMm ?? "", photo.centerShortestMm ?? "", photo.silhouetteFrom ?? "", photo.silhouetteSmoothMm ?? "", photo.silhouetteSmallestMm ?? "", photo.fitPaper ?? "", photo.penMm ?? "", photo.fitPairs ? "pairs" : "", photo.fitOpaque ? "opaque" : "", photo.streamWidestMm ?? "", photo.streamPasses ?? "", photo.streamFlowMm ?? "", photo.lineDots ?? "", photo.lineLiftMm ?? "", photo.lineCurve ?? "", photo.lineAngle ?? "", photo.lineBias ?? "", photo.lineGrain ?? "", photo.lineContrast ?? "", photo.hilbertCoarsestMm ?? "", photo.hilbertLift ? "hlift" : "", photo.hilbertCurve ?? "", photo.hilbertRound ?? "", photo.hilbertBlend ?? "", photo.hilbertAngle ?? "", photo.edgeMask ? `${photo.edgeMask.length}|${photo.edgeMask.slice(-32)}` : "", photo.edgeMaskInvert ? "inv" : "", photo.edgeMaskSides?.join(",") ?? "", photo.edgeGen ? edgeGenKey(photo.edgeGen) : ""].join("|");
+  return [photo.src.length, photo.src.slice(-32), w.toFixed(4), h.toFixed(4), photo.brightness, photo.contrast, photo.saturation ?? 0, photo.angle, photo.spacingMm, photo.levels, photo.hatchSmoothMm ?? "", photo.hatchShortestMm ?? "", photo.band?.join(",") ?? "", photo.side ?? "", photo.paperTone?.join(",") ?? "", photo.crop?.join(",") ?? "", photo.bleed ?? 0, photo.style ?? "hatch", photo.rowMm ?? "", photo.waveMm ?? "", photo.squiggleAmpMm ?? "", photo.squiggleHeight ?? "", photo.squiggleJoin ? "join" : "", photo.squiggleLift ? "lift" : "", photo.squiggleSmooth ?? "", JSON.stringify(photo.squiggleDraw ?? {}), photo.squiggleVersion ?? "", JSON.stringify(photo.squiggleInkscape ?? {}), photo.squiggleAngle ?? "", photo.ink ?? "", photo.regions?.join(",") ?? "", photo.region ?? "", photo.contours ?? "", photo.smoothMm ?? "", photo.key ? "key" : "", photo.keyInk ?? "", photo.regionInks?.join(",") ?? "", photo.keyStrength ?? "", photo.keyFrom ?? "", photo.plate ?? "", photo.plates?.join(",") ?? "", photo.blackShare ?? "", photo.centerFrom ?? "", photo.centerSmoothMm ?? "", photo.centerShortestMm ?? "", photo.centerStraightMm ?? "", photo.centerCornerDeg ?? "", photo.silhouetteFrom ?? "", photo.silhouetteSmoothMm ?? "", photo.silhouetteSmallestMm ?? "", photo.fitPaper ?? "", photo.penMm ?? "", photo.fitPairs ? "pairs" : "", photo.fitOpaque ? "opaque" : "", photo.streamWidestMm ?? "", photo.streamPasses ?? "", photo.streamFlowMm ?? "", photo.lineDots ?? "", photo.lineLiftMm ?? "", photo.lineCurve ?? "", photo.lineAngle ?? "", photo.lineBias ?? "", photo.lineGrain ?? "", photo.lineContrast ?? "", photo.hilbertCoarsestMm ?? "", photo.hilbertLift ? "hlift" : "", photo.hilbertCurve ?? "", photo.hilbertRound ?? "", photo.hilbertBlend ?? "", photo.hilbertAngle ?? "", photo.edgeMask ? `${photo.edgeMask.length}|${photo.edgeMask.slice(-32)}` : "", photo.edgeMaskInvert ? "inv" : "", photo.edgeMaskSides?.join(",") ?? "", photo.edgeGen ? edgeGenKey(photo.edgeGen) : ""].join("|");
 }
 
 /**
@@ -3064,13 +3084,20 @@ function centerlines(tones: Tones, photo: Photo, w: number, h: number): PhotoMar
   const tips = new Set<number>();
   const runs = joinRuns(joinTips(traceRuns(on, gw, gh), gw, dist, tips), gw);
   const toPoint = (i: number): Point => ({ x: (i % gw) * cell, y: Math.floor(i / gw) * cellY });
+  // Straight lines within this, in the page's inches; or curves, sharp where they turn more than cornerDeg.
+  const straight = photo.centerStraightMm && photo.centerStraightMm > 0 ? photo.centerStraightMm / 25.4 : 0;
+  const cornerDeg = !straight && photo.centerCornerDeg && photo.centerCornerDeg > 0 ? photo.centerCornerDeg : 0;
+  // Turns are read about a millimetre either way, so a pixel's step isn't a corner.
+  const reach = Math.max(2, Math.round(1 / 25.4 / cell));
   const strokes: Node[][] = [];
   let circles = 0;
   for (const run of runs) {
     let pts = run.pts.map(toPoint);
-    // A tip stays where it is and stays sharp.
+    // A tip stays where it is and stays sharp - and so, set to, does a turn sharper than cornerDeg.
     const corners: number[] = [];
     run.pts.forEach((g, i) => { if (tips.has(g)) corners.push(i); });
+    if (cornerDeg) for (const i of turnsOver(pts, run.closed, reach, cornerDeg)) if (!corners.includes(i)) corners.push(i);
+    corners.sort((a, b) => a - b);
     let length = 0;
     for (let i = 1; i < pts.length; i++) length += Math.hypot(pts[i].x - pts[i - 1].x, pts[i].y - pts[i - 1].y);
     if (length < Math.max(2, shortest) * cell) continue;
@@ -3107,10 +3134,77 @@ function centerlines(tones: Tones, photo: Photo, w: number, h: number): PhotoMar
       }
       pts.push({ ...pts[0] });
     }
-    strokes.push(fitNodes(pts, Math.max(cell, cellY) * FIT_CELLS, corners));
+    strokes.push(straight ? straightened(pts, straight, corners) : fitNodes(pts, Math.max(cell, cellY) * FIT_CELLS, corners));
   }
   const ordered = shortTravel(strokes);
   return { passes: [pathData(ordered)], strokes: ordered.length, widthMm, circles };
+}
+
+/**
+ * Where a traced line turns more than `degrees`: each point's turn read `reach` points either way,
+ * and only the sharpest point of each bend kept, so a corner is one point, not a cluster of them.
+ */
+function turnsOver(pts: Point[], closed: boolean, reach: number, degrees: number): number[] {
+  const n = pts.length;
+  const limit = (degrees * Math.PI) / 180;
+  const turn: number[] = new Array(n).fill(0);
+  for (let i = 0; i < n; i++) {
+    const a = closed ? pts[(i - reach + n) % n] : pts[i - reach];
+    const b = closed ? pts[(i + reach) % n] : pts[i + reach];
+    if (!a || !b) continue;
+    const ax = pts[i].x - a.x, ay = pts[i].y - a.y, bx = b.x - pts[i].x, by = b.y - pts[i].y;
+    const la = Math.hypot(ax, ay), lb = Math.hypot(bx, by);
+    if (!la || !lb) continue;
+    turn[i] = Math.acos(Math.max(-1, Math.min(1, (ax * bx + ay * by) / (la * lb))));
+  }
+  const out: number[] = [];
+  for (let i = 0; i < n; i++) {
+    if (turn[i] <= limit) continue;
+    let peak = true;
+    for (let d = 1; d <= reach && peak; d++) {
+      for (const j of [i - d, i + d]) {
+        const k = closed ? (j + n) % n : j;
+        if (k >= 0 && k < n && (turn[k] > turn[i] || (turn[k] === turn[i] && k < i))) peak = false;
+      }
+    }
+    if (peak) out.push(i);
+  }
+  return out;
+}
+
+/**
+ * A traced line as straight segments that stay within `tolerance` of it (Douglas-Peucker): the
+ * fewest points that keep its shape, each joined to the next by a straight line, so its corners
+ * are sharp. Its ends and `keep` - the tips and corners - are always among them.
+ */
+function straightened(pts: Point[], tolerance: number, keep: number[]): Node[] {
+  const n = pts.length;
+  if (n < 3) return pts.map((p) => ({ x: p.x, y: p.y }));
+  const fixed = [...new Set([0, ...keep.filter((i) => i > 0 && i < n - 1), n - 1])].sort((a, b) => a - b);
+  const chosen = new Uint8Array(n);
+  for (const i of fixed) chosen[i] = 1;
+  const off = (p: Point, a: Point, b: Point) => {
+    const dx = b.x - a.x, dy = b.y - a.y;
+    const len = Math.hypot(dx, dy);
+    return len < 1e-12 ? Math.hypot(p.x - a.x, p.y - a.y) : Math.abs((p.x - a.x) * dy - (p.y - a.y) * dx) / len;
+  };
+  const stack: [number, number][] = [];
+  for (let k = 0; k + 1 < fixed.length; k++) stack.push([fixed[k], fixed[k + 1]]);
+  while (stack.length) {
+    const [i, j] = stack.pop()!;
+    let worst = -1, at = -1;
+    for (let k = i + 1; k < j; k++) {
+      const d = off(pts[k], pts[i], pts[j]);
+      if (d > worst) { worst = d; at = k; }
+    }
+    if (at >= 0 && worst > tolerance) {
+      chosen[at] = 1;
+      stack.push([i, at], [at, j]);
+    }
+  }
+  const out: Node[] = [];
+  for (let i = 0; i < n; i++) if (chosen[i]) out.push({ x: pts[i].x, y: pts[i].y });
+  return out;
 }
 
 /**
@@ -3224,8 +3318,9 @@ function hatch(tones: Tones, photo: Photo, w: number, h: number): PhotoMarks {
   // Along each line, a look at the photo every half a line-spacing: fine enough that a line stops
   // where the tone does, coarse enough that a big sheet is still quick.
   const step = spacing / 2;
-  // Anything shorter than this is a dot, not a line: the pen would only tap the paper.
-  const shortest = spacing * 1.5;
+  // Anything shorter than this is a dot, not a line: the pen would only tap the paper. One and a half
+  // line spacings, unless the card says otherwise.
+  const shortest = photo.hatchShortestMm !== undefined ? photo.hatchShortestMm / 25.4 : spacing * 1.5;
   const cx = w / 2;
   const cy = h / 2;
   const reach = Math.hypot(w, h) / 2;
@@ -4132,6 +4227,8 @@ export function photoFromData(raw: Record<string, unknown>): Photo | null {
     ...(Number.isFinite(Number(raw.center_from)) && raw.center_from !== undefined ? { centerFrom: Number(raw.center_from) } : {}),
     ...(Number.isFinite(Number(raw.center_smooth_mm)) && raw.center_smooth_mm !== undefined ? { centerSmoothMm: Number(raw.center_smooth_mm) } : {}),
     ...(Number.isFinite(Number(raw.center_shortest_mm)) && raw.center_shortest_mm !== undefined ? { centerShortestMm: Number(raw.center_shortest_mm) } : {}),
+    ...(Number(raw.center_straight_mm) > 0 ? { centerStraightMm: Number(raw.center_straight_mm) } : {}),
+    ...(Number(raw.center_corner_deg) > 0 ? { centerCornerDeg: Math.min(179, Number(raw.center_corner_deg)) } : {}),
     ...(Number.isFinite(Number(raw.silhouette_from)) && raw.silhouette_from !== undefined ? { silhouetteFrom: Number(raw.silhouette_from) } : {}),
     ...(Number.isFinite(Number(raw.silhouette_smooth_mm)) && raw.silhouette_smooth_mm !== undefined ? { silhouetteSmoothMm: Number(raw.silhouette_smooth_mm) } : {}),
     ...(Number.isFinite(Number(raw.silhouette_smallest_mm)) && raw.silhouette_smallest_mm !== undefined ? { silhouetteSmallestMm: Number(raw.silhouette_smallest_mm) } : {}),
@@ -4175,6 +4272,7 @@ export function photoFromData(raw: Record<string, unknown>): Photo | null {
     ...(Number.isFinite(Number(raw.wave_mm)) && raw.wave_mm !== undefined ? { waveMm: Number(raw.wave_mm) } : {}),
     ...(Number.isFinite(Number(raw.saturation)) && raw.saturation !== undefined && Number(raw.saturation) !== 0 ? { saturation: Number(raw.saturation) } : {}),
     ...(Number.isFinite(Number(raw.hatch_smooth_mm)) && raw.hatch_smooth_mm !== undefined ? { hatchSmoothMm: Number(raw.hatch_smooth_mm) } : {}),
+    ...(Number.isFinite(Number(raw.hatch_shortest_mm)) && raw.hatch_shortest_mm !== undefined ? { hatchShortestMm: Math.max(0, Number(raw.hatch_shortest_mm)) } : {}),
     ...(Number.isFinite(Number(raw.squiggle_amp_mm)) && raw.squiggle_amp_mm !== undefined ? { squiggleAmpMm: Number(raw.squiggle_amp_mm) } : {}),
     ...(Number.isFinite(Number(raw.squiggle_height)) && raw.squiggle_height !== undefined ? { squiggleHeight: Number(raw.squiggle_height) } : {}),
     ...(raw.squiggle_join === true ? { squiggleJoin: true } : {}),
@@ -4218,6 +4316,8 @@ export const photoData = (p: Photo) => ({
   ...(p.centerFrom !== undefined ? { center_from: p.centerFrom } : {}),
   ...(p.centerSmoothMm !== undefined ? { center_smooth_mm: p.centerSmoothMm } : {}),
   ...(p.centerShortestMm !== undefined ? { center_shortest_mm: p.centerShortestMm } : {}),
+  ...(p.centerStraightMm ? { center_straight_mm: p.centerStraightMm } : {}),
+  ...(p.centerCornerDeg ? { center_corner_deg: p.centerCornerDeg } : {}),
   ...(p.silhouetteFrom !== undefined ? { silhouette_from: p.silhouetteFrom } : {}),
   ...(p.silhouetteSmoothMm !== undefined ? { silhouette_smooth_mm: p.silhouetteSmoothMm } : {}),
   ...(p.silhouetteSmallestMm !== undefined ? { silhouette_smallest_mm: p.silhouetteSmallestMm } : {}),
@@ -4256,6 +4356,7 @@ export const photoData = (p: Photo) => ({
   ...(p.rowMm !== undefined ? { row_mm: p.rowMm } : {}),
   ...(p.waveMm !== undefined ? { wave_mm: p.waveMm } : {}),
   ...(p.hatchSmoothMm ? { hatch_smooth_mm: p.hatchSmoothMm } : {}),
+  ...(p.hatchShortestMm !== undefined ? { hatch_shortest_mm: p.hatchShortestMm } : {}),
   ...(p.saturation ? { saturation: p.saturation } : {}),
   ...(p.squiggleAmpMm !== undefined ? { squiggle_amp_mm: p.squiggleAmpMm } : {}),
   ...(p.squiggleHeight !== undefined ? { squiggle_height: p.squiggleHeight } : {}),
