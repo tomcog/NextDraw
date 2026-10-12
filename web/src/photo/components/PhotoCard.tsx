@@ -6,6 +6,7 @@ import { Section } from "../../shared/components/controls/Section";
 import { NumberField } from "../../shared/components/controls/NumberField";
 import controls from "../../shared/components/controls/controls.module.css";
 import { BLACK_SHARE, CENTER_DEFAULTS, KEY_FROM, MOST_COLORS, MOST_LAYERS, MOST_SIDE_LAYERS, MOST_PASSES, paperToneOf, OUTLINE_DEFAULTS, PLATE_AIMS, PLATE_OFF, SILHOUETTE_DEFAULTS, STREAM_DEFAULTS, ONE_LINE_DEFAULTS, ONE_LINE_MOST, HILBERT_DEFAULTS, WAVE_DEFAULTS, ANGLE_PRESETS, MASK_SIDES, PLATE_SETS, SQUIGGLE_DRAW, SQUIGGLE_INKSCAPE, SQUIGGLE_INKSCAPE_RANGES, SQUIGGLE_RANGES, coverSteps, plateSetOf, platesOf, squiggleDrawOf, squiggleInkscapeOf, type AnglePreset, type SquiggleDraw, type SquiggleInkscape, type PlateSet, photoMarks, photoMode, type Photo, type Plate } from "../../shared/lib/drawing/photo";
+import { EDGE_FIELDS, EDGE_STYLES, newEdge, newSeed, type EdgeGen, type EdgeStyle } from "../../shared/lib/drawing/edgeMask";
 import { boxOf, type Shape } from "../../shared/lib/drawing/shapes";
 import type { PenColor } from "../../shared/lib/types";
 import styles from "../App.module.css";
@@ -21,6 +22,10 @@ export interface PhotoActions {
   chooseEdgeMask: (name: string | undefined) => Promise<void>;
   /** Take a mask out of the library; drawings that use it keep their copy. */
   deleteEdgeMask: (name: string) => Promise<void>;
+  /** Lay a made edge over the whole image. */
+  setEdgeGen: (gen: EdgeGen) => void;
+  /** Keep the made edge in the library as a picture. */
+  saveEdgeGen: (taken: string[]) => Promise<void>;
   switchMode: (to: "value" | "colour" | "cmyk") => void;
   /** Change settings of the photo - this layer's, or every layer's when "All layers" is on. */
   set: (patch: Partial<Photo>) => void;
@@ -410,23 +415,58 @@ export function PhotoCard({ shape, title, shapes, busy, targeted, layerCount, sh
                 <NumberField label="Margin" unit="in" min={0} max={4} step={0.25} value={photo.margin ?? 0.5} onChange={actions.setMargin} />
                 <NumberField label="Scale" unit="%" min={5} max={1000} step={5} value={scale} onChange={actions.setScale} />
               </div>
-              {/* An edge mask: a grunge border, a torn edge. A picture laid over the part of the image
-                that shows, stretched to it; where it's black the image is left as paper, before any
-                effect reads it. Chosen from a library; the drawing keeps a copy of the one it uses. */}
+              {/* An edge mask: a grunge border, a torn edge; where it's paper the image is left bare,
+                before any effect reads it. Either made here - a preset's look, its numbers to change,
+                New edge for another of the same - or a saved picture from the library, of which the
+                drawing keeps a copy. */}
               <InputSelect
                 size="md"
                 label="Edge mask"
-                value={!photo.edgeMask ? "" : ownMask ? "__own__" : photo.edgeMaskName}
+                value={photo.edgeGen ? `gen:${photo.edgeGen.style}` : !photo.edgeMask ? "" : ownMask ? "__own__" : photo.edgeMaskName}
                 disabled={busy}
-                title="Lay a mask over the image: a picture, stretched to the part that shows, whose black is left as paper - a grunge border, a torn edge"
+                title="Leave the image's edges as paper: a made edge, new each time you ask, or a saved mask picture"
                 onChange={(e) => {
-                  if (e.target.value !== "__own__") actions.chooseEdgeMask(e.target.value || undefined);
+                  const v = e.target.value;
+                  if (v.startsWith("gen:")) actions.setEdgeGen(newEdge(v.slice(4) as EdgeStyle));
+                  else if (v !== "__own__") actions.chooseEdgeMask(v || undefined);
                 }}
               >
                 <option value="">None</option>
-                {ownMask && <option value={"__own__"}>{`${photo.edgeMaskName ?? "Edge mask"} (this drawing's own)`}</option>}
-                {masks.map((name) => <option key={name} value={name}>{name}</option>)}
+                <optgroup label="Made">
+                  {EDGE_STYLES.map((st) => <option key={st.key} value={`gen:${st.key}`}>{st.label}</option>)}
+                </optgroup>
+                {(ownMask || masks.length > 0) && (
+                  <optgroup label="Saved">
+                    {ownMask && <option value={"__own__"}>{`${photo.edgeMaskName ?? "Edge mask"} (this drawing's own)`}</option>}
+                    {masks.map((name) => <option key={name} value={name}>{name}</option>)}
+                  </optgroup>
+                )}
               </InputSelect>
+              {photo.edgeGen && (() => {
+                const gen = photo.edgeGen;
+                return (
+                  <>
+                    <div className={styles.fillRow}>
+                      <Button size="sm" variant="secondary" disabled={busy} title="Another edge with the same look" onClick={() => actions.setEdgeGen({ ...gen, seed: newSeed() })}>
+                        New edge
+                      </Button>
+                      <Button size="sm" variant="secondary" disabled={busy} title={`Put the numbers back to ${EDGE_STYLES.find((st) => st.key === gen.style)?.label}'s, keeping this edge`} onClick={() => actions.setEdgeGen({ ...newEdge(gen.style), seed: gen.seed })}>
+                        Reset
+                      </Button>
+                      <Button size="sm" variant="secondary" disabled={busy} title="Keep this edge in the edge masks, as a picture to use again" onClick={() => actions.saveEdgeGen(masks).then(readMasks)}>
+                        Save…
+                      </Button>
+                    </div>
+                    <div className={styles.fillRow}>
+                      {EDGE_FIELDS.map((f) => (
+                        <div key={f.key} title={f.about}>
+                          <NumberField label={f.label} unit={f.unit} min={f.min} max={f.max} step={f.step} value={gen[f.key]} onChange={(v) => actions.setEdgeGen({ ...gen, [f.key]: v })} />
+                        </div>
+                      ))}
+                    </div>
+                  </>
+                );
+              })()}
               <div className={styles.fillRow}>
                 <Button size="sm" variant="secondary" disabled={busy} title="Add a picture to the edge masks - black border, white middle - and lay it over this image" onClick={() => maskInput.current?.click()}>
                   Add mask…
@@ -456,7 +496,7 @@ export function PhotoCard({ shape, title, shapes, busy, targeted, layerCount, sh
               </div>
               {/* Which sides it works on: a drawing that bleeds off only one or two edges is masked
                 on those, and the others left as they are. */}
-              {photo.edgeMask && (
+              {(photo.edgeMask || photo.edgeGen) && (
                 <div className={styles.fillRow}>
                   {MASK_SIDES.map((side) => {
                     const sides = photo.edgeMaskSides ?? MASK_SIDES;

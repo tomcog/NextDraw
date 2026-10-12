@@ -5,11 +5,12 @@
 
 import type { Dispatch, SetStateAction } from "react";
 import { api, postJSON } from "../../shared/lib/api";
+import { EDGE_STYLES, edgeKeep, type EdgeGen } from "../../shared/lib/drawing/edgeMask";
 import { lightness } from "../../shared/lib/color";
 import type { PenColor, Preset } from "../../shared/lib/types";
 import {
   BAND_NAMES, LAYER_SETTINGS, MOST_SIDE_LAYERS, paperToneOf, MOST_COLORS, MOST_LAYERS, PHOTO_DEFAULTS, PLATES, PLATE_AIMS, PLATE_OFF, colourGroups, isColourful, matchPens, photoMode,
-  placeOnPage, inkNamed, platePens, presetAngle, readTones, hexLinear, linearHex, coverSteps, stemWithoutPlate, turnedCopy, turnedCrop, workingCopy, MASK_EDGE_PX, type AnglePreset, type Photo, type PhotoPart, type Plate, type PlateSet, PLATE_SETS, plateSetOf, platesOf,
+  placeOnPage, inkNamed, platePens, presetAngle, readTones, hexLinear, linearHex, coverSteps, stemWithoutPlate, turnedCopy, turnedCrop, workingCopy, MASK_EDGE_PX, MASK_SIDES, type AnglePreset, type Photo, type PhotoPart, type Plate, type PlateSet, PLATE_SETS, plateSetOf, platesOf,
 } from "../../shared/lib/drawing/photo";
 import { boxOf, newLayerId, newShapeId, type Layer, type Page, type Shape } from "../../shared/lib/drawing/shapes";
 import { samplePhoto, type Candidate } from "./choosePens";
@@ -906,7 +907,7 @@ export function photoActions(ctx: PhotoContext) {
       let name = stem;
       for (let n = 2; taken.includes(name); n++) name = `${stem} ${n}`;
       await postJSON(`/api/edge-masks/${encodeURIComponent(name)}`, { src: copy.src }, "PUT");
-      setPhotoOf({ edgeMask: copy.src, edgeMaskName: name, edgeMaskInvert: undefined });
+      setPhotoOf({ edgeMask: copy.src, edgeMaskName: name, edgeMaskInvert: undefined, edgeGen: undefined });
       setMessage({ text: `${name} added to the edge masks and laid over the image: where it's black is left as paper`, ok: true });
     } catch (err) {
       setMessage({ text: (err as Error).message, ok: false });
@@ -917,15 +918,56 @@ export function photoActions(ctx: PhotoContext) {
   const chooseEdgeMask = async (name: string | undefined) => {
     if (!chosen?.photo) return;
     if (!name) {
-      setPhotoOf({ edgeMask: undefined, edgeMaskName: undefined, edgeMaskInvert: undefined, edgeMaskSides: undefined });
+      setPhotoOf({ edgeMask: undefined, edgeMaskName: undefined, edgeMaskInvert: undefined, edgeMaskSides: undefined, edgeGen: undefined });
       setMessage({ text: "Edge mask taken off", ok: true });
       return;
     }
     try {
       const { src } = await api<{ src: string }>(`/api/edge-masks/${encodeURIComponent(name)}`);
       await readTones(src);
-      setPhotoOf({ edgeMask: src, edgeMaskName: name });
+      setPhotoOf({ edgeMask: src, edgeMaskName: name, edgeGen: undefined });
       setMessage({ text: `${name} laid over the image`, ok: true });
+    } catch (err) {
+      setMessage({ text: (err as Error).message, ok: false });
+    }
+  };
+
+  /** Lay a made edge over the chosen photo: a preset's, a new seed of it, or its numbers changed. */
+  const setEdgeGen = (gen: EdgeGen) => {
+    setPhotoOf({ edgeGen: gen, edgeMask: undefined, edgeMaskName: undefined, edgeMaskInvert: undefined });
+  };
+
+  /**
+   * Keep the chosen photo's made edge in the library, as a picture like any other mask: all four
+   * sides, at the shape of the part of the image that shows.
+   */
+  const saveEdgeGen = async (taken: string[]) => {
+    const photo = chosen?.photo;
+    if (!photo?.edgeGen) return;
+    const label = EDGE_STYLES.find((s) => s.key === photo.edgeGen!.style)?.label ?? "Edge";
+    let suggest = label;
+    for (let n = 2; taken.includes(suggest); n++) suggest = `${label} ${n}`;
+    const name = window.prompt("Save this edge to the edge masks as:", suggest)?.replace(/[/\\:]/g, "-").trim();
+    if (!name) return;
+    if (taken.includes(name) && !window.confirm(`Replace the edge mask “${name}”?`)) return;
+    try {
+      const [c0, c1, c2, c3] = photo.crop ?? [0, 0, 1, 1];
+      const aspect = (photo.width * (c2 - c0)) / Math.max(1e-6, photo.height * (c3 - c1));
+      const w = Math.round(aspect >= 1 ? MASK_EDGE_PX : MASK_EDGE_PX * aspect);
+      const h = Math.round(aspect >= 1 ? MASK_EDGE_PX / aspect : MASK_EDGE_PX);
+      const keep = edgeKeep(photo.edgeGen, MASK_SIDES, w, h);
+      const canvas = document.createElement("canvas");
+      canvas.width = w;
+      canvas.height = h;
+      const ctx = canvas.getContext("2d")!;
+      const img = ctx.createImageData(w, h);
+      for (let i = 0; i < w * h; i++) {
+        const v = Math.round(keep[i] * 255);
+        img.data.set([v, v, v, 255], i * 4);
+      }
+      ctx.putImageData(img, 0, 0);
+      await postJSON(`/api/edge-masks/${encodeURIComponent(name)}`, { src: canvas.toDataURL("image/jpeg", 0.85) }, "PUT");
+      setMessage({ text: `This edge saved to the edge masks as ${name}`, ok: true });
     } catch (err) {
       setMessage({ text: (err as Error).message, ok: false });
     }
@@ -963,6 +1005,7 @@ export function photoActions(ctx: PhotoContext) {
     if ("edgeMaskName" in patch) whole.edgeMaskName = patch.edgeMaskName;
     if ("edgeMaskInvert" in patch) whole.edgeMaskInvert = patch.edgeMaskInvert;
     if ("edgeMaskSides" in patch) whole.edgeMaskSides = patch.edgeMaskSides;
+    if ("edgeGen" in patch) whole.edgeGen = patch.edgeGen;
     // A layer's own settings go to the layers targeted in the Layers card - all of them, some, or
     // none - and the photo's to every layer.
     setShapes((list) => list.map((sh) => {
@@ -974,7 +1017,7 @@ export function photoActions(ctx: PhotoContext) {
 
   return {
     addPhoto, addSeparations, switchPhotoMode, setKeyLayer, splitPhoto, splitPhotoByColor, splitPhotoBestFit, bestPens,
-    placePhoto, photoScale, setPhotoScale, setPhotoMargin, replacePhoto, turnPhoto, setPhotoOf, addEdgeMask, chooseEdgeMask, deleteEdgeMask, setAngles, photoStem, splitPhotoCmyk, setPlatePen, setLayerColor,
+    placePhoto, photoScale, setPhotoScale, setPhotoMargin, replacePhoto, turnPhoto, setPhotoOf, addEdgeMask, chooseEdgeMask, deleteEdgeMask, setEdgeGen, saveEdgeGen, setAngles, photoStem, splitPhotoCmyk, setPlatePen, setLayerColor,
     splitAroundPaper, setPaperTone,
   };
 }

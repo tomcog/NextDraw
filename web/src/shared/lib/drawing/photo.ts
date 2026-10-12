@@ -4,6 +4,7 @@
 // line: a photo is tens of thousands of strokes, and it is the photo and its numbers that are edited.
 
 import { colorNamed } from "../colorNames";
+import { edgeGenFromData, edgeGenKey, edgeKeep, type EdgeGen } from "./edgeMask";
 import type { Point } from "./parametric";
 import { fitNodes, pathData, type Node } from "./path";
 
@@ -253,6 +254,11 @@ export interface Photo {
    * run on to that edge. Absent, all four.
    */
   edgeMaskSides?: MaskSide[];
+  /**
+   * A random edge made rather than loaded: a style, a seed and how deep and rough it is, from which
+   * the same edge is made again every time (edgeMask.ts). In place of `edgeMask`, never with it.
+   */
+  edgeGen?: EdgeGen;
   /** Sized to the page: all of it as large as it fits, or filling the page and cropped. Absent once
    *  it has been moved or sized by hand. A photo sized to the page is sized again when the page is. */
   fit?: "fit" | "fill";
@@ -722,10 +728,11 @@ function saturatedTones(src: string, tones: Tones, sat: number): Tones {
 export const saturatedOf = (src: string, saturation: number) => photoTones({ src, saturation });
 
 /** A photo as its layers read it: its pixels, with its saturation applied and its edge mask laid over. Undefined until both have been read. */
-const photoTones = (photo: Pick<Photo, "src" | "saturation" | "edgeMask" | "edgeMaskInvert" | "edgeMaskSides" | "crop">) => {
+const photoTones = (photo: Pick<Photo, "src" | "saturation" | "edgeMask" | "edgeMaskInvert" | "edgeMaskSides" | "edgeGen" | "crop">) => {
   const tones = tonesOf(photo.src);
   if (!tones) return undefined;
   const saturated = saturatedTones(photo.src, tones, photo.saturation ?? 0);
+  if (photo.edgeGen) return maskedTones(photo.src, saturated, null, photo);
   if (!photo.edgeMask) return saturated;
   const mask = tonesOf(photo.edgeMask);
   if (!mask) {
@@ -750,10 +757,11 @@ const maskReading = new Set<string>();
  * each pixel is kept is the mask's lightness there (its darkness, inverted), and the pixel is taken
  * that far back toward white. Worked out once for each photo, mask and crop.
  */
-function maskedTones(src: string, tones: Tones, mask: Tones, photo: Pick<Photo, "edgeMask" | "edgeMaskInvert" | "edgeMaskSides" | "crop">): Tones {
+function maskedTones(src: string, tones: Tones, mask: Tones | null, photo: Pick<Photo, "edgeMask" | "edgeMaskInvert" | "edgeMaskSides" | "edgeGen" | "crop">): Tones {
   const [c0, c1, c2, c3] = photo.crop ?? [0, 0, 1, 1];
   const sides = photo.edgeMaskSides ?? MASK_SIDES;
-  const id = `${photo.edgeMask!.length}|${photo.edgeMask!.slice(-32)}|${photo.edgeMaskInvert ? "inv" : ""}|${c0},${c1},${c2},${c3}|${sides.join(",")}`;
+  const what = photo.edgeGen ? `gen:${edgeGenKey(photo.edgeGen)}` : `${photo.edgeMask!.length}|${photo.edgeMask!.slice(-32)}|${photo.edgeMaskInvert ? "inv" : ""}`;
+  const id = `${what}|${c0},${c1},${c2},${c3}|${sides.join(",")}`;
   const key = `${src.length}|${src.slice(-32)}|${tones.sat ?? 0}|${id}`;
   const known = maskedCache.get(key);
   if (known) return known;
@@ -762,9 +770,13 @@ function maskedTones(src: string, tones: Tones, mask: Tones, photo: Pick<Photo, 
   const rgba = new Uint8ClampedArray(tones.rgba.length);
   const cw = Math.max(1e-6, c2 - c0);
   const ch = Math.max(1e-6, c3 - c1);
-  // A side left out: the mask's border there is cut off and the rest stretched to the edge.
-  const depth = borderDepths(mask, photo.edgeMaskInvert);
-  const off = (side: MaskSide) => (sides.includes(side) ? 0 : depth[side]);
+  // A made edge: worked out over the pixels that show, on the sides chosen.
+  const gw = Math.max(1, Math.round(w * cw));
+  const gh = Math.max(1, Math.round(h * ch));
+  const made = photo.edgeGen ? edgeKeep(photo.edgeGen, sides, gw, gh) : null;
+  // A side left out of a loaded mask: its border there is cut off and the rest stretched to the edge.
+  const depth = mask ? borderDepths(mask, photo.edgeMaskInvert) : null;
+  const off = (side: MaskSide) => (!depth || sides.includes(side) ? 0 : depth[side]);
   const [u0, u1] = [off("left"), 1 - off("right")];
   const [v0, v1] = [off("top"), 1 - off("bottom")];
   for (let y = 0; y < h; y++) {
@@ -775,18 +787,22 @@ function maskedTones(src: string, tones: Tones, mask: Tones, photo: Pick<Photo, 
       // Outside the crop nothing is drawn anyway: left as it is.
       let keep = 1;
       if (mu >= 0 && mu <= 1 && mv >= 0 && mv <= 1) {
-        const m = lightAt(mask, u0 + mu * (u1 - u0), v0 + mv * (v1 - v0));
-        keep = photo.edgeMaskInvert ? 1 - m : m;
+        if (made) {
+          keep = made[Math.min(gh - 1, Math.floor(mv * gh)) * gw + Math.min(gw - 1, Math.floor(mu * gw))];
+        } else {
+          const m = lightAt(mask!, u0 + mu * (u1 - u0), v0 + mv * (v1 - v0));
+          keep = photo.edgeMaskInvert ? 1 - m : m;
+        }
       }
       light[i] = 1 - (1 - tones.light[i]) * keep;
       for (let c = 0; c < 3; c++) rgba[i * 4 + c] = 255 - (255 - tones.rgba[i * 4 + c]) * keep;
       rgba[i * 4 + 3] = tones.rgba[i * 4 + 3];
     }
   }
-  const made = { w, h, light, rgba, sat: tones.sat, mask: id };
+  const out = { w, h, light, rgba, sat: tones.sat, mask: id };
   if (maskedCache.size > 4) maskedCache.delete(maskedCache.keys().next().value!);
-  maskedCache.set(key, made);
-  return made;
+  maskedCache.set(key, out);
+  return out;
 }
 
 /**
@@ -1007,7 +1023,7 @@ export function photoMarks(photo: Photo, w: number, h: number): PhotoMarks | nul
 
 /** Everything a photo's lines depend on, as one string: the same key, the same lines. */
 function marksKey(photo: Photo, w: number, h: number) {
-  return [photo.src.length, photo.src.slice(-32), w.toFixed(4), h.toFixed(4), photo.brightness, photo.contrast, photo.saturation ?? 0, photo.angle, photo.spacingMm, photo.levels, photo.hatchSmoothMm ?? "", photo.band?.join(",") ?? "", photo.side ?? "", photo.paperTone?.join(",") ?? "", photo.crop?.join(",") ?? "", photo.bleed ?? 0, photo.style ?? "hatch", photo.rowMm ?? "", photo.waveMm ?? "", photo.squiggleAmpMm ?? "", photo.squiggleHeight ?? "", photo.squiggleJoin ? "join" : "", photo.squiggleLift ? "lift" : "", photo.squiggleSmooth ?? "", JSON.stringify(photo.squiggleDraw ?? {}), photo.squiggleVersion ?? "", JSON.stringify(photo.squiggleInkscape ?? {}), photo.squiggleAngle ?? "", photo.ink ?? "", photo.regions?.join(",") ?? "", photo.region ?? "", photo.contours ?? "", photo.smoothMm ?? "", photo.key ? "key" : "", photo.keyInk ?? "", photo.regionInks?.join(",") ?? "", photo.keyStrength ?? "", photo.keyFrom ?? "", photo.plate ?? "", photo.plates?.join(",") ?? "", photo.blackShare ?? "", photo.centerFrom ?? "", photo.centerSmoothMm ?? "", photo.centerShortestMm ?? "", photo.silhouetteFrom ?? "", photo.silhouetteSmoothMm ?? "", photo.silhouetteSmallestMm ?? "", photo.fitPaper ?? "", photo.penMm ?? "", photo.fitPairs ? "pairs" : "", photo.fitOpaque ? "opaque" : "", photo.streamWidestMm ?? "", photo.streamPasses ?? "", photo.streamFlowMm ?? "", photo.lineDots ?? "", photo.lineLiftMm ?? "", photo.lineCurve ?? "", photo.lineAngle ?? "", photo.lineBias ?? "", photo.lineGrain ?? "", photo.lineContrast ?? "", photo.hilbertCoarsestMm ?? "", photo.hilbertLift ? "hlift" : "", photo.hilbertCurve ?? "", photo.hilbertRound ?? "", photo.hilbertBlend ?? "", photo.hilbertAngle ?? "", photo.edgeMask ? `${photo.edgeMask.length}|${photo.edgeMask.slice(-32)}` : "", photo.edgeMaskInvert ? "inv" : "", photo.edgeMaskSides?.join(",") ?? ""].join("|");
+  return [photo.src.length, photo.src.slice(-32), w.toFixed(4), h.toFixed(4), photo.brightness, photo.contrast, photo.saturation ?? 0, photo.angle, photo.spacingMm, photo.levels, photo.hatchSmoothMm ?? "", photo.band?.join(",") ?? "", photo.side ?? "", photo.paperTone?.join(",") ?? "", photo.crop?.join(",") ?? "", photo.bleed ?? 0, photo.style ?? "hatch", photo.rowMm ?? "", photo.waveMm ?? "", photo.squiggleAmpMm ?? "", photo.squiggleHeight ?? "", photo.squiggleJoin ? "join" : "", photo.squiggleLift ? "lift" : "", photo.squiggleSmooth ?? "", JSON.stringify(photo.squiggleDraw ?? {}), photo.squiggleVersion ?? "", JSON.stringify(photo.squiggleInkscape ?? {}), photo.squiggleAngle ?? "", photo.ink ?? "", photo.regions?.join(",") ?? "", photo.region ?? "", photo.contours ?? "", photo.smoothMm ?? "", photo.key ? "key" : "", photo.keyInk ?? "", photo.regionInks?.join(",") ?? "", photo.keyStrength ?? "", photo.keyFrom ?? "", photo.plate ?? "", photo.plates?.join(",") ?? "", photo.blackShare ?? "", photo.centerFrom ?? "", photo.centerSmoothMm ?? "", photo.centerShortestMm ?? "", photo.silhouetteFrom ?? "", photo.silhouetteSmoothMm ?? "", photo.silhouetteSmallestMm ?? "", photo.fitPaper ?? "", photo.penMm ?? "", photo.fitPairs ? "pairs" : "", photo.fitOpaque ? "opaque" : "", photo.streamWidestMm ?? "", photo.streamPasses ?? "", photo.streamFlowMm ?? "", photo.lineDots ?? "", photo.lineLiftMm ?? "", photo.lineCurve ?? "", photo.lineAngle ?? "", photo.lineBias ?? "", photo.lineGrain ?? "", photo.lineContrast ?? "", photo.hilbertCoarsestMm ?? "", photo.hilbertLift ? "hlift" : "", photo.hilbertCurve ?? "", photo.hilbertRound ?? "", photo.hilbertBlend ?? "", photo.hilbertAngle ?? "", photo.edgeMask ? `${photo.edgeMask.length}|${photo.edgeMask.slice(-32)}` : "", photo.edgeMaskInvert ? "inv" : "", photo.edgeMaskSides?.join(",") ?? "", photo.edgeGen ? edgeGenKey(photo.edgeGen) : ""].join("|");
 }
 
 /**
@@ -4059,6 +4075,7 @@ export function photoFromData(raw: Record<string, unknown>): Photo | null {
     ...(typeof raw.edgeMask === "string" && raw.edgeMask.startsWith("data:image/") ? { edgeMask: raw.edgeMask } : {}),
     ...(typeof raw.edgeMaskName === "string" ? { edgeMaskName: raw.edgeMaskName } : {}),
     ...(raw.edgeMaskInvert === true ? { edgeMaskInvert: true } : {}),
+    ...(edgeGenFromData(raw.edgeGen) ? { edgeGen: edgeGenFromData(raw.edgeGen) } : {}),
     ...(Array.isArray(raw.edgeMaskSides) ? { edgeMaskSides: MASK_SIDES.filter((side) => (raw.edgeMaskSides as unknown[]).includes(side)) } : {}),
     ...(Array.isArray(raw.crop) && raw.crop.length === 4 && raw.crop.every((v) => Number.isFinite(Number(v)))
       ? { crop: raw.crop.map(Number) as [number, number, number, number] }
@@ -4142,7 +4159,9 @@ export const photoData = (p: Photo) => ({
   ...(p.band ? { band: p.band } : {}),
   ...(p.side ? { side: p.side, paper_tone: p.paperTone } : {}),
   ...(p.crop ? { crop: p.crop } : {}),
-  ...(p.edgeMask ? { edgeMask: p.edgeMask, ...(p.edgeMaskName ? { edgeMaskName: p.edgeMaskName } : {}), ...(p.edgeMaskInvert ? { edgeMaskInvert: true } : {}), ...(p.edgeMaskSides ? { edgeMaskSides: p.edgeMaskSides } : {}) } : {}),
+  ...(p.edgeMask ? { edgeMask: p.edgeMask, ...(p.edgeMaskName ? { edgeMaskName: p.edgeMaskName } : {}), ...(p.edgeMaskInvert ? { edgeMaskInvert: true } : {}) } : {}),
+  ...(p.edgeGen ? { edgeGen: p.edgeGen } : {}),
+  ...((p.edgeMask || p.edgeGen) && p.edgeMaskSides ? { edgeMaskSides: p.edgeMaskSides } : {}),
   ...(p.fit ? { fit: p.fit } : {}),
   ...(p.style === "waves" || p.style === "squiggle" || p.style === "streamlines" || p.style === "oneline" || p.style === "hilbert" || p.style === "outlines" || p.style === "centerlines" || p.style === "silhouette" ? { style: p.style } : {}),
   ...(p.centerFrom !== undefined ? { center_from: p.centerFrom } : {}),
