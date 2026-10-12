@@ -71,6 +71,12 @@ type Next = { kind: "new" } | { kind: "photos"; files: File[]; skipped?: string[
 export default function App() {
   const [page, setPage] = useState<Page>({ w: 11, h: 8.5 });
   const [paperColor, setPaperColor] = useState(() => load<string>(PAPER_COLOR_KEY) ?? "#ffffff");
+  // A paper color chosen by hand, as opposed to one a drawing opens with (see the effect that follows it).
+  const paperPicked = useRef(false);
+  const pickPaperColor = (color: string) => {
+    if (color !== paperColor) paperPicked.current = true;
+    setPaperColor(color);
+  };
   useEffect(() => remember(PAPER_COLOR_KEY, paperColor), [paperColor]);
   const sizeId = useMemo(() => sizeIdOf(page), [page]);
 
@@ -461,7 +467,7 @@ export default function App() {
         record();
         setPage({ w: w / 25.4, h: h / 25.4 });
       }}
-      onColor={setPaperColor}
+      onColor={pickPaperColor}
       // Fit to paper is the Image card's Fit, with the Paper card's margin and alignment: the photo
       // keeps both, so the Image card's own Margin shows the same number afterwards.
       onFit={chosen?.photo ? (marginMm, align) => placePhoto("fit", marginMm / 25.4, align) : undefined}
@@ -487,9 +493,20 @@ export default function App() {
     } else if (photo.side) {
       // Split around the paper: each band's pen chosen again, from the new pen's darker and lighter colors.
       const members = photo.group ? shapes.filter((sh) => sh.photo?.group === photo.group) : [chosen!];
-      splitAroundPaper({ dark: members.filter((sh) => sh.photo?.side === "dark").length, light: members.filter((sh) => sh.photo?.side === "light").length, paperTone: photo.paperTone });
+      splitAroundPaper({ dark: members.filter((sh) => sh.photo?.side === "dark").length, light: members.filter((sh) => sh.photo?.side === "light").length, paperTone: photo.paperToneSet ? photo.paperTone : undefined });
     }
   }, [toolName]); // eslint-disable-line react-hooks/exhaustive-deps
+  // A paper color chosen by hand, for a photo split around the paper: split again on the new paper,
+  // so the tones left bare follow it (unless they were set by hand) and the grays between are mixed
+  // from it. Not when a drawing opens with its own paper.
+  useEffect(() => {
+    if (!paperPicked.current) return;
+    paperPicked.current = false;
+    const photo = chosen?.photo;
+    if (!photo?.side) return;
+    const members = photo.group ? shapes.filter((sh) => sh.photo?.group === photo.group) : [chosen!];
+    splitAroundPaper({ dark: members.filter((sh) => sh.photo?.side === "dark").length, light: members.filter((sh) => sh.photo?.side === "light").length, paperTone: photo.paperToneSet ? photo.paperTone : undefined });
+  }, [paperColor]); // eslint-disable-line react-hooks/exhaustive-deps
   const toolSection = <DrawingToolSection tools={presets} value={toolName} onPick={pickPen} none="None" collapsibleKey="photo-pen" disabled={busy} />;
 
   // Split by best fit: how near the best pens come to the photo, with one fewer and one more than it
@@ -638,7 +655,7 @@ export default function App() {
         splitCmyk: (set) => splitPhotoCmyk({}, set),
         setPlatePen,
         setColor: setLayerColor,
-        splitAround: (dark, light) => splitAroundPaper({ dark, light, paperTone: chosen.photo?.side ? chosen.photo.paperTone : undefined }),
+        splitAround: (dark, light) => splitAroundPaper({ dark, light, paperTone: chosen.photo?.side && chosen.photo.paperToneSet ? chosen.photo.paperTone : undefined }),
         setPaperTone,
         pickBand: (id, layerId) => {
           pick(id);

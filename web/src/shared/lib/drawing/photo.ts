@@ -226,6 +226,8 @@ export interface Photo {
    */
   side?: "dark" | "light";
   paperTone?: [number, number];
+  /** The paper's tones were set by hand. Otherwise they follow the paper's color when it changes. */
+  paperToneSet?: boolean;
   /**
    * How far each band reaches into its neighbours, as a share of the whole range from white to black:
    * 0.05 takes a middle third from 33-67% to 28-72%. Where bands meet, both draw, so their lines
@@ -4185,6 +4187,7 @@ export function photoFromData(raw: Record<string, unknown>): Photo | null {
     ...(Array.isArray(raw.paper_tone) && raw.paper_tone.length === 2 && raw.paper_tone.every((v) => Number.isFinite(Number(v)))
       ? { paperTone: [Number(raw.paper_tone[0]), Number(raw.paper_tone[1])] as [number, number] }
       : {}),
+    ...(raw.paper_tone_set === true ? { paperToneSet: true } : {}),
     ...(Array.isArray(raw.band) && raw.band.length === 2 && raw.band.every((v) => Number.isFinite(Number(v)))
       ? { band: [Number(raw.band[0]), Number(raw.band[1])] as [number, number] }
       : {}),
@@ -4197,7 +4200,7 @@ export const photoData = (p: Photo) => ({
   angle: p.angle, spacing_mm: p.spacingMm, levels: p.levels,
   ...(p.group ? { group: p.group } : {}),
   ...(p.band ? { band: p.band } : {}),
-  ...(p.side ? { side: p.side, paper_tone: p.paperTone } : {}),
+  ...(p.side ? { side: p.side, paper_tone: p.paperTone, ...(p.paperToneSet ? { paper_tone_set: true } : {}) } : {}),
   ...(p.crop ? { crop: p.crop } : {}),
   ...(p.edgeMask ? { edgeMask: p.edgeMask, ...(p.edgeMaskName ? { edgeMaskName: p.edgeMaskName } : {}), ...(p.edgeMaskInvert ? { edgeMaskInvert: true } : {}) } : {}),
   ...(p.edgeGen ? { edgeGen: p.edgeGen } : {}),

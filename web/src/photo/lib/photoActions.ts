@@ -52,6 +52,20 @@ const colorStep = { layer: "", at: 0 };
 /** An angle turned by so many degrees, kept to a half turn - a line at 190° is the line at 10° - to a tenth. */
 const turnedBy = (angle: number, by: number) => Math.round(((((angle + by) % 180) + 180) % 180) * 10) / 10;
 
+/**
+ * The tones a photo split around the paper leaves bare, unless set by hand: a third of them, centred
+ * on the paper's own tone, so gray paper keeps the midtones and the pens draw either side of it. Kept
+ * a sixth clear of white when there are light pens, and of black when there are dark ones: on white
+ * or cream paper the third would otherwise start at white, and the light pen have nothing to draw.
+ */
+export function autoPaperTone(paper: string, dark: number, light: number): [number, number] {
+  const at = 1 - (lightness(paper) ?? 100) / 100;
+  const least = light > 0 ? 1 / 6 : 0;
+  const most = (dark > 0 ? 5 / 6 : 1) - 1 / 3;
+  const lo = Math.max(least, Math.min(most, at - 1 / 6));
+  return [Math.round(lo * 100) / 100, Math.round((lo + 1 / 3) * 100) / 100];
+}
+
 export function photoActions(ctx: PhotoContext) {
   const { chosen, shapes, setShapes, layers, setLayers, active, setActiveLayer, page, tool: tool2, targets, paper, record, addShape, pick, setMessage, setBusy } = ctx;
   const defaults = { spacingMm: ctx.spacingMm };
@@ -443,12 +457,7 @@ export function photoActions(ctx: PhotoContext) {
   const splitAroundPaper = ({ dark, light, paperTone, extra = {} }: { dark: number; light: number; paperTone?: [number, number]; extra?: Partial<Photo> }) => {
     if (!chosen?.photo) return;
     const pens = tool2?.palette ?? [];
-    const paperL = lightness(paper) ?? 100;
-    const tone: [number, number] = paperTone ?? (() => {
-      const at = 1 - paperL / 100;
-      const lo = Math.max(0, Math.min(2 / 3, at - 1 / 6));
-      return [Math.round(lo * 100) / 100, Math.round((lo + 1 / 3) * 100) / 100];
-    })();
+    const tone: [number, number] = paperTone ?? autoPaperTone(paper, dark, light);
     // The outermost band on each side is black, or white: the palette's own where it has one that
     // near, or else plain black and white. The bands between are the paper mixed with it, evenly -
     // two dark bands are black and a gray halfway from the paper to black.
@@ -477,7 +486,7 @@ export function photoActions(ctx: PhotoContext) {
           layerColor: pen.color,
           shapeName: `${name} ${pen.name}`,
           photo: {
-            side, paperTone: tone, band: n > 1 ? [i / n, (i + 1) / n] : undefined,
+            side, paperTone: tone, paperToneSet: paperTone ? true : undefined, band: n > 1 ? [i / n, (i + 1) / n] : undefined,
             ink: undefined, regions: undefined, region: undefined, key: undefined, keyInk: undefined, regionInks: undefined, plate: undefined, plates: undefined, fitPaper: undefined, fitPairs: undefined, ...extra,
           },
         });
@@ -501,7 +510,7 @@ export function photoActions(ctx: PhotoContext) {
     record();
     const [a, b] = paperToneOf({ paperTone: tone });
     const group = chosen.photo.group;
-    setShapes((list) => list.map((sh) => ((group ? sh.photo?.group === group : sh.id === chosen.id) && sh.photo?.side ? { ...sh, photo: { ...sh.photo, paperTone: [a, b] } } : sh)));
+    setShapes((list) => list.map((sh) => ((group ? sh.photo?.group === group : sh.id === chosen.id) && sh.photo?.side ? { ...sh, photo: { ...sh.photo, paperTone: [a, b], paperToneSet: true } } : sh)));
   };
 
   /**
