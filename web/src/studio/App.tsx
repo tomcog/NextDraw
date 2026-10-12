@@ -10,7 +10,7 @@ import { FileBrowser, type CombineResult, type OpenResult } from "../shared/comp
 import { Section } from "../shared/components/controls/Section";
 import controls from "../shared/components/controls/controls.module.css";
 import { api } from "../shared/lib/api";
-import { APP_URL, openInPhoto, STUDIO_CHANNEL } from "../shared/lib/apps";
+import { APP_URL, STUDIO_CHANNEL } from "../shared/lib/apps";
 import type { FitAlign } from "../shared/lib/geometry";
 import { load, save as remember } from "../shared/lib/storage";
 import { DEFAULT_SETTINGS, PAPER_SIZES } from "../shared/lib/constants";
@@ -202,7 +202,8 @@ export default function App() {
  // The loupe over the page, for a close look at the lines. The same switch as Plot's.
  const [loupe, setLoupe] = useState(false);
  const [toolName, setToolName] = useState<string>(() => load<string>(TOOL_KEY) ?? "");
- const [tool, setTool] = useState<Tool>("rect");
+ // Select to start with: a drawing opened is usually to be looked at and moved before it's drawn on.
+ const [tool, setTool] = useState<Tool>("select");
  // Everything picked, in the order it was picked. The cards edit the last of them; a drag, a delete
  // or a nudge takes the lot, which is what makes moving a whole layer at once possible.
  // A path of a shape made of several is never picked alone: picking it picks the whole shape. What
@@ -1557,22 +1558,6 @@ export default function App() {
   />
  );
 
- // A photo layer is drawn, moved and sized here like anything else, but how it's turned into lines is
- // set in Photo: saved first, so Photo opens what's on screen.
- const editInPhoto = async () => {
-  const where = dirty || !saved ? await save() : saved;
-  if (where) openInPhoto(where.path);
- };
- const photoCard = chosen?.kind === "photo" && chosen.photo ? (
-  <Card variant="flat" className={styles.controls}>
-   <div className={`${styles.cardBody} ${controls.cardSections}`}>
-    <Section title="Image">
-     <p className={controls.hint}>This is an image, drawn as lines. How it’s turned into lines - hatching, tone bands, colors - is set in Image.</p>
-     <Button size="sm" variant="secondary" disabled={busy} onClick={editInPhoto}>Save and open in Image</Button>
-    </Section>
-   </div>
-  </Card>
- ) : null;
 
  /** The copied fill onto the chosen shape, or every fillable shape selected, in place of their own. */
  const pasteFill = () => {
@@ -1635,6 +1620,23 @@ export default function App() {
    setMessage({ text: (err as Error).message, ok: false });
   }
  };
+
+ // An image layer is drawn, moved and sized here like anything else, but its lines are worked out from
+ // its picture each time, so they can't be edited one by one. Baked - a snapshot with the images made
+ // into paths, opened here - they can: the same way on as the Simplifier's.
+ const photoCard = chosen?.kind === "photo" && chosen.photo ? (
+  <Card variant="flat" className={styles.controls}>
+   <div className={`${styles.cardBody} ${controls.cardSections}`}>
+    <Section title="Image">
+     <div className={styles.confirm}>
+      <p>This is an image, drawn as lines worked out from its picture, so they can’t be edited one by one. Bake it to work on them: a snapshot of the drawing with its images made into paths, opened here. This drawing stays as it is.</p>
+      <Button size="sm" disabled={busy} title="Save a snapshot of this drawing with its images baked into paths, and open it to edit" onClick={workOnSnapshot}>
+       Bake and edit
+      </Button>
+     </div>
+    </Section>
+   </div>
+  </Card> ) : null;
 
  // A snapshot just saved: said at the top, with the ways on from it, until something else is said. In
  // Studio it opens in a tab of its own: the drawing here may have changes not saved.

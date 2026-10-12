@@ -164,16 +164,13 @@
 
 /* The controls that sit on the dimension line above the page, in one row with room between them. */
 /* One row while they fit, then onto the next: the card's width decides, not the number of tools. */
-.tools {
+/* A row of round buttons in a card - what's done to a shape, what a fill is made of - wrapping when
+   there are more than fit. A name of its own: sharing .tools with the column of toolbars at the left
+   stood these on end, one under another. */
+.toolRow {
   display: flex;
   flex-wrap: wrap;
   gap: 0.375rem;
-}
-
-/* The column of toolbars at the left shares the name; it keeps Photo's spacing, one under another. */
-.layout > .tools {
-  flex-wrap: nowrap;
-  gap: 0.5rem;
 }
 
 /* A parabolic's corners: four toggles set out as the corners sit on the box. */

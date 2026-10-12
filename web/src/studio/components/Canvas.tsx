@@ -711,7 +711,7 @@ export function Canvas({ bar, page, paperColor, shapes, fills, layers, activeLay
       overlay={
         shapes.length === 0 && !drag ? (
           <div className={styles.hint} aria-hidden="true">
-            <strong>Drag on the page to draw</strong>
+            <strong>{tool === "select" ? "Pick a drawing tool, then drag on the page" : "Drag on the page to draw"}</strong>
           </div>
         ) : undefined
       }

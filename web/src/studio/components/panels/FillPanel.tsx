@@ -58,7 +58,7 @@ export function FillPanel({ fills, outline, count = 1, asOne = false, actions }:
         onChange={(e) => actions.setHatched(e.target.checked)}
       />
       {first && (
-        <div className={styles.tools} role="group" aria-label="What the fill is made of">
+        <div className={styles.toolRow} role="group" aria-label="What the fill is made of">
           {(Object.keys(FILL_LABEL) as FillKind[]).map((k) => {
             const on = kind === k;
             return (

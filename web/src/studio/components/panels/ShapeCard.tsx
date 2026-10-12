@@ -186,7 +186,7 @@ export function ShapeCard({ shape, title, busy, hasFill, canPaste, panel, onPane
               {`Split into ${shape.runs?.length} paths`}
             </Button>
           )}
-          <div className={styles.tools} role="group" aria-label="What is done to this shape">
+          <div className={styles.toolRow} role="group" aria-label="What is done to this shape">
             {/* Simplify keeps its button here rather than in the row's menu: it opens a
               tolerance to type, and you come back to it until the points are where you
               want them. */}
@@ -308,7 +308,7 @@ export function ShapeCard({ shape, title, busy, hasFill, canPaste, panel, onPane
                 onChange={(e) => actions.setRepeat(e.target.checked ? defaultRepeat("line", shape) : undefined)}
               />
               {shape.repeat && (
-                <div className={styles.tools} role="group" aria-label="How this shape repeats">
+                <div className={styles.toolRow} role="group" aria-label="How this shape repeats">
                   {REPEATS.map((r) => {
                     const on = shape.repeat?.kind === r.kind;
                     return (
