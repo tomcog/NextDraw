@@ -236,8 +236,9 @@ export default function App() {
   ok: true,
  });
 
- // The paper's colour: the page is drawn in it and the inks blend with it, as they do in Plot. This
- // browser's choice, like the grid - it's the sheet on the plotter today, not part of the drawing.
+ // The paper's colour: the page is drawn in it and the inks blend with it, as they do in Plot. Kept
+ // in the drawing, like its size, so all three apps show the same paper; this browser remembers the
+ // last one for a new drawing.
  const [paperColor, setPaperColor] = useState(() => load<string>(PAPER_COLOR_KEY) ?? "#ffffff");
  useEffect(() => remember(PAPER_COLOR_KEY, paperColor), [paperColor]);
  // Which of the rail's cards are out, from the toolbar at the left, as in Photo and Plot.
@@ -271,7 +272,7 @@ export default function App() {
  // The drawing is the current drawing, shared by the three apps: picked up on starting, and again
  // when it's changed or replaced in another app or window (showCurrent, below).
  const { name, setName, saved, dirty, lock, touch, loaded, combined, started, save, snapshot: takeSnapshot, open, goTo, openIn } = useDrawingFile({
-  shapes, fills, layers, page, sizeId, toolName, fonts, setBusy, setMessage, onCurrent: (current) => showCurrent(current),
+  shapes, fills, layers, page, sizeId, toolName, paperColor, fonts, setBusy, setMessage, onCurrent: (current) => showCurrent(current),
  });
 
  // The drawing tool is written into the file too, so picking one is a change - but only when it's
@@ -282,6 +283,12 @@ export default function App() {
   setToolName(pen);
   touch();
  }, [touch]);
+ // The paper's color too, picked here: a change to the drawing, which the other apps follow.
+ const pickPaperColor = (color: string) => {
+  if (color === paperColor) return;
+  setPaperColor(color);
+  touch();
+ };
 
  // A photo split by colour draws each layer's area in that layer's pen, and each layer is worked
  // out alongside the rest - the pens of every area, and the key's. Give a layer another pen, and it
@@ -666,6 +673,7 @@ export default function App() {
   // file's own. (Presets not loaded yet, at startup: taken as it is, and checked when they come.)
   const saved = drawing.tool;
   if (saved) setToolName((current) => (presetsRef.current.length && !presetsRef.current.some((t) => t.name === saved) ? current : saved));
+  if (drawing.paperColor) setPaperColor(drawing.paperColor);
   // Saving would write only what Studio can draw, so anything else in the file has to be said out
   // loud before it's overwritten rather than discovered missing afterwards.
   setMessage(
@@ -1511,7 +1519,7 @@ export default function App() {
     record();
     setPage({ w: w / 25.4, h: h / 25.4 });
    }}
-   onColor={setPaperColor}
+   onColor={pickPaperColor}
    onTurnDrawing={turnDrawing}
    drawingScale={drawingScale}
    onScaleDrawing={scaleDrawing}
@@ -1626,7 +1634,7 @@ export default function App() {
      endpoint: "/api/studio/combine",
      canAdd: shapes.length > 0,
      // This drawing as it would be saved, for the files to go on top of.
-     base: () => buildSvg(shapes, fills, layers, page, { paperSizeId: sizeId, toolName, fonts }),
+     base: () => buildSvg(shapes, fills, layers, page, { paperSizeId: sizeId, toolName, paperColor, fonts }),
      onCombined: openCombined,
     }}
    />

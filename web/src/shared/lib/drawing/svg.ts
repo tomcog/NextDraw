@@ -208,6 +208,7 @@ function plotBlock(page: Page, opts: SaveOptions): string {
       paper_x: 0,
       paper_y: 0,
       paper_size: opts.paperSizeId || "custom",
+      ...(opts.paperColor ? { paper_color: opts.paperColor } : {}),
     },
   };
   return `  <metadata id="nextdraw-plot"><nds:plot>${escapeText(JSON.stringify(settings))}</nds:plot></metadata>`;
@@ -299,6 +300,8 @@ export interface SaveOptions {
   fonts?: Record<string, StrokeFont>;
   /** The drawing tool, so Plot opens the drawing with the same one chosen. */
   toolName: string;
+  /** The paper's color, so every app shows the drawing on the same paper. */
+  paperColor?: string;
 }
 
 /**

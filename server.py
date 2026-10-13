@@ -3357,9 +3357,12 @@ def save_drawing():
     try:
         tree = parse_svg(CURRENT_SVG)
         root = tree.getroot()
+        paper_before = None
         if isinstance(body.get("plot"), dict):
             plot = clean_plot(body["plot"])
-            kept = (read_plot(root) or {}).get("original_page")
+            before = read_plot(root) or {}
+            paper_before = paper_choice(before)
+            kept = before.get("original_page")
             if kept:
                 plot["original_page"] = kept  # set by Trim to drawing, not by the page's choices
             write_plot(root, plot)
@@ -3370,7 +3373,17 @@ def save_drawing():
         return problem
     global drawing_saved
     drawing_saved = f"{time.time_ns():x}"
+    # A new paper is a change to the drawing in Studio and Image too, which show it as their page: a
+    # new edit, so they pick it up.
+    if paper_before is not None and paper_choice(read_plot(tree.getroot()) or {}) != paper_before:
+        write_current_state({k: v for k, v in current_state().items() if k != "edited"})
     return jsonify(saved_to=display_path(disk_path.parent) if disk_path else None, saved=drawing_saved)
+
+
+def paper_choice(plot):
+    """The paper as every app shows it - its size, the way it lies, its color - from Plot's block."""
+    paper = plot.get("paper") if isinstance(plot.get("paper"), dict) else {}
+    return {k: paper.get(k) for k in ("paper_w", "paper_h", "paper_color")}
 
 
 @app.get("/api/plot-settings")
@@ -3688,7 +3701,9 @@ def carry_plot_block(svg, source):
     where the drawing sits, its scale, the inks, links and order chosen for plotting it - is Plot's,
     and the editors only know the fresh defaults they write into a new file. Replacing the block would
     undo every one of those choices each time the drawing was edited. Except the names Plot once gave
-    layers after their inks, and the drawing tool, which is chosen in both apps: the editor's wins.
+    layers after their inks, and what is chosen in every app - the drawing tool, and the paper's size,
+    the way it lies and its color: the editor's win. Where the paper sits on the bed stays Plot's, and
+    so does the whole paper of a drawing Plot trimmed, whose page is no longer the paper.
     """
     try:
         from lxml import etree
@@ -3698,9 +3713,14 @@ def carry_plot_block(svg, source):
         # The names, filed by a layer's place, would land on whatever layer is in that place now.
         kept.pop("layer_names", None)
         root = etree.fromstring(svg.encode("utf-8"), etree.XMLParser(huge_tree=True))
-        tool = (read_plot(root) or {}).get("tool")
+        theirs = read_plot(root) or {}
+        tool = theirs.get("tool")
         if isinstance(tool, str) and tool.strip():
             kept["tool"] = tool
+        paper = theirs.get("paper")
+        if isinstance(paper, dict) and not kept.get("original_page"):
+            chosen = {k: paper[k] for k in ("paper_size", "paper_w", "paper_h", "paper_color") if k in paper}
+            kept["paper"] = {**(kept.get("paper") or {}), **chosen}
         write_plot(root, kept)
         return etree.tostring(root, encoding="unicode", xml_declaration=False)
     except Exception:  # noqa: BLE001 - an unreadable old drawing is simply replaced, as before

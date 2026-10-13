@@ -8,7 +8,9 @@ What has to hold:
 - Plot's own choices, saved while there are edits not saved, go to the current drawing only;
 - saving from an editor writes the file - Plot's choices included - and leaves nothing to save;
 - a file changed on disk is not reopened over edits not saved;
-- a change to a drawing that has since been replaced by another is refused.
+- a change to a drawing that has since been replaced by another is refused;
+- the paper is the same in every app: an editor's new paper replaces Plot's, where it sits on the bed
+  staying Plot's, and Plot's new paper is a change the editors are told of.
 
 Runs on its own, against a temporary folder:   python3 tests/one_drawing_for_every_app.py
 """
@@ -40,6 +42,12 @@ def drawing(mark, plot=None):
         f'{block}<g id="layer1" inkscape:label="Black" inkscape:groupmode="layer">'
         f'<path id="{mark}" d="M 1 1 L 2 2" stroke="#000"/></g></svg>'
     )
+
+
+def paper_of(svg):
+    """The paper Plot's block gives the drawing."""
+    from lxml import etree
+    return (server.read_plot(etree.fromstring(svg.encode("utf-8"))) or {}).get("paper") or {}
 
 
 def x_of(svg):
@@ -123,6 +131,27 @@ def main():
     check("it has no file yet", now["path"], None)
     check("it's a new opening", now["opened"] != base, True)
     check("the old file is untouched", 'id="edited"' in file.read_text(), True)
+
+    print("\nthe paper, changed in either kind of app")
+    sunset = client.get("/api/current").get_json()["opened"]
+    res = client.post("/api/drawing", json={"file": "sunset.svg", "plot": {"placement": {"x": 0, "y": 0}, "scale": 100, "rotation": 0,
+                                            "paper": {"paper_size": "letter", "paper_w": 215.9, "paper_h": 279.4, "paper_x": 5, "paper_y": 0, "paper_color": "#ffffff"}}})
+    check("Plot's paper is saved", res.status_code, 200)
+    edited = client.get("/api/status").get_json().get("file_edited")
+    res = client.post("/api/current", json={"svg": drawing("new", {"tool": "Pen", "paper": {"paper_size": "9x12", "paper_w": 304.8, "paper_h": 228.6, "paper_x": 0, "paper_y": 0, "paper_color": "#c6a57a"}}),
+                                            "name": "sunset", "base": sunset, "dirty": True})
+    check("an editor's new paper is taken", res.status_code, 200)
+    paper = paper_of(client.get("/api/current").get_json()["svg"])
+    check("its size, the way it lies and its color", (paper.get("paper_size"), paper.get("paper_w"), paper.get("paper_h"), paper.get("paper_color")), ("9x12", 304.8, 228.6, "#c6a57a"))
+    check("where it sits on the bed stays Plot's", paper.get("paper_x"), 5)
+    edited = client.get("/api/status").get_json().get("file_edited")
+    client.post("/api/drawing", json={"file": "sunset.svg", "plot": {"placement": {"x": 0, "y": 0}, "scale": 100, "rotation": 0,
+                                      "paper": {"paper_size": "9x12", "paper_w": 304.8, "paper_h": 228.6, "paper_x": 5, "paper_y": 0, "paper_color": "#c6a57a"}}})
+    check("Plot saving the same paper isn't news to the editors", client.get("/api/status").get_json().get("file_edited"), edited)
+    client.post("/api/drawing", json={"file": "sunset.svg", "plot": {"placement": {"x": 0, "y": 0}, "scale": 100, "rotation": 0,
+                                      "paper": {"paper_size": "9x12", "paper_w": 228.6, "paper_h": 304.8, "paper_x": 5, "paper_y": 0, "paper_color": "#c6a57a"}}})
+    check("Plot turning the paper is", client.get("/api/status").get_json().get("file_edited") != edited, True)
+    check("and still has nothing saved", client.get("/api/current").get_json()["dirty"], True)
 
     print("\nwhile a stopped plot waits to be resumed")
     server.RESUME_META.write_text(json.dumps({"done_mm": 10, "total_mm": 100}))

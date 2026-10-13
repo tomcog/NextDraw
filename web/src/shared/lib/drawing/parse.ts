@@ -23,6 +23,8 @@ export interface Opened {
   unsupported: number;
   /** The drawing tool the file was last saved for, by either app ("Paper-Mate Flair Medium"), or null. */
   tool: string | null;
+  /** The paper's color from the block Plot reads, or null for a file that doesn't say. */
+  paperColor: string | null;
 }
 
 const PX_PER_INCH: Record<string, number> = {
@@ -589,14 +591,22 @@ export function parseDrawing(text: string): Opened {
     };
   }
 
-  // The tool, from the block Plot reads - the one both apps write it into.
+  // The tool and the paper, from the block Plot reads - the one all three apps write them into. The
+  // paper there is the drawing's paper wherever it was last chosen, Plot included, so it is the page
+  // here - unless Plot trimmed the page to the drawing, when the paper is the sheet it's placed on.
   let tool: string | null = null;
+  let paperColor: string | null = null;
+  let paperPage: Page | null = null;
   try {
     const plotEl = svg.getElementsByTagName("nds:plot")[0];
-    const named = plotEl?.textContent ? JSON.parse(plotEl.textContent)?.tool : null;
+    const plot = plotEl?.textContent ? JSON.parse(plotEl.textContent) : null;
+    const named = plot?.tool;
     tool = typeof named === "string" && named.trim() ? named : null;
+    const paper = plot?.paper;
+    if (typeof paper?.paper_color === "string" && /^#[0-9a-f]{6}$/i.test(paper.paper_color)) paperColor = paper.paper_color.toLowerCase();
+    if (!plot?.original_page && paper?.paper_w > 0 && paper?.paper_h > 0) paperPage = { w: paper.paper_w / 25.4, h: paper.paper_h / 25.4 };
   } catch {
     tool = null; // an unreadable block: the drawing still opens, in whatever tool is chosen
   }
-  return { page, shapes, layers, fills, unsupported, tool };
+  return { page: paperPage ?? page, shapes, layers, fills, unsupported, tool, paperColor };
 }

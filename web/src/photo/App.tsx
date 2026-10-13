@@ -72,9 +72,12 @@ export default function App() {
   const [paperColor, setPaperColor] = useState(() => load<string>(PAPER_COLOR_KEY) ?? "#ffffff");
   // A paper color chosen by hand, as opposed to one a drawing opens with (see the effect that follows it).
   const paperPicked = useRef(false);
+  // Kept in the drawing, like its size, so all three apps show the same paper: picking one is a change.
   const pickPaperColor = (color: string) => {
-    if (color !== paperColor) paperPicked.current = true;
+    if (color === paperColor) return;
+    paperPicked.current = true;
     setPaperColor(color);
+    file.touch();
   };
   useEffect(() => remember(PAPER_COLOR_KEY, paperColor), [paperColor]);
   const sizeId = useMemo(() => sizeIdOf(page), [page]);
@@ -207,7 +210,7 @@ export default function App() {
   // when it's changed or replaced in another app or window (showCurrent, below). Work kept in this
   // browser from before there was one is put back first, once (resumeKept).
   const file = useDrawingFile({
-    shapes, fills, layers, page, sizeId, toolName, fonts, setBusy, setMessage,
+    shapes, fills, layers, page, sizeId, toolName, paperColor, fonts, setBusy, setMessage,
     onCurrent: (current) => showCurrent(current),
     beforeStart: () => resumeKept(),
   });
@@ -356,6 +359,7 @@ export default function App() {
     file.loaded(current, drawing);
     const saved = drawing.tool;
     if (saved) setToolName((current) => (presetsRef.current.length && !presetsRef.current.some((t) => t.name === saved) ? current : saved));
+    if (drawing.paperColor) setPaperColor(drawing.paperColor);
     setMessage(
       drawing.unsupported
         ? { text: `${drawing.unsupported} ${drawing.unsupported === 1 ? "mark" : "marks"} in ${current.name} can’t be redrawn here, and saving would drop ${drawing.unsupported === 1 ? "it" : "them"}`, ok: false }

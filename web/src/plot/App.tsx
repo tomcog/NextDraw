@@ -550,9 +550,7 @@ export default function App() {
   const [choicesTick, setChoicesTick] = useState(0);
   // The choices saved in a drawing: where it goes, how big, its layers, its paper. Used when a drawing
   // is opened, and when another open page (odin's own screen, the laptop) saves its choices.
-  // keepPaper: joining a drawing other pages already have open. Their paper is in the shared settings,
-  // which may hold a change not yet saved into the file, so the file's paper isn't taken over it.
-  const applyChoices = useCallback((plot: Plot | null, keepPaper = false) => {
+  const applyChoices = useCallback((plot: Plot | null) => {
     setPlacementState(plot?.placement ?? { x: 0, y: 0 });
     const nextScale = plot?.scale ?? 100;
     refs.current.scale = nextScale;
@@ -574,7 +572,7 @@ export default function App() {
     // otherwise swap the chosen pen, and its pen positions and speeds with it, in the middle of
     // setting up a plot. The tool the page remembers stays chosen until it's changed by hand. Plot
     // still writes `tool` into the file, because Studio reads it to draw in the right ink.
-    const patch = keepPaper ? {} : { ...(plot?.paper ?? {}) };
+    const patch = { ...(plot?.paper ?? {}) };
     if (Object.keys(patch).length) {
       refs.current.settings = { ...refs.current.settings, ...patch };
       setSettings((prev) => ({ ...prev, ...patch }));
@@ -583,10 +581,23 @@ export default function App() {
     setChoicesTick((t) => t + 1);
     return nextScale;
   }, []);
+  // The drawing's paper - size, the way it lies, color - as Studio or Image just changed it. Where it
+  // sits on the bed stays as it is here.
+  const takePaper = useCallback((plot: Plot) => {
+    const { paper_size, paper_w, paper_h, paper_color } = plot.paper ?? {};
+    const patch: Partial<Settings> = {
+      ...(paper_w && paper_h ? { paper_w, paper_h, ...(paper_size ? { paper_size } : {}) } : {}),
+      ...(paper_color ? { paper_color } : {}),
+    };
+    const was = refs.current.settings;
+    if (!Object.entries(patch).some(([k, v]) => was[k as keyof Settings] !== v)) return;
+    refs.current.settings = { ...was, ...patch };
+    setSettings((prev) => ({ ...prev, ...patch }));
+  }, []);
   // A drawing was loaded: use the choices saved in it (or start at home, full size), then let auto-save
   // watch for changes from there. Returns the scale to estimate at.
-  const applyPlot = useCallback((name: string, plot: Plot | null, keepPaper = false) => {
-    const nextScale = applyChoices(plot, keepPaper);
+  const applyPlot = useCallback((name: string, plot: Plot | null) => {
+    const nextScale = applyChoices(plot);
     setPenColors({});
     setPrintLayer(null);
     setLayerMode("preview");
@@ -790,9 +801,9 @@ export default function App() {
           } else {
             refs.current.fileName = next.file;
             refs.current.opened = next.file_opened;
-            // Opening a page to watch mustn't change what the others show: with shared settings
-            // already taken, their paper stands, as their tool and settings do.
-            applyPlot(next.file, drawing.plot, Boolean(refs.current.settingsVersion));
+            // The paper is the drawing's, as Studio and Image show it - so arriving from one of
+            // them, or opening a page to watch, shows the drawing on its own paper.
+            applyPlot(next.file, drawing.plot);
             setFileName(next.file);
           }
         }
@@ -825,6 +836,10 @@ export default function App() {
           refs.current.fileName = next.file;
           setFileName(next.file);
           setDrawingVersion((v) => v + 1);
+          // Except the paper, which is chosen in every app: a new one there is the paper here too.
+          const drawing = await api<{ plot: Plot | null }>("/api/drawing").catch(() => null);
+          if (cancelled) return;
+          if (drawing?.plot) takePaper(drawing.plot);
         }
         refs.current.edited = next.file_edited ?? null;
         // Changed on disk since it was opened - saved from Studio, or synced from another Mac.
