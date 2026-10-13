@@ -427,6 +427,27 @@ export function parseDrawing(text: string): Opened {
     }
   }
 
+  // A shape read from the design block - a text, a curve, a photo - is placed by the box saved there,
+  // not by its lines. Plot's Turn and Fit change the drawing by a transform on each layer, so that
+  // box is carried through its layer's: about its middle, scaled, and turned by whole quarters.
+  const layerMatrix = (el: Element | null): Matrix => {
+    let top = el;
+    while (top && top.parentElement && top.parentElement !== svg) top = top.parentElement;
+    return top && top !== svg ? ctmOf(top) : IDENTITY;
+  };
+  const placedBox = (el: Element | null, box: number[], rotation?: number) => {
+    const m = layerMatrix(el);
+    const [x, y, x2, y2] = box;
+    if (m.every((v, i) => v === IDENTITY[i])) return { x, y, x2, y2, ...(rotation ? { rotation } : {}) };
+    const k = Math.sqrt(Math.abs(m[0] * m[3] - m[1] * m[2]));
+    const turn = Math.round((Math.atan2(m[1], m[0]) * 180) / Math.PI / 90) * 90;
+    const c = apply(m, { x: (x + x2) / 2, y: (y + y2) / 2 });
+    const mid = { x: toX(c.x), y: toY(c.y) };
+    const w = ((x2 - x) * k) / 2, h = ((y2 - y) * k) / 2;
+    const deg = (((rotation ?? 0) + turn) % 360 + 360) % 360;
+    return { x: mid.x - w, y: mid.y - h, x2: mid.x + w, y2: mid.y + h, ...(deg ? { rotation: deg } : {}) };
+  };
+
   // Each saved text becomes one shape again: the words, the font, and the box they were set in.
   for (const [id, saved] of Object.entries(design.texts ?? {})) {
     const box = Array.isArray(saved?.box) ? (saved.box as unknown[]).map(Number) : [];
@@ -438,7 +459,7 @@ export function parseDrawing(text: string): Opened {
       font: typeof saved.font === "string" ? saved.font : "",
       ...(Number.isFinite(Number(saved.tracking)) ? { tracking: Number(saved.tracking) } : {}),
       ...(Number.isFinite(Number(saved.leading)) ? { leading: Number(saved.leading) } : {}),
-      x: box[0], y: box[1], x2: box[2], y2: box[3],
+      ...placedBox(el, box),
     });
   }
 
@@ -451,7 +472,7 @@ export function parseDrawing(text: string): Opened {
     shapes.push({
       id: el ? noteSource(el) : String(saved.shape),
       layerId: "", kind: "curve", curve,
-      x: box[0], y: box[1], x2: box[2], y2: box[3],
+      ...placedBox(el, box),
     });
   }
 
@@ -465,7 +486,7 @@ export function parseDrawing(text: string): Opened {
     const el = svg.querySelector(`[id="${CSS.escape(PHOTO_GROUP_PREFIX + id)}"]`);
     const layer = el ? layerFor(el) : null;
     if (layer) layerOf.set(id, layer);
-    shapes.push({ id, layerId: "", kind: "photo", photo, x: box[0], y: box[1], x2: box[2], y2: box[3] });
+    shapes.push({ id, layerId: "", kind: "photo", photo, ...placedBox(el, box) });
   }
 
   // How each repeated shape repeats, put back on the one shape its copies were drawn from.
@@ -507,10 +528,11 @@ export function parseDrawing(text: string): Opened {
   // and the curve is the intent.
 
   // The angle each turned shape was drawn at. The geometry in the file is already turned, so this
-  // is what puts the shape back the way Studio holds it: a square box plus an angle.
+  // is what puts the shape back the way Studio holds it: a square box plus an angle - added to any
+  // quarter turn Plot gave its layer since (placedBox).
   for (const s of shapes) {
     const deg = Number(design.turned?.[s.id]);
-    if (Number.isFinite(deg) && deg) s.rotation = deg;
+    if (Number.isFinite(deg) && deg) s.rotation = (((s.rotation ?? 0) + deg) % 360 + 360) % 360 || undefined;
   }
 
   markOutlines();
