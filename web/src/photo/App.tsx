@@ -12,7 +12,7 @@ import { FileBrowser } from "../shared/components/FileBrowser";
 import { HistoryToolbar, type View } from "../shared/components/PreviewToolbar";
 import { AppSwitch } from "../shared/components/AppSwitch";
 import { StatusBanner } from "../shared/components/StatusBanner";
-import { api } from "../shared/lib/api";
+import { api, postJSON } from "../shared/lib/api";
 import { PAPER_SIZES } from "../shared/lib/constants";
 import { load, save as remember } from "../shared/lib/storage";
 import type { Info, PlotterModel, Preset } from "../shared/lib/types";
@@ -22,6 +22,7 @@ import { useHistory } from "../shared/lib/useHistory";
 import { loadFont, type StrokeFont } from "../shared/lib/drawing/font";
 import type { Fill } from "../shared/lib/drawing/hatch";
 import { parseDrawing } from "../shared/lib/drawing/parse";
+import { buildSvg, cleanFileName } from "../shared/lib/drawing/svg";
 import { photoMarks, placeOnPage, plateSetOf, stemWithoutPlate, type Photo } from "../shared/lib/drawing/photo";
 import { boxOf, newLayerId, type Layer, type Page, type Shape } from "../shared/lib/drawing/shapes";
 import { useDrawingFile, type Current } from "../shared/lib/drawing/useDrawingFile";
@@ -360,8 +361,12 @@ export default function App() {
     const saved = drawing.tool;
     if (saved) setToolName((current) => (presetsRef.current.length && !presetsRef.current.some((t) => t.name === saved) ? current : saved));
     if (drawing.paperColor) setPaperColor(drawing.paperColor);
+    const kept = keptNote.current;
+    keptNote.current = null;
     setMessage(
-      drawing.unsupported
+      kept
+        ? { text: kept, ok: true }
+        : drawing.unsupported
         ? { text: `${drawing.unsupported} ${drawing.unsupported === 1 ? "mark" : "marks"} in ${current.name} can’t be redrawn here, and saving would drop ${drawing.unsupported === 1 ? "it" : "them"}`, ok: false }
         : !drawing.shapes.some((s) => s.kind === "photo") && drawing.shapes.length
           ? { text: `${current.name} has no image in it. Open an image to start a drawing from one.`, ok: false }
@@ -369,11 +374,27 @@ export default function App() {
     );
   }, [clearHistory, file, newDrawing]);
 
-  // Unsaved work kept in this browser from before the apps shared one drawing: put back as it was -
-  // the drawing, its file, the photo picked - and so sent as the current drawing. Kept no longer.
+  // Unsaved work kept in this browser from before the apps shared one drawing. With no current
+  // drawing, it's put back as it was - the drawing, its file, the photo picked - and so sent as the
+  // current drawing. With one, that drawing is someone's work too, and stays: the kept work is saved
+  // as a file of its own beside it instead, and said where. Kept in the browser no longer, either way.
+  const keptNote = useRef<string | null>(null);
   const resumeKept = async () => {
     const work: Work | undefined = await loadWork();
     if (!work?.shapes.length) return false;
+    const current = await api<Current>("/api/current");
+    if (!current.empty) {
+      const { name, saved, saveTo } = work.file;
+      const folder = saved ? saved.path.slice(0, saved.path.lastIndexOf("/")) : saveTo;
+      const res = await postJSON<{ name: string; folder: string }>("/api/studio/save", {
+        name: cleanFileName(name),
+        svg: buildSvg(work.shapes, work.fills, work.layers, work.page, { paperSizeId: sizeIdOf(work.page), toolName, paperColor, fonts }),
+        ...(folder ? { folder } : {}),
+      });
+      await dropWork();
+      keptNote.current = `Unsaved work from before was kept in this browser: saved as ${res.name.replace(/\.svg$/i, "")} in ${res.folder}`;
+      return false;
+    }
     setPage(work.page);
     setShapes(work.shapes);
     setFills(work.fills);
