@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Button, Card } from "@tomcoggia/ui";
 import styles from "./App.module.css";
 import { api, postJSON } from "../shared/lib/api";
-import { barrelOffsetMm, BUSY_STATES, DEFAULT_SETTINGS, IDRAW_MODEL, PAPER_SIZES, PLOT_CHANNEL, PLOTTING_STATES, PRESET_FIELD_NAMES, PRESET_FIELDS, STEPS, STORAGE } from "../shared/lib/constants";
+import { barrelOffsetMm, BUSY_STATES, DEFAULT_SETTINGS, IDRAW_MODEL, PAPER_SIZES, PLOTTING_STATES, PRESET_FIELD_NAMES, PRESET_FIELDS, STEPS, STORAGE } from "../shared/lib/constants";
 import { cleanNote, listOf } from "../shared/lib/format";
 import { lightness } from "../shared/lib/color";
 import { fitsOnBed, fitsOnPaper, footprint, minPlacement, type FitAlign } from "../shared/lib/geometry";
@@ -25,7 +25,7 @@ import { loadFont } from "../shared/lib/drawing/font";
 import { fitText } from "../shared/lib/drawing/text";
 import { buildSvg } from "../shared/lib/drawing/svg";
 import { parseDrawing } from "../shared/lib/drawing/parse";
-import { APP_URL, openInStudio } from "../shared/lib/apps";
+import { goToApp } from "../shared/lib/apps";
 import { FileBrowser, type OpenResult } from "../shared/components/FileBrowser";
 import { MachinePanel } from "./components/MachinePanel";
 import { Section } from "../shared/components/controls/Section";
@@ -403,7 +403,7 @@ export default function App() {
   useEffect(() => save(STORAGE.zoom, zoomChoice), [zoomChoice]);
 
   // Refs let the polling loop see current values without restarting.
-  const refs = useRef({ fileName, status, lastAction, settings, scale, presets, plotLayerIds, rotation, hatchSpacing, readRequested: false, plotSettings: settings, skipTiny: null as number | null, activePreset, opened: undefined as string | null | undefined,
+  const refs = useRef({ fileName, status, lastAction, settings, scale, presets, plotLayerIds, rotation, hatchSpacing, readRequested: false, plotSettings: settings, skipTiny: null as number | null, activePreset, opened: undefined as string | null | undefined, edited: undefined as string | null | undefined,
     // Following the other open pages: the last shared-settings version and drawing save this page has
     // taken up, and whether it has changes of its own not yet sent.
     settingsVersion: undefined as string | null | undefined, settingsUnsent: false,
@@ -774,7 +774,7 @@ export default function App() {
       try {
         const next = await api<Status>("/api/status");
         if (cancelled) return;
-        const { fileName: currentFile, status: prev, lastAction: action } = refs.current;
+        const { fileName: currentFile, status: prev, lastAction: action, opened: openedBefore } = refs.current;
         setLostContact(false);
         if (!next.file && currentFile) clearDrawing(); // cleared in another window
         if (next.file && !currentFile) {
@@ -816,6 +816,17 @@ export default function App() {
           }
         }
         if (refs.current.opened === undefined) refs.current.opened = next.file_opened ?? null;
+        // Changed in Studio or Image - a change sent, or saved - on the same opening: the drawing, its
+        // layers and its name (renamed there, or saved under a new one) come again. Plot's choices for
+        // it stand: the server keeps them through the editors' changes.
+        // A new opening is loaded afresh above, edits and all: only edits to the same one count here.
+        if (refs.current.edited !== undefined && next.file && currentFile && next.file_edited !== refs.current.edited
+          && next.file_opened === openedBefore && !reloading.current) {
+          refs.current.fileName = next.file;
+          setFileName(next.file);
+          setDrawingVersion((v) => v + 1);
+        }
+        refs.current.edited = next.file_edited ?? null;
         // Changed on disk since it was opened - saved from Studio, or synced from another Mac.
         // Reopening is the same path as opening it by hand, so the drawing, its layers and the
         // choices saved in it all come back from the file rather than being patched piecemeal.
@@ -879,22 +890,9 @@ export default function App() {
       if (!cancelled) timer = window.setTimeout(poll, isBusy(refs.current.status) ? 500 : 2000);
     };
     poll();
-    // Studio's "Open in Plot" asks whether a Plot page is open before opening one: this page answers,
-    // and looks at the server straight away rather than on its next poll.
-    const channel = "BroadcastChannel" in window ? new BroadcastChannel(PLOT_CHANNEL) : null;
-    if (channel) {
-      channel.onmessage = (e) => {
-        if (e.data?.type !== "open-in-plot") return;
-        channel.postMessage({ type: "plot-here" });
-        window.clearTimeout(timer);
-        poll();
-        window.focus(); // most browsers won't bring a background tab forward, but some will
-      };
-    }
     return () => {
       cancelled = true;
       window.clearTimeout(timer);
-      channel?.close();
     };
   }, [clearDrawing]);
 
@@ -986,8 +984,10 @@ export default function App() {
   };
 
   // Drag and drop from Finder: the browser only hands over a copy, not the file's location.
-  const uploadFile = async (file: File | undefined) => {
-    if (!file || busy) return;
+  const uploadFile = (file: File | undefined) => {
+    if (file && !busy) replacing(() => void uploadNow(file));
+  };
+  const uploadNow = async (file: File) => {
     if (!/\.svg$/i.test(file.name)) {
       setLocalMessage({ text: "Drop an SVG file. Open Illustrator files with Open… so they can be imported.", tone: "error" });
       return;
@@ -1030,8 +1030,27 @@ export default function App() {
   const [misfits, setMisfits] = useState<{ drawing: string; path: string; files: string[] } | null>(null);
   const shownMisfits = misfits && misfits.drawing === fileName ? misfits : null;
 
+  // Another drawing in this one's place - opened, dropped, cleared, a sheet made - when this one has
+  // changes from Studio or Image not saved: asked first, as the editors ask. Plot can't save them;
+  // they're kept by going back to Studio or Image and saving there.
+  const replacing = (go: () => void) => {
+    if (!refs.current.status?.file_dirty) {
+      go();
+      return;
+    }
+    setConfirmation({
+      message: `${refs.current.fileName ?? "This drawing"} has changes made in Studio or Image that aren’t saved. Save them there to keep them.`,
+      confirmLabel: "Discard them",
+      danger: true,
+      onConfirm: () => {
+        setConfirmation(null);
+        go();
+      },
+    });
+  };
+
   const openBrowser = () => {
-    if (!busy) setBrowserOpen(true);
+    if (!busy) replacing(() => setBrowserOpen(true));
   };
   const onOpened = (res: OpenResult) => {
     refs.current.opened = res.opened; // this page's own open: nothing for the poll to catch up on
@@ -1039,8 +1058,10 @@ export default function App() {
   };
 
 
-  const clearFile = async () => {
-    if (busy) return;
+  const clearFile = () => {
+    if (!busy) replacing(() => void clearNow());
+  };
+  const clearNow = async () => {
     try {
       await api("/api/file", { method: "DELETE" });
       clearDrawing();
@@ -1223,10 +1244,9 @@ export default function App() {
 
   const active = presets.find((p) => p.name === activePreset);
 
-  // A drawing opened in Studio's own tab; this one stays on Plot, and says so if the browser won't.
-  const openStudio = async (path: string) => {
-    if (!(await openInStudio(path))) setLocalMessage({ text: "The browser didn’t open Studio’s tab: allow pop-ups for this page.", tone: "error" });
-  };
+  // Studio, on this drawing, in this tab. The plotter carries on with anything it's doing; Plot's page
+  // picks it up again when come back to.
+  const openStudio = () => void goToApp("studio");
 
   /* ---------- Setup: calibrating the pens ---------- */
 
@@ -1275,6 +1295,8 @@ export default function App() {
       const saved = await postJSON<{ name: string; path: string; folder: string }>("/api/studio/save", {
         name: `${active.name} ${kind === "calibration" ? "calibration" : "color pairs"}`,
         svg,
+        // One sheet per pen: a fresh one takes the old one's place.
+        replace: true,
       });
       onOpened(await postJSON<OpenResult>("/api/open", { path: saved.path }));
       setLocalMessage({ text: `Saved to ${saved.folder} and opened, ready to plot.`, tone: "ok" });
@@ -1869,17 +1891,16 @@ export default function App() {
                 trimming={trimming}
                 onTrim={trimPage}
                 onRotate={(turn) => setRotation((r) => (((r + turn * 90) % 360) + 360) % 360)}
-                // Only a drawing that lives in a folder: an uploaded copy has nowhere for Studio to read it from.
-                // This tab becomes Studio on the drawing: Plot is left, not opened beside. The plotter
-                // carries on with anything it's doing; Plot's page picks it up again when come back to.
-                onEditInStudio={status?.file_path ? () => window.location.assign(`${APP_URL.studio}?open=${encodeURIComponent(status.file_path!)}`) : undefined}
+                // The same drawing, in Studio, in this tab: Plot is left, not opened beside.
+                onEditInStudio={fileName ? openStudio : undefined}
+                unsaved={Boolean(status?.file_dirty)}
               />
               {shownMisfits && (
                 <div className={styles.misfits} role="status">
                   <p>
                     {`${listOf(shownMisfits.files)} ${shownMisfits.files.length === 1 ? "isn’t" : "aren’t"} on a page the size of the first file’s, so ${shownMisfits.files.length === 1 ? "it" : "they"} may not line up.`}
                   </p>
-                  <Button size="sm" variant="secondary" onClick={() => openStudio(shownMisfits.path)}>
+                  <Button size="sm" variant="secondary" onClick={openStudio}>
                     Line up in Studio
                   </Button>
                 </div>
@@ -1961,8 +1982,8 @@ export default function App() {
                 sheetOpen={Boolean(sheetLayoutNow)}
                 sheetIsTool={sheetIsTool}
                 strangers={strangers}
-                onNewSheet={() => makeSheet("calibration")}
-                onNewPairs={() => makeSheet("pairs")}
+                onNewSheet={() => replacing(() => void makeSheet("calibration"))}
+                onNewPairs={() => replacing(() => void makeSheet("pairs"))}
                 onReadPhoto={readSheetPhoto}
               />
               <Section title="Appearance" action={<ThemeToggle />}>

@@ -90,6 +90,8 @@ export interface Status {
   plotters?: number; // how many are plugged in; with more than one, nothing is sent to either
   file: string | null;
   file_opened?: string | null; // changes every time a drawing is opened, from any tab or app
+  file_edited?: string | null; // changes every time Studio or Image sends the drawing a change, or saves it
+  file_dirty?: boolean; // it has changes from Studio or Image not saved to its file yet
   drawing_saved?: string | null; // changes every time a page saves its choices for the drawing
   settings_version?: string | null; // changes every time a page changes the shared settings
   file_path: string | null;

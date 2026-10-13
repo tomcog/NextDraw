@@ -104,7 +104,8 @@ with tempfile.TemporaryDirectory() as tmp:
     for name, file in (("CURRENT_SVG", "current.svg"), ("CURRENT_MTIME", "current.mtime"),
                        ("CURRENT_OPENED", "current.opened"), ("CURRENT_HASH", "current.hash"),
                        ("CURRENT_PATH", "current.path"), ("RESUME_SVG", "resume.svg"),
-                       ("RESUME_META", "resume.json"), ("PLOT_PATHS", "plot-paths.svg")):
+                       ("RESUME_META", "resume.json"), ("PLOT_PATHS", "plot-paths.svg"),
+                       ("CURRENT_STATE", "current.json"), ("PRINTED_FILE", "printed-layers.json")):
         setattr(server, name, jobs / file)
     client = server.app.test_client()
 

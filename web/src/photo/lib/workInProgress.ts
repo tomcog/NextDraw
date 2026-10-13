@@ -3,12 +3,9 @@ import type { Layer, Page, Shape } from "../../shared/lib/drawing/shapes";
 import type { FileState } from "../../shared/lib/drawing/useDrawingFile";
 
 /**
- * Photo's drawing while it has changes not saved to a file: kept in the browser, so a reload - or a
- * new version of the app, which needs one - puts it back as it was rather than losing the photo.
- * Once the drawing is saved there's nothing to keep: the app reopens the file it was saved to.
- *
- * In IndexedDB rather than localStorage, which holds a few megabytes at most: a photo's working copy
- * alone can come near that, and a photo split by tone or colour carries it in each of its layers.
+ * Image's unsaved drawing as it used to be kept: in the browser, so a reload put it back. Since the
+ * apps share one current drawing on the server, unsaved work lives there instead; what's left here is
+ * reading back work kept before that, once, so it isn't lost in the change (see resumeKept in App.tsx).
  */
 export interface Work {
   shapes: Shape[];
@@ -51,8 +48,5 @@ async function run<T>(mode: IDBTransactionMode, act: (store: IDBObjectStore) => 
 /** The work kept from last time, if there is any. */
 export const loadWork = () => run<Work | undefined>("readonly", (s) => s.get(KEY));
 
-/** Keep the drawing as it is now, in place of whatever was kept before. */
-export const keepWork = (work: Work) => run<IDBValidKey>("readwrite", (s) => s.put(work, KEY));
-
-/** Nothing unsaved any more: forget what was kept. */
+/** Put back, and sent on: forget what was kept. */
 export const dropWork = () => run<undefined>("readwrite", (s) => s.delete(KEY));

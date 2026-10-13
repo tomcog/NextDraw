@@ -54,6 +54,7 @@ def main():
     # Studio saves over it, drawn with the Stabilo, with its own fresh defaults for everything else.
     res = client.post("/api/studio/save", json={
         "name": "tool test",
+        "replace": True,
         "svg": drawing({"placement": {"x": 0, "y": 0}, "scale": 100, "rotation": 0, "tool": "Stabilo point 88"}),
     })
     check("the save went through", res.status_code, 200)

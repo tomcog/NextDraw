@@ -7,10 +7,7 @@ import "../index.css";
 import "@tomcoggia/ui/styles.css";
 import "@tomcoggia/ui/fonts.css";
 import App from "./App";
-import { nameThisTab } from "../shared/lib/apps";
 
-// So the other apps' switches can find this tab again rather than opening another.
-nameThisTab("photo");
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>

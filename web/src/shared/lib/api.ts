@@ -6,7 +6,8 @@ export async function api<T = any>(path: string, options: RequestInit = {}): Pro
   } catch {
     /* no body */
   }
-  if (!res.ok) throw new Error(body.error || `Request failed (${res.status})`);
+  // The answer goes with the error, for callers that need more than its message (a refusal's reason).
+  if (!res.ok) throw Object.assign(new Error(body.error || `Request failed (${res.status})`), { body });
   return body as T;
 }
 

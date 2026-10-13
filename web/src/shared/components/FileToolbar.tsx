@@ -82,7 +82,7 @@ export function FileToolbar({ busy, hasShapes, onOpen, onAddLayer, onOpenPhotos,
             New drawing
           </Segment>
           {onEditInStudio && (
-            <Segment icon={<PenTool />} title="Save this drawing and carry on with it in Studio, in its own tab" disabled={busy || !hasShapes} onClick={onEditInStudio}>
+            <Segment icon={<PenTool />} title="Carry on with this drawing in Studio - changes not saved go too" disabled={busy || !hasShapes} onClick={onEditInStudio}>
               Edit in Studio
             </Segment>
           )}
@@ -91,7 +91,7 @@ export function FileToolbar({ busy, hasShapes, onOpen, onAddLayer, onOpenPhotos,
               Snapshot
             </Segment>
           )}
-          <Segment icon={<Send />} title="Save this drawing and open it in Plot, ready to draw" disabled={busy || !hasShapes} onClick={onSendToPlot}>
+          <Segment icon={<Send />} title="Plot this drawing - changes not saved go too" disabled={busy || !hasShapes} onClick={onSendToPlot}>
             Send to Plot
           </Segment>
         </ToolbarExpander>

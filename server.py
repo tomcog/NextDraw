@@ -68,6 +68,9 @@ CURRENT_MTIME = JOBS / "current.mtime"  # the file's modified time when opened o
 CURRENT_OPENED = JOBS / "current.opened"  # changes each time a drawing is opened, by anyone
 CURRENT_HASH = JOBS / "current.hash"  # and a hash of its bytes, so the page can be told it changed
 CURRENT_PATH = JOBS / "current.path"  # where the loaded drawing lives on disk; absent for uploaded copies
+# The editors' side of the same drawing (see /api/current): whether it has changes not saved to its
+# file, where a first save goes, marks the editors can't redraw, and which edit it is.
+CURRENT_STATE = JOBS / "current.json"
 
 
 ILLUSTRATOR_POINTS_PER_INCH = 72.0
@@ -2503,6 +2506,9 @@ def status():
     name_file = JOBS / "current.name"
     snap["file"] = name_file.read_text() if CURRENT_SVG.exists() and name_file.exists() else None
     snap["file_opened"] = opened_token() if snap["file"] else None
+    state = current_state() if snap["file"] else {}
+    snap["file_edited"] = state.get("edited")
+    snap["file_dirty"] = bool(state.get("dirty"))
     snap["drawing_saved"] = drawing_saved if snap["file"] else None
     with plot_settings_lock:
         snap["settings_version"] = shared_settings["version"]
@@ -2520,7 +2526,9 @@ def status():
         # Changed underneath us - by Studio, or by another Mac's iCloud sync. Never mid-plot: the
         # copy being drawn from mustn't move, and a stopped plot still has to be resumable.
         on_disk = disk_token(disk_path)
-        snap["drawing_stale"] = bool(on_disk and loaded_token() and on_disk != loaded_token()) and not (live or resume)
+        # Nor over changes not saved yet: reopening the file would throw them away.
+        snap["drawing_stale"] = (bool(on_disk and loaded_token() and on_disk != loaded_token())
+                                 and not (live or resume) and not snap["file_dirty"])
     return jsonify(snap)
 
 
@@ -2710,6 +2718,7 @@ def load_drawing(svg_path):
     # reopens the drawing Plot already has, and a Plot page open in another tab has to know to show
     # the new one. The name can't say that, and the file's hash is rewritten by Plot's own saves.
     CURRENT_OPENED.write_text(str(time.time_ns()))
+    write_current_state({})
     with job.lock:
         if not job.busy():
             job.reset("idle")
@@ -3083,14 +3092,19 @@ def combine_sources(raw_paths, mode):
     return parts, paths[0]
 
 
-def combined_path(folder, stem):
-    """A new file next to the originals, never one of them: "<stem> combined.svg", numbered if taken."""
-    path = folder / f"{stem} combined.svg"
+def free_path(folder, stem):
+    """A new file, never one already there: "<stem>.svg", or "<stem> 2.svg" and on if that's taken."""
+    path = folder / f"{stem}.svg"
     n = 2
     while path.exists():
-        path = folder / f"{stem} combined {n}.svg"
+        path = folder / f"{stem} {n}.svg"
         n += 1
     return path
+
+
+def combined_path(folder, stem):
+    """A new file next to the originals, never one of them: "<stem> combined.svg", numbered if taken."""
+    return free_path(folder, f"{stem} combined")
 
 
 @app.post("/api/combine")
@@ -3196,6 +3210,9 @@ def open_file():
         plot = load_drawing(svg_path)
     except (OSError, ValueError, RuntimeError) as exc:
         return jsonify(error=str(exc)), 400
+    if request.args.get("svg"):
+        # Studio and Image: the drawing they now work on, to read into shapes.
+        return jsonify(current_drawing())
     return jsonify(name=svg_path.name, path=str(svg_path), folder=display_path(svg_path.parent), plot=plot,
                    opened=opened_token())
 
@@ -3404,6 +3421,10 @@ def saving_problem(body):
         # Another window (or this one, before it caught up) loaded a different drawing since.
         return (jsonify(error="A different drawing was opened in another window. Reload this page."), 409), None
     disk_path = Path(CURRENT_PATH.read_text()) if CURRENT_PATH.exists() else None
+    if current_state()["dirty"]:
+        # Edits in Studio or Image not saved yet: the loaded copy holds them, and writing it to the
+        # file would save them behind the editor's back. Plot's choices go with them when they're saved.
+        disk_path = None
     if disk_path is not None:
         if allowed_path(str(disk_path)) is None or not disk_path.exists():
             return (jsonify(error=f"{disk_path.name} is no longer in {display_path(disk_path.parent)}. Open it again to keep saving."), 409), None
@@ -3595,6 +3616,9 @@ def upload():
     (JOBS / "current.name").write_text(file.filename)
     CURRENT_PATH.unlink(missing_ok=True)  # an uploaded copy isn't linked to a file on disk
     CURRENT_MTIME.unlink(missing_ok=True)
+    CURRENT_HASH.unlink(missing_ok=True)
+    CURRENT_OPENED.write_text(str(time.time_ns()))
+    write_current_state({})
     with job.lock:
         if not job.busy():
             job.reset("idle")
@@ -3658,46 +3682,83 @@ def studio_read():
     return jsonify(name=path.name, path=str(path), folder=display_path(path.parent), svg=svg)
 
 
+def carry_plot_block(svg, source):
+    """
+    The editors' SVG with Plot's block taken from the same drawing as it was before. Plot's block -
+    where the drawing sits, its scale, the inks, links and order chosen for plotting it - is Plot's,
+    and the editors only know the fresh defaults they write into a new file. Replacing the block would
+    undo every one of those choices each time the drawing was edited. Except the names Plot once gave
+    layers after their inks, and the drawing tool, which is chosen in both apps: the editor's wins.
+    """
+    try:
+        from lxml import etree
+        kept = read_plot(source)
+        if kept is None:
+            return svg
+        # The names, filed by a layer's place, would land on whatever layer is in that place now.
+        kept.pop("layer_names", None)
+        root = etree.fromstring(svg.encode("utf-8"), etree.XMLParser(huge_tree=True))
+        tool = (read_plot(root) or {}).get("tool")
+        if isinstance(tool, str) and tool.strip():
+            kept["tool"] = tool
+        write_plot(root, kept)
+        return etree.tostring(root, encoding="unicode", xml_declaration=False)
+    except Exception:  # noqa: BLE001 - an unreadable old drawing is simply replaced, as before
+        return svg
+
+
+def editor_svg(body):
+    """The SVG an editor sent, or an error response."""
+    svg = body.get("svg")
+    if not isinstance(svg, str) or "<svg" not in svg:
+        return None, (jsonify(error="That doesn't look like an SVG."), 400)
+    if len(svg.encode("utf-8")) > MAX_STUDIO_SVG:
+        return None, (jsonify(error="That drawing is too big to save."), 413)
+    return svg, None
+
+
 @app.post("/api/studio/save")
 def studio_save():
     """
     Write a drawing Studio made into a folder this app can open from, so it can then be opened for
-    plotting like any other file. Saving doesn't load it - Studio calls /api/open for that.
+    plotting like any other file.
+
+    A file already there is only written over when the caller says replace: the drawing is saving
+    back into its own file. Anything else - a drawing never saved, one renamed, a snapshot - that
+    lands on a name that's taken is numbered instead, so one drawing can never silently take the
+    place of another that only happened to share its name (a picture's, or "Untitled").
+
+    With current - the token of the opening the editor is working on - the saved file becomes what the
+    current drawing is: Plot shows it as saved, and later saves go on into it. Refused if another
+    drawing has been opened since.
     """
     body = request.json or {}
-    svg = body.get("svg")
-    if not isinstance(svg, str) or "<svg" not in svg:
-        return jsonify(error="That doesn't look like an SVG."), 400
-    if len(svg.encode("utf-8")) > MAX_STUDIO_SVG:
-        return jsonify(error="That drawing is too big to save."), 413
+    svg, problem = editor_svg(body)
+    if problem:
+        return problem
     name = studio_file_name(body.get("name"))
     if name is None:
         return jsonify(error="Give the drawing a name."), 400
     folder = allowed_path(body.get("folder")) if body.get("folder") else DRAWINGS_FOLDER
     if folder is None or not folder.is_dir():
         return jsonify(error="That isn't a folder the app can save drawings in."), 403
+    current = body.get("current")
+    if current is not None:
+        if job.busy():
+            return jsonify(error="Wait for the plotter to finish, then save.", busy=True), 409
+        if not CURRENT_SVG.exists() or current != opened_token():
+            return jsonify(error="Another drawing was opened since this one. Reload this page to see it.", conflict=True), 409
     path = folder / name
-    # Saving over a drawing keeps what Plot wrote into it. Plot's block - where the drawing sits, its
-    # scale, the inks, links and order chosen for plotting it - is Plot's, and Studio only knows the
-    # fresh defaults it writes into a new file. Replacing the block would undo every one of those
-    # choices each time the drawing was edited.
-    if path.exists():
+    if not body.get("replace"):
+        path = free_path(folder, path.stem)
+    # Plot's choices for the drawing: from the current drawing, where Plot keeps them up to date even
+    # while there are edits not saved, or else from the file being saved over.
+    if current is not None:
+        svg = carry_plot_block(svg, parse_svg(CURRENT_SVG).getroot())
+    elif path.exists():
         try:
-            from lxml import etree
-            kept = read_plot(parse_svg(path).getroot())
-            if kept is not None:
-                # Except the names Plot once gave layers after their inks: the names are Studio's,
-                # and those, filed by a layer's place, land on whatever layer is in that place now.
-                kept.pop("layer_names", None)
-                root = etree.fromstring(svg.encode("utf-8"), etree.XMLParser(huge_tree=True))
-                # And the drawing tool, which is chosen in both apps: the one Studio saves with wins,
-                # as Plot's does when Plot saves. Kept whole, a tool picked in Studio was dropped.
-                tool = (read_plot(root) or {}).get("tool")
-                if isinstance(tool, str) and tool.strip():
-                    kept["tool"] = tool
-                write_plot(root, kept)
-                svg = etree.tostring(root, encoding="unicode", xml_declaration=False)
-        except Exception:  # noqa: BLE001 - an unreadable old file is simply replaced, as before
+            svg = carry_plot_block(svg, parse_svg(path).getroot())
+        except Exception:  # noqa: BLE001 - an unreadable old file is simply replaced
             pass
     try:
         tmp = path.with_name(f".{path.name}.studio-saving")
@@ -3705,7 +3766,129 @@ def studio_save():
         os.replace(tmp, path)
     except OSError as exc:
         return jsonify(error=f"Couldn't save {name}: {exc.strerror or exc}"), 500
-    return jsonify(name=path.name, path=str(path), folder=display_path(folder))
+    if current is not None:
+        # The current drawing is now this file, as saved: not a new opening - Plot keeps its place,
+        # and what's been printed - just no longer anything to save.
+        write_current_svg(svg)
+        (JOBS / "current.name").write_text(path.name)
+        CURRENT_PATH.write_text(str(path))
+        CURRENT_MTIME.write_text(str(path.stat().st_mtime_ns))
+        CURRENT_HASH.write_text(disk_token(path) or "")
+        write_current_state({})
+    return jsonify(name=path.name, path=str(path), folder=display_path(folder),
+                   edited=current_state()["edited"] if current is not None else None)
+
+
+# ---- The current drawing ----
+# One drawing at a time, for all three apps: the one Plot has loaded. Studio and Image read it when
+# they start, send each change to it a moment after it's made, and save it to its file - so going
+# from one app to another, the drawing goes too, changes not yet saved included. Opening a file in
+# any app makes it the current drawing (/api/open); New in an editor starts one with no file.
+
+def current_state():
+    """The editors' side of the current drawing, with defaults for anything not recorded."""
+    try:
+        raw = json.loads(CURRENT_STATE.read_text())
+    except (OSError, ValueError):
+        raw = {}
+    raw = raw if isinstance(raw, dict) else {}
+    return {
+        "dirty": bool(raw.get("dirty")),
+        "save_to": raw.get("save_to") if isinstance(raw.get("save_to"), str) else None,
+        "foreign": raw.get("foreign") if isinstance(raw.get("foreign"), int) else 0,
+        "edited": raw.get("edited") if isinstance(raw.get("edited"), str) else None,
+    }
+
+
+def write_current_state(state):
+    """Record the editors' side; every write is a new edit, which the open pages notice."""
+    out = {"dirty": False, "save_to": None, "foreign": 0, **state, "edited": f"{time.time_ns():x}"}
+    tmp = CURRENT_STATE.with_suffix(".tmp")
+    tmp.write_text(json.dumps(out))
+    os.replace(tmp, CURRENT_STATE)
+    return out
+
+
+def write_current_svg(svg):
+    tmp = CURRENT_SVG.with_suffix(".tmp")
+    tmp.write_text(svg, encoding="utf-8")
+    os.replace(tmp, CURRENT_SVG)
+    ensure_layer_ids(CURRENT_SVG)
+
+
+def current_drawing():
+    """The current drawing as an editor picks it up: its SVG, its file and its state."""
+    if not CURRENT_SVG.exists():
+        return {"empty": True}
+    name_file = JOBS / "current.name"
+    disk_path = Path(CURRENT_PATH.read_text()) if CURRENT_PATH.exists() else None
+    state = current_state()
+    return {
+        "name": name_file.read_text() if name_file.exists() else "Untitled.svg",
+        "path": str(disk_path) if disk_path else None,
+        "folder": display_path(disk_path.parent) if disk_path else None,
+        "svg": CURRENT_SVG.read_text(encoding="utf-8", errors="replace"),
+        "opened": opened_token(),
+        **state,
+    }
+
+
+@app.get("/api/current")
+def get_current():
+    return jsonify(current_drawing())
+
+
+@app.post("/api/current")
+def put_current():
+    """
+    An editor's drawing as it now stands, made the current drawing. With base - the opening it was
+    working on - it's a change to that drawing: Plot's block, what's been printed and the file it lives
+    in all stay. Without, it's a new drawing (New, a picture opened, files stacked into one): no file
+    yet, nothing printed - or, given path, unsaved work on that file. Refused while the plotter is drawing, and when another drawing has been
+    opened since base.
+    """
+    body = request.json or {}
+    svg, problem = editor_svg(body)
+    if problem:
+        return problem
+    if job.busy():
+        return jsonify(error="Plot is drawing. Changes reach it once it has finished.", busy=True), 409
+    base = body.get("base")
+    save_to = allowed_path(body["save_to"]) if isinstance(body.get("save_to"), str) else None
+    foreign = body.get("foreign") if isinstance(body.get("foreign"), int) else 0
+    name = studio_file_name(body.get("name")) or "Untitled.svg"
+    if base is None:
+        clear_resume()
+        forget_printed()
+        for path in (CURRENT_PATH, CURRENT_MTIME, CURRENT_HASH):
+            path.unlink(missing_ok=True)
+        # Unless it already belongs to a file - work kept from before there was one current drawing,
+        # put back - which it saves into, as unsaved work does.
+        home = allowed_path(body["path"]) if isinstance(body.get("path"), str) else None
+        if home is not None and home.is_file():
+            CURRENT_PATH.write_text(str(home))
+        write_current_svg(svg)
+        CURRENT_OPENED.write_text(str(time.time_ns()))
+        with job.lock:
+            if not job.busy():
+                job.reset("idle")
+    else:
+        if not CURRENT_SVG.exists() or base != opened_token():
+            return jsonify(error="Another drawing was opened since this one.", conflict=True), 409
+        write_current_svg(carry_plot_block(svg, parse_svg(CURRENT_SVG).getroot()))
+    (JOBS / "current.name").write_text(name)
+    state = write_current_state({
+        "dirty": bool(body.get("dirty", True)),
+        "save_to": str(save_to) if save_to and save_to.is_dir() else None,
+        "foreign": foreign,
+    })
+    return jsonify(opened=opened_token(), edited=state["edited"], name=name)
+
+
+@app.delete("/api/current")
+def drop_current():
+    """New in an editor: no current drawing until something is drawn."""
+    return clear_file()
 
 
 @app.delete("/api/printed")
@@ -3725,7 +3908,7 @@ def clear_file():
     if job.busy():
         return jsonify(error="Wait for the plotter to finish before clearing the drawing."), 409
     forget_printed()
-    for path in (CURRENT_SVG, JOBS / "current.name", CURRENT_PATH, CURRENT_MTIME):
+    for path in (CURRENT_SVG, JOBS / "current.name", CURRENT_PATH, CURRENT_MTIME, CURRENT_STATE):
         path.unlink(missing_ok=True)
     clear_resume()
     with job.lock:

@@ -6,11 +6,10 @@ import { PaperSection } from "../shared/components/controls/PaperSection";
 import { PanelToolbar } from "../shared/components/PanelToolbar";
 import { Button, Card } from "@tomcoggia/ui";
 import { ArrowDownToLine, ClipboardCopy, ClipboardPaste, Copy, Layers2, LayersArrowDown, MousePointer2, PenLine, Sparkles, Spline, SquareDimensions, Trash2, Ungroup } from "lucide-react";
-import { FileBrowser, type CombineResult, type OpenResult } from "../shared/components/FileBrowser";
+import { FileBrowser, type CombineResult } from "../shared/components/FileBrowser";
 import { Section } from "../shared/components/controls/Section";
 import controls from "../shared/components/controls/controls.module.css";
 import { api } from "../shared/lib/api";
-import { APP_URL, STUDIO_CHANNEL } from "../shared/lib/apps";
 import type { FitAlign } from "../shared/lib/geometry";
 import { load, save as remember } from "../shared/lib/storage";
 import { DEFAULT_SETTINGS, PAPER_SIZES } from "../shared/lib/constants";
@@ -34,7 +33,7 @@ import { type Repeat } from "../shared/lib/drawing/repeat";
 import { parseDrawing } from "../shared/lib/drawing/parse";
 import { PLATE_OFF, platesOf, placeOnPage } from "../shared/lib/drawing/photo";
 import { useHistory } from "../shared/lib/useHistory";
-import { useDrawingFile } from "../shared/lib/drawing/useDrawingFile";
+import { useDrawingFile, type Current } from "../shared/lib/drawing/useDrawingFile";
 import { bakedCopies, flattened, handOutFills, joined, markRuns, pointCount, simplified, simplifyDrawing, splitApart } from "./lib/shapeEdits";
 import { PaletteMenu } from "../shared/components/controls/PaletteMenu";
 import { Hints } from "../shared/components/controls/Hints";
@@ -70,7 +69,6 @@ const PLAIN_PEN: PenColor = { name: "Black", color: "#262626" };
 const TOOL_KEY = "studio-tool";
 // The drawing being worked on, remembered so that handing one to Plot - which navigates away - isn't
 // the same as losing it. Its own key: Plot's keys share this origin and still carry the old name.
-const LAST_FILE_KEY = "studio-last-file";
 const FONT_KEY = "studio-font";
 const SNAP_KEY = "studio-snap";
 const SIMPLIFY_KEY = "studio-simplify";
@@ -173,7 +171,7 @@ export default function App() {
  // Plot's presets rather than being invented here.
  const [defaults, setDefaults] = useState({ angle: 45, spacingMm: 1.5 });
  const [presets, setPresets] = useState<Preset[]>([]);
- const presetsRef = useRef(presets); // for openDrawing, which is made once
+ const presetsRef = useRef(presets); // for showCurrent, which is made once
  presetsRef.current = presets;
  // The single-stroke fonts: the names the app offers, the ones that have been read, and the one new
  // text is set in. A font is only fetched when something wants to be drawn in it.
@@ -269,8 +267,10 @@ export default function App() {
   return match ? match.id : "custom";
  }, [page]);
 
- const { name, setName, saved, dirty, touch, opened, combined, started, save, sendToPlot, snapshot: takeSnapshot, openInPlot } = useDrawingFile({
-  shapes, fills, layers, page, sizeId, toolName, fonts, setBusy, setMessage, lastFileKey: LAST_FILE_KEY,
+ // The drawing is the current drawing, shared by the three apps: picked up on starting, and again
+ // when it's changed or replaced in another app or window (showCurrent, below).
+ const { name, setName, saved, dirty, touch, loaded, combined, started, save, snapshot: takeSnapshot, open, goTo, openIn } = useDrawingFile({
+  shapes, fills, layers, page, sizeId, toolName, fonts, setBusy, setMessage, onCurrent: (current) => showCurrent(current),
  });
 
  // The drawing tool is written into the file too, so picking one is a change - but only when it's
@@ -617,8 +617,10 @@ export default function App() {
  // Close whatever is open and begin again on a blank page. The page size stays as it is: it's the
  // paper you're working on today, and a new drawing is almost always for the same sheet.
  // Whether a new drawing is waiting on the question about unsaved work.
- const [confirmNew, setConfirmNew] = useState<"blank" | null>(null);
- const newDrawing = useCallback(() => {
+ // Something that would put another drawing in this one's place, waiting on the question about
+ // unsaved work: what it is, said in the buttons, and doing it.
+ const [confirmNext, setConfirmNext] = useState<{ what: string; go: () => void } | null>(null);
+ const newDrawing = useCallback((quiet = false) => {
   const noShapes: Shape[] = [];
   const noFills: Fill[] = [];
   const first = { id: newLayerId(), name: "Black", color: "#262626" };
@@ -630,22 +632,25 @@ export default function App() {
   setActiveLayer(first.id);
   setSelected([]);
   clearHistory();
-  setConfirmNew(null);
-  setMessage({ text: "New drawing", ok: true });
+  setConfirmNext(null);
+  if (!quiet) setMessage({ text: "New drawing", ok: true });
   // An empty page is not unsaved work, and the paper it's on came from the drawing before it.
   started("Untitled", { shapes: noShapes, fills: noFills, layers: onlyLayer, page });
  }, [started, page, clearHistory]);
 
  // Undo can't bring back which file was open - a snapshot is the drawing, not the drawing's name -
  // so unsaved work gets a question rather than a silent discard.
- const startNew = () => {
-  if (dirty && shapes.length) setConfirmNew("blank");
-  else newDrawing();
- };
- const beginNew = () => newDrawing();
+ const unsaved = dirty && shapes.length > 0;
+ const ask = (what: string, go: () => void) => (unsaved ? setConfirmNext({ what, go }) : go());
+ const startNew = () => ask("start new", () => newDrawing());
 
- const openDrawing = useCallback((res: OpenResult, note: (n: number) => string) => {
-  const drawing = parseDrawing(res.svg ?? "");
+ // The current drawing, on screen: on starting, opened here, or changed in another app or window.
+ const showCurrent = useCallback((current: Current) => {
+  if (current.empty) {
+   newDrawing(true);
+   return;
+  }
+  const drawing = parseDrawing(current.svg);
   setPage(drawing.page);
   setShapes(drawing.shapes);
   setDrawingScale(100);
@@ -654,7 +659,7 @@ export default function App() {
   setActiveLayer(drawing.layers[0]?.id ?? "");
   setSelected([]);
   clearHistory();
-  opened(res, drawing);
+  loaded(current, drawing);
   // The drawing comes up in the tool it was saved for, in either app - unless that tool is gone
   // from the presets, when the one already chosen stays. Not a change to the drawing: it's the
   // file's own. (Presets not loaded yet, at startup: taken as it is, and checked when they come.)
@@ -665,13 +670,13 @@ export default function App() {
   setMessage(
    drawing.unsupported
     ? {
-      text: `${note(drawing.shapes.length)} - ${drawing.unsupported} other ${drawing.unsupported === 1 ? "mark" : "marks"} can’t be edited here and saving would drop ${drawing.unsupported === 1 ? "it" : "them"}`,
+      text: `${current.name} - ${drawing.unsupported} other ${drawing.unsupported === 1 ? "mark" : "marks"} can’t be edited here and saving would drop ${drawing.unsupported === 1 ? "it" : "them"}`,
       ok: false,
      }
     // Opened cleanly, nothing to say: the drawing's name is already in the File card.
     : { text: "", ok: true },
   );
- }, [opened, clearHistory]);
+ }, [loaded, clearHistory, newDrawing]);
 
  // Files stacked into one drawing, a layer each (the file browser's "Open as layers" and "Add as
  // layers"). Opened, they are a new drawing not yet saved, which saves next to the first of them.
@@ -701,68 +706,17 @@ export default function App() {
   setMessage(misfit || foreignNote ? { text: said + misfit + foreignNote, ok: false } : { text: "", ok: true });
  };
 
- // Say so if the server isn't there, rather than only failing at the moment of saving. Then pick up
- // the drawing this browser was last working on, so coming back from Plot lands where you left off.
+ // Say so if the server isn't there, rather than only failing at the moment of saving. The drawing
+ // itself is the current drawing, picked up by useDrawingFile.
  useEffect(() => {
   let cancelled = false;
-  (async () => {
-   try {
-    const info = await api<Info>("/api/info");
-    if (!cancelled) setModel(info.models.find((m) => m.id === DEFAULT_SETTINGS.model) ?? info.models[0]);
-   } catch {
-    if (!cancelled) setMessage({ text: "Can’t reach the server. Is server.py running?", ok: false });
-    return;
-   }
-   // A drawing handed over in the address - Plot's "Line up in Studio" - comes before the one
-   // worked on last. The address is put back as it was, so reloading doesn't open it again.
-   const handed = new URLSearchParams(window.location.search).get("open");
-   if (handed) window.history.replaceState(null, "", window.location.pathname);
-   const last = handed ?? load<string>(LAST_FILE_KEY);
-   if (!last || cancelled) return;
-   try {
-    const res = await api<OpenResult>(`/api/studio/read?path=${encodeURIComponent(last)}`);
-    if (!cancelled) openDrawing(res, (n) => `${handed ? "Opened" : "Picked up"} ${res.name} - ${n} ${n === 1 ? "path" : "paths"}`);
-    // Said at the top, where it's seen: the file has gone, and this is Plot's copy of it.
-    if (!cancelled && res.note) setMessage({ text: res.note, ok: false });
-   } catch (err) {
-    // Start clean but keep the pointer: the file may be fine and the server merely unreachable,
-    // and throwing the only record of what was being worked on is the one unrecoverable move.
-    // Opening or saving anything else replaces it anyway. A drawing handed over says why it didn't open.
-    if (!cancelled) setMessage({ text: handed ? (err as Error).message : `Couldn’t reopen the last drawing. Use Open… to pick it up.`, ok: false });
-   }
-  })();
+  api<Info>("/api/info")
+   .then((info) => !cancelled && setModel(info.models.find((m) => m.id === DEFAULT_SETTINGS.model) ?? info.models[0]))
+   .catch(() => !cancelled && setMessage({ text: "Can’t reach the server. Is server.py running?", ok: false }));
   return () => {
    cancelled = true;
   };
- }, [openDrawing]);
-
- // A drawing handed over from another app's "Open in Studio" while this page is open: opened here,
- // unless what's here has changes not saved - then it says so and keeps them, rather than losing work
- // to a click in another tab.
- const unsavedRef = useRef(false);
- unsavedRef.current = dirty && shapes.length > 0;
- useEffect(() => {
-  if (!("BroadcastChannel" in window)) return;
-  const channel = new BroadcastChannel(STUDIO_CHANNEL);
-  channel.onmessage = async (e) => {
-   if (e.data?.type !== "open-in-studio" || typeof e.data.path !== "string") return;
-   channel.postMessage({ type: "studio-here" });
-   const path: string = e.data.path;
-   const file = path.slice(path.lastIndexOf("/") + 1);
-   if (unsavedRef.current) {
-    setMessage({ text: `${file} was sent here to open, but this drawing has changes not saved. Save it, then send ${file} again.`, ok: false });
-    return;
-   }
-   try {
-    const res = await api<OpenResult>(`/api/studio/read?path=${encodeURIComponent(path)}`);
-    openDrawing(res, (n) => `Opened ${res.name} - ${n} ${n === 1 ? "path" : "paths"}`);
-    if (res.note) setMessage({ text: res.note, ok: false });
-   } catch (err) {
-    setMessage({ text: (err as Error).message, ok: false });
-   }
-  };
-  return () => channel.close();
- }, [openDrawing]);
+ }, []);
 
  // Whether a plotter is on USB, and which, for the header and the tool list - asked now and then,
  // since Studio doesn't drive it.
@@ -1511,8 +1465,8 @@ export default function App() {
  // Asked in the rail rather than in a dialog: the question is about this drawing, and the answer is
  // one of three buttons. Saving first is offered because wanting a new drawing is rarely the same as
  // wanting to lose this one. Shown in whichever rail is up, since Setup starts new drawings too.
- const confirmNewBlock = confirmNew && (
-         <div className={styles.confirm} role="alertdialog" aria-label="Start a new drawing">
+ const confirmNewBlock = confirmNext && (
+         <div className={styles.confirm} role="alertdialog" aria-label="Replace this drawing">
           <p>
            {saved ? `“${name}” has` : "This drawing has"} changes that aren’t saved.
           </p>
@@ -1521,15 +1475,21 @@ export default function App() {
             size="sm"
             disabled={busy}
             onClick={async () => {
-             if (await save()) beginNew();
+             if (await save()) {
+              setConfirmNext(null);
+              confirmNext.go();
+             }
             }}
            >
-            Save, then start new
+            Save, then {confirmNext.what}
            </Button>
-           <Button size="sm" tone="danger" variant="secondary" onClick={beginNew}>
-            Discard and start new
+           <Button size="sm" tone="danger" variant="secondary" onClick={() => {
+            setConfirmNext(null);
+            confirmNext.go();
+           }}>
+            Discard and {confirmNext.what}
            </Button>
-           <Button size="sm" variant="tertiary" onClick={() => setConfirmNew(null)}>
+           <Button size="sm" variant="tertiary" onClick={() => setConfirmNext(null)}>
             Keep editing
            </Button>
           </div>
@@ -1596,30 +1556,15 @@ export default function App() {
 
  /**
   * The Simplifier's way on from a drawing of image layers: a snapshot with them baked into paths,
-  * opened to simplify. Here, when this drawing is saved as it is - it stays on disk, untouched; in a
-  * new tab when it has changes not saved, so they're kept. The tab is asked for before the snapshot
-  * is made, while the click still counts as the user's: a tab opened after waiting is blocked.
+  * opened to simplify in this drawing's place. This drawing stays on disk as it was saved; changes
+  * to it not saved yet are asked about first, as for opening anything else.
   */
- const workOnSnapshot = async () => {
-  const tab = dirty ? window.open("", "_blank") : null;
+ const bakeAndEdit = async () => {
   const res = await takeSnapshot();
-  if (!res) {
-   tab?.close();
-   return;
-  }
-  const label = res.name.replace(/\.svg$/i, "");
-  if (dirty) {
-   if (tab) tab.location.href = `${APP_URL.studio}?open=${encodeURIComponent(res.path)}`;
-   else setSnapped({ name: label, path: res.path }); // the tab was blocked: the banner offers it instead
-   return;
-  }
-  try {
-   const read = await api<OpenResult>(`/api/studio/read?path=${encodeURIComponent(res.path)}`);
-   openDrawing(read, (n) => `Working on the snapshot ${label} - ${n} ${n === 1 ? "path" : "paths"}, ready to simplify`);
-  } catch (err) {
-   setMessage({ text: (err as Error).message, ok: false });
-  }
+  if (!res || !(await open(res.path))) return;
+  setMessage({ text: `Working on the snapshot ${res.name.replace(/\.svg$/i, "")}, ready to simplify`, ok: true });
  };
+ const workOnSnapshot = () => ask("bake and edit", () => void bakeAndEdit());
 
  // An image layer is drawn, moved and sized here like anything else, but its lines are worked out from
  // its picture each time, so they can't be edited one by one. Baked - a snapshot with the images made
@@ -1638,8 +1583,8 @@ export default function App() {
    </div>
   </Card> ) : null;
 
- // A snapshot just saved: said at the top, with the ways on from it, until something else is said. In
- // Studio it opens in a tab of its own: the drawing here may have changes not saved.
+ // A snapshot just saved: said at the top, with the ways on from it, until something else is said.
+ // Either puts it in this drawing's place, so unsaved work here is asked about first.
  const [snapped, setSnapped] = useState<{ name: string; path: string } | null>(null);
  useEffect(() => setSnapped(null), [message]);
  const banner = useMemo(
@@ -1651,8 +1596,8 @@ export default function App() {
      brand: true,
      id: snapped.path,
      actions: [
-      { label: "Open in a new Studio tab", onClick: () => { window.open(`${APP_URL.studio}?open=${encodeURIComponent(snapped.path)}`, "_blank"); } },
-      { label: "Open in Plot", onClick: () => void openInPlot(snapped.path) },
+      { label: "Open here", onClick: () => ask("open the snapshot", () => void open(snapped.path)) },
+      { label: "Open in Plot", onClick: () => ask("open the snapshot", () => void openIn("plot", snapped.path)) },
      ],
     }
     : null),
@@ -1669,7 +1614,8 @@ export default function App() {
     endpoint="/api/studio/read"
     onClose={() => setBrowserOpen(false)}
     addMode={browserAdds}
-    onOpened={(res) => openDrawing(res, (n) => `Opened ${res.name} - ${n} ${n === 1 ? "path" : "paths"}`)}
+    // Read to pick it, then - once any unsaved work here is dealt with - made the current drawing.
+    onOpened={(res) => ask("open another", () => void open(res.path))}
     combine={{
      endpoint: "/api/studio/combine",
      canAdd: shapes.length > 0,
@@ -1865,7 +1811,7 @@ export default function App() {
 
    <main className={styles.layout}>
     <div className={styles.tools}>
-     <AppSwitch current="studio" orientation="vertical" />
+     <AppSwitch current="studio" orientation="vertical" onRefused={(why) => setMessage({ text: why, ok: false })} />
      {/* What's done with whole drawings, opening down: the File card keeps Save. */}
      <FileToolbar
       busy={busy}
@@ -1879,7 +1825,7 @@ export default function App() {
        setBrowserOpen(true);
       }}
       onNew={() => startNew()}
-      onSendToPlot={sendToPlot}
+      onSendToPlot={() => void goTo("plot")}
       // Only where there's an image to bake: a drawing of plain paths is its own snapshot.
       onSnapshot={shapes.some((sh) => sh.kind === "photo") ? async () => {
        const res = await takeSnapshot();

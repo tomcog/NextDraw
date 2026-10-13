@@ -24,12 +24,14 @@ interface Props {
   trimming: boolean;
   onTrim: (restore: boolean) => void;
   onRotate: (quarterTurns: 1 | -1) => void;
-  /** Open this drawing in Studio. Left out for a drawing Studio can't read from a folder. */
+  /** Open this drawing in Studio. Left out with no drawing. */
   onEditInStudio?: () => void;
+  /** It has changes from Studio or Image not saved to its file yet: they're saved there. */
+  unsaved?: boolean;
 }
 
 export function FileSection({
-  fileName, busy, preview, previewScale, scale, units, folder, saveState, saveError, onScale, onOpen, onClear, trimmed, trimming, onTrim, onRotate, onEditInStudio,
+  fileName, busy, preview, previewScale, scale, units, folder, saveState, saveError, onScale, onOpen, onClear, trimmed, trimming, onTrim, onRotate, onEditInStudio, unsaved = false,
 }: Props) {
   const [draft, setDraft] = useState(trimNum(scale, 1));
   useEffect(() => setDraft(trimNum(scale, 1)), [scale]);
@@ -52,11 +54,15 @@ export function FileSection({
   const original = originalIn ? size(originalIn[0], originalIn[1]) : null;
   const resized = originalIn && scale !== 100 ? size(originalIn[0] * scale / 100, originalIn[1] * scale / 100) : null;
 
+  // The drawing is the one Studio and Image work on too: changes made there and not saved yet are
+  // shown and plotted here, and saved there.
   const whereText = saveState === "error"
     ? saveError ?? ""
     : !folder
-      ? "Uploaded copy. Open it from a folder to save changes to a file."
-      : saveState === "saving" ? `Saving to ${folder}…` : saveState === "saved" ? `Saved to ${folder}` : `In ${folder}`;
+      ? "Not in a file yet. Save it from Studio or Image."
+      : unsaved
+        ? `In ${folder}, with changes not saved. Save them in Studio or Image.`
+        : saveState === "saving" ? `Saving to ${folder}…` : saveState === "saved" ? `Saved to ${folder}` : `In ${folder}`;
 
   return (
     <FileCard
@@ -69,7 +75,7 @@ export function FileSection({
           {/* The way to Studio with this drawing, as Studio's Send is the way here: Studio's nib, as
               its name in the header carries. Opened in this tab, in Plot's place. */}
           {onEditInStudio && (
-            <ButtonRound size="sm" icon={<PenTool />} aria-label="Open in Studio" title="Open this drawing in Studio, in this tab" disabled={busy} onClick={onEditInStudio} />
+            <ButtonRound size="sm" icon={<PenTool />} aria-label="Open in Studio" title="This drawing, in Studio" disabled={busy} onClick={onEditInStudio} />
           )}
           {fileName && (
             <ButtonRound

@@ -16,9 +16,11 @@ that made them. The drawing was quietly no longer editable.
 So this test doesn't check that Plot behaves. It checks that the file came back byte-identical apart
 from one metadata block, which is a claim no amount of careful behaviour can fake.
 
-Run it with the server up:   python3 tests/plot_never_edits_the_drawing.py
-It loads a fixture drawing, so it replaces whatever is open in Plot. It puts the old one back at the
-end, but any unsaved change in an open Plot window is the window's, not the file's, and won't survive.
+Run it with the server up:   python3 tests/plot_never_edits_the_drawing.py --live
+It loads a fixture drawing into the running server, so it replaces the current drawing in all three
+apps. It puts the old one back at the end, but reopening it forgets which layers were printed and any
+stopped plot waiting to resume, and changes in Studio or Image not saved yet are lost. Without
+--live it does nothing, so running every test in the folder never touches the apps in use.
 """
 
 import json
@@ -138,6 +140,10 @@ def comparison_works():
 
 
 def main():
+    if "--live" not in sys.argv:
+        print("skipped: this test drives the running server at localhost:5055 and replaces its drawing.")
+        print("Run it on purpose with --live.")
+        return
     blind = comparison_works()
     if blind:
         print("FAILED - this test cannot see the damage it exists to catch:")
