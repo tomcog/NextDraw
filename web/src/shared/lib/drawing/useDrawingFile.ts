@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { LAST_FOLDER_KEY, type CombineResult } from "../../components/FileBrowser";
 import { api, postJSON } from "../api";
 import { goToApp, whenLeaving, type AppName } from "../apps";
+import { PLOTTING_STATES } from "../constants";
 import { save as remember } from "../storage";
 import type { StrokeFont } from "./font";
 import type { Fill } from "./hatch";
@@ -73,6 +74,13 @@ interface Options {
 
 const fileOf = (path: string) => path.slice(path.lastIndexOf("/") + 1);
 const folderPathOf = (path: string) => path.slice(0, path.lastIndexOf("/"));
+/**
+ * Why the drawing can't be edited for now, if it can't: Plot is drawing it, or a stopped plot of it
+ * waits to be resumed. Either way the rest of the plot is drawn from the drawing as it was, and has to
+ * land on the lines already on the paper.
+ */
+export type Lock = "plotting" | "paused" | null;
+
 const same = (a: Snapshot | null, b: Snapshot) =>
   a !== null && a.shapes === b.shapes && a.fills === b.fills && a.layers === b.layers && a.page === b.page && a.name === b.name && a.touches === b.touches;
 
@@ -148,6 +156,9 @@ export function useDrawingFile({ shapes, fills, layers, page, sizeId, toolName, 
   // Another drawing was opened elsewhere while this one had changes not sent: they stay here, and
   // Save writes them to a file of their own.
   const conflict = useRef(false);
+  // Plot drawing, or waiting to resume: nothing can be edited here, and nothing is sent.
+  const [lock, setLock] = useState<Lock>(null);
+  const lockRef = useRef<Lock>(null);
   const timer = useRef<number | undefined>(undefined);
   const sending = useRef<Promise<void> | null>(null);
 
@@ -193,10 +204,9 @@ export function useDrawingFile({ shapes, fills, layers, page, sizeId, toolName, 
       if (refusal?.conflict) {
         conflict.current = true;
         setMessage({ text: "Another drawing was opened in another app or window. This one’s changes are only here now: Save keeps them in a file of their own.", ok: false });
-      } else if (refusal?.busy) {
-        setMessage({ text: "Plot is drawing. Changes here reach it once it has finished.", ok: false });
       }
-      // Anything else - the server away for a moment - is tried again by the poll below.
+      // Refused for now - the plotter busy, which the lock below says - or the server away for a
+      // moment: tried again by the poll below.
     }
   }, [setMessage, setUnsent]);
 
@@ -230,6 +240,8 @@ export function useDrawingFile({ shapes, fills, layers, page, sizeId, toolName, 
       return;
     }
     setUnsent(true);
+    // Locked, it waits: the poll sends it once Plot has finished.
+    if (lockRef.current) return;
     window.clearTimeout(timer.current);
     timer.current = window.setTimeout(() => {
       timer.current = undefined;
@@ -283,8 +295,15 @@ export function useDrawingFile({ shapes, fills, layers, page, sizeId, toolName, 
           const current = await api<Current>("/api/current");
           if (cancelled) return;
           take(current);
-        } catch {
-          if (!cancelled) setMessage({ text: "Can’t reach the server. Is server.py running?", ok: false });
+        } catch (err) {
+          // Answered, but without the current drawing: a server started before this page's version.
+          const answered = (err as { body?: unknown }).body !== undefined && /\(404\)/.test((err as Error).message);
+          if (!cancelled) setMessage({
+            text: answered
+              ? "The server is older than this page. Restart it (close its window, then start.command), then reload."
+              : "Can’t reach the server. Is server.py running?",
+            ok: false,
+          });
         }
       }
       if (!cancelled) setReady(true);
@@ -302,14 +321,17 @@ export function useDrawingFile({ shapes, fills, layers, page, sizeId, toolName, 
     let poll: number | undefined;
     const look = async () => {
       try {
-        if (conflict.current) return;
+        const st = await api<{ state: string; resume: unknown; file: string | null; file_opened: string | null; file_edited: string | null }>("/api/status");
+        if (cancelled) return;
+        const now: Lock = PLOTTING_STATES.includes(st.state) ? "plotting" : st.resume ? "paused" : null;
+        lockRef.current = now;
+        setLock(now);
+        if (conflict.current || now) return;
         if (unsentRef.current || sending.current) {
-          // Refused for a moment - Plot drawing, the server away: tried again.
+          // Refused for a moment - the plotter busy, the server away: tried again.
           if (unsentRef.current && !sending.current && timer.current === undefined) await sendNow();
           return;
         }
-        const st = await api<{ file: string | null; file_opened: string | null; file_edited: string | null }>("/api/status");
-        if (cancelled || unsentRef.current || sending.current) return;
         const theirs = st.file ? st.file_opened : null;
         if (theirs === base.current && (theirs === null || st.file_edited === edited.current)) return;
         const current = await api<Current>("/api/current");
@@ -321,7 +343,8 @@ export function useDrawingFile({ shapes, fills, layers, page, sizeId, toolName, 
         if (!cancelled) poll = window.setTimeout(look, 2000);
       }
     };
-    poll = window.setTimeout(look, 2000);
+    // At once, so a page opened while Plot is drawing is locked from the start.
+    void look();
     return () => {
       cancelled = true;
       window.clearTimeout(poll);
@@ -554,5 +577,5 @@ export function useDrawingFile({ shapes, fills, layers, page, sizeId, toolName, 
 
   const fileState: FileState = { name, saved, saveTo, foreign, openedAs };
 
-  return { name, setName, saved, dirty, unsent, touch, loaded, combined, started, resumed, fileState, save, snapshot, open, goTo, openIn };
+  return { name, setName, saved, dirty, unsent, lock, touch, loaded, combined, started, resumed, fileState, save, snapshot, open, goTo, openIn };
 }

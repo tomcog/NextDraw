@@ -124,10 +124,22 @@ def main():
     check("it's a new opening", now["opened"] != base, True)
     check("the old file is untouched", 'id="edited"' in file.read_text(), True)
 
+    print("\nwhile a stopped plot waits to be resumed")
+    server.RESUME_META.write_text(json.dumps({"done_mm": 10, "total_mm": 100}))
+    server.RESUME_SVG.write_text(drawing("stopped"))
+    sunset = client.get("/api/current").get_json()["opened"]
+    res = client.post("/api/current", json={"svg": drawing("while-paused"), "name": "sunset", "base": sunset, "dirty": True})
+    check("a change is refused", res.status_code, 409)
+    check("as the plotter being busy, for the editor to wait", res.get_json().get("busy"), True)
+    check("and the drawing stays as the plot left it", 'id="new"' in client.get("/api/current").get_json()["svg"], True)
+    server.clear_resume()
+    res = client.post("/api/current", json={"svg": drawing("after"), "name": "sunset", "base": sunset, "dirty": True})
+    check("once it's resumed or discarded, changes are taken again", res.status_code, 200)
+
     print("\na change to the drawing that was replaced")
     res = client.post("/api/current", json={"svg": drawing("late"), "name": "portrait", "base": base, "dirty": True})
     check("is refused", res.status_code, 409)
-    check("and the new drawing stands", 'id="new"' in client.get("/api/current").get_json()["svg"], True)
+    check("and the new drawing stands", 'id="after"' in client.get("/api/current").get_json()["svg"], True)
 
     print(f"\n{'all good' if not failures else f'{len(failures)} failed'}")
     sys.exit(1 if failures else 0)

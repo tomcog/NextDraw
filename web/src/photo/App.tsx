@@ -25,6 +25,7 @@ import { parseDrawing } from "../shared/lib/drawing/parse";
 import { photoMarks, placeOnPage, plateSetOf, stemWithoutPlate, type Photo } from "../shared/lib/drawing/photo";
 import { boxOf, newLayerId, type Layer, type Page, type Shape } from "../shared/lib/drawing/shapes";
 import { useDrawingFile, type Current } from "../shared/lib/drawing/useDrawingFile";
+import { lockBanner, useEditLock } from "../shared/lib/useEditLock";
 import { usePhotoRead, usePhotosRead } from "../shared/lib/drawing/usePhotoRead";
 import { photoActions, pictureSources } from "./lib/photoActions";
 import { ConvertStage, type ConvertView } from "./components/ConvertStage";
@@ -210,6 +211,9 @@ export default function App() {
     onCurrent: (current) => showCurrent(current),
     beforeStart: () => resumeKept(),
   });
+  // Plot drawing this, or waiting to resume it: looked at, not changed (useEditLock).
+  const mainRef = useRef<HTMLElement>(null);
+  useEditLock(file.lock, mainRef);
 
   // Photos sized to the page follow it: a new paper size, or turning it, sizes them again.
   useEffect(() => {
@@ -702,7 +706,7 @@ export default function App() {
   return (
     <div className={styles.app}>
       {/* Problems, and what's under way, across the top of the page - never on the preview's rulers. */}
-      <StatusBanner message={banner} />
+      <StatusBanner message={file.lock && !(message.text && !message.ok) ? lockBanner(file.lock, () => void file.goTo("plot")) : banner} />
       <FileBrowser
         open={browsing !== null}
         endpoint="/api/studio/read"
@@ -766,7 +770,7 @@ export default function App() {
       />
 
       {/* With every card put away the rail has nothing to show, and the stage takes its width. */}
-      <main className={styles.layout} data-rail={railOut ? undefined : "none"}>
+      <main ref={mainRef} className={styles.layout} data-rail={railOut ? undefined : "none"}>
         <div className={styles.tools}>
           <AppSwitch current="photo" orientation="vertical" onRefused={(why) => setMessage({ text: why, ok: false })} />
           {/* What's done with whole drawings, opening down: the File card keeps Save. */}

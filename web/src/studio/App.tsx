@@ -34,6 +34,7 @@ import { parseDrawing } from "../shared/lib/drawing/parse";
 import { PLATE_OFF, platesOf, placeOnPage } from "../shared/lib/drawing/photo";
 import { useHistory } from "../shared/lib/useHistory";
 import { useDrawingFile, type Current } from "../shared/lib/drawing/useDrawingFile";
+import { lockBanner, useEditLock } from "../shared/lib/useEditLock";
 import { bakedCopies, flattened, handOutFills, joined, markRuns, pointCount, simplified, simplifyDrawing, splitApart } from "./lib/shapeEdits";
 import { PaletteMenu } from "../shared/components/controls/PaletteMenu";
 import { Hints } from "../shared/components/controls/Hints";
@@ -269,7 +270,7 @@ export default function App() {
 
  // The drawing is the current drawing, shared by the three apps: picked up on starting, and again
  // when it's changed or replaced in another app or window (showCurrent, below).
- const { name, setName, saved, dirty, touch, loaded, combined, started, save, snapshot: takeSnapshot, open, goTo, openIn } = useDrawingFile({
+ const { name, setName, saved, dirty, lock, touch, loaded, combined, started, save, snapshot: takeSnapshot, open, goTo, openIn } = useDrawingFile({
   shapes, fills, layers, page, sizeId, toolName, fonts, setBusy, setMessage, onCurrent: (current) => showCurrent(current),
  });
 
@@ -1587,8 +1588,13 @@ export default function App() {
  // Either puts it in this drawing's place, so unsaved work here is asked about first.
  const [snapped, setSnapped] = useState<{ name: string; path: string } | null>(null);
  useEffect(() => setSnapped(null), [message]);
+ // Plot drawing this, or waiting to resume it: looked at, not changed (useEditLock).
+ const mainRef = useRef<HTMLElement>(null);
+ useEditLock(lock, mainRef);
  const banner = useMemo(
-  () => (message.text && (!message.ok || message.progress)
+  () => (lock && !(message.text && !message.ok)
+   ? lockBanner(lock, () => void goTo("plot"))
+   : message.text && (!message.ok || message.progress)
    ? { text: message.text, error: !message.ok, working: message.progress }
    : snapped
     ? {
@@ -1601,7 +1607,7 @@ export default function App() {
      ],
     }
     : null),
-  [message, snapped], // eslint-disable-line react-hooks/exhaustive-deps
+  [message, snapped, lock], // eslint-disable-line react-hooks/exhaustive-deps
  );
 
  return (
@@ -1809,7 +1815,7 @@ export default function App() {
     }}
    />
 
-   <main className={styles.layout}>
+   <main ref={mainRef} className={styles.layout}>
     <div className={styles.tools}>
      <AppSwitch current="studio" orientation="vertical" onRefused={(why) => setMessage({ text: why, ok: false })} />
      {/* What's done with whole drawings, opening down: the File card keeps Save. */}

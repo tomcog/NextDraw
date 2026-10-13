@@ -3844,7 +3844,10 @@ def put_current():
     An editor's drawing as it now stands, made the current drawing. With base - the opening it was
     working on - it's a change to that drawing: Plot's block, what's been printed and the file it lives
     in all stay. Without, it's a new drawing (New, a picture opened, files stacked into one): no file
-    yet, nothing printed - or, given path, unsaved work on that file. Refused while the plotter is drawing, and when another drawing has been
+    yet, nothing printed - or, given path, unsaved work on that file.
+
+    Refused while the plotter is drawing or a stopped plot waits to be resumed - the editors are locked
+    then (see useDrawingFile), and this is what holds if one isn't - and when another drawing has been
     opened since base.
     """
     body = request.json or {}
@@ -3853,6 +3856,10 @@ def put_current():
         return problem
     if job.busy():
         return jsonify(error="Plot is drawing. Changes reach it once it has finished.", busy=True), 409
+    # Nor while a stopped plot is waiting to be resumed: the rest of it is drawn from the drawing as it
+    # was, and has to land on the lines already on the paper. Plot's Resume or Discard ends the wait.
+    if load_resume():
+        return jsonify(error="A stopped plot of this drawing is waiting in Plot.", busy=True), 409
     base = body.get("base")
     save_to = allowed_path(body["save_to"]) if isinstance(body.get("save_to"), str) else None
     foreign = body.get("foreign") if isinstance(body.get("foreign"), int) else 0
