@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 import { ButtonRound, InputText } from "@tomcoggia/ui";
-import { FolderOpen, Save } from "lucide-react";
+import { FilePlus, FolderOpen, Save } from "lucide-react";
 import { FileCard } from "./FileCard";
 import controls from "./controls.module.css";
 
@@ -18,15 +18,17 @@ interface Props {
   onSave: () => void;
   /** Open another drawing in this one's place: the file browser, which asks about unsaved work. */
   onOpen: () => void;
+  /** Close this drawing and start a new, empty one - asking first about unsaved work. */
+  onNew: () => void;
   /** Under which the card's folding is remembered: the app's own. */
   collapsibleKey: string;
 }
 
 /**
- * Shared: the File card's inside in all three apps - the drawing's name, where it's saved, and Open
- * and Save - in the File card every app has (FileCard).
+ * Shared: the File card's inside in all three apps - the drawing's name, where it's saved, and New,
+ * Open and Save - in the File card every app has (FileCard).
  */
-export function FileSection({ name, onName, saved, dirty, hasShapes, busy, confirm, onSave, onOpen, collapsibleKey }: Props) {
+export function FileSection({ name, onName, saved, dirty, hasShapes, busy, confirm, onSave, onOpen, onNew, collapsibleKey }: Props) {
   return (
     <FileCard
       fileName={name || null}
@@ -35,6 +37,7 @@ export function FileSection({ name, onName, saved, dirty, hasShapes, busy, confi
       forceOpen={Boolean(confirm)}
       action={
         <span className={controls.headerTools}>
+          <ButtonRound size="sm" icon={<FilePlus />} aria-label="New drawing" title="Close this drawing and start a new one" disabled={busy} onClick={onNew} />
           <ButtonRound size="sm" icon={<FolderOpen />} aria-label="Open a drawing" title="Open another drawing in this one's place" disabled={busy} onClick={onOpen} />
           {/* A safety-toned round button: the half of "are you sure?" that keeps the work, and the one
               button here that writes a file. */}

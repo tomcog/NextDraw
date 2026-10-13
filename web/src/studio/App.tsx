@@ -515,6 +515,15 @@ export default function App() {
   ]);
   setSelected(copies.map((s) => s.id));
  };
+ /** Everything selected onto one layer, drawn in its pen, and still selected: the Layers card's button. */
+ const moveSelectedToLayer = (layerId: string) => {
+  const ids = new Set(selected);
+  if (!shapes.some((s) => ids.has(s.id) && s.layerId !== layerId)) return;
+  record();
+  setShapes((list) => list.map((s) => (ids.has(s.id) ? { ...s, layerId } : s)));
+  // The layer they went to is worked on with the rest, so they stay picked and in its list.
+  if (!targets.includes(layerId)) setTargets([...targets, layerId]);
+ };
  const moveGroupToLayer = (group: string, layerId: string) => {
   record();
   setShapes((list) => list.map((s) => (s.group === group ? { ...s, layerId } : s)));
@@ -1895,6 +1904,7 @@ export default function App() {
         confirm={confirmNewBlock}
         onSave={save}
         onOpen={() => setBrowserOpen(true)}
+        onNew={() => ask("start new", () => newDrawing())}
        />
 
       </div>
@@ -1950,6 +1960,8 @@ export default function App() {
          settleLayerName(id);
          setRenamingLayer(null);
         }}
+        movableTo={(id) => (selected.length ? shapes.filter((s) => pickedIds.has(s.id) && s.layerId !== id).length : 0)}
+        onMoveHere={moveSelectedToLayer}
         onRestackStart={record}
         onRestack={(id, to) => setLayers((list) => {
          const from = list.findIndex((l) => l.id === id);

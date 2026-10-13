@@ -1,6 +1,6 @@
 import { useRef, type ReactNode } from "react";
 import { ButtonRound, LayerController } from "@tomcoggia/ui";
-import { EllipsisVertical, LayersArrowUp, Plus, Sparkles } from "lucide-react";
+import { EllipsisVertical, Layers2, LayersArrowUp, Plus, Sparkles } from "lucide-react";
 import { Section } from "./Section";
 import { isPalettePen, labelAfter, LABEL_SEPARATOR } from "../../lib/ink";
 import type { Preset } from "../../lib/types";
@@ -45,6 +45,10 @@ interface Props {
   onRenameCancel?: (id: string) => void;
   /** The name field left: keep what was typed. */
   onRenameDone?: (id: string) => void;
+  /** Studio: how many of the selected paths aren't on this layer yet - shown as a button on its row
+   *  that moves them here - and moving them. Nothing selected elsewhere, no button. */
+  movableTo?: (id: string) => number;
+  onMoveHere?: (id: string) => void;
   /** A drag to restack is starting: somewhere to take an undo snapshot. */
   onRestackStart: () => void;
   /** Move a layer to a new place in the stack, `to` counted bottom first like `layers`. */
@@ -187,6 +191,17 @@ export function LayersSection(props: Props) {
                   onPointerDown: (e) => start(e, layer.id),
                 }}
               />
+              {/* The selection, moved onto this layer - drawn in its pen - in one click. */}
+              {(() => {
+                const count = props.movableTo?.(layer.id) ?? 0;
+                return count > 0 && (
+                  <ButtonRound size="sm" variant="tertiary" icon={<Layers2 />}
+                    aria-label={`Move the selected ${count === 1 ? "path" : `${count} paths`} to ${layer.name}`}
+                    title={`Move the selected ${count === 1 ? "path" : `${count} paths`} to this layer`}
+                    disabled={busy}
+                    onClick={() => props.onMoveHere?.(layer.id)} />
+                );
+              })()}
               {props.onRowMenu && (
                 <ButtonRound size="sm" variant="tertiary" icon={<EllipsisVertical />}
                   aria-label={`More for layer ${layer.name}`}

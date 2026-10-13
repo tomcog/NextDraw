@@ -1084,6 +1084,20 @@ export default function App() {
     }
   };
 
+  // New drawing: this one closed - asked first when it has changes not saved - and none in its place,
+  // so Studio and Image start a blank one and Plot waits for one to be opened.
+  const newDrawing = () => {
+    if (!busy) replacing(() => void closeDrawing());
+  };
+  const closeDrawing = async () => {
+    try {
+      await api("/api/file", { method: "DELETE" });
+      clearDrawing();
+    } catch (err) {
+      setLocalMessage({ text: (err as Error).message, tone: "error" });
+    }
+  };
+
   const resume = !busy ? status?.resume ?? null : null;
 
   // Confirmations are shown in the page (above the panel), not with window.confirm: embedded
@@ -1899,6 +1913,7 @@ export default function App() {
                 confirm={null}
                 onSave={() => void saveDrawing()}
                 onOpen={openBrowser}
+                onNew={newDrawing}
               />
               {shownMisfits && (
                 <div className={styles.misfits} role="status">

@@ -676,6 +676,7 @@ export default function App() {
               confirm={confirmBlock}
               onSave={() => file.save()}
               onOpen={() => setBrowsing("drawing")}
+              onNew={() => ask({ kind: "new" })}
             />
           </div>
         </Card>
