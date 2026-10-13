@@ -353,7 +353,6 @@ export default function App() {
     setArtPreview(p);
     setSimPreview(p);
   };
-  const [previewScale, setPreviewScale] = useState(100); // the scale the current preview was made at
   const [placement, setPlacementState] = useState<Placement>({ x: 0, y: 0 });
   const [scale, setScaleState] = useState(100); // percent; per drawing, 100 for every new file
   const [rotation, setRotation] = useState(0); // quarter turns clockwise, in degrees; per drawing
@@ -510,38 +509,28 @@ export default function App() {
     }
     : null;
 
-  const setScale = useCallback((percent: number) => {
-    const next = Math.min(1000, Math.max(1, percent));
-    setScaleState(next);
-  }, []);
-
-  // Fit the drawing's lines to the paper inside a margin all round (mm): the scale that fills the
-  // room on its tighter side, and the start that puts the lines where `align` says in what's left -
-  // centred, or against a margin. The drawing's page scales about its corner, so its lines keep
-  // their share of it at any scale.
-  const fitToPaper = preview && settings.paper_w > 0 && settings.paper_h > 0
-    ? (marginMm: number, align: FitAlign) => {
-      const f = preview.ink ?? { x0: 0, y0: 0, x1: 1, y1: 1 };
-      const pageMm = { w: (preview.widthIn * 25.4 * 100) / previewScale, h: (preview.heightIn * 25.4 * 100) / previewScale }; // at 100%
-      const ink = { w: (f.x1 - f.x0) * pageMm.w, h: (f.y1 - f.y0) * pageMm.h };
-      const room = { w: settings.paper_w - 2 * marginMm, h: settings.paper_h - 2 * marginMm };
-      if (room.w <= 0 || room.h <= 0) return;
-      const fits = Math.min(ink.w > 1e-6 ? room.w / ink.w : Infinity, ink.h > 1e-6 ? room.h / ink.h : Infinity);
-      if (!Number.isFinite(fits)) return;
-      // Down to a tenth of a percent, so the lines come out inside the margin rather than a hair over.
-      const next = Math.min(1000, Math.max(1, Math.floor(fits * 1000) / 10));
-      const k = next / 100;
-      // The room left over is shared out as the alignment says: none of it before the lines when
-      // they go against the near margin, all of it when against the far one.
-      const at = (paperAt: number, paperSize: number, inkSize: number, inkFrom: number, pageSize: number, share: number) =>
-        Math.round((paperAt + marginMm + (paperSize - 2 * marginMm - inkSize * k) * share - inkFrom * pageSize * k) * 10) / 10;
-      setScale(next);
-      // Straight to the state: setPlacement's floor is worked out at the old scale. Its lines never
-      // start before home, as setPlacement's floor would have them.
-      setPlacementState({
-        x: Math.max(-f.x0 * pageMm.w * k, at(settings.paper_x, settings.paper_w, ink.w, f.x0, pageMm.w, align.x)),
-        y: Math.max(-f.y0 * pageMm.h * k, at(settings.paper_y, settings.paper_h, ink.h, f.y0, pageMm.h, align.y)),
-      });
+  // The Paper card's drawing controls, as in Studio and Image: they change the drawing itself, here
+  // by the server, which sends it to the other apps as a change not saved.
+  const reshape = async (change: Record<string, unknown>) => {
+    if (busy) return null;
+    try {
+      const res = await postJSON<{ edited?: string }>("/api/current/reshape", { ...change, settings: refs.current.settings });
+      if (res.edited) {
+        refs.current.edited = res.edited; // our own change: nothing for the poll to catch up on
+        setDrawingVersion((v) => v + 1);
+      }
+      return res;
+    } catch (err) {
+      setLocalMessage({ text: (err as Error).message, tone: "error" });
+      return null;
+    }
+  };
+  const turnDrawing = (dir: 1 | -1) => void reshape({ turn: dir });
+  // Fit to the paper where it lies under the page: its corner and size, in inches on the page.
+  const fitToPaper = fileName && settings.paper_w > 0 && settings.paper_h > 0
+    ? async (marginMm: number, align: FitAlign) => {
+      const box = [(settings.paper_x - placement.x) / 25.4, (settings.paper_y - placement.y) / 25.4, settings.paper_w / 25.4, settings.paper_h / 25.4];
+      await reshape({ fit: marginMm, align, box });
     }
     : undefined;
 
@@ -553,6 +542,19 @@ export default function App() {
   // is opened, and when another open page (odin's own screen, the laptop) saves its choices.
   const applyChoices = useCallback((plot: Plot | null) => {
     setPlacementState(plot?.placement ?? { x: 0, y: 0 });
+    // Plot's own scale and turn are no more: the Paper card changes the drawing instead, in every
+    // app. A drawing saved with them has them put into it, once, as a change not saved.
+    if ((plot?.scale ?? 100) !== 100 || plot?.rotation) {
+      postJSON<{ edited?: string }>("/api/current/reshape", { bake: true, settings: refs.current.settings })
+        .then((res) => {
+          if (res.edited) {
+            refs.current.edited = res.edited;
+            setDrawingVersion((v) => v + 1);
+          }
+        })
+        .catch((err) => setLocalMessage({ text: (err as Error).message, tone: "error" }));
+      plot = { ...plot, scale: 100, rotation: 0 };
+    }
     const nextScale = plot?.scale ?? 100;
     refs.current.scale = nextScale;
     setScaleState(nextScale);
@@ -938,7 +940,6 @@ export default function App() {
         .then((art) => {
           if (key !== artworkKey.current) return; // a newer size or turn was asked for
           setArtPreview(parsePreview(art.svg));
-          setPreviewScale(sentScale);
           setDrawingLayers(art.layers);
           setArtWarnings(art.warnings);
         })
@@ -1930,7 +1931,8 @@ export default function App() {
                   onDimensions={(paper_w, paper_h) => updateSettings({ paper_size: "custom", paper_w, paper_h })}
                   onColor={(paper_color) => updateSettings({ paper_color })}
                   onUnits={(units) => updateSettings({ units })}
-                  onFit={fitToPaper}
+                  onTurnDrawing={fileName ? turnDrawing : undefined}
+                  onFit={fitToPaper ? (margin, align) => void fitToPaper(margin, align) : undefined}
                 />
             </div>
           </Card>

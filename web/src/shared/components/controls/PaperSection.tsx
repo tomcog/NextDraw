@@ -1,9 +1,8 @@
 import { useState } from "react";
 import { Button, ButtonRound, InputSelect, Segment, SegmentedControl } from "@tomcoggia/ui";
-import { AlignHorizontalJustifyCenter, AlignHorizontalJustifyEnd, AlignHorizontalJustifyStart, AlignVerticalJustifyCenter, AlignVerticalJustifyEnd, AlignVerticalJustifyStart, MoveHorizontal, MoveVertical, Pipette, RotateCcw } from "lucide-react";
+import { AlignHorizontalJustifyCenter, AlignHorizontalJustifyEnd, AlignHorizontalJustifyStart, AlignVerticalJustifyCenter, AlignVerticalJustifyEnd, AlignVerticalJustifyStart, MoveHorizontal, MoveVertical, Pipette, RotateCcwSquare, RotateCwSquare } from "lucide-react";
 import styles from "./controls.module.css";
 import { LengthField } from "./LengthField";
-import { NumberField } from "./NumberField";
 import { UnitSwitch } from "./UnitSwitch";
 import { Section } from "./Section";
 import { PAPER_SIZES } from "../../lib/constants";
@@ -30,12 +29,9 @@ interface Props {
   onColor: (color: string) => void;
   /** Plot: measure in inches or millimetres. Studio works in inches alone, so it doesn't pass this. */
   onUnits?: (units: Units) => void;
-  /** Studio: turn the whole drawing a quarter turn anticlockwise with the paper. Plot turns a drawing elsewhere. */
-  onTurnDrawing?: () => void;
-  /** Studio: the drawing's scale, a percent of its size when opened, and setting it - which rescales
-   *  the drawing about its middle straight away. Plot scales a drawing elsewhere. */
-  drawingScale?: number;
-  onScaleDrawing?: (percent: number) => void;
+  /** Turn the drawing a quarter turn, 1 right or -1 left, about its middle; the paper stays as it lies.
+   *  Left out while there is no drawing to turn. */
+  onTurnDrawing?: (dir: 1 | -1) => void;
   /** Scale the drawing to fill the paper less a margin all round (in mm), placed in the room left
    *  over as `align` says - centred, or against an edge. Left out while there is no drawing to fit. */
   onFit?: (marginMm: number, align: FitAlign) => void;
@@ -56,10 +52,11 @@ const PAPER_COLORS = [
 ];
 
 /**
- * Shared: the paper, the same card in both apps - its size, the way it lies, and its colour. What
- * only one app has is passed in by that app, and is simply not there in the other.
+ * Shared: the paper, the same card in every app - its size, the way it lies and its colour, and the
+ * drawing on it: its turn, and fitting it to the paper. Each app does those to the drawing
+ * itself, so all three show the same. Plot alone passes its units.
  */
-export function PaperSection({ w, h, sizeId, units, color, collapsibleKey, disabled, onSize, onDimensions, onColor, onUnits, onTurnDrawing, drawingScale = 100, onScaleDrawing, onFit }: Props) {
+export function PaperSection({ w, h, sizeId, units, color, collapsibleKey, disabled, onSize, onDimensions, onColor, onUnits, onTurnDrawing, onFit }: Props) {
   const landscape = w >= h;
   // Custom chosen by hand stays chosen while its width and height are typed, even through a size
   // that happens to be one of the list's on the way. The size belongs to this drawing alone: it is
@@ -171,17 +168,6 @@ export function PaperSection({ w, h, sizeId, units, color, collapsibleKey, disab
             );
           })}
         </SegmentedControl>
-        {/* The switch above turns only the paper; this turns the drawing with it. */}
-        {onTurnDrawing && (
-          <ButtonRound
-            size="sm"
-            icon={<RotateCcw />}
-            aria-label="Turn the drawing"
-            title="Turn the drawing a quarter turn anticlockwise, with the paper"
-            disabled={disabled}
-            onClick={onTurnDrawing}
-          />
-        )}
       </div>
 
       {custom && (
@@ -191,11 +177,12 @@ export function PaperSection({ w, h, sizeId, units, color, collapsibleKey, disab
         </div>
       )}
 
-      {/* The paper stays the size it is; the drawing grows or shrinks on it, about its own middle,
-          as the scale changes. */}
-      {onScaleDrawing && (
+      {/* The drawing on the paper, turned a quarter about its own middle. The paper stays as it is -
+          the switch beside its size is what turns the paper. */}
+      {onTurnDrawing && (
         <div className={styles.scaleRow}>
-          <NumberField label="Scale drawing" unit="%" min={1} max={1000} step={5} value={drawingScale} disabled={disabled} onChange={onScaleDrawing} />
+          <ButtonRound size="sm" icon={<RotateCcwSquare />} aria-label="Turn the drawing left" title="Turn the drawing 90° left, on the paper" disabled={disabled} onClick={() => onTurnDrawing(-1)} />
+          <ButtonRound size="sm" icon={<RotateCwSquare />} aria-label="Turn the drawing right" title="Turn the drawing 90° right, on the paper" disabled={disabled} onClick={() => onTurnDrawing(1)} />
         </div>
       )}
 

@@ -690,30 +690,6 @@ export function photoActions(ctx: PhotoContext) {
       ? { ...sh, ...box, rotation: undefined, photo: { ...sh.photo!, crop, fit: how, margin, align: at } }
       : sh)));
   };
-  /**
-    * Scale the chosen photo - all its bands - about its middle, keeping its proportions. 100% is the
-    * size Fit gives it inside the margin, so the number means the same whatever the page. Scaled by
-    * number, it's no longer sized to the page.
-    */
-  const photoScale = (sh: Shape) => {
-    const b = boxOf(sh);
-    const aspect = (b.x1 - b.x0) / Math.max(1e-6, b.y1 - b.y0);
-    const fit = placeOnPage(aspect, page, "fit", sh.photo?.margin ?? 0.5);
-    return { b, aspect, fitW: fit.x2 - fit.x };
-  };
-  const setPhotoScale = (percent: number) => {
-    if (!chosen?.photo || !(percent > 0)) return;
-    const { b, aspect, fitW } = photoScale(chosen);
-    const w = (fitW * percent) / 100;
-    const h = w / aspect;
-    const cx = (b.x0 + b.x1) / 2;
-    const cy = (b.y0 + b.y1) / 2;
-    const box = { x: cx - w / 2, y: cy - h / 2, x2: cx + w / 2, y2: cy + h / 2 };
-    record();
-    setShapes((list) => list.map((sh) => (sameImage(sh)
-      ? { ...sh, ...box, photo: { ...sh.photo!, fit: undefined } }
-      : sh)));
-  };
 
   /** The margin a photo is sized inside: changing it sizes the photo again, if it's sized to the page. */
   const setPhotoMargin = (margin: number) => {
@@ -1139,7 +1115,7 @@ export function photoActions(ctx: PhotoContext) {
 
   return {
     addPhoto, addSeparations, switchPhotoMode, setKeyLayer, splitPhoto, splitPhotoByColor, splitPhotoBestFit, bestPens,
-    placePhoto, photoScale, setPhotoScale, setPhotoMargin, replacePhoto, reloadPhoto, turnPhoto, setPhotoOf, addEdgeMask, chooseEdgeMask, deleteEdgeMask, setEdgeGen, saveEdgeGen, setAngles, photoStem, splitPhotoCmyk, setPlatePen, setLayerColor,
+    placePhoto, setPhotoMargin, replacePhoto, reloadPhoto, turnPhoto, setPhotoOf, addEdgeMask, chooseEdgeMask, deleteEdgeMask, setEdgeGen, saveEdgeGen, setAngles, photoStem, splitPhotoCmyk, setPlatePen, setLayerColor,
     splitAroundPaper, setPaperTone, addPass, removePass,
   };
 }

@@ -1,7 +1,7 @@
-// The whole-drawing operations in studio/lib/drawing.ts: turning with the page, scaling, fitting.
+// The whole-drawing operations in shared/lib/drawing/whole.ts: turning, scaling, fitting.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { drawnBox, fitToPage, reshapeDrawing, runsOffPage, turnDrawingLeft } from "../src/studio/lib/drawing";
+import { drawnBox, fitToPage, reshapeDrawing, runsOffPage, turnDrawing, turnDrawingLeft } from "../src/shared/lib/drawing/whole";
 import type { Fill } from "../src/shared/lib/drawing/hatch";
 import type { Page, Shape } from "../src/shared/lib/drawing/shapes";
 
@@ -117,4 +117,15 @@ test("nothing to fit: no drawing, no room, or a single point", () => {
   assert.equal(fitToPage([], page, 0.5), null);
   assert.equal(fitToPage([shape({})], page, 5), null);
   assert.equal(fitToPage([shape({ kind: "line", x: 1, y: 1, x2: 1, y2: 1 })], page, 0.5), null);
+});
+
+test("turning the drawing on the paper keeps its middle and the paper, and right undoes left", () => {
+  const line = shape({ kind: "line", x: 1, y: 1, x2: 5, y2: 1 });
+  const right = turnDrawing([line], [], page, 1);
+  const [r] = right.shapes;
+  // A line across, turned right about its middle (3, 1), runs down through it.
+  close(r.x, 3); close(r.y, -1);
+  close(r.x2, 3); close(r.y2, 3);
+  const back = turnDrawing(right.shapes, right.fills, page, -1).shapes[0];
+  close(back.x, 1); close(back.y, 1); close(back.x2, 5); close(back.y2, 1);
 });

@@ -53,7 +53,7 @@ import { LayersSection } from "../shared/components/controls/LayersSection";
 import { addPointOnLongest, boxAround, boxOf, clampToPage, groupLabel, groupsOf, moveBy, newGroupId, newLayerId, newShapeId, pointsBox, resizeTo, shapeName, turnAround, withWholeGroups, type Layer, type Page, type Shape } from "../shared/lib/drawing/shapes";
 import { areaPicker, silhouetteOf } from "../shared/lib/drawing/silhouette";
 import { buildSvg, svgForMarks } from "../shared/lib/drawing/svg";
-import { drawnMiddle, fitToPage, reshapeDrawing, runsOffPage, turnDrawingLeft } from "./lib/drawing";
+import { fitToPage, reshapeDrawing, runsOffPage, turnDrawing as turnedDrawing } from "../shared/lib/drawing/whole";
 import styles from "./App.module.css";
 
 // Page sizes, in inches, from the list Plot already offers. Stored width-first the way they're drawn
@@ -93,7 +93,6 @@ interface Snapshot {
  shapes: Shape[];
  fills: Fill[];
  layers: Layer[];
- drawingScale: number;
  page: Page;
 }
 
@@ -143,7 +142,6 @@ export default function App() {
  const [page, setPage] = useState<Page>({ w: 11, h: 8.5 });
  // How big the drawing is now, as a percent of its size when it was opened or started: the Paper
  // card's scale, which rescales the drawing as it changes. Back to 100 with each drawing.
- const [drawingScale, setDrawingScale] = useState(100);
  const [shapes, setShapes] = useState<Shape[]>([]);
  const [fills, setFills] = useState<Fill[]>([]);
  const [layers, setLayers] = useState<Layer[]>(() => [{ id: newLayerId(), name: "Black", color: "#262626" }]);
@@ -339,13 +337,12 @@ export default function App() {
   });
  }, [page]);
 
- const snapshot = useMemo<Snapshot>(() => ({ shapes, fills, layers, page, drawingScale }), [shapes, fills, layers, page, drawingScale]);
+ const snapshot = useMemo<Snapshot>(() => ({ shapes, fills, layers, page }), [shapes, fills, layers, page]);
  const restore = useCallback((next: Snapshot) => {
   setShapes(next.shapes);
   setFills(next.fills);
   setLayers(next.layers);
   setPage(next.page);
-  setDrawingScale(next.drawingScale);
   // A shape that isn't there any more can't stay selected, or its handles would hang in the air.
   const still = new Set(next.shapes.map((s) => s.id));
   setSelected((ids) => ids.filter((id) => still.has(id)));
@@ -634,7 +631,6 @@ export default function App() {
   const first = { id: newLayerId(), name: "Black", color: "#262626" };
   const onlyLayer = [first];
   setShapes(noShapes);
-  setDrawingScale(100);
   setFills(noFills);
   setLayers(onlyLayer);
   setActiveLayer(first.id);
@@ -661,7 +657,6 @@ export default function App() {
   const drawing = parseDrawing(current.svg);
   setPage(drawing.page);
   setShapes(drawing.shapes);
-  setDrawingScale(100);
   setFills(drawing.fills);
   setLayers(drawing.layers);
   setActiveLayer(drawing.layers[0]?.id ?? "");
@@ -698,7 +693,6 @@ export default function App() {
   combined(res, drawing.unsupported);
   setPage(drawing.page);
   setShapes(drawing.shapes);
-  setDrawingScale(100);
   setFills(drawing.fills);
   setLayers(drawing.layers);
   setActiveLayer(drawing.layers[drawing.layers.length - 1]?.id ?? "");
@@ -952,12 +946,14 @@ export default function App() {
  };
 
  /** Turn the whole drawing a quarter turn anticlockwise, page and all (see turnDrawingLeft). */
- const turnDrawing = () => {
+ /** A quarter turn of the drawing on the paper, right or left, about its middle: the paper stays. */
+ const turnDrawing = (dir: 1 | -1) => {
+  if (!shapes.length) return;
   record();
-  const turned = turnDrawingLeft(shapes, fills, page);
+  const turned = turnedDrawing(shapes, fills, page, dir);
   setFills(turned.fills);
   setShapes(turned.shapes);
-  setPage(turned.page);
+  setMessage(runsOffPage(turned.shapes, page) ? { text: "The drawing now runs off the paper", ok: false } : { text: "", ok: true });
  };
 
  /** Scale the whole drawing by `k` about one point, then move it by `by`, leaving the paper as it is. */
@@ -965,18 +961,9 @@ export default function App() {
   const next = reshapeDrawing(shapes, k, about, by);
   record();
   setShapes(next);
-  setDrawingScale((now) => Number((now * k).toFixed(1)));
   setMessage(runsOffPage(next, page) ? { text: "The drawing now runs off the paper", ok: false } : { text: "", ok: true });
  };
 
- /**
-  * Set the drawing's scale, as a percent of its size when it was opened or started: the drawing is
-  * scaled from the scale it is at now to the new one, about the middle of what it draws.
-  */
- const scaleDrawing = (percent: number) => {
-  if (!shapes.length || percent <= 0 || percent === drawingScale) return;
-  reshape(percent / drawingScale, drawnMiddle(shapes));
- };
 
  /** Scale the drawing as big as the paper allows inside a margin all round, and centre it there. */
  const fitDrawing = (marginMm: number, align: FitAlign) => {
@@ -1520,9 +1507,7 @@ export default function App() {
     setPage({ w: w / 25.4, h: h / 25.4 });
    }}
    onColor={pickPaperColor}
-   onTurnDrawing={turnDrawing}
-   drawingScale={drawingScale}
-   onScaleDrawing={scaleDrawing}
+   onTurnDrawing={shapes.length ? turnDrawing : undefined}
    onFit={shapes.length ? fitDrawing : undefined}
   />
  );

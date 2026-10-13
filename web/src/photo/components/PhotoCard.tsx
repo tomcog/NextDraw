@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { api } from "../../shared/lib/api";
 import { Button, ButtonRound, Card, Checkbox, InputSelect, Segment, SegmentedControl } from "@tomcoggia/ui";
-import { RefreshCw, RotateCcwSquare, RotateCwSquare } from "lucide-react";
+import { RefreshCw } from "lucide-react";
 import { Section } from "../../shared/components/controls/Section";
 import { NumberField } from "../../shared/components/controls/NumberField";
 import controls from "../../shared/components/controls/controls.module.css";
@@ -14,7 +14,6 @@ import { EFFECTS, effectOf } from "./EffectToolbar";
 
 /** What the card does to the photo. Each acts on the chosen photo, and on all its layers where it should. */
 export interface PhotoActions {
-  turn: (quarter: 1 | -1) => void;
   replace: (file: File | undefined) => void;
   /** Read the photo's file again, where it was opened from NextDraw's file browser and so is known. */
   reload: () => void;
@@ -46,7 +45,6 @@ export interface PhotoActions {
   setKeyLayer: (on: boolean) => void;
   place: (how: "fit" | "fill", margin: number) => void;
   setMargin: (margin: number) => void;
-  setScale: (percent: number) => void;
   /** Draw a plate in another of the pen's colors, by its name in the palette. */
   setPlatePen: (plate: Plate, penName: string) => void;
   /** B&W split around the paper: so many layers darker than it and lighter, the tones between left bare. */
@@ -75,8 +73,6 @@ interface Props {
   layerCount: number;
   /** The layer whose settings the card shows. */
   shownName: string;
-  /** The photo's size as a percent of what Fit gives it. */
-  scale: number;
   /** Split by best fit: how near the photo the best pens come, one fewer, as many and one more (ΔE). */
   estimates?: { pens: number; err: number }[];
   actions: PhotoActions;
@@ -98,7 +94,7 @@ interface Props {
  * The chosen photo's card - in the drawing's rail, and in image conversion's under its own: how it is
  * split into layers, sized to the page, and what each layer's lines are drawn as.
  */
-export function PhotoCard({ shape, title, shapes, busy, targeted, layerCount, shownName, scale, estimates, actions, penWidthMm = 0.5, palette = [], anyColor = false, infoCard = true, effectCards = true, layersCard }: Props) {
+export function PhotoCard({ shape, title, shapes, busy, targeted, layerCount, shownName, estimates, actions, penWidthMm = 0.5, palette = [], anyColor = false, infoCard = true, effectCards = true, layersCard }: Props) {
   const replaceInput = useRef<HTMLInputElement>(null);
   const maskInput = useRef<HTMLInputElement>(null);
   // The edge mask library, shared between Macs; read when the card opens and after each change to it.
@@ -435,10 +431,6 @@ export function PhotoCard({ shape, title, shapes, busy, targeted, layerCount, sh
               closedAction={<span className={controls.toolInTitle} title={title}>{title}</span>}
               action={
                 <span className={controls.headerTools}>
-                  {/* A quarter at a time, to stand the picture the way the paper does: the same
-                    buttons as Plot's for turning a drawing. */}
-                  <ButtonRound size="sm" icon={<RotateCcwSquare />} aria-label="Turn the image left" title="Turn the image 90° left" disabled={busy} onClick={() => actions.turn(-1)} />
-                  <ButtonRound size="sm" icon={<RotateCwSquare />} aria-label="Turn the image right" title="Turn the image 90° right" disabled={busy} onClick={() => actions.turn(1)} />
                   {/* Only for a picture opened from NextDraw's file browser: its file is known. */}
                   {photo.source && (
                     <ButtonRound
@@ -480,15 +472,11 @@ export function PhotoCard({ shape, title, shapes, busy, targeted, layerCount, sh
                 label="B&W"
                 onChange={(e) => actions.set({ saturation: e.target.checked ? -100 : undefined })}
               />
-              {/* Sized to the page, inside the margin: the whole photo as large as it fits, or the page
-                filled and the photo cropped. Moved or sized by hand, it's neither. */}
+              {/* Filling the page, inside the margin, the image cropped to it: Image's alone. Its scale, turn
+                and Fit are on the Paper card, as in every app. */}
               <div className={styles.fillRow}>
-                <SegmentedControl size="sm" variant="dark" aria-label="Size to the page">
-                  <Segment selected={photo.fit === "fit"} title="Fit to page: all of the image, as large as it fits inside the margin" onClick={() => actions.place("fit", photo.margin ?? 0.5)}>Fit</Segment>
-                  <Segment selected={photo.fit === "fill"} title="Fill page: the whole page inside the margin, the image cropped to it" onClick={() => actions.place("fill", photo.margin ?? 0.5)}>Fill</Segment>
-                </SegmentedControl>
+                <Button size="sm" variant="secondary" title="Fill page: the whole page inside the margin, the image cropped to it" onClick={() => actions.place("fill", photo.margin ?? 0.5)}>Fill page</Button>
                 <NumberField label="Margin" unit="in" min={0} max={4} step={0.25} value={photo.margin ?? 0.5} onChange={actions.setMargin} />
-                <NumberField label="Scale" unit="%" min={5} max={1000} step={5} value={scale} onChange={actions.setScale} />
               </div>
               {/* Passes over the picture: hatching for the shading and edges over it, say - each its own
                 effect, settings and layers, the picture and its place shared. Which one the cards below

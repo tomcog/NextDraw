@@ -304,7 +304,7 @@ export default function App() {
 
   const {
     addPhoto, addSeparations, switchPhotoMode, setKeyLayer, splitPhoto, splitPhotoByColor, splitPhotoBestFit, bestPens,
-    placePhoto, photoScale, setPhotoScale, setPhotoMargin, replacePhoto, reloadPhoto, turnPhoto, setPhotoOf, addEdgeMask, chooseEdgeMask, deleteEdgeMask, setEdgeGen, saveEdgeGen, setAngles, photoStem, splitPhotoCmyk, setPlatePen, setLayerColor,
+    placePhoto, setPhotoMargin, replacePhoto, reloadPhoto, turnPhoto, setPhotoOf, addEdgeMask, chooseEdgeMask, deleteEdgeMask, setEdgeGen, saveEdgeGen, setAngles, photoStem, splitPhotoCmyk, setPlatePen, setLayerColor,
     splitAroundPaper, setPaperTone, addPass, removePass,
   } = photoActions({
     chosen, shapes, setShapes, layers, setLayers, active, setActiveLayer, page, tool,
@@ -463,8 +463,9 @@ export default function App() {
         setPage({ w: w / 25.4, h: h / 25.4 });
       }}
       onColor={pickPaperColor}
-      // Fit to paper is the Image card's Fit, with the Paper card's margin and alignment: the photo
-      // keeps both, so the Image card's own Margin shows the same number afterwards.
+      // The image on the paper - its turn, and Fit with the Paper card's margin and alignment, which
+      // the image keeps, so Fill uses the same margin.
+      onTurnDrawing={chosen?.photo ? (dir) => void turnPhoto(dir) : undefined}
       onFit={chosen?.photo ? (marginMm, align) => placePhoto("fit", marginMm / 25.4, align) : undefined}
     />
   );
@@ -624,12 +625,7 @@ export default function App() {
       infoCard={infoCard}
       effectCards={effectCards}
       layersCard={layersSection}
-      scale={(() => {
-        const { b, fitW } = photoScale(chosen);
-        return Math.round(((b.x1 - b.x0) / fitW) * 100);
-      })()}
       actions={{
-        turn: turnPhoto,
         replace: replacePhoto,
         reload: reloadPhoto,
         addPass,
@@ -649,7 +645,6 @@ export default function App() {
         setKeyLayer,
         place: placePhoto,
         setMargin: setPhotoMargin,
-        setScale: setPhotoScale,
         setAngles,
         splitCmyk: (set) => splitPhotoCmyk({}, set),
         setPlatePen,

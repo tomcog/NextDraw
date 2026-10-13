@@ -1,7 +1,7 @@
 // Flattening, baking, joining, splitting and simplifying shapes, in studio/lib/shapeEdits.ts.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { drawnBox } from "../src/studio/lib/drawing";
+import { drawnBox } from "../src/shared/lib/drawing/whole";
 import { insertPoint, removePoint } from "../src/shared/lib/drawing/shapes";
 import type { Fill } from "../src/shared/lib/drawing/hatch";
 import { bakedCopies, flattened, handOutFills, joined, markRuns, pointCount, simplified, simplifyDrawing, splitApart } from "../src/studio/lib/shapeEdits";

@@ -1,13 +1,14 @@
-// What is done to the drawing as a whole: turning it with its page, scaling it, fitting it to the
-// paper. Plain geometry over the shapes and their fills, so it can be worked out - and tested -
-// apart from the app that keeps them.
+// What is done to the drawing as a whole: turning it, scaling it, fitting it to the paper - the
+// Paper card's controls, in Studio and Image alike (Plot has the server do the same to the file).
+// Plain geometry over the shapes and their fills, so it can be worked out - and tested - apart from
+// the app that keeps them.
 
-import { newFillId, type Fill } from "../../shared/lib/drawing/hatch";
-import { type Point } from "../../shared/lib/drawing/parametric";
-import { mapNode, type Node } from "../../shared/lib/drawing/path";
-import { placements } from "../../shared/lib/drawing/repeat";
-import { boxOf, centerOf, drawnRuns, newShapeId, outlinePoints, shiftShape, turnPoint, type Page, type Shape } from "../../shared/lib/drawing/shapes";
-import { FIT_CENTERED, type FitAlign } from "../../shared/lib/geometry";
+import { newFillId, type Fill } from "./hatch";
+import { type Point } from "./parametric";
+import { mapNode, type Node } from "./path";
+import { placements } from "./repeat";
+import { boxOf, centerOf, drawnRuns, newShapeId, outlinePoints, shiftShape, turnPoint, type Page, type Shape } from "./shapes";
+import { FIT_CENTERED, type FitAlign } from "../geometry";
 
 export interface Box {
   x0: number;
@@ -115,6 +116,21 @@ export function turnDrawingLeft(shapes: Shape[], fills: Fill[], page: Page): { s
     fills: nextFills.map((f) => (pointsTurned.has(f.shapeId) ? { ...f, angle: (f.angle + 270) % 360 } : f)),
     page: { w: page.h, h: page.w },
   };
+}
+
+/**
+ * The drawing turned a quarter turn, 1 to the right or -1 to the left, about the middle of what it
+ * draws - the paper staying as it lies, which the Landscape and Portrait switch turns on its own.
+ */
+export function turnDrawing(shapes: Shape[], fills: Fill[], page: Page, dir: 1 | -1): { shapes: Shape[]; fills: Fill[] } {
+  if (!shapes.length) return { shapes, fills };
+  const before = drawnMiddle(shapes);
+  // A left turn, once or three times; each swaps the page it turns on, which only says where the
+  // drawing lands - put back about its middle below.
+  let turned = { shapes, fills, page };
+  for (let i = 0; i < (dir < 0 ? 1 : 3); i++) turned = turnDrawingLeft(turned.shapes, turned.fills, turned.page);
+  const after = drawnMiddle(turned.shapes);
+  return { shapes: reshapeDrawing(turned.shapes, 1, after, { x: before.x - after.x, y: before.y - after.y }), fills: turned.fills };
 }
 
 /**

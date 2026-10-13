@@ -3912,6 +3912,116 @@ def put_current():
     return jsonify(opened=opened_token(), edited=state["edited"], name=name)
 
 
+# What isn't drawn: left where it is when the drawing is moved, scaled or turned as a whole.
+NOT_DRAWN = {SVG_NS + t for t in ("metadata", "defs", "title", "desc", "style", "script")}
+
+
+def reshape_matrix(body, bounds):
+    """
+    The change asked for, in inches on the page, as (a, b, c, d, e, f) - x' = a x + c y + e,
+    y' = b x + d y + f - or None. scale: a percent of the drawing's size now, about its middle. turn:
+    a quarter turn, 1 to the right or -1 to the left, about its middle; the paper stays as it lies.
+    fit: as big as the paper allows inside margin_mm, placed in the room left over as align says - the
+    paper being box (x, y, width, height in inches on the page), or the page.
+    bake: Plot's own scale and turn from before, put into the drawing - scaled about the page's
+    corner, where Plot scaled it from, and turned about its middle.
+    """
+    x0, y0, x1, y1, page_w, page_h = bounds
+    mx, my = (x0 + x1) / 2, (y0 + y1) / 2
+
+    def about(k, quarter):
+        # Scaled by k and turned so many quarters right, about the middle.
+        cos, sin = [(1, 0), (0, 1), (-1, 0), (0, -1)][quarter % 4]
+        a, b, c, d = k * cos, k * sin, -k * sin, k * cos
+        return a, b, c, d, mx - a * mx - c * my, my - b * mx - d * my
+
+    if "scale" in body:
+        k = float(body["scale"]) / 100
+        return about(k, 0) if 0.001 < k < 100 else None
+    if "turn" in body:
+        return about(1, 1 if int(body["turn"]) > 0 else 3)
+    if "fit" in body:
+        margin = max(0.0, float(body["fit"])) / 25.4
+        align = body.get("align") or {}
+        ax = min(1.0, max(0.0, float(align.get("x", 0.5))))
+        ay = min(1.0, max(0.0, float(align.get("y", 0.5))))
+        # The paper, in inches on the page: where Plot has the page placed on it. The page itself if not said.
+        bx, by, bw, bh = [float(v) for v in body["box"]] if isinstance(body.get("box"), list) and len(body["box"]) == 4 else (0.0, 0.0, page_w, page_h)
+        room_w, room_h = bw - 2 * margin, bh - 2 * margin
+        dw, dh = x1 - x0, y1 - y0
+        if room_w <= 0 or room_h <= 0:
+            return None
+        k = min(room_w / dw if dw > 1e-9 else float("inf"), room_h / dh if dh > 1e-9 else float("inf"))
+        if k == float("inf"):
+            return None
+        # Its corner goes to the margin plus the alignment's share of the room it doesn't fill.
+        return k, 0, 0, k, bx + margin + (room_w - dw * k) * ax - x0 * k, by + margin + (room_h - dh * k) * ay - y0 * k
+    if "bake" in body:
+        bake = body["bake"] or {}
+        k = float(bake.get("scale", 100)) / 100
+        quarter = int(round(float(bake.get("rotation", 0)) / 90)) % 4
+        # Scaled about the page's corner first, then turned about where the middle went.
+        mx, my = mx * k, my * k
+        a, b, c, d, e, f = about(1, quarter)
+        return a * k, b * k, c * k, d * k, e, f
+    return None
+
+
+@app.post("/api/current/reshape")
+def reshape_current():
+    """
+    Scale, turn or fit the current drawing itself, from Plot - the Paper card's controls, which in
+    Studio and Image change the drawing they hold. Done to what is drawn as a whole, by a transform on
+    each of its top-level parts (its layers), so nothing else in the file changes; the editors take it
+    up as a change, and read the transform into their shapes. It's a change not saved, like theirs.
+    """
+    body = request.json or {}
+    if job.busy() or load_resume():
+        return jsonify(error="Wait for the plotter to finish, then change the drawing.", busy=True), 409
+    if not CURRENT_SVG.exists():
+        return jsonify(error="Open a drawing first."), 400
+    try:
+        bounds = drawing_bounds(clean_settings(body.get("settings") or {}))
+        if not bounds:
+            return jsonify(error="There are no lines in this drawing."), 400
+        tree = parse_svg(CURRENT_SVG)
+        root = tree.getroot()
+        if "bake" in body:
+            # Once, and from the block itself: Plot's scale and turn go into the drawing and out of its
+            # block in the same write, so a second page asking too finds nothing left to bake.
+            plot = read_plot(root) or {}
+            if float(plot.get("scale", 100)) == 100 and not float(plot.get("rotation", 0)):
+                return jsonify(baked=False)
+            body["bake"] = {"scale": plot.get("scale", 100), "rotation": plot.get("rotation", 0)}
+            write_plot(root, {**plot, "scale": 100, "rotation": 0})
+        matrix = reshape_matrix(body, bounds)
+        if matrix is None:
+            return jsonify(error="That can't be done to this drawing."), 400
+        sized = parse_svg(CURRENT_SVG).getroot()
+        normalize_size(sized)
+        page_w, page_h = bounds[4], bounds[5]
+        vb = sized.get("viewBox")
+        vx, vy, vw, vh = [float(v) for v in re.split(r"[\s,]+", vb.strip())] if vb else (0, 0, page_w * 96, page_h * 96)
+        ux, uy = vw / page_w, vh / page_h  # user units per inch
+        # The same change in the file's own units: into inches, changed, and back.
+        a, b, c, d, e, f = matrix
+        ua, ub, uc, ud = a, b * uy / ux, c * ux / uy, d
+        ue = vx + ux * e - ua * vx - uc * vy
+        uf = vy + uy * f - ub * vx - ud * vy
+        change = f"matrix({ua:.8g},{ub:.8g},{uc:.8g},{ud:.8g},{ue:.8g},{uf:.8g})"
+        for el in root:
+            if not isinstance(el.tag, str) or el.tag in NOT_DRAWN or el.tag.startswith("{http://sodipodi"):
+                continue
+            el.set("transform", f"{change} {el.get('transform') or ''}".strip())
+        from lxml import etree
+        write_current_svg(etree.tostring(root, encoding="unicode"))
+    except Exception as exc:  # noqa: BLE001
+        return jsonify(error=f"Couldn't change the drawing: {exc}"), 400
+    state = current_state()
+    state = write_current_state({"dirty": True, "save_to": state["save_to"], "foreign": state["foreign"]})
+    return jsonify(edited=state["edited"], scaled=abs(a * d - b * c) ** 0.5, baked="bake" in body)
+
+
 @app.delete("/api/current")
 def drop_current():
     """New in an editor: no current drawing until something is drawn."""
