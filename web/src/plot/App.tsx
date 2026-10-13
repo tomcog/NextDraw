@@ -23,7 +23,8 @@ import { pairsSheet } from "../shared/lib/calibration/pairs";
 import { readCalibration, readingProblems, sheetLayout, type SheetLayout } from "../shared/lib/calibration/read";
 import { loadFont } from "../shared/lib/drawing/font";
 import { fitText } from "../shared/lib/drawing/text";
-import { buildSvg } from "../shared/lib/drawing/svg";
+import { buildSvg, cleanFileName } from "../shared/lib/drawing/svg";
+import type { Current } from "../shared/lib/drawing/useDrawingFile";
 import { parseDrawing } from "../shared/lib/drawing/parse";
 import { goToApp } from "../shared/lib/apps";
 import { FileBrowser, type OpenResult } from "../shared/components/FileBrowser";
@@ -35,7 +36,7 @@ import { AppSwitch } from "../shared/components/AppSwitch";
 import { SettingsHud } from "./components/SettingsHud";
 import { PlotSummary } from "./components/PlotSummary";
 import { PlotProgress } from "./components/PlotProgress";
-import { FileSection } from "./components/controls/FileSection";
+import { FileSection } from "../shared/components/controls/FileSection";
 import { LayersSection } from "./components/controls/LayersSection";
 import { PositionSection } from "./components/controls/PositionSection";
 import { PresetSection } from "./components/controls/PresetSection";
@@ -601,12 +602,9 @@ export default function App() {
     setPenColors({});
     setPrintLayer(null);
     setLayerMode("preview");
-    setSaveState(null);
     setLoadedFile(name);
     return nextScale;
   }, [applyChoices]);
-  const [saveState, setSaveState] = useState<"saving" | "saved" | "error" | null>(null);
-  const [saveError, setSaveError] = useState<string | null>(null);
 
   /* ---------- Auto-save ---------- */
 
@@ -644,16 +642,15 @@ export default function App() {
     const timer = window.setTimeout(() => {
       saveChain.current = saveChain.current.then(async () => {
         if (refs.current.fileName !== fileName) return;
-        setSaveState("saving");
         try {
           const res = await postJSON<{ saved?: string }>("/api/drawing", body);
           if (res.saved) refs.current.drawingSaved = res.saved; // our own save: nothing to follow
           savedKey.current = key;
-          setSaveState("saved");
         } catch (err) {
           savedKey.current = key; // don't retry the same change; the next change tries again
-          setSaveError((err as Error).message);
-          setSaveState("error");
+          // Plot's choices didn't reach the drawing: said in the banner, as the File card no longer
+          // shows these saves.
+          setLocalMessage({ text: (err as Error).message, tone: "error" });
         }
       });
     }, 700);
@@ -769,7 +766,6 @@ export default function App() {
     setPenColors({});
     setPrintLayer(null);
     setLoadedFile(null);
-    setSaveState(null);
     setLocalMessage(null);
   }, []);
 
@@ -927,7 +923,6 @@ export default function App() {
   const layerCount = drawingLayers ? drawingLayers.length : null;
   const simulate = showPenUp && layerCount !== null && (layerCount <= 1 || Boolean(plotLayerId));
   const [artWarnings, setArtWarnings] = useState<string[]>([]);
-  const [trimmed, setTrimmed] = useState(false);
   useEffect(() => {
     if (!fileName) return;
     const seq = ++estimateSeq.current;
@@ -939,14 +934,13 @@ export default function App() {
     if (key !== artworkKey.current) {
       artworkKey.current = key;
       setSimPreview(null); // its pen paths are for the old size or turn
-      postJSON<{ svg: string; layers: Layer[]; warnings: string[]; trimmed: boolean }>("/api/artwork", { scale: sentScale, rotation: sentRotation, hatch_spacing: sentHatch })
+      postJSON<{ svg: string; layers: Layer[]; warnings: string[] }>("/api/artwork", { scale: sentScale, rotation: sentRotation, hatch_spacing: sentHatch })
         .then((art) => {
           if (key !== artworkKey.current) return; // a newer size or turn was asked for
           setArtPreview(parsePreview(art.svg));
           setPreviewScale(sentScale);
           setDrawingLayers(art.layers);
           setArtWarnings(art.warnings);
-          setTrimmed(art.trimmed);
         })
         .catch(() => {}); // the estimate reports anything wrong with the file
     }
@@ -1018,43 +1012,21 @@ export default function App() {
     }
   };
 
-  // Trim to drawing / Restore page. The server changes the page and says how far the lines sit from the
-  // old page's corner; moving the drawing by that much keeps the lines where they were on the paper.
-  const [trimming, setTrimming] = useState(false);
-  const trimPage = async (restore: boolean) => {
-    if (busy || trimming || !fileName) return;
-    setTrimming(true);
-    try {
-      const res = await postJSON<{ offset_mm: [number, number] }>(restore ? "/api/untrim" : "/api/trim", {
-        ...settings, file: fileName, rotation, scale,
-      });
-      setPlacement({ x: placement.x + res.offset_mm[0], y: placement.y + res.offset_mm[1] });
-      setTrimmed(!restore);
-      setDrawingVersion((v) => v + 1); // redraw with the new page
-    } catch (err) {
-      setSaveError((err as Error).message); // shown in the File card, under the file name
-      setSaveState("error");
-    } finally {
-      setTrimming(false);
-    }
-  };
-
   const [browserOpen, setBrowserOpen] = useState(false);
   // Files just stacked whose page isn't the size of the first one's: they may not line up, and Plot
   // doesn't move layers - Studio does. Said for as long as that drawing is the one open.
   const [misfits, setMisfits] = useState<{ drawing: string; path: string; files: string[] } | null>(null);
   const shownMisfits = misfits && misfits.drawing === fileName ? misfits : null;
 
-  // Another drawing in this one's place - opened, dropped, cleared, a sheet made - when this one has
-  // changes from Studio or Image not saved: asked first, as the editors ask. Plot can't save them;
-  // they're kept by going back to Studio or Image and saving there.
+  // Another drawing in this one's place - opened, dropped, a sheet made - when this one has changes
+  // not saved: asked first, as the editors ask. Save, on the File card, keeps them.
   const replacing = (go: () => void) => {
     if (!refs.current.status?.file_dirty) {
       go();
       return;
     }
     setConfirmation({
-      message: `${refs.current.fileName ?? "This drawing"} has changes made in Studio or Image that aren’t saved. Save them there to keep them.`,
+      message: `${refs.current.fileName ?? "This drawing"} has changes that aren’t saved. Save it first to keep them.`,
       confirmLabel: "Discard them",
       danger: true,
       onConfirm: () => {
@@ -1073,15 +1045,41 @@ export default function App() {
   };
 
 
-  const clearFile = () => {
-    if (!busy) replacing(() => void clearNow());
-  };
-  const clearNow = async () => {
+  // The File card, as Studio's and Image's: the drawing's name, where it's saved, and Save. Saved as
+  // the server holds it - changes from Studio or Image and Plot's own choices for it included - into
+  // its own file, or, renamed or never saved, a new one beside it: never over another drawing.
+  const fileStem = fileName ? fileName.replace(/\.svg$/i, "") : "";
+  const [draftName, setDraftName] = useState(fileStem);
+  useEffect(() => setDraftName(fileStem), [fileStem]);
+  const renamed = cleanFileName(draftName) !== cleanFileName(fileStem);
+  const [saving, setSaving] = useState(false);
+  const saveDrawing = async () => {
+    if (!fileName || busy || saving) return;
+    setSaving(true);
     try {
-      await api("/api/file", { method: "DELETE" });
-      clearDrawing();
+      const current = await api<Current>("/api/current");
+      if (current.empty) return;
+      const name = cleanFileName(draftName);
+      const own = Boolean(current.path) && name === cleanFileName(current.name);
+      // Written from what the editors could redraw: over its own file, that would drop the rest.
+      if (own && current.dirty && current.foreign > 0) {
+        setLocalMessage({ text: `${current.name} has ${current.foreign} ${current.foreign === 1 ? "mark" : "marks"} that can’t be redrawn. Give it another name to save a copy.`, tone: "error" });
+        return;
+      }
+      const folder = current.path ? current.path.slice(0, current.path.lastIndexOf("/")) : current.save_to;
+      const res = await postJSON<{ name: string; folder: string }>("/api/studio/save", {
+        name, svg: current.svg, replace: own, current: current.opened, ...(folder ? { folder } : {}),
+      });
+      const asked = name.replace(/\.svg$/i, "");
+      const savedAs = res.name.replace(/\.svg$/i, "");
+      setLocalMessage({
+        text: savedAs.toLowerCase() === asked.toLowerCase() ? `Saved to ${res.folder}` : `Saved as ${savedAs} in ${res.folder}: there was already a drawing called ${asked}`,
+        tone: "ok",
+      });
     } catch (err) {
       setLocalMessage({ text: (err as Error).message, tone: "error" });
+    } finally {
+      setSaving(false);
     }
   };
 
@@ -1890,25 +1888,15 @@ export default function App() {
           <Card variant="flat" className={`${styles.controls} ${styles.fileCard}`}>
             <div className={`${styles.cardBody} ${controls.cardSections}`}>
               <FileSection
-                fileName={fileName}
-                busy={busy}
-                preview={preview}
-                previewScale={previewScale}
-                scale={scale}
-                units={settings.units}
-                onScale={setScale}
-                folder={status?.file_folder ?? null}
-                saveState={saveState}
-                saveError={saveError}
-                onOpen={openBrowser}
-                onClear={clearFile}
-                trimmed={trimmed}
-                trimming={trimming}
-                onTrim={trimPage}
-                onRotate={(turn) => setRotation((r) => (((r + turn * 90) % 360) + 360) % 360)}
-                // The same drawing, in Studio, in this tab: Plot is left, not opened beside.
-                onEditInStudio={fileName ? openStudio : undefined}
-                unsaved={Boolean(status?.file_dirty)}
+                collapsibleKey="plot-file"
+                name={draftName}
+                onName={setDraftName}
+                saved={status?.file_path ? { path: status.file_path, folder: status.file_folder ?? "" } : null}
+                dirty={Boolean(status?.file_dirty) || !status?.file_path || renamed}
+                hasShapes={Boolean(fileName)}
+                busy={busy || saving}
+                confirm={null}
+                onSave={() => void saveDrawing()}
               />
               {shownMisfits && (
                 <div className={styles.misfits} role="status">

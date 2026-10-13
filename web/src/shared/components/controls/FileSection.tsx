@@ -21,9 +21,9 @@ interface Props {
 }
 
 /**
- * Shared: the File card's inside in Studio and Image - the drawing's name, where it's saved, and Save -
- * in the File card every app has (FileCard). Opening, starting and sending are the File toolbar's, in
- * the left-hand column (FileToolbar); Save stays here, beside the name it saves under.
+ * Shared: the File card's inside in all three apps - the drawing's name, where it's saved, and Save -
+ * in the File card every app has (FileCard). In Studio and Image, opening, starting and sending are the
+ * File toolbar's, in the left-hand column (FileToolbar); Save stays here, beside the name it saves under.
  */
 export function FileSection({ name, onName, saved, dirty, hasShapes, busy, confirm, onSave, collapsibleKey }: Props) {
   return (

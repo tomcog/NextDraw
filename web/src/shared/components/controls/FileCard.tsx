@@ -16,9 +16,8 @@ interface Props {
 
 /**
  * Shared: the File card in every app - its heading, folding, and the drawing named in red while it's
- * folded, as Paper names its size and Pen its tool. What's in it, and the buttons on it, are the
- * app's own: Plot opens a drawing to plot and sets its scale and turn; Studio and Image name, save,
- * start and send one (FileSection).
+ * folded, as Paper names its size and Pen its tool. What's in it is FileSection's, the same in every
+ * app: the drawing's name, where it's saved, and Save.
  */
 export function FileCard({ fileName, collapsibleKey, action, children, forceOpen }: Props) {
   return (
