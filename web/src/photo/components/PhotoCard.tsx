@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { api } from "../../shared/lib/api";
 import { Button, ButtonRound, Card, Checkbox, InputSelect, Segment, SegmentedControl } from "@tomcoggia/ui";
-import { RefreshCw } from "lucide-react";
+import { ChevronRight, RefreshCw, Trash2 } from "lucide-react";
 import { Section } from "../../shared/components/controls/Section";
 import { NumberField } from "../../shared/components/controls/NumberField";
 import controls from "../../shared/components/controls/controls.module.css";
@@ -471,26 +471,12 @@ export function PhotoCard({ shape, title, shapes, busy, targeted, layerCount, sh
                 onChange={(e) => actions.set({ saturation: e.target.checked ? -100 : undefined })}
               />
               {/* Passes over the picture: hatching for the shading and edges over it, say - each its own
-                effect, settings and layers, the picture and its place shared. Which one the cards below
-                are about, and adding or taking one off. */}
-              {passes.length > 1 && (
-                <SegmentedControl size="sm" variant="dark" aria-label="Passes">
-                  {passes.map((p, i) => (
-                    <Segment key={p.id} selected={p.mine} title={`Pass ${i + 1}: ${p.effect.label}, ${p.layers === 1 ? "1 layer" : `${p.layers} layers`}`} onClick={() => !p.mine && actions.pickPass(p.id)}>
-                      {`${i + 1} ${p.effect.label}`}
-                    </Segment>
-                  ))}
-                </SegmentedControl>
-              )}
+                effect, settings and layers, the picture and its place shared. Each has a card of its own
+                below, where it's taken off again. */}
               <div className={styles.fillRow}>
                 <Button size="sm" variant="secondary" disabled={busy} title="Another pass over this picture, on a layer of its own on top: Edges to start with - lines where the tone changes sharply - or any effect" onClick={actions.addPass}>
                   Add pass
                 </Button>
-                {passes.length > 1 && (
-                  <Button size="sm" variant="secondary" disabled={busy} title="Take this pass and its layers off the image. The other passes stay" onClick={actions.removePass}>
-                    Remove pass
-                  </Button>
-                )}
               </div>
               {/* Mask edges: ticked, the mask's controls; unticked, none of them, and no mask on the
                 image - so a mask never stays on out of sight. */}
@@ -630,275 +616,294 @@ export function PhotoCard({ shape, title, shapes, busy, targeted, layerCount, sh
         </Card>
       )}
       {layersCard}
-      {/* The effect's own cards - Color mode, then its card - put away by clicking its button again. */}
-      {effectCards && (
-        <>
-          {/* Color mode first in the photo's stack - how the picture is divided into layers and pens - then the effect's own card under it. */}
-          {splits && (
-            <Card variant="flat" className={styles.controls}>
-              <div className={`${styles.cardBody} ${controls.cardSections}`}>
-                <Section title={photo.separation ? "Separation" : "Color mode"} collapsibleKey="photo-layers">
-                  {/* How many layers the photo is split into by tone. Each band layer has its own settings
-                    below; the photo's picture, brightness and contrast are what the bands are cut from. */}
-                  {/* By value: read as black and white, split into tone bands. By colour: split into groups
-                    of similar colours, each drawn in the tool's nearest pen. Either way, a layer each, with
-                    its own lines. */}
-                  {colourMode}
-                  {photo.group && bleed}
-                </Section>
-              </div>
-            </Card>
-          )}
-          <Card variant="flat" className={styles.controls}>
-            <div className={`${styles.cardBody} ${controls.cardSections}`}>
-              {/* The effect's own numbers, under its name: the toolbar on the left chooses which. */}
-              <Section title={<span className={controls.iconTitle}>{effect.icon}{effect.label}</span>}>
-                {photo.style === "silhouette" ? (
-                  <div className={styles.fillRow}>
-                    <NumberField label="Paper lighter than" unit="%" min={1} max={99} step={1} value={Math.round((photo.silhouetteFrom ?? SILHOUETTE_DEFAULTS.from) * 100)} onChange={(v) => actions.set({ silhouetteFrom: v / 100 })} />
-                    <NumberField label="Smoothing" unit="mm" min={0} max={5} step={0.05} value={photo.silhouetteSmoothMm ?? SILHOUETTE_DEFAULTS.smoothMm} onChange={(silhouetteSmoothMm) => actions.set({ silhouetteSmoothMm })} />
-                    <NumberField label="Smallest" unit="mm" min={0} max={50} step={0.5} value={photo.silhouetteSmallestMm ?? SILHOUETTE_DEFAULTS.smallestMm} onChange={(silhouetteSmallestMm) => actions.set({ silhouetteSmallestMm })} />
-                  </div>
-                ) : photo.style === "edges" ? (
-                  <>
-                    {/* Edges: where the tone changes sharply, traced as Centerlines traces strokes. */}
-                    <div className={styles.fillRow}>
-                      <div title="How sharp a change of tone counts as an edge, against the picture's sharpest: lower finds fainter edges">
-                        <NumberField label="Edge strength" unit="%" min={1} max={100} step={5} value={Math.round((photo.edgeFrom ?? EDGE_DEFAULTS.from) * 100)} onChange={(v) => actions.set({ edgeFrom: Math.max(0.01, v / 100) })} />
-                      </div>
-                      <div title="How much the picture is smoothed first, so texture and grain aren't taken for edges">
-                        <NumberField label="Smoothing" unit="mm" min={0} max={5} step={0.1} value={photo.edgeSmoothMm ?? EDGE_DEFAULTS.smoothMm} onChange={(edgeSmoothMm) => actions.set({ edgeSmoothMm })} />
-                      </div>
-                      <div title="Edges shorter than this are left out">
-                        <NumberField label="Shortest" unit="mm" min={0} max={50} step={0.5} value={photo.edgeShortestMm ?? EDGE_DEFAULTS.shortestMm} onChange={(edgeShortestMm) => actions.set({ edgeShortestMm })} />
-                      </div>
-                    </div>
-                    {lineModes}
-                  </>
-                ) : photo.style === "centerlines" ? (
-                  <>
-                    <div className={styles.fillRow}>
-                      <NumberField label="Darker than" unit="%" min={1} max={99} step={5} value={Math.round((photo.centerFrom ?? CENTER_DEFAULTS.from) * 100)} onChange={(v) => actions.set({ centerFrom: v / 100 })} />
-                      <NumberField label="Smoothing" unit="mm" min={0} max={5} step={0.05} value={photo.centerSmoothMm ?? CENTER_DEFAULTS.smoothMm} onChange={(centerSmoothMm) => actions.set({ centerSmoothMm })} />
-                      <NumberField label="Shortest" unit="mm" min={0} max={20} step={0.25} value={photo.centerShortestMm ?? CENTER_DEFAULTS.shortestMm} onChange={(centerShortestMm) => actions.set({ centerShortestMm })} />
-                    </div>
-                    {lineModes}
-                  </>
-                ) : photo.style === "streamlines" ? (
-                  <>
-                    {/* The layers' angles - which the lines settle to wherever the image has no shape to follow. */}
-                    {anglePresets}
-                    <div className={`${styles.fillRow} ${styles.oneRow}`}>
-                      {angleField}
-                      <NumberField label="Spacing mm" min={0.1} max={5} step={0.05} value={photo.spacingMm} onChange={(spacingMm) => actions.set({ spacingMm })} />
-                      <NumberField label="Widest mm" min={0.5} max={20} step={0.25} value={photo.streamWidestMm ?? STREAM_DEFAULTS.widestMm} onChange={(streamWidestMm) => actions.set({ streamWidestMm })} />
-                    </div>
-                    <div className={styles.fillRow}>
-                      {/* How broadly the shapes are read: more, and the lines sweep in long curves; less, and they follow every turn. */}
-                      <NumberField label="Flow mm" min={0} max={20} step={0.5} value={photo.streamFlowMm ?? STREAM_DEFAULTS.flowMm} onChange={(streamFlowMm) => actions.set({ streamFlowMm })} />
-                      <NumberField label="Passes" min={1} max={2} step={1} value={photo.streamPasses ?? STREAM_DEFAULTS.passes} onChange={(streamPasses) => actions.set({ streamPasses })} />
-                    </div>
-                    {eachLayer("Angle, spacing, widest, flow and passes")}
-                  </>
-                ) : photo.style === "oneline" ? (
-                  <>
-                    {/* No angles: the line goes where the dots are. */}
-                    <div className={styles.fillRow}>
-                      <NumberField label="Dots" min={50} max={ONE_LINE_MOST} step={500} value={photo.lineDots ?? ONE_LINE_DEFAULTS.dots} onChange={(lineDots) => actions.set({ lineDots })} />
-                      {/* 0 keeps it one unbroken line; more, and the pen lifts over jumps that long, leaving white as paper. */}
-                      <NumberField label="Lift over" unit="mm" min={0} max={100} step={1} value={photo.lineLiftMm ?? 0} onChange={(v) => actions.set({ lineLiftMm: v > 0 ? v : undefined })} />
-                    </div>
-                    <div className={styles.fillRow}>
-                      {/* 0, straight from dot to dot - angular; 100, smooth curves through them; 200, overshooting into loops. */}
-                      <NumberField label="Curviness" unit="%" min={0} max={200} step={10} value={Math.round((photo.lineCurve ?? 0) * 100)} onChange={(v) => actions.set({ lineCurve: v > 0 ? v / 100 : undefined })} />
-                      {/* 0, the dots spread evenly - a tidy maze; 100, left as scattered - looser, with clumps and gaps. */}
-                      <NumberField label="Grain" unit="%" min={0} max={100} step={10} value={Math.round((photo.lineGrain ?? 0) * 100)} onChange={(v) => actions.set({ lineGrain: v > 0 ? v / 100 : undefined })} />
-                      {/* Less, more dots in the lights, for detail there; more, crowded into the darks, punchier. */}
-                      <NumberField label="Contrast" unit="%" min={0} max={100} step={10} value={Math.round((photo.lineContrast ?? 0.5) * 100)} onChange={(v) => actions.set({ lineContrast: v === 50 ? undefined : v / 100 })} />
-                    </div>
-                    <div className={styles.fillRow}>
-                      {/* Which way the line prefers to run, and how strongly: 0, any way; 100, in streaks that way. */}
-                      <NumberField label="Direction" unit="°" min={-180} max={180} step={15} value={photo.lineAngle ?? 0} onChange={(v) => actions.set({ lineAngle: v || undefined })} />
-                      <NumberField label="Strength" unit="%" min={0} max={100} step={10} value={Math.round((photo.lineBias ?? 0) * 100)} onChange={(v) => actions.set({ lineBias: v > 0 ? v / 100 : undefined })} />
-                    </div>
-                    {eachLayer("These settings")}
-                  </>
-                ) : photo.style === "hilbert" ? (
-                  <>
-                    {/* No angles: the curve runs square to the picture. */}
-                    <div className={styles.fillRow}>
-                      <NumberField label="Spacing mm" min={0.1} max={5} step={0.05} value={photo.spacingMm} onChange={(spacingMm) => actions.set({ spacingMm })} />
-                      {/* How big the curve's squares get in the lightest parts, so they still meander. */}
-                      <NumberField label="Coarsest mm" min={0.5} max={50} step={0.5} value={photo.hilbertCoarsestMm ?? HILBERT_DEFAULTS.coarsestMm} onChange={(hilbertCoarsestMm) => actions.set({ hilbertCoarsestMm })} />
-                    </div>
-                    {/* Which curve: Hilbert's, folding each square in four, or Peano's, in nine - a woven look, with bigger steps of tone that Blend softens. */}
-                    <SegmentedControl size="sm" variant="dark" aria-label="Curve">
-                      <Segment selected={photo.hilbertCurve !== "peano"} title="Hilbert: each square folds into four - bold steps of tone" onClick={() => actions.set({ hilbertCurve: undefined })}>Hilbert</Segment>
-                      <Segment selected={photo.hilbertCurve === "peano"} title="Peano: each square folds into nine - a woven, back-and-forth texture with bigger steps of tone; best with Blend" onClick={() => actions.set({ hilbertCurve: "peano" })}>Peano</Segment>
-                    </SegmentedControl>
-                    <div className={styles.fillRow}>
-                      {/* 0, square corners - a circuit board; 100, every turn a curve - a worm. */}
-                      <NumberField label="Rounding" unit="%" min={0} max={100} step={10} value={Math.round((photo.hilbertRound ?? 0) * 100)} onChange={(v) => actions.set({ hilbertRound: v > 0 ? v / 100 : undefined })} />
-                      {/* 0, hard steps of tone; 100, neighbouring steps mixed where the tone falls between them. */}
-                      <NumberField label="Blend" unit="%" min={0} max={100} step={10} value={Math.round((photo.hilbertBlend ?? 0) * 100)} onChange={(v) => actions.set({ hilbertBlend: v > 0 ? v / 100 : undefined })} />
-                      <NumberField label="Angle" unit="°" min={-180} max={180} step={15} value={photo.hilbertAngle ?? 0} onChange={(v) => actions.set({ hilbertAngle: v || undefined })} />
-                    </div>
-                    <Checkbox size="md" checked={Boolean(photo.hilbertLift)} label="Lift the pen in white areas" onChange={(e) => actions.set({ hilbertLift: e.target.checked || undefined })} />
-                    {eachLayer("These settings")}
-                  </>
-                ) : photo.style === "outlines" ? (
-                  <>
-                    {/* No angles: contours follow the photo, not a direction. */}
-                    <div className={styles.fillRow}>
-                      <NumberField label="Lines" min={1} max={40} step={1} value={photo.contours ?? OUTLINE_DEFAULTS.contours} onChange={(contours) => actions.set({ contours })} />
-                      <NumberField label="Smoothing mm" min={0} max={20} step={0.25} value={photo.smoothMm ?? OUTLINE_DEFAULTS.smoothMm} onChange={(smoothMm) => actions.set({ smoothMm })} />
-                    </div>
-                    {eachLayer("Lines and smoothing")}
-                  </>
-                ) : photo.style === "squiggle" ? (
-                  <>
-                    {/* The rows are level, every layer alike, unless turned here. */}
-                    {/* Which SquiggleDraw: the Processing sketch, whose waves tighten in the darks, or the
-                      Inkscape extension's grid, whose waves keep their frequency and only grow. */}
-                    <SegmentedControl size="sm" variant="dark" aria-label="SquiggleDraw version">
-                      <Segment selected={photo.squiggleVersion !== "inkscape"} title="Processing: SquiggleDraw's sketch - waves taller and tighter where it's darker" onClick={() => actions.set({ squiggleVersion: undefined })}>Processing</Segment>
-                      <Segment selected={photo.squiggleVersion === "inkscape"} title="Inkscape: SquiggleDraw for Inkscape - a grid of cells, the same number of rounded waves in each, taller where it's darker" onClick={() => actions.set({ squiggleVersion: "inkscape" })}>Inkscape</Segment>
-                    </SegmentedControl>
-                    {photo.squiggleVersion === "inkscape" ? (
-                      <>
-                        {/* The extension's own controls, its names, ranges and numbers; the angle and lifting are Photo's. */}
-                        <div className={styles.fillRow}>
-                          {squiggleAngleField}
-                          {inkscapeField("rows")}
-                        </div>
-                        <div className={styles.fillRow}>
-                          {inkscapeField("cols")}
-                          {inkscapeField("freq")}
-                        </div>
-                        <div className={styles.fillRow}>
-                          {inkscapeField("amp")}
-                          <InputSelect size="md" label="Path direction" value={squiggleInkscapeOf(photo).path} onChange={(e) => setInkscape({ path: e.target.value as SquiggleInkscape["path"] })}>
-                            <option value="uni">Left-to-Right</option>
-                            <option value="bidi">Back-and-Forth</option>
-                            <option value="join">Back-and-Forth with Joined Ends</option>
-                          </InputSelect>
-                        </div>
-                        <Checkbox size="md" checked={squiggleInkscapeOf(photo).invert} label="Invert colors" onChange={(e) => setInkscape({ invert: e.target.checked })} />
-                        <Checkbox size="md" checked={Boolean(photo.squiggleLift)} label="Lift the pen in white areas" onChange={(e) => actions.set({ squiggleLift: e.target.checked || undefined })} />
-                        <Button size="sm" variant="secondary" onClick={() => actions.set({ squiggleInkscape: undefined })}>Default</Button>
-                      </>
-                    ) : (
-                      <>
-                        {/* SquiggleDraw's own controls, its names, ranges and numbers, so a photo comes out as
-                          the sketch draws it; the angle, smoothness and lifting are Photo's, over it. */}
-                        <div className={styles.fillRow}>
-                          {squiggleAngleField}
-                          {squiggleField("lines")}
-                        </div>
-                        <div className={styles.fillRow}>
-                          {squiggleField("strength")}
-                          {squiggleField("frequency")}
-                        </div>
-                        <div className={styles.fillRow}>
-                          {squiggleField("detail")}
-                          {squiggleField("lineWidth")}
-                        </div>
-                        <div className={styles.fillRow}>
-                          {squiggleField("black")}
-                          {squiggleField("white")}
-                        </div>
-                        <div className={styles.fillRow}>
-                          {squiggleField("scale")}
-                          {/* How round the waves are: 0 a zigzag, 100 as SquiggleDraw draws them, 200 broad round crests. */}
-                          <NumberField label="Smoothness" unit="%" min={0} max={200} step={10} value={Math.round((photo.squiggleSmooth ?? 1) * 100)} onChange={(v) => actions.set({ squiggleSmooth: v / 100 })} />
-                        </div>
-                        <Checkbox size="md" checked={squiggleDrawOf(photo).invert} label="Invert colors" onChange={(e) => setSquiggle({ invert: e.target.checked })} />
-                        <Checkbox size="md" checked={Boolean(photo.squiggleJoin)} label="Connect ends" onChange={(e) => actions.set({ squiggleJoin: e.target.checked || undefined })} />
-                        <Checkbox size="md" checked={Boolean(photo.squiggleLift)} label="Lift the pen in white areas" onChange={(e) => actions.set({ squiggleLift: e.target.checked || undefined })} />
-                        <Button size="sm" variant="secondary" onClick={() => actions.set({ squiggleDraw: undefined, squiggleSmooth: undefined, squiggleJoin: undefined })}>Default</Button>
-                      </>
-                    )}
-                    {eachLayer("These settings")}
-                  </>
-                ) : photo.style === "waves" ? (
-                  <>
-                    {/* The layers' angles first, as Hatching's. */}
-                    {anglePresets}
-                    <div className={`${styles.fillRow} ${styles.oneRow}`}>
-                      {angleField}
-                      <NumberField label="Spacing mm" min={0.2} max={20} step={0.25} value={photo.rowMm ?? WAVE_DEFAULTS.rowMm} onChange={(rowMm) => actions.set({ rowMm })} />
-                      <NumberField label="Wavelength mm" min={0.2} max={20} step={0.1} value={photo.waveMm ?? WAVE_DEFAULTS.waveMm} onChange={(waveMm) => actions.set({ waveMm })} />
-                    </div>
-                    {eachLayer("Angle, spacing and wavelength")}
-                  </>
-                ) : (
-                  <>
-                    {anglePresets}
-                    <div className={`${styles.fillRow} ${styles.oneRow}`}>
-                      {angleField}
-                      <NumberField label="Spacing mm" min={0.1} max={5} step={0.05} value={photo.spacingMm} onChange={(spacingMm) => actions.set({ spacingMm })} />
-                      <NumberField label="Passes" min={1} max={MOST_PASSES} step={1} value={photo.levels} onChange={(levels) => actions.set({ levels })} />
-                    </div>
-                    {/* When the lines can't cover enough of the paper for colors to reach full strength: by how
-                      much, and the spacing that would. */}
-                    {(() => {
-                      const pen = photo.penMm ?? penWidthMm;
-                      const fullest = (spacing: number) => { const steps = coverSteps(pen, spacing, photo.levels); return steps[steps.length - 1]; };
-                      const most = fullest(photo.spacingMm);
-                      if (most >= 0.7) return null;
-                      let enough = photo.spacingMm;
-                      while (enough > 0.1 && fullest(enough) < 0.85) enough = Math.round((enough - 0.05) * 100) / 100;
-                      return (
-                        <p className={styles.empty}>
-                          {`${photo.levels} ${photo.levels === 1 ? "pass" : "passes"} of a ${pen} mm line at ${photo.spacingMm} mm spacing cover at most ${Math.round(most * 100)}% of the paper, so colors stay paler than the image's.${enough < photo.spacingMm ? ` About ${enough} mm spacing would let them reach full strength.` : ""}`}
-                        </p>
-                      );
-                    })()}
-                    {/* The photo smoothed before it's hatched, so busy patches read as tone rather than dashes. */}
-                    <div className={styles.fillRow}>
-                      <NumberField label="Smoothing mm" min={0} max={5} step={0.1} value={photo.hatchSmoothMm ?? 0} onChange={(v) => actions.set({ hatchSmoothMm: v > 0 ? v : undefined })} />
-                      {/* Strokes shorter than this are left out: dabs, not lines. Until it's set, one and
-                        a half line spacings, following the spacing. */}
-                      <div title="Leave out strokes shorter than this: a tap of the pen rather than a line. Until set, one and a half line spacings">
-                        <NumberField
-                          label="Shortest stroke mm"
-                          min={0}
-                          max={50}
-                          step={0.1}
-                          value={hatchShortestOf(photo)}
-                          onChange={(v) => actions.set({ hatchShortestMm: Math.abs(v - hatchShortestOf({ spacingMm: photo.spacingMm })) < 1e-9 ? undefined : Math.max(0, v) })}
-                        />
-                      </div>
-                    </div>
-                    {eachLayer("Angle, spacing, passes, smoothing and shortest stroke")}
-                  </>
-                )}
-                <p className={styles.empty}>
-                  {marks
-                    ? photo.style === "silhouette"
-                      ? `${marks.strokes.toLocaleString()} ${marks.strokes === 1 ? "loop" : "loops"}: the shape's outline${marks.strokes > 1 ? " and the holes in it" : ""}, where the picture meets white paper. Paper lighter than sets what counts as paper; Smallest drops specks and flecks.`
-                      : photo.style === "centerlines"
-                      ? `${marks.strokes.toLocaleString()} ${marks.strokes === 1 ? "line" : "lines"}${marks.circles ? `, ${marks.circles} of them ${marks.circles === 1 ? "a circle" : "circles"}` : ""}, each drawn once down the middle of a stroke in the picture${marks.widthMm ? ` (they're about ${marks.widthMm.toFixed(1)} mm wide there)` : ""}. Darker than sets what counts as a line; Shortest drops specks and whiskers.`
-                      : photo.style === "streamlines"
-                      ? `${marks.strokes.toLocaleString()} lines, flowing along the image's shapes. They run from Spacing apart in the blacks to Widest apart, past which it's paper; Flow sets how broadly the shapes are followed${(photo.streamPasses ?? 1) > 1 ? ", and a second pass crosses the first in the darker half" : ""}.`
-                      : photo.style === "oneline"
-                      ? `${marks.strokes === 1 ? "One line" : `${marks.strokes.toLocaleString()} lines`} through ${(marks.dots ?? 0).toLocaleString()} dots, ${((marks.lengthMm ?? 0) / 1000).toFixed(1)} m of drawing. The dots are thicker where the image is darker, so the line winds tighter there.${marks.strokes > 1 ? " The pen lifts over jumps longer than Lift over." : ""}`
-                      : photo.style === "hilbert"
-                      ? `${marks.strokes === 1 ? "One line" : `${marks.strokes.toLocaleString()} lines`}, ${((marks.lengthMm ?? 0) / 1000).toFixed(1)} m of drawing, folding finer where the image is darker: from Coarsest in the lightest parts down to Spacing in the blacks, ${photo.hilbertCurve === "peano" ? "a third" : "halving"} at each step.${photo.hilbertLift ? " The pen lifts where there's nothing to draw." : ""}`
-                      : photo.style === "outlines"
-                      ? `${marks.strokes.toLocaleString()} contours, along the image's edges and shapes. More lines follow finer changes of tone; more smoothing, only the big ones.`
-                      : photo.style === "squiggle"
-                      ? `${marks.strokes.toLocaleString()} ${marks.strokes === 1 ? "line" : "lines"}. Each row swings higher and waves tighter where the image is darker${photo.squiggleLift ? ", and lifts off where there's nothing to draw" : ", and runs on flat through white"}. As SquiggleDraw ${photo.squiggleVersion === "inkscape" ? "for Inkscape" : "in Processing"} draws it, with its controls and numbers.`
-                      : photo.style === "waves"
-                      ? `${marks.strokes.toLocaleString()} strokes. Each row waves harder and tighter where the image is darker; white is left as paper.`
-                      : `${marks.strokes.toLocaleString()} strokes. The spacing starts at the pen’s solid-fill spacing; each pass adds lines where the image is darker.`
-                    : "Reading the image…"}
-                </p>
+      {/* A card for each pass over the picture, in the order they were added: its Color mode, then its
+        effect's own numbers. The pass being worked on is open; another, folded, opens when clicked -
+        becoming the one the effect toolbar and the Layers card are about. */}
+      {effectCards && passes.map((p) => p.mine ? (
+        <Card key={p.id} variant="flat" className={styles.controls}>
+          <div className={`${styles.cardBody} ${controls.cardSections}`}>
+            {/* Color mode first - how the picture is divided into layers and pens - then the effect. */}
+            {splits && (
+              <Section title={photo.separation ? "Separation" : "Color mode"} collapsibleKey="photo-layers">
+                {/* How many layers the photo is split into by tone. Each band layer has its own settings
+                  below; the photo's picture, brightness and contrast are what the bands are cut from. */}
+                {/* By value: read as black and white, split into tone bands. By colour: split into groups
+                  of similar colours, each drawn in the tool's nearest pen. Either way, a layer each, with
+                  its own lines. */}
+                {colourMode}
+                {photo.group && bleed}
               </Section>
-            </div>
-          </Card>
-        </>
-      )}
+            )}
+            {/* The effect's own numbers, under its name: the toolbar on the left chooses which. */}
+            <Section
+              title={<span className={controls.iconTitle}>{effect.icon}{effect.label}</span>}
+              // With more than one pass, this one comes off the image here, with its layers.
+              action={passes.length > 1 ? (
+                <ButtonRound size="sm" icon={<Trash2 />} aria-label="Remove this pass" title="Take this pass and its layers off the image. The other passes stay" disabled={busy} onClick={actions.removePass} />
+              ) : undefined}
+            >
+              {photo.style === "silhouette" ? (
+                <div className={styles.fillRow}>
+                  <NumberField label="Paper lighter than" unit="%" min={1} max={99} step={1} value={Math.round((photo.silhouetteFrom ?? SILHOUETTE_DEFAULTS.from) * 100)} onChange={(v) => actions.set({ silhouetteFrom: v / 100 })} />
+                  <NumberField label="Smoothing" unit="mm" min={0} max={5} step={0.05} value={photo.silhouetteSmoothMm ?? SILHOUETTE_DEFAULTS.smoothMm} onChange={(silhouetteSmoothMm) => actions.set({ silhouetteSmoothMm })} />
+                  <NumberField label="Smallest" unit="mm" min={0} max={50} step={0.5} value={photo.silhouetteSmallestMm ?? SILHOUETTE_DEFAULTS.smallestMm} onChange={(silhouetteSmallestMm) => actions.set({ silhouetteSmallestMm })} />
+                </div>
+              ) : photo.style === "edges" ? (
+                <>
+                  {/* Edges: where the tone changes sharply, traced as Centerlines traces strokes. */}
+                  <div className={styles.fillRow}>
+                    <div title="How sharp a change of tone counts as an edge, against the picture's sharpest: lower finds fainter edges">
+                      <NumberField label="Edge strength" unit="%" min={1} max={100} step={5} value={Math.round((photo.edgeFrom ?? EDGE_DEFAULTS.from) * 100)} onChange={(v) => actions.set({ edgeFrom: Math.max(0.01, v / 100) })} />
+                    </div>
+                    <div title="How much the picture is smoothed first, so texture and grain aren't taken for edges">
+                      <NumberField label="Smoothing" unit="mm" min={0} max={5} step={0.1} value={photo.edgeSmoothMm ?? EDGE_DEFAULTS.smoothMm} onChange={(edgeSmoothMm) => actions.set({ edgeSmoothMm })} />
+                    </div>
+                    <div title="Edges shorter than this are left out">
+                      <NumberField label="Shortest" unit="mm" min={0} max={50} step={0.5} value={photo.edgeShortestMm ?? EDGE_DEFAULTS.shortestMm} onChange={(edgeShortestMm) => actions.set({ edgeShortestMm })} />
+                    </div>
+                  </div>
+                  {lineModes}
+                </>
+              ) : photo.style === "centerlines" ? (
+                <>
+                  <div className={styles.fillRow}>
+                    <NumberField label="Darker than" unit="%" min={1} max={99} step={5} value={Math.round((photo.centerFrom ?? CENTER_DEFAULTS.from) * 100)} onChange={(v) => actions.set({ centerFrom: v / 100 })} />
+                    <NumberField label="Smoothing" unit="mm" min={0} max={5} step={0.05} value={photo.centerSmoothMm ?? CENTER_DEFAULTS.smoothMm} onChange={(centerSmoothMm) => actions.set({ centerSmoothMm })} />
+                    <NumberField label="Shortest" unit="mm" min={0} max={20} step={0.25} value={photo.centerShortestMm ?? CENTER_DEFAULTS.shortestMm} onChange={(centerShortestMm) => actions.set({ centerShortestMm })} />
+                  </div>
+                  {lineModes}
+                </>
+              ) : photo.style === "streamlines" ? (
+                <>
+                  {/* The layers' angles - which the lines settle to wherever the image has no shape to follow. */}
+                  {anglePresets}
+                  <div className={`${styles.fillRow} ${styles.oneRow}`}>
+                    {angleField}
+                    <NumberField label="Spacing mm" min={0.1} max={5} step={0.05} value={photo.spacingMm} onChange={(spacingMm) => actions.set({ spacingMm })} />
+                    <NumberField label="Widest mm" min={0.5} max={20} step={0.25} value={photo.streamWidestMm ?? STREAM_DEFAULTS.widestMm} onChange={(streamWidestMm) => actions.set({ streamWidestMm })} />
+                  </div>
+                  <div className={styles.fillRow}>
+                    {/* How broadly the shapes are read: more, and the lines sweep in long curves; less, and they follow every turn. */}
+                    <NumberField label="Flow mm" min={0} max={20} step={0.5} value={photo.streamFlowMm ?? STREAM_DEFAULTS.flowMm} onChange={(streamFlowMm) => actions.set({ streamFlowMm })} />
+                    <NumberField label="Passes" min={1} max={2} step={1} value={photo.streamPasses ?? STREAM_DEFAULTS.passes} onChange={(streamPasses) => actions.set({ streamPasses })} />
+                  </div>
+                  {eachLayer("Angle, spacing, widest, flow and passes")}
+                </>
+              ) : photo.style === "oneline" ? (
+                <>
+                  {/* No angles: the line goes where the dots are. */}
+                  <div className={styles.fillRow}>
+                    <NumberField label="Dots" min={50} max={ONE_LINE_MOST} step={500} value={photo.lineDots ?? ONE_LINE_DEFAULTS.dots} onChange={(lineDots) => actions.set({ lineDots })} />
+                    {/* 0 keeps it one unbroken line; more, and the pen lifts over jumps that long, leaving white as paper. */}
+                    <NumberField label="Lift over" unit="mm" min={0} max={100} step={1} value={photo.lineLiftMm ?? 0} onChange={(v) => actions.set({ lineLiftMm: v > 0 ? v : undefined })} />
+                  </div>
+                  <div className={styles.fillRow}>
+                    {/* 0, straight from dot to dot - angular; 100, smooth curves through them; 200, overshooting into loops. */}
+                    <NumberField label="Curviness" unit="%" min={0} max={200} step={10} value={Math.round((photo.lineCurve ?? 0) * 100)} onChange={(v) => actions.set({ lineCurve: v > 0 ? v / 100 : undefined })} />
+                    {/* 0, the dots spread evenly - a tidy maze; 100, left as scattered - looser, with clumps and gaps. */}
+                    <NumberField label="Grain" unit="%" min={0} max={100} step={10} value={Math.round((photo.lineGrain ?? 0) * 100)} onChange={(v) => actions.set({ lineGrain: v > 0 ? v / 100 : undefined })} />
+                    {/* Less, more dots in the lights, for detail there; more, crowded into the darks, punchier. */}
+                    <NumberField label="Contrast" unit="%" min={0} max={100} step={10} value={Math.round((photo.lineContrast ?? 0.5) * 100)} onChange={(v) => actions.set({ lineContrast: v === 50 ? undefined : v / 100 })} />
+                  </div>
+                  <div className={styles.fillRow}>
+                    {/* Which way the line prefers to run, and how strongly: 0, any way; 100, in streaks that way. */}
+                    <NumberField label="Direction" unit="°" min={-180} max={180} step={15} value={photo.lineAngle ?? 0} onChange={(v) => actions.set({ lineAngle: v || undefined })} />
+                    <NumberField label="Strength" unit="%" min={0} max={100} step={10} value={Math.round((photo.lineBias ?? 0) * 100)} onChange={(v) => actions.set({ lineBias: v > 0 ? v / 100 : undefined })} />
+                  </div>
+                  {eachLayer("These settings")}
+                </>
+              ) : photo.style === "hilbert" ? (
+                <>
+                  {/* No angles: the curve runs square to the picture. */}
+                  <div className={styles.fillRow}>
+                    <NumberField label="Spacing mm" min={0.1} max={5} step={0.05} value={photo.spacingMm} onChange={(spacingMm) => actions.set({ spacingMm })} />
+                    {/* How big the curve's squares get in the lightest parts, so they still meander. */}
+                    <NumberField label="Coarsest mm" min={0.5} max={50} step={0.5} value={photo.hilbertCoarsestMm ?? HILBERT_DEFAULTS.coarsestMm} onChange={(hilbertCoarsestMm) => actions.set({ hilbertCoarsestMm })} />
+                  </div>
+                  {/* Which curve: Hilbert's, folding each square in four, or Peano's, in nine - a woven look, with bigger steps of tone that Blend softens. */}
+                  <SegmentedControl size="sm" variant="dark" aria-label="Curve">
+                    <Segment selected={photo.hilbertCurve !== "peano"} title="Hilbert: each square folds into four - bold steps of tone" onClick={() => actions.set({ hilbertCurve: undefined })}>Hilbert</Segment>
+                    <Segment selected={photo.hilbertCurve === "peano"} title="Peano: each square folds into nine - a woven, back-and-forth texture with bigger steps of tone; best with Blend" onClick={() => actions.set({ hilbertCurve: "peano" })}>Peano</Segment>
+                  </SegmentedControl>
+                  <div className={styles.fillRow}>
+                    {/* 0, square corners - a circuit board; 100, every turn a curve - a worm. */}
+                    <NumberField label="Rounding" unit="%" min={0} max={100} step={10} value={Math.round((photo.hilbertRound ?? 0) * 100)} onChange={(v) => actions.set({ hilbertRound: v > 0 ? v / 100 : undefined })} />
+                    {/* 0, hard steps of tone; 100, neighbouring steps mixed where the tone falls between them. */}
+                    <NumberField label="Blend" unit="%" min={0} max={100} step={10} value={Math.round((photo.hilbertBlend ?? 0) * 100)} onChange={(v) => actions.set({ hilbertBlend: v > 0 ? v / 100 : undefined })} />
+                    <NumberField label="Angle" unit="°" min={-180} max={180} step={15} value={photo.hilbertAngle ?? 0} onChange={(v) => actions.set({ hilbertAngle: v || undefined })} />
+                  </div>
+                  <Checkbox size="md" checked={Boolean(photo.hilbertLift)} label="Lift the pen in white areas" onChange={(e) => actions.set({ hilbertLift: e.target.checked || undefined })} />
+                  {eachLayer("These settings")}
+                </>
+              ) : photo.style === "outlines" ? (
+                <>
+                  {/* No angles: contours follow the photo, not a direction. */}
+                  <div className={styles.fillRow}>
+                    <NumberField label="Lines" min={1} max={40} step={1} value={photo.contours ?? OUTLINE_DEFAULTS.contours} onChange={(contours) => actions.set({ contours })} />
+                    <NumberField label="Smoothing mm" min={0} max={20} step={0.25} value={photo.smoothMm ?? OUTLINE_DEFAULTS.smoothMm} onChange={(smoothMm) => actions.set({ smoothMm })} />
+                  </div>
+                  {eachLayer("Lines and smoothing")}
+                </>
+              ) : photo.style === "squiggle" ? (
+                <>
+                  {/* The rows are level, every layer alike, unless turned here. */}
+                  {/* Which SquiggleDraw: the Processing sketch, whose waves tighten in the darks, or the
+                    Inkscape extension's grid, whose waves keep their frequency and only grow. */}
+                  <SegmentedControl size="sm" variant="dark" aria-label="SquiggleDraw version">
+                    <Segment selected={photo.squiggleVersion !== "inkscape"} title="Processing: SquiggleDraw's sketch - waves taller and tighter where it's darker" onClick={() => actions.set({ squiggleVersion: undefined })}>Processing</Segment>
+                    <Segment selected={photo.squiggleVersion === "inkscape"} title="Inkscape: SquiggleDraw for Inkscape - a grid of cells, the same number of rounded waves in each, taller where it's darker" onClick={() => actions.set({ squiggleVersion: "inkscape" })}>Inkscape</Segment>
+                  </SegmentedControl>
+                  {photo.squiggleVersion === "inkscape" ? (
+                    <>
+                      {/* The extension's own controls, its names, ranges and numbers; the angle and lifting are Photo's. */}
+                      <div className={styles.fillRow}>
+                        {squiggleAngleField}
+                        {inkscapeField("rows")}
+                      </div>
+                      <div className={styles.fillRow}>
+                        {inkscapeField("cols")}
+                        {inkscapeField("freq")}
+                      </div>
+                      <div className={styles.fillRow}>
+                        {inkscapeField("amp")}
+                        <InputSelect size="md" label="Path direction" value={squiggleInkscapeOf(photo).path} onChange={(e) => setInkscape({ path: e.target.value as SquiggleInkscape["path"] })}>
+                          <option value="uni">Left-to-Right</option>
+                          <option value="bidi">Back-and-Forth</option>
+                          <option value="join">Back-and-Forth with Joined Ends</option>
+                        </InputSelect>
+                      </div>
+                      <Checkbox size="md" checked={squiggleInkscapeOf(photo).invert} label="Invert colors" onChange={(e) => setInkscape({ invert: e.target.checked })} />
+                      <Checkbox size="md" checked={Boolean(photo.squiggleLift)} label="Lift the pen in white areas" onChange={(e) => actions.set({ squiggleLift: e.target.checked || undefined })} />
+                      <Button size="sm" variant="secondary" onClick={() => actions.set({ squiggleInkscape: undefined })}>Default</Button>
+                    </>
+                  ) : (
+                    <>
+                      {/* SquiggleDraw's own controls, its names, ranges and numbers, so a photo comes out as
+                        the sketch draws it; the angle, smoothness and lifting are Photo's, over it. */}
+                      <div className={styles.fillRow}>
+                        {squiggleAngleField}
+                        {squiggleField("lines")}
+                      </div>
+                      <div className={styles.fillRow}>
+                        {squiggleField("strength")}
+                        {squiggleField("frequency")}
+                      </div>
+                      <div className={styles.fillRow}>
+                        {squiggleField("detail")}
+                        {squiggleField("lineWidth")}
+                      </div>
+                      <div className={styles.fillRow}>
+                        {squiggleField("black")}
+                        {squiggleField("white")}
+                      </div>
+                      <div className={styles.fillRow}>
+                        {squiggleField("scale")}
+                        {/* How round the waves are: 0 a zigzag, 100 as SquiggleDraw draws them, 200 broad round crests. */}
+                        <NumberField label="Smoothness" unit="%" min={0} max={200} step={10} value={Math.round((photo.squiggleSmooth ?? 1) * 100)} onChange={(v) => actions.set({ squiggleSmooth: v / 100 })} />
+                      </div>
+                      <Checkbox size="md" checked={squiggleDrawOf(photo).invert} label="Invert colors" onChange={(e) => setSquiggle({ invert: e.target.checked })} />
+                      <Checkbox size="md" checked={Boolean(photo.squiggleJoin)} label="Connect ends" onChange={(e) => actions.set({ squiggleJoin: e.target.checked || undefined })} />
+                      <Checkbox size="md" checked={Boolean(photo.squiggleLift)} label="Lift the pen in white areas" onChange={(e) => actions.set({ squiggleLift: e.target.checked || undefined })} />
+                      <Button size="sm" variant="secondary" onClick={() => actions.set({ squiggleDraw: undefined, squiggleSmooth: undefined, squiggleJoin: undefined })}>Default</Button>
+                    </>
+                  )}
+                  {eachLayer("These settings")}
+                </>
+              ) : photo.style === "waves" ? (
+                <>
+                  {/* The layers' angles first, as Hatching's. */}
+                  {anglePresets}
+                  <div className={`${styles.fillRow} ${styles.oneRow}`}>
+                    {angleField}
+                    <NumberField label="Spacing mm" min={0.2} max={20} step={0.25} value={photo.rowMm ?? WAVE_DEFAULTS.rowMm} onChange={(rowMm) => actions.set({ rowMm })} />
+                    <NumberField label="Wavelength mm" min={0.2} max={20} step={0.1} value={photo.waveMm ?? WAVE_DEFAULTS.waveMm} onChange={(waveMm) => actions.set({ waveMm })} />
+                  </div>
+                  {eachLayer("Angle, spacing and wavelength")}
+                </>
+              ) : (
+                <>
+                  {anglePresets}
+                  <div className={`${styles.fillRow} ${styles.oneRow}`}>
+                    {angleField}
+                    <NumberField label="Spacing mm" min={0.1} max={5} step={0.05} value={photo.spacingMm} onChange={(spacingMm) => actions.set({ spacingMm })} />
+                    <NumberField label="Passes" min={1} max={MOST_PASSES} step={1} value={photo.levels} onChange={(levels) => actions.set({ levels })} />
+                  </div>
+                  {/* When the lines can't cover enough of the paper for colors to reach full strength: by how
+                    much, and the spacing that would. */}
+                  {(() => {
+                    const pen = photo.penMm ?? penWidthMm;
+                    const fullest = (spacing: number) => { const steps = coverSteps(pen, spacing, photo.levels); return steps[steps.length - 1]; };
+                    const most = fullest(photo.spacingMm);
+                    if (most >= 0.7) return null;
+                    let enough = photo.spacingMm;
+                    while (enough > 0.1 && fullest(enough) < 0.85) enough = Math.round((enough - 0.05) * 100) / 100;
+                    return (
+                      <p className={styles.empty}>
+                        {`${photo.levels} ${photo.levels === 1 ? "pass" : "passes"} of a ${pen} mm line at ${photo.spacingMm} mm spacing cover at most ${Math.round(most * 100)}% of the paper, so colors stay paler than the image's.${enough < photo.spacingMm ? ` About ${enough} mm spacing would let them reach full strength.` : ""}`}
+                      </p>
+                    );
+                  })()}
+                  {/* The photo smoothed before it's hatched, so busy patches read as tone rather than dashes. */}
+                  <div className={styles.fillRow}>
+                    <NumberField label="Smoothing mm" min={0} max={5} step={0.1} value={photo.hatchSmoothMm ?? 0} onChange={(v) => actions.set({ hatchSmoothMm: v > 0 ? v : undefined })} />
+                    {/* Strokes shorter than this are left out: dabs, not lines. Until it's set, one and
+                      a half line spacings, following the spacing. */}
+                    <div title="Leave out strokes shorter than this: a tap of the pen rather than a line. Until set, one and a half line spacings">
+                      <NumberField
+                        label="Shortest stroke mm"
+                        min={0}
+                        max={50}
+                        step={0.1}
+                        value={hatchShortestOf(photo)}
+                        onChange={(v) => actions.set({ hatchShortestMm: Math.abs(v - hatchShortestOf({ spacingMm: photo.spacingMm })) < 1e-9 ? undefined : Math.max(0, v) })}
+                      />
+                    </div>
+                  </div>
+                  {eachLayer("Angle, spacing, passes, smoothing and shortest stroke")}
+                </>
+              )}
+              <p className={styles.empty}>
+                {marks
+                  ? photo.style === "silhouette"
+                    ? `${marks.strokes.toLocaleString()} ${marks.strokes === 1 ? "loop" : "loops"}: the shape's outline${marks.strokes > 1 ? " and the holes in it" : ""}, where the picture meets white paper. Paper lighter than sets what counts as paper; Smallest drops specks and flecks.`
+                    : photo.style === "centerlines"
+                    ? `${marks.strokes.toLocaleString()} ${marks.strokes === 1 ? "line" : "lines"}${marks.circles ? `, ${marks.circles} of them ${marks.circles === 1 ? "a circle" : "circles"}` : ""}, each drawn once down the middle of a stroke in the picture${marks.widthMm ? ` (they're about ${marks.widthMm.toFixed(1)} mm wide there)` : ""}. Darker than sets what counts as a line; Shortest drops specks and whiskers.`
+                    : photo.style === "streamlines"
+                    ? `${marks.strokes.toLocaleString()} lines, flowing along the image's shapes. They run from Spacing apart in the blacks to Widest apart, past which it's paper; Flow sets how broadly the shapes are followed${(photo.streamPasses ?? 1) > 1 ? ", and a second pass crosses the first in the darker half" : ""}.`
+                    : photo.style === "oneline"
+                    ? `${marks.strokes === 1 ? "One line" : `${marks.strokes.toLocaleString()} lines`} through ${(marks.dots ?? 0).toLocaleString()} dots, ${((marks.lengthMm ?? 0) / 1000).toFixed(1)} m of drawing. The dots are thicker where the image is darker, so the line winds tighter there.${marks.strokes > 1 ? " The pen lifts over jumps longer than Lift over." : ""}`
+                    : photo.style === "hilbert"
+                    ? `${marks.strokes === 1 ? "One line" : `${marks.strokes.toLocaleString()} lines`}, ${((marks.lengthMm ?? 0) / 1000).toFixed(1)} m of drawing, folding finer where the image is darker: from Coarsest in the lightest parts down to Spacing in the blacks, ${photo.hilbertCurve === "peano" ? "a third" : "halving"} at each step.${photo.hilbertLift ? " The pen lifts where there's nothing to draw." : ""}`
+                    : photo.style === "outlines"
+                    ? `${marks.strokes.toLocaleString()} contours, along the image's edges and shapes. More lines follow finer changes of tone; more smoothing, only the big ones.`
+                    : photo.style === "squiggle"
+                    ? `${marks.strokes.toLocaleString()} ${marks.strokes === 1 ? "line" : "lines"}. Each row swings higher and waves tighter where the image is darker${photo.squiggleLift ? ", and lifts off where there's nothing to draw" : ", and runs on flat through white"}. As SquiggleDraw ${photo.squiggleVersion === "inkscape" ? "for Inkscape" : "in Processing"} draws it, with its controls and numbers.`
+                    : photo.style === "waves"
+                    ? `${marks.strokes.toLocaleString()} strokes. Each row waves harder and tighter where the image is darker; white is left as paper.`
+                    : `${marks.strokes.toLocaleString()} strokes. The spacing starts at the pen’s solid-fill spacing; each pass adds lines where the image is darker.`
+                  : "Reading the image…"}
+              </p>
+            </Section>
+          </div>
+        </Card>
+      ) : (
+        <Card key={p.id} variant="flat" className={styles.controls}>
+          <div className={`${styles.cardBody} ${controls.cardSections}`}>
+            {/* Folded, as a folded card is: the effect and its layers. Clicked anywhere, it's the pass worked on. */}
+            <fieldset className={controls.section} data-collapsed="true" onClick={() => !busy && actions.pickPass(p.id)}>
+              <legend className={controls.legend}>
+                <span className={controls.legendRow}>
+                  <button type="button" className={controls.sectionToggle} aria-expanded={false} disabled={busy}>
+                    <ChevronRight className={controls.sectionChevron} aria-hidden="true" data-open={false} />
+                    <span className={controls.iconTitle}>{p.effect.icon}{p.effect.label}</span>
+                  </button>
+                  <span className={controls.toolInTitle}>{p.layers === 1 ? "1 layer" : `${p.layers} layers`}</span>
+                </span>
+              </legend>
+            </fieldset>
+          </div>
+        </Card>
+      ))}
     </>
   );
 }
