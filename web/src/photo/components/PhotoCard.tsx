@@ -43,8 +43,6 @@ export interface PhotoActions {
   /** Split by best fit again, with or without two pens hatched across each other. */
   setPairs: (on: boolean) => void;
   setKeyLayer: (on: boolean) => void;
-  place: (how: "fit" | "fill", margin: number) => void;
-  setMargin: (margin: number) => void;
   /** Draw a plate in another of the pen's colors, by its name in the palette. */
   setPlatePen: (plate: Plate, penName: string) => void;
   /** B&W split around the paper: so many layers darker than it and lighter, the tones between left bare. */
@@ -472,12 +470,6 @@ export function PhotoCard({ shape, title, shapes, busy, targeted, layerCount, sh
                 label="B&W"
                 onChange={(e) => actions.set({ saturation: e.target.checked ? -100 : undefined })}
               />
-              {/* Filling the page, inside the margin, the image cropped to it: Image's alone. Its scale, turn
-                and Fit are on the Paper card, as in every app. */}
-              <div className={styles.fillRow}>
-                <Button size="sm" variant="secondary" title="Fill page: the whole page inside the margin, the image cropped to it" onClick={() => actions.place("fill", photo.margin ?? 0.5)}>Fill page</Button>
-                <NumberField label="Margin" unit="in" min={0} max={4} step={0.25} value={photo.margin ?? 0.5} onChange={actions.setMargin} />
-              </div>
               {/* Passes over the picture: hatching for the shading and edges over it, say - each its own
                 effect, settings and layers, the picture and its place shared. Which one the cards below
                 are about, and adding or taking one off. */}

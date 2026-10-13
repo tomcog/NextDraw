@@ -27,8 +27,8 @@ interface Props {
   /** A new width and height, in mm: the paper turned, or a custom size typed in. */
   onDimensions: (w: number, h: number) => void;
   onColor: (color: string) => void;
-  /** Plot: measure in inches or millimetres. Studio works in inches alone, so it doesn't pass this. */
-  onUnits?: (units: Units) => void;
+  /** Measure in inches or millimetres: one choice for all three apps (useUnits, and Plot's settings). */
+  onUnits: (units: Units) => void;
   /** Turn the drawing a quarter turn, 1 right or -1 left, about its middle; the paper stays as it lies.
    *  Left out while there is no drawing to turn. */
   onTurnDrawing?: (dir: 1 | -1) => void;
@@ -54,7 +54,7 @@ const PAPER_COLORS = [
 /**
  * Shared: the paper, the same card in every app - its size, the way it lies and its colour, and the
  * drawing on it: its turn, and fitting it to the paper. Each app does those to the drawing
- * itself, so all three show the same. Plot alone passes its units.
+ * itself, so all three show the same. Every app passes all of it: the card is the same everywhere.
  */
 export function PaperSection({ w, h, sizeId, units, color, collapsibleKey, disabled, onSize, onDimensions, onColor, onUnits, onTurnDrawing, onFit }: Props) {
   const landscape = w >= h;
@@ -144,7 +144,7 @@ export function PaperSection({ w, h, sizeId, units, color, collapsibleKey, disab
           {/* Its width and height are in the fields below, so the menu needn't repeat them. */}
           <option value="custom">{custom ? "Custom" : "Custom size…"}</option>
         </InputSelect>
-        {onUnits && <UnitSwitch units={units} disabled={disabled} onChange={onUnits} />}
+        <UnitSwitch units={units} disabled={disabled} onChange={onUnits} />
         {/* The paper lies one way or the other, never both: a choice of two, like the toolbar's.
             A square sheet lies neither way, so neither is chosen. */}
         <SegmentedControl size="sm" variant="dark" aria-label="Which way the paper lies">
@@ -177,54 +177,58 @@ export function PaperSection({ w, h, sizeId, units, color, collapsibleKey, disab
         </div>
       )}
 
-      {/* The drawing on the paper, turned a quarter about its own middle. The paper stays as it is -
-          the switch beside its size is what turns the paper. */}
-      {onTurnDrawing && (
-        <div className={styles.scaleRow}>
-          <ButtonRound size="sm" icon={<RotateCcwSquare />} aria-label="Turn the drawing left" title="Turn the drawing 90° left, on the paper" disabled={disabled} onClick={() => onTurnDrawing(-1)} />
-          <ButtonRound size="sm" icon={<RotateCwSquare />} aria-label="Turn the drawing right" title="Turn the drawing 90° right, on the paper" disabled={disabled} onClick={() => onTurnDrawing(1)} />
+      {/* What's done to the drawing on the paper, apart from the paper itself: turning it, and fitting
+          it inside a margin. Folds on its own, its choice remembered per app. */}
+      <Section title="Drawing transform" collapsibleKey={`${collapsibleKey}-transform`}>
+        {/* One row: the drawing turned a quarter about its own middle - the paper stays as it is, the
+            switch beside its size is what turns the paper - then Fit: as big as the paper allows
+            inside the margin. A drawing of another proportion than the paper fills it only one way;
+            the alignment below says where it sits the other way - centred, or against an edge. */}
+        <div className={styles.transformRow}>
+          {onTurnDrawing && (
+            <>
+              <ButtonRound size="sm" icon={<RotateCcwSquare />} aria-label="Turn the drawing left" title="Turn the drawing 90° left, on the paper" disabled={disabled} onClick={() => onTurnDrawing(-1)} />
+              <ButtonRound size="sm" icon={<RotateCwSquare />} aria-label="Turn the drawing right" title="Turn the drawing 90° right, on the paper" disabled={disabled} onClick={() => onTurnDrawing(1)} />
+            </>
+          )}
+          <div className={styles.marginField}>
+            <LengthField label="Margin" mm={margin} units={units} min={0} disabled={disabled} onChange={keepMargin} />
+          </div>
+          <Button
+            size="sm"
+            variant="secondary"
+            title={roomLeft
+              ? `Fit: scale the drawing to fill the paper inside a ${fmtLen(margin, units)} margin, placed as the alignment below says`
+              : "The margin leaves no paper to fit the drawing into"}
+            disabled={disabled || !onFit || !roomLeft}
+            onClick={() => onFit?.(margin, align)}
+          >
+            Fit
+          </Button>
         </div>
-      )}
-
-      {/* Fit: as big as the paper allows inside the margin. A drawing of another proportion than the
-          paper fills it only one way; the alignment says where it sits the other way - centred, or
-          against an edge, for a composition that wants to sit to one side. */}
-      <div className={styles.scaleRow}>
-        <LengthField label="Margin" mm={margin} units={units} min={0} disabled={disabled} onChange={keepMargin} />
-        <Button
-          size="sm"
-          variant="secondary"
-          title={roomLeft
-            ? `Scale the drawing to fill the paper inside a ${fmtLen(margin, units)} margin, placed as the alignment below says`
-            : "The margin leaves no paper to fit the drawing into"}
-          disabled={disabled || !onFit || !roomLeft}
-          onClick={() => onFit?.(margin, align)}
-        >
-          Fit to paper
-        </Button>
-      </div>
-      {onFit && (
-        <div className={styles.fitAlign}>
-          <SegmentedControl size="sm" variant="dark" aria-label="Fit across: left, center or right">
-            {[
-              { x: 0 as const, icon: <AlignHorizontalJustifyStart />, label: "Left", hint: "Fit against the left margin" },
-              { x: 0.5 as const, icon: <AlignHorizontalJustifyCenter />, label: "Center", hint: "Fit centered across the paper" },
-              { x: 1 as const, icon: <AlignHorizontalJustifyEnd />, label: "Right", hint: "Fit against the right margin" },
-            ].map(({ x, icon, label, hint }) => (
-              <Segment key={label} selected={align.x === x} icon={icon} aria-label={label} title={hint} disabled={disabled} onClick={() => keepAlign({ ...align, x })} />
-            ))}
-          </SegmentedControl>
-          <SegmentedControl size="sm" variant="dark" aria-label="Fit down: top, middle or bottom">
-            {[
-              { y: 0 as const, icon: <AlignVerticalJustifyStart />, label: "Top", hint: "Fit against the top margin" },
-              { y: 0.5 as const, icon: <AlignVerticalJustifyCenter />, label: "Middle", hint: "Fit centered down the paper" },
-              { y: 1 as const, icon: <AlignVerticalJustifyEnd />, label: "Bottom", hint: "Fit against the bottom margin" },
-            ].map(({ y, icon, label, hint }) => (
-              <Segment key={label} selected={align.y === y} icon={icon} aria-label={label} title={hint} disabled={disabled} onClick={() => keepAlign({ ...align, y })} />
-            ))}
-          </SegmentedControl>
-        </div>
-      )}
+        {onFit && (
+          <div className={styles.fitAlign}>
+            <SegmentedControl size="sm" variant="dark" aria-label="Fit across: left, center or right">
+              {[
+                { x: 0 as const, icon: <AlignHorizontalJustifyStart />, label: "Left", hint: "Fit against the left margin" },
+                { x: 0.5 as const, icon: <AlignHorizontalJustifyCenter />, label: "Center", hint: "Fit centered across the paper" },
+                { x: 1 as const, icon: <AlignHorizontalJustifyEnd />, label: "Right", hint: "Fit against the right margin" },
+              ].map(({ x, icon, label, hint }) => (
+                <Segment key={label} selected={align.x === x} icon={icon} aria-label={label} title={hint} disabled={disabled} onClick={() => keepAlign({ ...align, x })} />
+              ))}
+            </SegmentedControl>
+            <SegmentedControl size="sm" variant="dark" aria-label="Fit down: top, middle or bottom">
+              {[
+                { y: 0 as const, icon: <AlignVerticalJustifyStart />, label: "Top", hint: "Fit against the top margin" },
+                { y: 0.5 as const, icon: <AlignVerticalJustifyCenter />, label: "Middle", hint: "Fit centered down the paper" },
+                { y: 1 as const, icon: <AlignVerticalJustifyEnd />, label: "Bottom", hint: "Fit against the bottom margin" },
+              ].map(({ y, icon, label, hint }) => (
+                <Segment key={label} selected={align.y === y} icon={icon} aria-label={label} title={hint} disabled={disabled} onClick={() => keepAlign({ ...align, y })} />
+              ))}
+            </SegmentedControl>
+          </div>
+        )}
+      </Section>
 
       {colorsOpen && (
         <div className={styles.paperColors} role="radiogroup" aria-label="Paper color">

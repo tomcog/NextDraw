@@ -243,10 +243,12 @@
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 0.5rem;
+  justify-content: space-between;
+  gap: 0.75rem;
 }
 
-.paperRow > :first-child { flex: 1; min-width: 0; }
+/* The size menu only as wide as a size needs, so the units and the way the paper lies have room. */
+.paperRow > :first-child { flex: 0 1 6.5rem; min-width: 0; }
 
 /* A custom paper's width and height, side by side, sharing the card's width. Each may shrink below
    a number box's natural width (about 134px), which on its own pushed the pair out of the card. */
@@ -267,6 +269,17 @@
 }
 
 .scaleRow > :first-child { flex: 0 1 7rem; min-width: 5rem; }
+
+/* The Paper card's drawing transform: the turn buttons, a narrow margin and Fit, on one line. The
+   buttons sit level with the field's box, its label hanging below it. */
+.transformRow {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
+  margin-top: 0.5rem;
+}
+
+.marginField { flex: 0 0 3.5rem; min-width: 0; }
 
 /* Fit to paper's alignment: across, then down. */
 .fitAlign {

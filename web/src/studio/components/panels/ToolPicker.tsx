@@ -67,7 +67,7 @@ export function ToolPicker({ tool, onTool, simplifying, onSimplify, layersOut, o
         </SegmentedControl>
       </Toolbar>
       <Toolbar tone="white" orientation="vertical" aria-label="Tools">
-        <SegmentedControl size="sm" aria-label="Tool">
+        <SegmentedControl size="sm" variant="dark" aria-label="Tool">
           {TOOLS.map(segment)}
         </SegmentedControl>
       </Toolbar>

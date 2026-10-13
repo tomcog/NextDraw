@@ -691,12 +691,6 @@ export function photoActions(ctx: PhotoContext) {
       : sh)));
   };
 
-  /** The margin a photo is sized inside: changing it sizes the photo again, if it's sized to the page. */
-  const setPhotoMargin = (margin: number) => {
-    if (!chosen?.photo) return;
-    if (chosen.photo.fit) return placePhoto(chosen.photo.fit, margin);
-    setPhotoOf({ margin });
-  };
 
   /**
     * Put a different picture in the chosen photo - all its layers - keeping everything else: how it's
@@ -1115,7 +1109,7 @@ export function photoActions(ctx: PhotoContext) {
 
   return {
     addPhoto, addSeparations, switchPhotoMode, setKeyLayer, splitPhoto, splitPhotoByColor, splitPhotoBestFit, bestPens,
-    placePhoto, setPhotoMargin, replacePhoto, reloadPhoto, turnPhoto, setPhotoOf, addEdgeMask, chooseEdgeMask, deleteEdgeMask, setEdgeGen, saveEdgeGen, setAngles, photoStem, splitPhotoCmyk, setPlatePen, setLayerColor,
+    placePhoto, replacePhoto, reloadPhoto, turnPhoto, setPhotoOf, addEdgeMask, chooseEdgeMask, deleteEdgeMask, setEdgeGen, saveEdgeGen, setAngles, photoStem, splitPhotoCmyk, setPlatePen, setLayerColor,
     splitAroundPaper, setPaperTone, addPass, removePass,
   };
 }

@@ -45,6 +45,7 @@ import { TextCard } from "./components/panels/TextCard";
 import { SelectionCard } from "./components/panels/SelectionCard";
 import { FillPanel } from "./components/panels/FillPanel";
 import { FileSection } from "../shared/components/controls/FileSection";
+import { useUnits } from "../shared/lib/useUnits";
 import { FileToolbar } from "../shared/components/FileToolbar";
 import { GridSection } from "./components/panels/GridSection";
 import { SIMPLIFIER_START, SimplifierSection, type SimplifierState } from "./components/panels/SimplifierSection";
@@ -238,6 +239,8 @@ export default function App() {
  // in the drawing, like its size, so all three apps show the same paper; this browser remembers the
  // last one for a new drawing.
  const [paperColor, setPaperColor] = useState(() => load<string>(PAPER_COLOR_KEY) ?? "#ffffff");
+ // Inches or millimetres for the Paper card: one choice for all three apps.
+ const [units, setUnits] = useUnits();
  useEffect(() => remember(PAPER_COLOR_KEY, paperColor), [paperColor]);
  // Which of the rail's cards are out, from the toolbar at the left, as in Photo and Plot.
  const [fileCard, setFileCard] = useState(() => load<boolean>("studio-file-card") ?? true);
@@ -1498,7 +1501,8 @@ export default function App() {
    w={page.w * 25.4}
    h={page.h * 25.4}
    sizeId={sizeId}
-   units="in"
+   units={units}
+   onUnits={setUnits}
    color={paperColor}
    collapsibleKey="paper"
    onSize={setSize}

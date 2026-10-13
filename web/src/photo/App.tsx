@@ -4,6 +4,7 @@ import { Button, Card } from "@tomcoggia/ui";
 import "../shared/lib/drawing/separationWorker";
 import { DrawingToolSection } from "../shared/components/controls/DrawingToolSection";
 import { FileSection } from "../shared/components/controls/FileSection";
+import { useUnits } from "../shared/lib/useUnits";
 import { FileToolbar } from "../shared/components/FileToolbar";
 import { PaperSection } from "../shared/components/controls/PaperSection";
 import { Section } from "../shared/components/controls/Section";
@@ -71,6 +72,8 @@ type Next = { kind: "new" } | { kind: "photos"; files: File[]; skipped?: string[
 export default function App() {
   const [page, setPage] = useState<Page>({ w: 11, h: 8.5 });
   const [paperColor, setPaperColor] = useState(() => load<string>(PAPER_COLOR_KEY) ?? "#ffffff");
+  // Inches or millimetres for the Paper card: one choice for all three apps.
+  const [units, setUnits] = useUnits();
   // A paper color chosen by hand, as opposed to one a drawing opens with (see the effect that follows it).
   const paperPicked = useRef(false);
   // Kept in the drawing, like its size, so all three apps show the same paper: picking one is a change.
@@ -304,7 +307,7 @@ export default function App() {
 
   const {
     addPhoto, addSeparations, switchPhotoMode, setKeyLayer, splitPhoto, splitPhotoByColor, splitPhotoBestFit, bestPens,
-    placePhoto, setPhotoMargin, replacePhoto, reloadPhoto, turnPhoto, setPhotoOf, addEdgeMask, chooseEdgeMask, deleteEdgeMask, setEdgeGen, saveEdgeGen, setAngles, photoStem, splitPhotoCmyk, setPlatePen, setLayerColor,
+    placePhoto, replacePhoto, reloadPhoto, turnPhoto, setPhotoOf, addEdgeMask, chooseEdgeMask, deleteEdgeMask, setEdgeGen, saveEdgeGen, setAngles, photoStem, splitPhotoCmyk, setPlatePen, setLayerColor,
     splitAroundPaper, setPaperTone, addPass, removePass,
   } = photoActions({
     chosen, shapes, setShapes, layers, setLayers, active, setActiveLayer, page, tool,
@@ -453,7 +456,8 @@ export default function App() {
       w={page.w * 25.4}
       h={page.h * 25.4}
       sizeId={sizeId}
-      units="in"
+      units={units}
+      onUnits={setUnits}
       color={paperColor}
       collapsibleKey="photo-paper"
       disabled={busy}
@@ -464,7 +468,7 @@ export default function App() {
       }}
       onColor={pickPaperColor}
       // The image on the paper - its turn, and Fit with the Paper card's margin and alignment, which
-      // the image keeps, so Fill uses the same margin.
+      // the image keeps, so it follows the paper when that changes.
       onTurnDrawing={chosen?.photo ? (dir) => void turnPhoto(dir) : undefined}
       onFit={chosen?.photo ? (marginMm, align) => placePhoto("fit", marginMm / 25.4, align) : undefined}
     />
@@ -643,8 +647,6 @@ export default function App() {
         splitBestFit: (count) => splitPhotoBestFit(count),
         setPairs: (on) => splitPhotoBestFit(inks, {}, on),
         setKeyLayer,
-        place: placePhoto,
-        setMargin: setPhotoMargin,
         setAngles,
         splitCmyk: (set) => splitPhotoCmyk({}, set),
         setPlatePen,
