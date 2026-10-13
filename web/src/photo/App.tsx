@@ -5,7 +5,6 @@ import "../shared/lib/drawing/separationWorker";
 import { DrawingToolSection } from "../shared/components/controls/DrawingToolSection";
 import { FileSection } from "../shared/components/controls/FileSection";
 import { useUnits } from "../shared/lib/useUnits";
-import { FileToolbar } from "../shared/components/FileToolbar";
 import { PaperSection } from "../shared/components/controls/PaperSection";
 import { Section } from "../shared/components/controls/Section";
 import controls from "../shared/components/controls/controls.module.css";
@@ -40,7 +39,7 @@ import { dropWork, loadWork, type Work } from "./lib/workInProgress";
 import { PhotoCard } from "./components/PhotoCard";
 import { PhotoHeader } from "./components/PhotoHeader";
 import { GENERAL_PEN } from "./lib/generalPen";
-import { folderOf, inksOf, separationFiles, type Inks } from "./lib/separationFolder";
+import { folderOf, type Inks } from "./lib/separationFolder";
 import styles from "./App.module.css";
 
 // NextDraw Photo: a photo turned into lines for the tool's pens, saved as an ordinary layered drawing
@@ -443,9 +442,6 @@ export default function App() {
     </div>
   );
 
-  // The same drawing, in Studio - changes not saved go along.
-  const editInStudio = () => void file.goTo("studio");
-
   // ---- The rail ----
 
   // The file browser, open to pick a drawing.
@@ -679,6 +675,7 @@ export default function App() {
               busy={busy}
               confirm={confirmBlock}
               onSave={() => file.save()}
+              onOpen={() => setBrowsing("drawing")}
             />
           </div>
         </Card>
@@ -795,36 +792,6 @@ export default function App() {
       <main ref={mainRef} className={styles.layout} data-rail={railOut ? undefined : "none"}>
         <div className={styles.tools}>
           <AppSwitch current="photo" orientation="vertical" onRefused={(why) => setMessage({ text: why, ok: false })} />
-          {/* What's done with whole drawings, opening down: the File card keeps Save. */}
-          <FileToolbar
-      busy={busy}
-            hasShapes={shapes.length > 0}
-            onOpen={() => setBrowsing("drawing")}
-            onOpenPhotos={async (files) => {
-              if (!files.length) return;
-              if (files.length === 1) return ask({ kind: "photos", files });
-              // Several at once are separations: each one's ink is read from its name, Claude asked
-              // for the names this app doesn't know.
-              setMessage({ text: "Reading the inks from the file names…", ok: true, progress: true });
-              const found = await inksOf(files, tool.palette ?? []);
-              setMessage({ text: "", ok: true });
-              ask({ kind: "photos", files, found });
-            }}
-            onOpenFolder={async (files) => {
-              setMessage({ text: "Reading the inks from the file names…", ok: true, progress: true });
-              const { use, skipped, ...found } = await separationFiles(files, tool.palette ?? []);
-              setMessage({ text: "", ok: true });
-              if (use.length) ask({ kind: "photos", files: use, skipped, found });
-              else setMessage({ text: "There are no images in that folder", ok: false });
-            }}
-            onNew={() => ask({ kind: "new" })}
-            onEditInStudio={editInStudio}
-            onSendToPlot={() => void file.goTo("plot")}
-            onSnapshot={async () => {
-              const res = await file.snapshot();
-              if (res) setSnapped({ name: res.name.replace(/\.svg$/i, ""), path: res.path });
-            }}
-          />
           <PanelToolbar
             cards={[
               { key: "file", on: fileCard, toggle: () => setFileCard((on) => !on) },

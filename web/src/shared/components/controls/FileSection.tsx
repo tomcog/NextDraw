@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 import { ButtonRound, InputText } from "@tomcoggia/ui";
-import { Save } from "lucide-react";
+import { FolderOpen, Save } from "lucide-react";
 import { FileCard } from "./FileCard";
 import controls from "./controls.module.css";
 
@@ -16,16 +16,17 @@ interface Props {
   /** The question asked before a new drawing replaces one with unsaved work, when it's being asked. */
   confirm: ReactNode;
   onSave: () => void;
+  /** Open another drawing in this one's place: the file browser, which asks about unsaved work. */
+  onOpen: () => void;
   /** Under which the card's folding is remembered: the app's own. */
   collapsibleKey: string;
 }
 
 /**
- * Shared: the File card's inside in all three apps - the drawing's name, where it's saved, and Save -
- * in the File card every app has (FileCard). In Studio and Image, opening, starting and sending are the
- * File toolbar's, in the left-hand column (FileToolbar); Save stays here, beside the name it saves under.
+ * Shared: the File card's inside in all three apps - the drawing's name, where it's saved, and Open
+ * and Save - in the File card every app has (FileCard).
  */
-export function FileSection({ name, onName, saved, dirty, hasShapes, busy, confirm, onSave, collapsibleKey }: Props) {
+export function FileSection({ name, onName, saved, dirty, hasShapes, busy, confirm, onSave, onOpen, collapsibleKey }: Props) {
   return (
     <FileCard
       fileName={name || null}
@@ -33,17 +34,20 @@ export function FileSection({ name, onName, saved, dirty, hasShapes, busy, confi
       // The question about unsaved work is asked in here: never folded away while it's waiting.
       forceOpen={Boolean(confirm)}
       action={
-        // A safety-toned round button: the half of "are you sure?" that keeps the work, and the one
-        // button here that writes a file.
-        <ButtonRound
-          size="sm"
-          tone="safety"
-          icon={<Save />}
-          aria-label="Save"
-          title={`Save this drawing${saved ? ` to ${saved.folder}` : ""}`}
-          disabled={busy || !hasShapes || !dirty}
-          onClick={onSave}
-        />
+        <span className={controls.headerTools}>
+          <ButtonRound size="sm" icon={<FolderOpen />} aria-label="Open a drawing" title="Open another drawing in this one's place" disabled={busy} onClick={onOpen} />
+          {/* A safety-toned round button: the half of "are you sure?" that keeps the work, and the one
+              button here that writes a file. */}
+          <ButtonRound
+            size="sm"
+            tone="safety"
+            icon={<Save />}
+            aria-label="Save"
+            title={`Save this drawing${saved ? ` to ${saved.folder}` : ""}`}
+            disabled={busy || !hasShapes || !dirty}
+            onClick={onSave}
+          />
+        </span>
       }
     >
       <InputText

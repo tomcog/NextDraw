@@ -1898,6 +1898,7 @@ export default function App() {
                 busy={busy || saving}
                 confirm={null}
                 onSave={() => void saveDrawing()}
+                onOpen={openBrowser}
               />
               {shownMisfits && (
                 <div className={styles.misfits} role="status">

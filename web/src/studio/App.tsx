@@ -46,7 +46,6 @@ import { SelectionCard } from "./components/panels/SelectionCard";
 import { FillPanel } from "./components/panels/FillPanel";
 import { FileSection } from "../shared/components/controls/FileSection";
 import { useUnits } from "../shared/lib/useUnits";
-import { FileToolbar } from "../shared/components/FileToolbar";
 import { GridSection } from "./components/panels/GridSection";
 import { SIMPLIFIER_START, SimplifierSection, type SimplifierState } from "./components/panels/SimplifierSection";
 import { ToolPicker } from "./components/panels/ToolPicker";
@@ -227,7 +226,6 @@ export default function App() {
  };
  const [busy, setBusy] = useState(false);
  const [browserOpen, setBrowserOpen] = useState(false);
- const [browserAdds, setBrowserAdds] = useState(false); // opened to add a file as a layer, not to open one
  // What the toolbar says. Only problems, and work still under way (`progress`), are shown: a note
  // that something went as asked is left unsaid, since the result is there to see.
  const [message, setMessage] = useState<{ text: string; ok: boolean; progress?: boolean }>({
@@ -649,7 +647,6 @@ export default function App() {
  // so unsaved work gets a question rather than a silent discard.
  const unsaved = dirty && shapes.length > 0;
  const ask = (what: string, go: () => void) => (unsaved ? setConfirmNext({ what, go }) : go());
- const startNew = () => ask("start new", () => newDrawing());
 
  // The current drawing, on screen: on starting, opened here, or changed in another app or window.
  const showCurrent = useCallback((current: Current) => {
@@ -1616,7 +1613,6 @@ export default function App() {
     open={browserOpen}
     endpoint="/api/studio/read"
     onClose={() => setBrowserOpen(false)}
-    addMode={browserAdds}
     // Read to pick it, then - once any unsaved work here is dealt with - made the current drawing.
     onOpened={(res) => ask("open another", () => void open(res.path))}
     combine={{
@@ -1815,26 +1811,6 @@ export default function App() {
    <main ref={mainRef} className={styles.layout}>
     <div className={styles.tools}>
      <AppSwitch current="studio" orientation="vertical" onRefused={(why) => setMessage({ text: why, ok: false })} />
-     {/* What's done with whole drawings, opening down: the File card keeps Save. */}
-     <FileToolbar
-      busy={busy}
-      hasShapes={shapes.length > 0}
-      onOpen={() => {
-       setBrowserAdds(false);
-       setBrowserOpen(true);
-      }}
-      onAddLayer={() => {
-       setBrowserAdds(true);
-       setBrowserOpen(true);
-      }}
-      onNew={() => startNew()}
-      onSendToPlot={() => void goTo("plot")}
-      // Only where there's an image to bake: a drawing of plain paths is its own snapshot.
-      onSnapshot={shapes.some((sh) => sh.kind === "photo") ? async () => {
-       const res = await takeSnapshot();
-       if (res) setSnapped({ name: res.name.replace(/\.svg$/i, ""), path: res.path });
-      } : undefined}
-     />
      <PanelToolbar
       cards={[
        { key: "file", on: fileCard, toggle: () => setFileCard((on) => !on) },
@@ -1918,6 +1894,7 @@ export default function App() {
         busy={busy}
         confirm={confirmNewBlock}
         onSave={save}
+        onOpen={() => setBrowserOpen(true)}
        />
 
       </div>
