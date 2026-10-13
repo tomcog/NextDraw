@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { Segment, Toolbar, ToolbarExpander } from "@tomcoggia/ui";
-import { Camera, File as FileIcon, FileInput, FilePlus, FolderInput, FolderOpen, ImagePlus, PenTool, Send } from "lucide-react";
+import { Camera, File as FileIcon, FileInput, FilePlus, FolderInput, FolderOpen, ImagePlus, Send, SplinePointer } from "lucide-react";
 
 interface Props {
   busy: boolean;
@@ -82,7 +82,7 @@ export function FileToolbar({ busy, hasShapes, onOpen, onAddLayer, onOpenPhotos,
             New drawing
           </Segment>
           {onEditInStudio && (
-            <Segment icon={<PenTool />} title="Carry on with this drawing in Studio - changes not saved go too" disabled={busy || !hasShapes} onClick={onEditInStudio}>
+            <Segment icon={<SplinePointer />} title="Carry on with this drawing in Studio - changes not saved go too" disabled={busy || !hasShapes} onClick={onEditInStudio}>
               Edit in Studio
             </Segment>
           )}

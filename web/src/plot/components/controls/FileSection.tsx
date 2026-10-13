@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { ButtonRound, InputText } from "@tomcoggia/ui";
-import { Crop, FolderOpen, PenTool, RotateCcw, RotateCcwSquare, RotateCwSquare, ScanSquare, StickyNoteX } from "lucide-react";
+import { Crop, FolderOpen, RotateCcw, RotateCcwSquare, RotateCwSquare, ScanSquare, SplinePointer, StickyNoteX } from "lucide-react";
 import styles from "../../../shared/components/controls/controls.module.css";
 import { FileCard } from "../../../shared/components/controls/FileCard";
 import { arrowStep, fmtLen, trimNum } from "../../../shared/lib/format";
@@ -75,7 +75,7 @@ export function FileSection({
           {/* The way to Studio with this drawing, as Studio's Send is the way here: Studio's nib, as
               its name in the header carries. Opened in this tab, in Plot's place. */}
           {onEditInStudio && (
-            <ButtonRound size="sm" icon={<PenTool />} aria-label="Open in Studio" title="This drawing, in Studio" disabled={busy} onClick={onEditInStudio} />
+            <ButtonRound size="sm" icon={<SplinePointer />} aria-label="Open in Studio" title="This drawing, in Studio" disabled={busy} onClick={onEditInStudio} />
           )}
           {fileName && (
             <ButtonRound

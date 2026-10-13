@@ -1,5 +1,5 @@
 import { Logo, Tag } from "@tomcoggia/ui";
-import { Aperture } from "lucide-react";
+import { Image } from "lucide-react";
 import styles from "../../shared/components/Header.module.css";
 
 interface Props {
@@ -21,7 +21,7 @@ export function PhotoHeader({ plotterFound }: Props) {
         NextDraw
         {/* A lens stands in for the space: what the picture comes through. Decorative - the heading
             still reads "NextDraw Image" to anything listening. */}
-        <Aperture className={styles.titleMark} aria-hidden="true" />
+        <Image className={styles.titleMark} aria-hidden="true" />
         <span className={styles.titleApp}>Image</span>
       </h1>
       <span className={styles.tools}>

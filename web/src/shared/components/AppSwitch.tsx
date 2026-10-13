@@ -1,5 +1,5 @@
 import { Segment, SegmentedControl, Toolbar } from "@tomcoggia/ui";
-import { Aperture, PenTool, Waypoints } from "lucide-react";
+import { Image, SplinePointer, Waypoints } from "lucide-react";
 import { goToApp, type AppName } from "../lib/apps";
 
 /**
@@ -21,7 +21,7 @@ export function AppSwitch({ current, orientation, onRefused }: { current: AppNam
       <SegmentedControl size="sm" variant="dark" aria-label="App">
         <Segment
           selected={current === "studio"}
-          icon={<PenTool />}
+          icon={<SplinePointer />}
           hideLabel
           title={current === "studio" ? "You're in Studio" : "Go to Studio, on this drawing"}
           onClick={() => void go("studio")}
@@ -30,7 +30,7 @@ export function AppSwitch({ current, orientation, onRefused }: { current: AppNam
         </Segment>
         <Segment
           selected={current === "photo"}
-          icon={<Aperture />}
+          icon={<Image />}
           hideLabel
           title={current === "photo" ? "You're in Image" : "Go to Image, on this drawing"}
           onClick={() => void go("photo")}
