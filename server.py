@@ -4569,14 +4569,72 @@ def plotter_on_usb():
     return plotter_of(ports) if ports else None
 
 
-@app.get("/api/presets")
-def list_presets():
-    presets = resolve_presets(load_presets())
+# "None": the pen for a new or one-off tool, with no preset of its own - first in every list. Each
+# plotter has its own, since heights are the machine's. Until it's changed it is that plotter's
+# EnerGel (or, with no EnerGel, its first tool): its settings, hatch and barrel, but no colors,
+# tilt or one-way strokes, which belong to a pen that's known. The first change - in Plot's HUD -
+# saves it as a preset named "None" for that plotter; deleting that puts it back to EnerGel's.
+NONE_TOOL = "None"
+NONE_FROM = "EnerGel"
+
+
+def stored_none(saved, plotter):
+    """This plotter's saved None, or None when it has never been changed."""
+    return next((p for p in saved if str(p.get("name") or "").strip() == NONE_TOOL
+                 and plotter_of_preset(p) == plotter), None)
+
+
+def none_tool(saved, plotter):
+    """This plotter's None as every list shows it: saved, or made from its EnerGel."""
+    stored = stored_none(saved, plotter)
+    if stored is not None:
+        return stored
+    tools = [p for p in resolve_presets(saved) if p.get("name") != NONE_TOOL and plotter_of_preset(p) == plotter]
+    base = next((p for p in tools if p.get("name") == NONE_FROM), tools[0] if tools else None)
+    if base is None:
+        return None
+    entry = {"name": NONE_TOOL, "settings": dict(base.get("settings") or {})}
+    for key in ("hatch", "barrel_mm"):
+        if base.get(key):
+            entry[key] = copy.deepcopy(base[key])
+    if plotter == IDRAW:
+        entry["plotter"] = IDRAW
+    return entry
+
+
+def find_tool(saved, name, plotter):
+    """find_preset, but None is the plotter's own - saved into the list first if it never was, so
+    what's changed on it has somewhere to go."""
+    if str(name or "").strip() != NONE_TOOL:
+        return find_preset(saved, name)
+    stored = stored_none(saved, plotter)
+    if stored is None:
+        stored = none_tool(saved, plotter)
+        if stored is None:
+            return None, None
+        saved.append(stored)
+    return stored, None
+
+
+def tool_plotter():
+    """The plotter a tool being changed belongs to: the one plugged in, else the NextDraw."""
+    return plotter_on_usb() or "nextdraw"
+
+
+def listed_presets(saved):
+    """The tools as the page asked for them: the connected plotter's (?plotter=connected), None first."""
+    presets = [p for p in resolve_presets(saved) if p.get("name") != NONE_TOOL]
     # With no plotter plugged in there's no telling which one the tools are for, so every tool is listed.
     plotter = plotter_on_usb() if request.args.get("plotter") == "connected" else None
     if plotter:
         presets = [p for p in presets if plotter_of_preset(p) == plotter]
-    return jsonify(presets=presets)
+    none = none_tool(saved, plotter or "nextdraw")
+    return ([none] if none else []) + presets
+
+
+@app.get("/api/presets")
+def list_presets():
+    return jsonify(presets=listed_presets(load_presets()))
 
 
 @app.put("/api/presets/<name>")
@@ -4586,16 +4644,16 @@ def put_preset(name):
         return jsonify(error="Give the preset a name."), 400
     settings = clean_preset_settings(request.json or {})
     existing = load_presets()
-    marker, tip = find_preset(existing, name)
     # With a plotter plugged in, Plot sees only its tools, so it mustn't overwrite the other one's by name.
     plotter = plotter_on_usb() if request.args.get("plotter") == "connected" else None
+    marker, tip = find_tool(existing, name, plotter or "nextdraw") if name == NONE_TOOL else find_preset(existing, name)
     if plotter and marker is not None and plotter_of_preset(marker) != plotter:
         other = "iDraw" if plotter_of_preset(marker) == IDRAW else "NextDraw"
         return jsonify(error=f"The {other} already has a tool called “{name}”. Give this one another name."), 409
     if tip is not None:
         return save_tip(existing, marker, tip, settings, request.json or {})
     previous = marker or {}
-    presets = [p for p in existing if p.get("name") != name]
+    presets = [p for p in existing if p is not marker]
     entry = {"name": name, "settings": settings}
     if plotter_of_preset(previous) == IDRAW or plotter == IDRAW:
         entry["plotter"] = IDRAW
@@ -4624,9 +4682,9 @@ def put_preset(name):
     if previous.get("calibration"):
         entry["calibration"] = previous["calibration"]  # its pens as measured off a plotted sheet
     presets.append(entry)
-    presets.sort(key=lambda p: p["name"].lower())
+    presets.sort(key=lambda p: (p["name"] != NONE_TOOL, p["name"].lower()))
     save_presets(presets)
-    return jsonify(presets=resolve_presets(presets))
+    return jsonify(presets=listed_presets(presets))
 
 
 def save_tip(presets, marker, tip, settings, body):
@@ -4648,7 +4706,7 @@ def save_tip(presets, marker, tip, settings, body):
     except (KeyError, TypeError, ValueError):
         pass
     save_presets(presets)
-    return jsonify(presets=resolve_presets(presets))
+    return jsonify(presets=listed_presets(presets))
 
 
 def clean_palette(raw):
@@ -4670,7 +4728,7 @@ def put_palette(name):
     presets = load_presets()
     # Onto the marker, not the tip: the same ink comes out of both ends, which is the whole reason
     # they are one preset. A tip that was given a palette of its own keeps it.
-    marker, tip = find_preset(presets, name.strip()[:40])
+    marker, tip = find_tool(presets, name.strip()[:40], tool_plotter())
     preset = tip if (tip is not None and "palette" in tip) else marker
     if preset is None:
         return jsonify(error="That drawing tool isn't on this Mac."), 404
@@ -4686,13 +4744,13 @@ def put_palette(name):
         marker["palette"] = merged
         tip["colors"] = [c["name"] for c in colors]
         save_presets(presets)
-        return jsonify(presets=resolve_presets(presets))
+        return jsonify(presets=listed_presets(presets))
     if colors:
         preset["palette"] = colors
     else:
         preset.pop("palette", None)
     save_presets(presets)
-    return jsonify(presets=resolve_presets(presets))
+    return jsonify(presets=listed_presets(presets))
 
 
 # What a calibration sheet read back from a photo holds: for each pen, the colour it came out at each
@@ -4721,7 +4779,7 @@ def put_calibration(name):
     """Save a tool's pens as measured off its calibration sheet. They go where its palette is - on the
     marker, unless this tip has a palette of its own - since it is the ink that was measured."""
     presets = load_presets()
-    marker, tip = find_preset(presets, name.strip()[:40])
+    marker, tip = find_tool(presets, name.strip()[:40], tool_plotter())
     preset = tip if (tip is not None and "palette" in tip) else marker
     if preset is None:
         return jsonify(error="That drawing tool isn't on this Mac."), 404
@@ -4730,12 +4788,18 @@ def put_calibration(name):
         return jsonify(error="Nothing was measured."), 400
     preset["calibration"] = calibration
     save_presets(presets)
-    return jsonify(presets=resolve_presets(presets))
+    return jsonify(presets=listed_presets(presets))
 
 
 @app.delete("/api/presets/<name>")
 def delete_preset(name):
     saved = load_presets()
+    if name.strip() == NONE_TOOL:
+        # None can't go: deleting it puts it back to the plotter's EnerGel.
+        gone = stored_none(saved, tool_plotter())
+        saved = [p for p in saved if p is not gone]
+        save_presets(saved)
+        return jsonify(presets=listed_presets(saved))
     marker, tip = find_preset(saved, name)
     if tip is not None:
         marker["variants"] = [v for v in marker["variants"] if v is not tip]
@@ -4743,7 +4807,7 @@ def delete_preset(name):
     else:
         presets = [p for p in saved if p.get("name") != name]
     save_presets(presets)
-    return jsonify(presets=resolve_presets(presets))
+    return jsonify(presets=listed_presets(presets))
 
 
 # ---- Pictures the browser can't read ----

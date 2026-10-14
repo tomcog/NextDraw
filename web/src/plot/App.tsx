@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Button, Card } from "@tomcoggia/ui";
 import styles from "./App.module.css";
 import { api, postJSON } from "../shared/lib/api";
-import { barrelOffsetMm, BUSY_STATES, DEFAULT_SETTINGS, IDRAW_MODEL, PAPER_SIZES, PLOTTING_STATES, PRESET_FIELD_NAMES, PRESET_FIELDS, STEPS, STORAGE } from "../shared/lib/constants";
+import { barrelOffsetMm, BUSY_STATES, DEFAULT_SETTINGS, IDRAW_MODEL, NONE_PEN, PAPER_SIZES, PLOTTING_STATES, PRESET_FIELD_NAMES, PRESET_FIELDS, STEPS, STORAGE } from "../shared/lib/constants";
 import { cleanNote, listOf } from "../shared/lib/format";
 import { lightness } from "../shared/lib/color";
 import { fitsOnBed, fitsOnPaper, footprint, minPlacement, type FitAlign } from "../shared/lib/geometry";
@@ -1679,12 +1679,22 @@ export default function App() {
 
   const deletePreset = async () => {
     const name = activePreset;
-    if (!name || !window.confirm(`Delete the preset “${name}”? The first tool in the list will be chosen instead.`)) return;
+    // None can't be deleted, only put back to EnerGel's settings.
+    const ask = name === NONE_PEN
+      ? "Put None back to EnerGel’s settings? What’s been changed on it is lost."
+      : `Delete the preset “${name}”? The first tool in the list will be chosen instead.`;
+    if (!name || !window.confirm(ask)) return;
     try {
       const res = await api<{ presets: Preset[] }>(`/api/presets/${encodeURIComponent(name)}`, { method: "DELETE" });
       setPresets(res.presets);
       setActivePreset(null);
-      setLocalMessage({ text: `Deleted preset “${name}”.` });
+      if (name === NONE_PEN) {
+        // Still None, now with EnerGel's values: taken up as a tool picked by hand would be.
+        const none = res.presets.find((p) => p.name === NONE_PEN);
+        if (none) updateSettings(none.settings);
+        setActivePreset(NONE_PEN);
+      }
+      setLocalMessage({ text: name === NONE_PEN ? "None is back to EnerGel’s settings." : `Deleted preset “${name}”.` });
     } catch (err) {
       setLocalMessage({ text: (err as Error).message, tone: "error" });
     }

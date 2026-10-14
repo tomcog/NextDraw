@@ -100,5 +100,9 @@ export const STORAGE = {
   utilitiesCard: "nextdraw-plot-utilities-card",
 };
 
+// The pen for a new or one-off tool, first in every app's Pen menu: the server's, per plotter, with
+// EnerGel's settings until they're changed in Plot's HUD (server.py, none_tool).
+export const NONE_PEN = "None";
+
 // The channel Studio's "Open in Plot" uses to find a Plot page already open in another tab.
 export const PLOT_CHANNEL = "nextdraw-plot";

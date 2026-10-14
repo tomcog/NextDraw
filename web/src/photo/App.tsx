@@ -17,7 +17,7 @@ import { PAPER_SIZES } from "../shared/lib/constants";
 import { load, save as remember } from "../shared/lib/storage";
 import type { Info, PlotterModel, Preset } from "../shared/lib/types";
 import type { Zoom } from "../shared/components/BedCanvas";
-import { DEFAULT_SETTINGS } from "../shared/lib/constants";
+import { DEFAULT_SETTINGS, NONE_PEN } from "../shared/lib/constants";
 import { useHistory } from "../shared/lib/useHistory";
 import { loadFont, type StrokeFont } from "../shared/lib/drawing/font";
 import type { Fill } from "../shared/lib/drawing/hatch";
@@ -159,7 +159,8 @@ export default function App() {
   const [vignetteCard, setVignetteCard] = useState(() => load<boolean>("photo-vignette-card") ?? false);
   useEffect(() => remember("photo-vignette-card", vignetteCard), [vignetteCard]);
 
-  const [toolName, setToolName] = useState<string>(() => load<string>(TOOL_KEY) ?? "");
+  // None until a pen is picked: the server's None pen, first in the list (once "", before it was one).
+  const [toolName, setToolName] = useState<string>(() => load<string>(TOOL_KEY) || NONE_PEN);
   useEffect(() => remember(TOOL_KEY, toolName), [toolName]);
   const presetsSeen = useRef<string | null>(null);
   useEffect(() => {
@@ -172,7 +173,7 @@ export default function App() {
           presetsSeen.current = text;
           setPresets(list);
           // None stays None; a pen that's gone falls back to it.
-          setToolName((current) => (list.some((t) => t.name === current) ? current : ""));
+          setToolName((current) => (list.some((t) => t.name === current) ? current : NONE_PEN));
         })
         .catch(() => {});
     read();
@@ -182,10 +183,11 @@ export default function App() {
       window.clearInterval(timer);
     };
   }, [plotterOnUsb]);
-  // The preset chosen, or with None, the general pen: print's colors, any of which a layer can swap
-  // for a color of its own.
-  const preset = presets.find((t) => t.name === toolName) ?? null;
-  const tool = preset ?? GENERAL_PEN;
+  // None is no preset for its colors - the general pen's, any of which a layer can swap for any color -
+  // but its line and hatch are None's own: EnerGel's until they're changed in Plot's HUD.
+  const preset = toolName === NONE_PEN ? null : presets.find((t) => t.name === toolName) ?? null;
+  const nonePen = presets.find((t) => t.name === NONE_PEN);
+  const tool = preset ?? (nonePen ? { ...GENERAL_PEN, settings: { ...GENERAL_PEN.settings, ...nonePen.settings }, hatch: nonePen.hatch ?? GENERAL_PEN.hatch } : GENERAL_PEN);
   const penWidthMm = tool.settings.pen_width ?? 0.5;
 
   // ---- The photo drawing ----
@@ -515,7 +517,7 @@ export default function App() {
     const members = photo.group ? shapes.filter((sh) => sh.photo?.group === photo.group) : [chosen!];
     splitAroundPaper({ dark: members.filter((sh) => sh.photo?.side === "dark").length, light: members.filter((sh) => sh.photo?.side === "light").length, paperTone: photo.paperToneSet ? photo.paperTone : undefined });
   }, [paperColor]); // eslint-disable-line react-hooks/exhaustive-deps
-  const toolSection = <DrawingToolSection tools={presets} value={toolName} onPick={pickPen} none="None" collapsibleKey="photo-pen" disabled={busy} />;
+  const toolSection = <DrawingToolSection tools={presets} value={toolName} onPick={pickPen} collapsibleKey="photo-pen" disabled={busy} />;
 
   // Split by best fit: how near the best pens come to the photo, with one fewer and one more than it
   // has, so what another pen buys can be seen. An estimate from a sample of the photo's pixels, each

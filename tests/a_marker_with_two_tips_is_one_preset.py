@@ -66,7 +66,8 @@ def main():
     server.PRESETS_FILE = tmp
     server.ensure_presets_file = lambda: None
     client = server.app.test_client()
-    tools = lambda r: {p["name"]: p for p in r.get_json()["presets"]}
+    # None - the pen for a one-off tool, made from EnerGel - heads every list; these promises are about the rest.
+    tools = lambda r: {p["name"]: p for p in r.get_json()["presets"] if p["name"] != "None"}
 
     print("the names a drawing records")
     got = tools(client.get("/api/presets"))
