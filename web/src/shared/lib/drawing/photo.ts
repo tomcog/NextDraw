@@ -355,12 +355,13 @@ export function placeOnPage(aspect: number, page: { w: number; h: number }, how:
     const y = m + (ah - h) * align.y;
     return { x, y, x2: x + w, y2: y + h, crop: undefined };
   }
-  // Filling: the whole area inside the margin, with the picture cropped evenly on the sides that
-  // don't fit - the middle of the photo is what stays.
+  // Filling: the whole area inside the margin, with the picture cropped on the sides that don't fit -
+  // evenly, keeping its middle, or keeping the edge the alignment names: Left keeps its left side.
   const area = aw / ah;
+  const cut = aspect > area ? 1 - area / aspect : 1 - aspect / area;
   const crop: [number, number, number, number] = aspect > area
-    ? [(1 - area / aspect) / 2, 0, 1 - (1 - area / aspect) / 2, 1]
-    : [0, (1 - aspect / area) / 2, 1, 1 - (1 - aspect / area) / 2];
+    ? [cut * align.x, 0, cut * align.x + (1 - cut), 1]
+    : [0, cut * align.y, 1, cut * align.y + (1 - cut)];
   return { x: m, y: m, x2: page.w - m, y2: page.h - m, crop };
 }
 

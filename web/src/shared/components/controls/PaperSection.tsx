@@ -35,6 +35,9 @@ interface Props {
   /** Scale the drawing to fill the paper less a margin all round (in mm), placed in the room left
    *  over as `align` says - centred, or against an edge. Left out while there is no drawing to fit. */
   onFit?: (marginMm: number, align: FitAlign) => void;
+  /** Image only: scale the picture to cover the paper less the margin, cropping what's over - the
+   *  alignment says which part stays. Left out, there's no Fill: a drawing of paths can't be cropped. */
+  onFill?: (marginMm: number, align: FitAlign) => void;
 }
 
 // Common paper colours, plus any colour from the picker. The paper is drawn in this colour whatever
@@ -56,7 +59,7 @@ const PAPER_COLORS = [
  * drawing on it: its turn, and fitting it to the paper. Each app does those to the drawing
  * itself, so all three show the same. Every app passes all of it: the card is the same everywhere.
  */
-export function PaperSection({ w, h, sizeId, units, color, collapsibleKey, disabled, onSize, onDimensions, onColor, onUnits, onTurnDrawing, onFit }: Props) {
+export function PaperSection({ w, h, sizeId, units, color, collapsibleKey, disabled, onSize, onDimensions, onColor, onUnits, onTurnDrawing, onFit, onFill }: Props) {
   const landscape = w >= h;
   // Custom chosen by hand stays chosen while its width and height are typed, even through a size
   // that happens to be one of the list's on the way. The size belongs to this drawing alone: it is
@@ -205,6 +208,19 @@ export function PaperSection({ w, h, sizeId, units, color, collapsibleKey, disab
           >
             Fit
           </Button>
+          {onFill && (
+            <Button
+              size="sm"
+              variant="secondary"
+              title={roomLeft
+                ? `Fill: scale the image to cover the paper inside a ${fmtLen(margin, units)} margin, cropping what's over - the alignment below says which part stays`
+                : "The margin leaves no paper to fill"}
+              disabled={disabled || !roomLeft}
+              onClick={() => onFill(margin, align)}
+            >
+              Fill
+            </Button>
+          )}
         </div>
         {onFit && (
           <div className={styles.fitAlign}>

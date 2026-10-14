@@ -65,6 +65,9 @@ get complicated, and it never needs Studio's tools for drawing and transforming 
     works out that ink's share as it's drawn, so turning, replacing and switching modes just work.
     Inks are named and colored from the profile's colorant table; a layer is a separation (`separation`
     is the ink's name), so the composite, Adjustments and angle presets all apply.
+  - Fill, beside Fit in the Paper card's Drawing transform (Image only - paths can't be cropped):
+    the image covers the paper inside the margin, cropped on the sides that don't fit; the alignment
+    says which part stays (`placeOnPage(..., "fill", ...)`).
   - A new color image opens split into CMYK, each plate in its nearest palette pen (2026-10-13); with
     fewer than four palette colors, by colour groups. A black and white one stays one B&W layer.
   - The stage is the shared NextDraw canvas (`shared/components/NextDrawCanvas.tsx`), the one Studio

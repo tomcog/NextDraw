@@ -471,6 +471,7 @@ export default function App() {
       // the image keeps, so it follows the paper when that changes.
       onTurnDrawing={chosen?.photo ? (dir) => void turnPhoto(dir) : undefined}
       onFit={chosen?.photo ? (marginMm, align) => placePhoto("fit", marginMm / 25.4, align) : undefined}
+      onFill={chosen?.photo ? (marginMm, align) => placePhoto("fill", marginMm / 25.4, align) : undefined}
     />
   );
   // A pen chosen by hand: the photo's colors are chosen again from its palette - each plate, or each
