@@ -97,19 +97,20 @@ export function photoActions(ctx: PhotoContext) {
       const stem = file.name.replace(/\.[^.]+$/, "");
       const photo: Photo = { ...copy, ...PHOTO_DEFAULTS, spacingMm: defaults.spacingMm, crop, fit: "fit", margin, source: pictureSources.get(file) };
       const pens = tool2?.palette ?? [];
-      // Matched to the tool's pens as it comes in: split into CMYK, each plate in the pen nearest it
-      // (Tom, 2026-10-13). With fewer than four colors to choose from, a colour photo is split by its
-      // colours, each group in the nearest pen, and a black and white one is one layer, in the pen
+      // Matched to the tool's pens as it comes in. A colour photo is split into CMYK, each plate in the
+      // pen nearest it (Tom, 2026-10-13) - or with fewer than four colors to choose from, by its
+      // colours, each group in the nearest pen. A black and white one is one layer, in the pen
       // nearest its darkest shade. With no palette, it goes on the layer being drawn on, in its ink.
       let parts: { pen: PenColor; photo: Partial<Photo> }[] = [];
       const penMm = tool2?.settings.pen_width ?? 0.5;
-      const cmyk = pens.length >= PLATES.length ? platePens(pens, PLATES, { penMm, spacingMm: photo.spacingMm, levels: photo.levels }) : [];
+      const colourful = isColourful(copy.src);
+      const cmyk = colourful && pens.length >= PLATES.length ? platePens(pens, PLATES, { penMm, spacingMm: photo.spacingMm, levels: photo.levels }) : [];
       if (cmyk.length && cmyk.every(Boolean)) {
         const plates = cmyk.map((pen) => pen!.color);
         parts = PLATES.map((plate, i) => ({ pen: cmyk[i]!, photo: { plate, plates, ink: plates[i], angle: PLATE_AIMS[plate].angle, penMm } as Partial<Photo> }))
           // Lightest at the bottom, as the layers are laid down.
           .sort((a, b) => (lightness(b.pen.color) ?? 0) - (lightness(a.pen.color) ?? 0));
-      } else if (pens.length && isColourful(copy.src)) {
+      } else if (pens.length && colourful) {
         const groups = colourGroups(copy.src, 4, photo.brightness, photo.contrast);
         const matched = matchPens(groups, pens);
         parts = groups.flatMap((_, region) => (matched[region] ? [{ pen: matched[region]!, photo: { ink: matched[region]!.color, regions: groups, region } as Partial<Photo> }] : []))
@@ -1088,6 +1089,7 @@ export function photoActions(ctx: PhotoContext) {
     const whole: Partial<Photo> = {};
     if (patch.brightness !== undefined) whole.brightness = patch.brightness;
     if (patch.contrast !== undefined) whole.contrast = patch.contrast;
+    if ("blackPoint" in patch) whole.blackPoint = patch.blackPoint;
     if ("saturation" in patch) whole.saturation = patch.saturation;
     if (patch.bleed !== undefined) whole.bleed = patch.bleed;
     if (patch.keyStrength !== undefined) whole.keyStrength = patch.keyStrength;
@@ -1117,13 +1119,14 @@ export function photoActions(ctx: PhotoContext) {
   };
 
   /** One separation plate's own brightness and contrast, by its shape: before the whole image's. 0 is none. */
-  const setChannelOf = (id: string, patch: { channelBrightness?: number; channelContrast?: number }) => {
+  const setChannelOf = (id: string, patch: { channelBrightness?: number; channelContrast?: number; channelBlackPoint?: number }) => {
     record();
     setShapes((list) => list.map((sh) => {
       if (sh.id !== id || !sh.photo) return sh;
       const photo = { ...sh.photo, ...patch };
       if (!photo.channelBrightness) delete photo.channelBrightness;
       if (!photo.channelContrast) delete photo.channelContrast;
+      if (!photo.channelBlackPoint) delete photo.channelBlackPoint;
       return { ...sh, photo };
     }));
   };

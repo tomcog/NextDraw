@@ -25,3 +25,17 @@ test("a channel's settings, then the whole image's, come out as one", () => {
     }
   }
 });
+
+test("a black point makes everything that dark full ink, and leaves white white", () => {
+  const one = channelAdjusted(photo({ channelBlackPoint: 40 }));
+  assert.ok(Math.abs(read(0.4, one.brightness, one.contrast)) < 1e-9, "the point itself: black");
+  assert.ok(read(0.2, one.brightness, one.contrast) < 0, "darker still: black, once clamped");
+  assert.ok(Math.abs(read(1, one.brightness, one.contrast) - 1) < 1e-9, "white stays white");
+  assert.ok(Math.abs(read(0.7, one.brightness, one.contrast) - 0.5) < 1e-9, "between: stretched to meet it");
+});
+
+test("the whole image's black point comes after each plate's own settings", () => {
+  const one = channelAdjusted(photo({ channelBrightness: 20, blackPoint: 30 }));
+  const point = (v: number) => (v - 0.3) / 0.7;
+  for (const v of [0.2, 0.5, 0.9]) assert.ok(Math.abs(read(v, one.brightness, one.contrast) - point(read(v, 20, 0))) < 1e-9);
+});

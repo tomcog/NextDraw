@@ -54,8 +54,10 @@ get complicated, and it never needs Studio's tools for drawing and transforming 
     whole image's Brightness, Contrast and Saturation (and B&W) at the top, then for separations each
     channel's own Brightness and Contrast (`channelBrightness`, `channelContrast`), applied before
     the whole image's and folded into one by `channelAdjusted`. They're no longer in the Image card.
-  - A new image opens split into CMYK, each plate in its nearest palette pen (2026-10-13); with fewer
-    than four palette colors it falls back to colour groups or one B&W layer as before.
+    Separations also have a Black point (%), the whole image's and each channel's: Levels' black
+    slider, tones that dark or darker full ink and white kept white - to punch the shadows.
+  - A new color image opens split into CMYK, each plate in its nearest palette pen (2026-10-13); with
+    fewer than four palette colors, by colour groups. A black and white one stays one B&W layer.
   - The stage is the shared NextDraw canvas (`shared/components/NextDrawCanvas.tsx`), the one Studio
     and Plot show a drawing on: the bed, the paper, the rulers and the one bar - Outline and Preview (the lines drawn with Studio's ink, `Ink.tsx`), the zooms and the loupe.
     After the shared views, Photo's own: Picture (the image alone, what a new photo opens in), Lines,

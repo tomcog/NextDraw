@@ -619,7 +619,7 @@ export default function App() {
       channels={chosen.photo.separation && chosen.photo.group
         ? [...layers].reverse().flatMap((l) => shapes
             .filter((sh) => sh.layerId === l.id && sh.photo?.separation && sh.photo.group === chosen.photo!.group)
-            .map((sh) => ({ id: sh.id, name: l.name, color: l.color, brightness: sh.photo!.channelBrightness ?? 0, contrast: sh.photo!.channelContrast ?? 0 })))
+            .map((sh) => ({ id: sh.id, name: l.name, color: l.color, brightness: sh.photo!.channelBrightness ?? 0, contrast: sh.photo!.channelContrast ?? 0, blackPoint: sh.photo!.channelBlackPoint ?? 0 })))
         : []}
       set={setPhotoOf}
       setChannel={setChannelOf}

@@ -4,7 +4,7 @@ import { Section } from "../../shared/components/controls/Section";
 import { NumberField } from "../../shared/components/controls/NumberField";
 import controls from "../../shared/components/controls/controls.module.css";
 import bar from "../../shared/components/PreviewToolbar.module.css";
-import type { Photo } from "../../shared/lib/drawing/photo";
+import { MOST_BLACK_POINT, type Photo } from "../../shared/lib/drawing/photo";
 import styles from "../App.module.css";
 
 /** One separation's plate, as the card lists it: its shape, and its layer's name and ink. */
@@ -14,6 +14,7 @@ export interface Channel {
   color: string;
   brightness: number;
   contrast: number;
+  blackPoint: number;
 }
 
 interface Props {
@@ -24,8 +25,13 @@ interface Props {
   /** The whole image's brightness, contrast and saturation. */
   set: (patch: Partial<Photo>) => void;
   /** One plate's own brightness and contrast, before the whole image's. */
-  setChannel: (id: string, patch: { channelBrightness?: number; channelContrast?: number }) => void;
+  setChannel: (id: string, patch: { channelBrightness?: number; channelContrast?: number; channelBlackPoint?: number }) => void;
 }
+
+/** The black point, as Levels' black slider: tones this dark or darker become full ink, white stays white. */
+const blackPoint = (value: number, onChange: (v: number) => void) => (
+  <NumberField label="Black point" unit="%" min={0} max={MOST_BLACK_POINT} step={5} value={value} onChange={onChange} />
+);
 
 /**
  * How light, how contrasty and how colorful the image is read for its lines: the whole image's at
@@ -43,6 +49,8 @@ export function AdjustCard({ photo, channels, set, setChannel }: Props) {
             <NumberField label="Contrast" min={-100} max={100} step={5} value={photo.contrast} onChange={(contrast) => set({ contrast })} />
             {/* A separation is grayscale: there's no color to saturate. */}
             {!photo.separation && <NumberField label="Saturation" min={-100} max={100} step={5} value={photo.saturation ?? 0} onChange={(v) => set({ saturation: v || undefined })} />}
+            {/* Separations: tones this dark or darker are full ink, so the shadows punch. */}
+            {photo.separation && blackPoint(photo.blackPoint ?? 0, (v) => set({ blackPoint: v || undefined }))}
           </div>
           {/* Black and white is Saturation all the way down: on sets it to -100, off back to the photo's own. */}
           {!photo.separation && (
@@ -64,6 +72,7 @@ export function AdjustCard({ photo, channels, set, setChannel }: Props) {
                 <div className={`${styles.fillRow} ${styles.oneRow}`}>
                   <NumberField label="Brightness" min={-100} max={100} step={5} value={ch.brightness} onChange={(v) => setChannel(ch.id, { channelBrightness: v })} />
                   <NumberField label="Contrast" min={-100} max={100} step={5} value={ch.contrast} onChange={(v) => setChannel(ch.id, { channelContrast: v })} />
+                  {blackPoint(ch.blackPoint, (v) => setChannel(ch.id, { channelBlackPoint: v }))}
                 </div>
               </div>
             ))}

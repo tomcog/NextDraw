@@ -30,6 +30,13 @@ export interface Photo {
    */
   channelBrightness?: number;
   channelContrast?: number;
+  /**
+   * Separations: the black point, 0 to 90 percent - every tone at least that dark is full ink, and
+   * the lighter ones stretched to meet it, white staying white. Punches the shadows. `blackPoint` is
+   * the whole image's, every plate alike; `channelBlackPoint` a plate's own, before it. Absent, 0.
+   */
+  blackPoint?: number;
+  channelBlackPoint?: number;
   /** -100 to 100: greyer or more vivid - -100 grey, 100 twice as colourful. The lightness stays. Absent, 0. */
   saturation?: number;
   /** Degrees: the direction of the first set of lines. The second crosses it at a right angle. */
@@ -1241,20 +1248,42 @@ const contrastGain = (contrast: number) => {
   return c >= 0 ? 1 / (1 - c) : 1 + c;
 };
 
+/** Most of the way to black a black point goes: 90%, past which a plate would be nothing but ink. */
+export const MOST_BLACK_POINT = 90;
+
 /**
- * A separation as its lines see it: its own brightness and contrast, then the whole image's, made
- * one brightness and contrast - both are a stretch about middle grey and a lift, so two in a row are
- * one. A photo with no channel settings comes back as it is.
+ * A separation as its lines see it: its own brightness and contrast, then its own black point, then
+ * the whole image's three, made one brightness and contrast. Each is a straight line on the tones -
+ * a stretch and a lift - so any number in a row are one. A photo with none of a plate's own settings
+ * and no black point comes back as it is.
  */
 export function channelAdjusted(p: Photo): Photo {
-  const b = p.channelBrightness ?? 0;
-  const c = p.channelContrast ?? 0;
-  if (!b && !c) return p;
-  const whole = contrastGain(p.contrast);
-  const gain = contrastGain(c) * whole;
-  const lift = (b / 200) * whole + p.brightness / 200;
-  const contrast = gain >= 1 ? (1 - 1 / gain) * 100 : (gain - 1) * 100;
-  return { ...p, brightness: lift * 200, contrast: Math.max(-99, Math.min(99, contrast)), channelBrightness: undefined, channelContrast: undefined };
+  const own = { b: p.channelBrightness ?? 0, c: p.channelContrast ?? 0, k: p.channelBlackPoint ?? 0 };
+  if (!own.b && !own.c && !own.k && !p.blackPoint) return p;
+  // Lightness 0 to 1 as a * L + m, stage by stage.
+  let a = 1;
+  let m = 0;
+  const then = (gain: number, offset: number) => {
+    a *= gain;
+    m = m * gain + offset;
+  };
+  const levels = (b: number, c: number) => {
+    const gain = contrastGain(c);
+    then(gain, 0.5 - 0.5 * gain + b / 200);
+  };
+  const black = (k: number) => {
+    const point = Math.max(0, Math.min(MOST_BLACK_POINT, k)) / 100;
+    if (point) then(1 / (1 - point), -point / (1 - point));
+  };
+  levels(own.b, own.c);
+  black(own.k);
+  levels(p.brightness, p.contrast);
+  black(p.blackPoint ?? 0);
+  const contrast = a >= 1 ? (1 - 1 / a) * 100 : (a - 1) * 100;
+  return {
+    ...p, brightness: (m - 0.5 + 0.5 * a) * 200, contrast: Math.max(-99, Math.min(99, contrast)),
+    channelBrightness: undefined, channelContrast: undefined, channelBlackPoint: undefined, blackPoint: undefined,
+  };
 }
 
 /** Brightness and contrast, applied to a channel value 0 to 255. */
@@ -4385,6 +4414,8 @@ export function photoFromData(raw: Record<string, unknown>): Photo | null {
     contrast: num(raw.contrast, PHOTO_DEFAULTS.contrast),
     ...(num(raw.channel_brightness, 0) ? { channelBrightness: num(raw.channel_brightness, 0) } : {}),
     ...(num(raw.channel_contrast, 0) ? { channelContrast: num(raw.channel_contrast, 0) } : {}),
+    ...(num(raw.channel_black_point, 0) ? { channelBlackPoint: num(raw.channel_black_point, 0) } : {}),
+    ...(num(raw.black_point, 0) ? { blackPoint: num(raw.black_point, 0) } : {}),
     angle: num(raw.angle, PHOTO_DEFAULTS.angle),
     spacingMm: num(raw.spacing_mm, 0.3),
     ...(typeof raw.source === "string" && raw.source ? { source: raw.source } : {}),
@@ -4488,6 +4519,8 @@ export const photoData = (p: Photo) => ({
   src: p.src, width: p.width, height: p.height, brightness: p.brightness, contrast: p.contrast,
   ...(p.channelBrightness ? { channel_brightness: p.channelBrightness } : {}),
   ...(p.channelContrast ? { channel_contrast: p.channelContrast } : {}),
+  ...(p.channelBlackPoint ? { channel_black_point: p.channelBlackPoint } : {}),
+  ...(p.blackPoint ? { black_point: p.blackPoint } : {}),
   angle: p.angle, spacing_mm: p.spacingMm, levels: p.levels,
   ...(p.source ? { source: p.source } : {}),
   ...(p.quarterTurns ? { quarter_turns: p.quarterTurns } : {}),
