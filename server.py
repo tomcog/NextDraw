@@ -4920,6 +4920,65 @@ def delete_edge_mask(name):
     return list_edge_masks()
 
 
+# ---- Image presets ----
+# Image's saved settings: everything about how an image is turned into lines - its layers and passes,
+# their effects, numbers and pens, its edge - without the picture, to use on another one. A file each,
+# shared between Macs beside the edge masks. The page builds and reads them; the server only keeps them.
+IMAGE_PRESETS = (ICLOUD_DRIVE / "NextDraw Studio" / "Image presets") if ICLOUD_DRIVE.is_dir() else (ROOT / "image-presets")
+MAX_IMAGE_PRESET = 20 * 1024 * 1024  # an edge mask picture can be in one
+
+
+def image_preset_file(name):
+    """The file a preset of this name is kept in, or None for a name that isn't one."""
+    name = (name or "").strip()
+    if not name or len(name) > 120 or not re.fullmatch(r"[^/\\:\x00-\x1f]+", name) or name.startswith("."):
+        return None
+    return IMAGE_PRESETS / f"{name}.json"
+
+
+@app.get("/api/image-presets")
+def list_image_presets():
+    names = sorted((f.stem for f in IMAGE_PRESETS.glob("*.json")), key=str.lower) if IMAGE_PRESETS.is_dir() else []
+    return jsonify(presets=names)
+
+
+@app.get("/api/image-presets/<name>")
+def get_image_preset(name):
+    path = image_preset_file(name)
+    if path is None or not path.is_file():
+        return jsonify(error=f"There's no preset called {name}."), 404
+    try:
+        return jsonify(name=path.stem, preset=json.loads(path.read_text()))
+    except (OSError, ValueError):
+        return jsonify(error=f"The preset {name} couldn't be read."), 400
+
+
+@app.put("/api/image-presets/<name>")
+def save_image_preset(name):
+    path = image_preset_file(name)
+    if path is None:
+        return jsonify(error="That name can't be used for a preset."), 400
+    preset = (request.json or {}).get("preset")
+    if not isinstance(preset, dict) or not isinstance(preset.get("layers"), list) or not preset["layers"]:
+        return jsonify(error="A preset needs the image's layers."), 400
+    text = json.dumps(preset)
+    if len(text) > MAX_IMAGE_PRESET:
+        return jsonify(error="That preset is too big to keep."), 400
+    IMAGE_PRESETS.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_suffix(".tmp")
+    tmp.write_text(text)
+    os.replace(tmp, path)
+    return list_image_presets()
+
+
+@app.delete("/api/image-presets/<name>")
+def delete_image_preset(name):
+    path = image_preset_file(name)
+    if path is not None and path.is_file():
+        path.unlink()
+    return list_image_presets()
+
+
 # ---- Ink colors by name, from Claude ----
 # A folder of separations names each file for its ink - "Portrait_Peach.png". The page knows a few
 # hundred color names itself (web/src/shared/lib/colorNames.ts); a name it doesn't know is asked of

@@ -18,6 +18,7 @@ drivers/
 
 # Edge masks, on a Mac without iCloud Drive
 edge-masks/
+image-presets/
 
 # Color profiles, on a Mac without iCloud Drive
 color-profiles/

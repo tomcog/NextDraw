@@ -19,6 +19,11 @@ export interface PhotoActions {
   replace: () => void;
   /** Read the photo's file again, where it was opened from NextDraw's file browser and so is known. */
   reload: () => void;
+  /** Keep how the image is drawn - layers, passes, settings, pens, edge - as a preset; `taken` are the names in use. */
+  savePreset: (taken: string[]) => Promise<void>;
+  /** Draw the image as a saved preset says, keeping its picture and place. */
+  applyPreset: (name: string) => Promise<void>;
+  deletePreset: (name: string) => Promise<void>;
   /** Another pass over the image - drawn as Edges to start with, on a layer of its own on top. */
   addPass: () => void;
   /** The chosen pass taken off the image (never the last). */
@@ -104,7 +109,13 @@ export function PhotoCard({ shape, title, shapes, busy, targeted, layerCount, sh
   const [masks, setMasks] = useState<string[]>([]);
   const readMasks = () => api<{ masks: string[] }>("/api/edge-masks").then((r) => setMasks(r.masks)).catch(() => {});
   useEffect(() => { readMasks(); }, []);
+  // The presets, shared between Macs like the masks; and the one last picked here, for Delete.
+  const [presets, setPresets] = useState<string[]>([]);
+  const readPresets = () => api<{ presets: string[] }>("/api/image-presets").then((r) => setPresets(r.presets)).catch(() => {});
+  useEffect(() => { readPresets(); }, []);
+  const [presetPicked, setPresetPicked] = useState("");
   const photo = shape.photo;
+  const presetsBlocked = Boolean(photo.separation && !photo.profile);
   // The printer profiles in NextDraw's Color profiles folder: read once Profile is chosen, and again
   // after the folder is opened to add some.
   const [profiles, setProfiles] = useState<{ name: string; file: string; inks: number }[]>([]);
@@ -542,6 +553,43 @@ export function PhotoCard({ shape, title, shapes, busy, targeted, layerCount, sh
                 <Button size="sm" variant="secondary" disabled={busy} title="Another pass over this picture, on a layer of its own on top: Edges to start with - lines where the tone changes sharply - or any effect" onClick={actions.addPass}>
                   Add pass
                 </Button>
+              </div>
+              {/* Presets: how this image is drawn, kept to use on another picture - every layer and pass,
+                their effects, numbers and pens, and the edge. Picking one draws this image that way. */}
+              <InputSelect
+                size="md"
+                label="Preset"
+                value={presets.includes(presetPicked) ? presetPicked : ""}
+                disabled={busy || presetsBlocked || !presets.length}
+                title={presetsBlocked
+                  ? "Separations can't use presets: each plate draws a picture of its own"
+                  : presets.length ? "Draw this image as a saved preset says: its layers, passes, settings, pens and edge. The picture and its place stay" : "No presets yet: Save… keeps how this image is drawn"}
+                onChange={(e) => {
+                  const v = e.target.value;
+                  setPresetPicked(v);
+                  if (v) void actions.applyPreset(v);
+                }}
+              >
+                <option value="">{presets.length ? "Choose a preset" : "No presets yet"}</option>
+                {presets.map((name) => <option key={name} value={name}>{name}</option>)}
+              </InputSelect>
+              <div className={styles.fillRow}>
+                <Button size="sm" variant="secondary" disabled={busy || presetsBlocked}
+                  title={presetsBlocked ? "Separations can't use presets: each plate draws a picture of its own" : "Keep how this image is drawn - its layers, passes, settings, pens and edge - as a preset, to use on another picture"}
+                  onClick={() => actions.savePreset(presets).then(readPresets)}>
+                  Save preset…
+                </Button>
+                {presets.includes(presetPicked) && (
+                  <Button size="sm" variant="secondary" disabled={busy}
+                    title={`Take ${presetPicked} out of the presets. Drawings made with it stay as they are`}
+                    onClick={() => {
+                      if (window.confirm(`Take “${presetPicked}” out of the presets? Drawings made with it stay as they are.`)) {
+                        void actions.deletePreset(presetPicked).then(readPresets);
+                      }
+                    }}>
+                    Delete
+                  </Button>
+                )}
               </div>
               {/* Mask edges: ticked, the mask's controls; unticked, none of them, and no mask on the
                 image - so a mask never stays on out of sight. */}

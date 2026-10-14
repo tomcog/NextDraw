@@ -11,7 +11,7 @@ import type { FitAlign } from "../../shared/lib/geometry";
 import type { PenColor, Preset } from "../../shared/lib/types";
 import {
   BAND_NAMES, LAYER_SETTINGS, MOST_SIDE_LAYERS, paperToneOf, MOST_COLORS, MOST_LAYERS, PHOTO_DEFAULTS, PLATES, PLATE_AIMS, PLATE_OFF, colourGroups, isColourful, matchPens, photoMode,
-  placeOnPage, inkNamed, loadProfile, plateOfPhoto, platePens, presetAngle, readTones, hexLinear, linearHex, coverSteps, stemWithoutPlate, turnedCopy, turnedCrop, workingCopy, MASK_EDGE_PX, MASK_SIDES, type AnglePreset, type Photo, type PhotoPart, type Plate, type PlateSet, PLATE_SETS, plateSetOf, platesOf,
+  placeOnPage, photoData, photoFromData, inkNamed, loadProfile, plateOfPhoto, platePens, presetAngle, readTones, hexLinear, linearHex, coverSteps, stemWithoutPlate, turnedCopy, turnedCrop, workingCopy, MASK_EDGE_PX, MASK_SIDES, type AnglePreset, type Photo, type PhotoPart, type Plate, type PlateSet, PLATE_SETS, plateSetOf, platesOf,
 } from "../../shared/lib/drawing/photo";
 import { boxOf, newLayerId, newShapeId, type Layer, type Page, type Shape } from "../../shared/lib/drawing/shapes";
 import { samplePhoto, type Candidate } from "./choosePens";
@@ -1133,6 +1133,109 @@ export function photoActions(ctx: PhotoContext) {
   };
 
   /**
+   * Presets: everything about how the chosen image is drawn - its layers and passes, their effects,
+   * numbers and pens, its edge - kept under a name, without the picture, to put on another picture
+   * later. Separations can't have one: each plate draws a picture of its own.
+   */
+  const presetBlocked = () => Boolean(chosen?.photo?.separation && !chosen.photo.profile);
+  const savePreset = async (taken: string[]) => {
+    if (!chosen?.photo || presetBlocked()) return;
+    const { name: stem } = photoStem();
+    const name = window.prompt("Save how this image is drawn as the preset:", stem)?.replace(/[/\\:]/g, "-").trim();
+    if (!name) return;
+    if (taken.includes(name) && !window.confirm(`Replace the preset “${name}”?`)) return;
+    const members = shapes.filter(sameImage);
+    // Bottom first, as the layers stack. A shape named after the image keeps only what follows its
+    // name, so it's named after the next picture instead.
+    const presetLayers = layers.filter((l) => members.some((sh) => sh.layerId === l.id)).map((l) => ({
+      name: l.name,
+      color: l.color,
+      shapes: members.filter((sh) => sh.layerId === l.id).map((sh) => {
+        const { src: _src, width: _w, height: _h, source: _s, source_channel: _c, quarter_turns: _q, crop: _crop, fit: _fit, margin: _m, align: _a, ...settings } = photoData(sh.photo!) as Record<string, unknown>;
+        return { ...(sh.name?.startsWith(stem) ? { after: sh.name.slice(stem.length) } : { name: sh.name }), photo: settings };
+      }),
+    }));
+    try {
+      await postJSON(`/api/image-presets/${encodeURIComponent(name)}`, { preset: { layers: presetLayers } }, "PUT");
+      setMessage({ text: `Saved as the preset ${name}`, ok: true });
+    } catch (err) {
+      setMessage({ text: (err as Error).message, ok: false });
+    }
+  };
+  /**
+   * Draw the chosen image as a preset says: its layers and passes take the place of the image's own,
+   * with every setting and pen the preset has. The picture stays, and so do its turn, crop and place.
+   */
+  const applyPreset = async (name: string) => {
+    const was = chosen?.photo;
+    if (!chosen || !was || presetBlocked()) return;
+    try {
+      type Saved = { layers: { name: string; color: string; shapes: { name?: string; after?: string; photo: Record<string, unknown> }[] }[] };
+      const { preset } = await api<{ preset: Saved }>(`/api/image-presets/${encodeURIComponent(name)}`);
+      const { name: stem } = photoStem();
+      const members = shapes.filter(sameImage);
+      const gone = new Set(members.map((sh) => sh.id));
+      // Each preset group and pass gets ids of its own, so it's never joined to another image's.
+      const fresh = new Map<string, string>();
+      const renamed = (id: unknown) => {
+        if (typeof id !== "string") return undefined;
+        if (!fresh.has(id)) fresh.set(id, newShapeId());
+        return fresh.get(id);
+      };
+      const newLayers: Layer[] = [];
+      const newShapes: Shape[] = [];
+      for (const pl of preset.layers ?? []) {
+        const layer: Layer = { id: newLayerId(), name: pl.name, color: pl.color };
+        newLayers.push(layer);
+        for (const ps of pl.shapes ?? []) {
+          const settings = photoFromData({ ...ps.photo, src: was.src, width: was.width, height: was.height });
+          if (!settings) continue;
+          const group = renamed(ps.photo.group);
+          const link = renamed(ps.photo.link);
+          newShapes.push({
+            ...chosen,
+            id: newShapeId(),
+            layerId: layer.id,
+            name: ps.after !== undefined ? `${stem}${ps.after}` : ps.name ?? stem,
+            photo: {
+              ...settings,
+              group, link,
+              source: was.source, sourceChannel: was.sourceChannel, quarterTurns: was.quarterTurns,
+              crop: was.crop, fit: was.fit, margin: was.margin, align: was.align,
+            },
+          });
+        }
+      }
+      if (!newShapes.length) throw new Error("it has no layers to draw");
+      record();
+      // The image's layers go where nothing else is on them, and the preset's take the place of the lowest.
+      const emptied = new Set(layers.filter((l) => members.some((sh) => sh.layerId === l.id)
+        && !shapes.some((sh) => sh.layerId === l.id && !gone.has(sh.id))).map((l) => l.id));
+      const at = layers.findIndex((l) => members.some((sh) => sh.layerId === l.id));
+      setLayers((list) => {
+        const before = list.slice(0, Math.max(0, at)).filter((l) => !emptied.has(l.id));
+        const after = list.slice(Math.max(0, at)).filter((l) => !emptied.has(l.id));
+        return [...before, ...newLayers, ...after];
+      });
+      setShapes((list) => [...list.filter((sh) => !gone.has(sh.id)), ...newShapes]);
+      const top = newShapes[newShapes.length - 1];
+      pick(top.id);
+      setActiveLayer(top.layerId);
+      setMessage({ text: `Drawn as the preset ${name}`, ok: true });
+    } catch (err) {
+      setMessage({ text: `Couldn't use the preset ${name}: ${(err as Error).message}`, ok: false });
+    }
+  };
+  const deletePreset = async (name: string) => {
+    try {
+      await api(`/api/image-presets/${encodeURIComponent(name)}`, { method: "DELETE" });
+      setMessage({ text: `${name} taken out of the presets`, ok: true });
+    } catch (err) {
+      setMessage({ text: (err as Error).message, ok: false });
+    }
+  };
+
+  /**
    * Another pass over the chosen image: a layer of its own, on top, in the palette's darkest pen,
    * drawn as Edges - lines where the tone changes sharply - over whatever the image already draws.
    * It shares the picture and its place with the image's other passes and keeps its own settings;
@@ -1240,7 +1343,7 @@ export function photoActions(ctx: PhotoContext) {
   return {
     setChannelOf, splitPhotoProfile,
     addPhoto, addSeparations, switchPhotoMode, setKeyLayer, splitPhoto, splitPhotoByColor, splitPhotoBestFit, bestPens,
-    placePhoto, replacePhoto, reloadPhoto, turnPhoto, setPhotoOf, addEdgeMask, chooseEdgeMask, deleteEdgeMask, setEdgeGen, saveEdgeGen, setAngles, photoStem, splitPhotoCmyk, setPlatePen, setLayerColor,
+    placePhoto, replacePhoto, reloadPhoto, savePreset, applyPreset, deletePreset, turnPhoto, setPhotoOf, addEdgeMask, chooseEdgeMask, deleteEdgeMask, setEdgeGen, saveEdgeGen, setAngles, photoStem, splitPhotoCmyk, setPlatePen, setLayerColor,
     splitAroundPaper, setPaperTone, addPass, removePass,
   };
 }
