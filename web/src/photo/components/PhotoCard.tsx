@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { api } from "../../shared/lib/api";
+import { api, postJSON } from "../../shared/lib/api";
 import { Button, ButtonRound, Card, Checkbox, InputSelect, Segment, SegmentedControl } from "@tomcoggia/ui";
 import { ChevronRight, RefreshCw, Trash2 } from "lucide-react";
 import { Section } from "../../shared/components/controls/Section";
@@ -105,11 +105,22 @@ export function PhotoCard({ shape, title, shapes, busy, targeted, layerCount, sh
   const readMasks = () => api<{ masks: string[] }>("/api/edge-masks").then((r) => setMasks(r.masks)).catch(() => {});
   useEffect(() => { readMasks(); }, []);
   const photo = shape.photo;
-  // The printer profiles on the server's Mac a photo can be split by: read once Profile is chosen.
-  const [profiles, setProfiles] = useState<{ name: string; path: string; inks: number; folder: string }[]>([]);
+  // The printer profiles in NextDraw's Color profiles folder: read once Profile is chosen, and again
+  // after the folder is opened to add some.
+  const [profiles, setProfiles] = useState<{ name: string; file: string; inks: number }[]>([]);
+  const readProfiles = () => api<{ profiles: typeof profiles }>("/api/color-profiles").then((r) => setProfiles(r.profiles)).catch(() => {});
   useEffect(() => {
-    if (photo.profile && !profiles.length) api<{ profiles: typeof profiles }>("/api/color-profiles").then((r) => setProfiles(r.profiles)).catch(() => {});
-  }, [photo.profile, profiles.length]);
+    if (photo.profile && !profiles.length) void readProfiles();
+  }, [photo.profile, profiles.length]); // eslint-disable-line react-hooks/exhaustive-deps
+  // Back from the Finder, having added profiles to the folder: the list again.
+  useEffect(() => {
+    if (!photo.profile) return;
+    const again = () => void readProfiles();
+    window.addEventListener("focus", again);
+    return () => window.removeEventListener("focus", again);
+  }, [photo.profile]); // eslint-disable-line react-hooks/exhaustive-deps
+  // A drawing from before the folder kept the profile's whole path: its file name is what's listed.
+  const profileFile = photo.profile ? photo.profile.slice(photo.profile.lastIndexOf("/") + 1) : "";
   // A mask this drawing carries that isn't in the library: added before there was one, or taken out since.
   const ownMask = Boolean(photo.edgeMask) && !masks.includes(photo.edgeMaskName ?? "");
   // Mask edges is ticked while the image has a mask, or once ticked to choose one.
@@ -200,12 +211,12 @@ export function PhotoCard({ shape, title, shapes, busy, targeted, layerCount, sh
               <InputSelect
                 size="md"
                 label="Profile"
-                value={photo.profile}
-                title={photo.profile}
+                value={profileFile}
+                title={profileFile}
                 onChange={(e) => actions.setProfile(e.target.value, photo.profileIntent ?? 0)}
               >
-                {!profiles.some((p) => p.path === photo.profile) && <option value={photo.profile}>{photo.profileName ?? photo.profile}</option>}
-                {profiles.map((p) => <option key={p.path} value={p.path}>{`${p.name} - ${p.inks} inks (${p.folder})`}</option>)}
+                {!profiles.some((p) => p.file === profileFile) && <option value={profileFile}>{photo.profileName ?? profileFile}</option>}
+                {profiles.map((p) => <option key={p.file} value={p.file}>{`${p.name} - ${p.inks} inks`}</option>)}
               </InputSelect>
               <InputSelect
                 size="md"
@@ -216,7 +227,10 @@ export function PhotoCard({ shape, title, shapes, busy, targeted, layerCount, sh
               >
                 {INTENTS.map((name, i) => <option key={name} value={i}>{name}</option>)}
               </InputSelect>
-              <p className={styles.empty}>Each layer draws its ink's share of the image, as the profile works it out for a printer - a starting point for pens, set further in the Adjustments card.</p>
+              <p className={styles.empty}>Each layer draws its ink's share of the image, as the profile works it out for a printer - a starting point for pens, set further in the Adjustments card. The profiles are the ones in NextDraw's Color profiles folder.</p>
+              <Button size="sm" variant="secondary" title="Open NextDraw's Color profiles folder in the Finder, to add or take out profiles" onClick={() => void postJSON("/api/color-profiles/show").then(readProfiles).catch(() => {})}>
+                Show folder
+              </Button>
             </>
           ) : photoMode(photo) === "cmyk" ? (
             <>

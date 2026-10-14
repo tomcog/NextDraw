@@ -22,6 +22,8 @@ import type { InkProfile } from "../../shared/lib/drawing/icc";
 
 /** The profile a photo was last split by, and its intent: what the next is split by to start with. */
 export const PROFILE_KEY = "photo-profile";
+/** A profile's file name, from a drawing that kept its whole path before profiles had a folder of their own. */
+const baseName = (path: string) => path.slice(path.lastIndexOf("/") + 1);
 
 export interface PhotoContext {
   /** The one shape picked, if one is. */
@@ -332,14 +334,17 @@ export function photoActions(ctx: PhotoContext) {
     // A profile split isn't kept to come back to: it's made again, as quickly, from the profile.
     const modes = from === "profile" || from === "separations" ? { ...(chosen.photo.modes ?? {}) } : { ...(chosen.photo.modes ?? {}), [from]: photoParts() };
     if (to === "profile") {
-      const last = load<{ path: string; intent?: number }>(PROFILE_KEY);
+      // The profile split by last, while it's still in the folder; or the folder's first.
+      const last = load<{ file?: string; path?: string; intent?: number }>(PROFILE_KEY);
       void (async () => {
-        const path = last?.path ?? (await api<{ profiles: { path: string }[] }>("/api/color-profiles").catch(() => ({ profiles: [] }))).profiles[0]?.path;
-        if (!path) {
-          setMessage({ text: "There are no printer profiles on this Mac to split by: add one to ColorSync's Profiles folder", ok: false });
+        const { profiles, folder } = await api<{ profiles: { file: string }[]; folder: string }>("/api/color-profiles").catch(() => ({ profiles: [], folder: "" }));
+        const was = baseName(last?.file ?? last?.path ?? "");
+        const file = profiles.find((p) => p.file === was)?.file ?? profiles[0]?.file;
+        if (!file) {
+          setMessage({ text: `No color profiles to split by yet: put printer profiles (.icc) in ${folder || "the Color profiles folder"}, then choose Profile again`, ok: false });
           return;
         }
-        await splitPhotoProfile(path, last?.intent ?? 0, { modes });
+        await splitPhotoProfile(file, last?.intent ?? 0, { modes });
       })();
       return;
     }
@@ -371,20 +376,21 @@ export function photoActions(ctx: PhotoContext) {
     * other, the color the profile gives it. Layers stack lightest at the bottom. The profile is
     * remembered, for the next photo split this way.
     */
-  const splitPhotoProfile = async (path: string, intent = 0, extra: Partial<Photo> = {}) => {
+  const splitPhotoProfile = async (file: string, intent = 0, extra: Partial<Photo> = {}) => {
     if (!chosen?.photo) return;
     setMessage({ text: "Reading the profile…", ok: true, progress: true });
     let profile: InkProfile;
-    let name = path.slice(path.lastIndexOf("/") + 1).replace(/\.ic[cm]$/i, "");
+    const path = baseName(file);
+    let name = path.replace(/\.ic[cm]$/i, "");
     try {
       profile = await loadProfile(path);
-      const listed = (await api<{ profiles: { path: string; name: string }[] }>("/api/color-profiles")).profiles.find((p) => p.path === path);
+      const listed = (await api<{ profiles: { file: string; name: string }[] }>("/api/color-profiles")).profiles.find((p) => p.file === path);
       if (listed) name = listed.name;
     } catch (err) {
       setMessage({ text: `Couldn't use that profile: ${(err as Error).message}`, ok: false });
       return;
     }
-    remember(PROFILE_KEY, { path, intent });
+    remember(PROFILE_KEY, { file: path, intent });
     const pens = tool2?.palette ?? [];
     const inkNames = profile.names ?? Array.from({ length: profile.inks }, (_, i) => `Channel ${i + 1}`);
     const found = inkNames.map((ink) => inkNamed(ink, pens));

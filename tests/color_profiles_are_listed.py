@@ -1,17 +1,20 @@
 #!/usr/bin/env python3
 """
-The printer profiles Image can split a photo by are listed, and nothing it can't use.
+Image splits a photo by the printer profiles in NextDraw's own Color profiles folder, and no others.
 
-Image splits a photo into a profile's inks itself (web/src/shared/lib/drawing/icc.ts), so the list
-(server.py, color_profiles) must hold only what that code reads: printer profiles from Lab with a
-lookup-table photo-to-ink conversion, of any number of inks - and never a display or RGB profile.
-The file itself is sent only for a listed profile.
+Image applies a profile itself (web/src/shared/lib/drawing/icc.ts), so the list (server.py,
+color_profiles) must hold only what that code reads - printer profiles from Lab with a lookup-table
+photo-to-ink conversion, of any number of inks - and only from the folder, not every profile on the
+Mac. A profile's file is sent by its name in the folder; a drawing from before the folder, which kept
+the whole path, gets the file of that name; nothing outside the folder is ever sent.
 
 Run it from the repository:   python3 tests/color_profiles_are_listed.py
-It needs nothing running. It reads the Mac's own ColorSync folders.
+It needs nothing running. It works in a temporary folder, copying in two of macOS's own profiles.
 """
 import importlib.util
+import shutil
 import sys
+import tempfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -19,6 +22,7 @@ spec = importlib.util.spec_from_file_location("srv", ROOT / "server.py")
 server = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(server)
 
+SYSTEM = Path("/System/Library/ColorSync/Profiles")
 failures = []
 
 
@@ -28,15 +32,21 @@ def check(what, ok):
         failures.append(what)
 
 
-listed = server.color_profiles()
-generic = Path("/System/Library/ColorSync/Profiles/Generic CMYK Profile.icc")
-if generic.exists():
-    check("Generic CMYK is listed, with four inks", any(p["path"] == str(generic) and p["inks"] == 4 for p in listed))
-check("no RGB or display profile is", server.profile_info(Path("/System/Library/ColorSync/Profiles/sRGB Profile.icc")) is None)
-check("each listed once", len({p["path"] for p in listed}) == len(listed))
-client = server.app.test_client()
-check("a listed profile's file is sent", not listed or client.get("/api/color-profile", query_string={"path": listed[0]["path"]}).status_code == 200)
-check("anything else isn't", client.get("/api/color-profile", query_string={"path": "/etc/hosts"}).status_code == 404)
+with tempfile.TemporaryDirectory() as tmp:
+    server.COLOR_PROFILES = Path(tmp) / "Color profiles"
+    client = server.app.test_client()
+    check("no folder yet: nothing listed", client.get("/api/color-profiles").get_json()["profiles"] == [])
+    server.COLOR_PROFILES.mkdir()
+    shutil.copy(SYSTEM / "Generic CMYK Profile.icc", server.COLOR_PROFILES)
+    shutil.copy(SYSTEM / "sRGB Profile.icc", server.COLOR_PROFILES)
+    listed = client.get("/api/color-profiles").get_json()["profiles"]
+    check("the CMYK profile is listed, with four inks", [(p["file"], p["inks"]) for p in listed] == [("Generic CMYK Profile.icc", 4)])
+    check("the RGB one in the folder isn't", all(p["file"] != "sRGB Profile.icc" for p in listed))
+    get = lambda **q: client.get("/api/color-profile", query_string=q)
+    check("a listed profile is sent by its name", get(name="Generic CMYK Profile.icc").status_code == 200)
+    check("and by an old drawing's whole path", get(path="/Users/someone/Library/ColorSync/Profiles/Generic CMYK Profile.icc").status_code == 200)
+    check("one that isn't listed isn't", get(name="sRGB Profile.icc").status_code == 404)
+    check("nor anything outside the folder", get(name="../../etc/hosts").status_code == 404)
 
 print()
 print(f"{len(failures)} failed" if failures else "All good.")

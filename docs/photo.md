@@ -56,8 +56,9 @@ get complicated, and it never needs Studio's tools for drawing and transforming 
     the whole image's and folded into one by `channelAdjusted`. They're no longer in the Image card.
     Separations also have a Black point (%), the whole image's and each channel's: Levels' black
     slider, tones that dark or darker full ink and white kept white - to punch the shadows.
-  - Profile, a fourth color mode: split by a printer's ICC profile from this Mac's ColorSync folders
-    (server.py `color_profiles`, `/api/color-profiles`, `/api/color-profile`) - CMYK, and the 3-, 6- or
+  - Profile, a fourth color mode: split by a printer's ICC profile in NextDraw's own Color profiles
+    folder, beside the presets in iCloud Drive (server.py `COLOR_PROFILES`, `/api/color-profiles`,
+    `/api/color-profile?name=`, Show folder: `/api/color-profiles/show`) - CMYK, and the 3-, 6- or
     7-ink ones macOS's own converter refuses. The page applies the profile itself (`shared/lib/drawing/icc.ts`:
     sRGB to Lab D50, then the profile's mft2/mft1 table), within about 1% of macOS on CMYK. Each layer
     keeps the photo and says which ink it is (`profile`, `profileIntent`, `profileInk`); `profiled`

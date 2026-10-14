@@ -4498,22 +4498,17 @@ def flattened_picture(data, suffix):
 
 
 # ---- Color profiles ----
-# Printer profiles from this Mac's ColorSync folders, for Image to split a photo into a profile's inks:
-# CMYK, and the 2- to 15-ink ones (Riso sets, extended gamut) macOS's converter refuses. Only what the
-# page can apply is listed: an output profile from Lab, whose photo-to-ink table is a 16- or 8-bit
-# lookup table (mft2, mft1). The page reads the file and does the converting itself.
-PROFILE_FOLDERS = [
-    (Path.home() / "Library" / "ColorSync" / "Profiles", "Yours"),
-    (Path("/Library/ColorSync/Profiles"), "This Mac"),
-    (Path("/Library/Application Support/Adobe/Color/Profiles/Recommended"), "Adobe"),
-    (Path("/Library/Application Support/Adobe/Color/Profiles"), "Adobe"),
-    (Path("/System/Library/ColorSync/Profiles"), "macOS"),
-]
+# Printer profiles for Image to split a photo into a profile's inks: CMYK, and the 2- to 15-ink ones
+# (Riso sets, extended gamut) macOS's converter refuses. Only the ones put in NextDraw's own folder,
+# beside the presets in iCloud Drive so both Macs have the same - not every profile on the Mac. Only
+# what the page can apply is listed: an output profile from Lab, whose photo-to-ink table is a 16- or
+# 8-bit lookup table (mft2, mft1). The page reads the file and does the converting itself.
+COLOR_PROFILES = (ICLOUD_DRIVE / "NextDraw Studio" / "Color profiles") if ICLOUD_DRIVE.is_dir() else (ROOT / "color-profiles")
 INK_SPACES = {"CMYK": 4, **{f"{n:X}CLR": n for n in range(2, 16)}}
 
 
 def profile_info(path):
-    """A profile Image can split a photo by, as {name, path, inks, folder}, or None."""
+    """A profile Image can split a photo by, as {name, file, inks}, or None."""
     try:
         with open(path, "rb") as f:
             head = f.read(132)
@@ -4541,7 +4536,7 @@ def profile_info(path):
     except (OSError, struct.error, UnicodeDecodeError):
         return None
     # Some name themselves after their file: "Ink set.icc" reads as "Ink set".
-    return {"name": re.sub(r"\.ic[cm]$", "", name, flags=re.I) or path.stem, "path": str(path), "inks": inks}
+    return {"name": re.sub(r"\.ic[cm]$", "", name, flags=re.I) or path.stem, "file": path.name, "inks": inks}
 
 
 def profile_name(desc):
@@ -4556,34 +4551,40 @@ def profile_name(desc):
 
 
 def color_profiles():
-    """Every profile Image can split by, yours first, each file once."""
-    seen, out = set(), []
-    for folder, where in PROFILE_FOLDERS:
-        if not folder.is_dir():
-            continue
-        for path in sorted(folder.iterdir(), key=lambda p: p.name.lower()):
-            if path.suffix.lower() not in (".icc", ".icm") or path.resolve() in seen:
-                continue
-            seen.add(path.resolve())
+    """The profiles in NextDraw's folder that Image can split by, by name."""
+    if not COLOR_PROFILES.is_dir():
+        return []
+    out = []
+    for path in sorted(COLOR_PROFILES.iterdir(), key=lambda p: p.name.lower()):
+        if path.suffix.lower() in (".icc", ".icm") and not path.name.startswith("."):
             info = profile_info(path)
             if info:
-                out.append({**info, "folder": where})
-    return out
+                out.append(info)
+    return sorted(out, key=lambda p: p["name"].lower())
 
 
 @app.get("/api/color-profiles")
 def list_color_profiles():
-    return jsonify(profiles=color_profiles())
+    return jsonify(profiles=color_profiles(), folder=display_path(COLOR_PROFILES))
 
 
 @app.get("/api/color-profile")
 def color_profile():
-    """A profile's file, by its path - one of the listed ones only."""
+    """A profile's file, by its file name in the folder. A drawing from before the folder kept the
+    profile's whole path: its file name is looked for here."""
     from flask import Response
-    raw = request.args.get("path") or ""
-    if raw not in {p["path"] for p in color_profiles()}:
-        return jsonify(error="That profile isn't one Image can use, or it's gone."), 404
-    return Response(Path(raw).read_bytes(), mimetype="application/vnd.iccprofile")
+    name = Path(request.args.get("name") or request.args.get("path") or "").name
+    if not name or name not in {p["file"] for p in color_profiles()}:
+        return jsonify(error=f"{name or 'That profile'} isn't in the Color profiles folder."), 404
+    return Response((COLOR_PROFILES / name).read_bytes(), mimetype="application/vnd.iccprofile")
+
+
+@app.post("/api/color-profiles/show")
+def show_color_profiles():
+    """The folder, opened in the Finder on this Mac - made first, the first time - to put profiles in."""
+    COLOR_PROFILES.mkdir(parents=True, exist_ok=True)
+    subprocess.run(["open", str(COLOR_PROFILES)], capture_output=True, timeout=10)
+    return jsonify(ok=True, folder=display_path(COLOR_PROFILES))
 
 
 # ---- Multichannel Photoshop files ----

@@ -39,7 +39,7 @@ export interface Photo {
   blackPoint?: number;
   channelBlackPoint?: number;
   /**
-   * Split by a printer's color profile: the profile's file (its path on the server's Mac), its name,
+   * Split by a printer's color profile: the profile's file in NextDraw's Color profiles folder, its name,
    * the rendering intent (0 perceptual, 1 relative colorimetric, 2 saturation) and which of its inks
    * this layer is. The layer draws that ink's share of the photo, worked out from `src` as it's drawn -
    * the photo itself stays as it is, so turning or replacing it splits it again. Its `separation` is
@@ -1016,14 +1016,18 @@ export function readTones(src: string): Promise<Tones> {
 const profiles = new Map<string, InkProfile>();
 const profileLoading = new Map<string, Promise<InkProfile>>();
 
-/** A printer profile from the server, read once however many layers ask. */
+/**
+ * A printer profile from the server's Color profiles folder, by its file name, read once however many
+ * layers ask. (A drawing from before the folder has the profile's whole path: the server looks for
+ * its file name.)
+ */
 export function loadProfile(path: string): Promise<InkProfile> {
   const known = profiles.get(path);
   if (known) return Promise.resolve(known);
   const pending = profileLoading.get(path);
   if (pending) return pending;
   const job = (async () => {
-    const res = await fetch(`/api/color-profile?path=${encodeURIComponent(path)}`);
+    const res = await fetch(`/api/color-profile?name=${encodeURIComponent(path)}`);
     if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error ?? "That profile couldn't be read");
     const made = parseProfile(await res.arrayBuffer());
     profiles.set(path, made);
