@@ -1,0 +1,50 @@
+.headerTools {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+/* The queue: the library's layer row, with a menu after it, as Studio's Layers card. */
+.list {
+  /* The open drawing is marked with a black target, as the layer to print is in the Layers card. */
+  --ui-layer-controller-target-color: var(--ui-text-default);
+  position: relative; /* rows measure their offsetTop against the list */
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.125rem;
+}
+
+.row {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  border-radius: 4px;
+}
+
+.row > :first-child { flex: 1; min-width: 0; }
+
+/* The row being carried: lifted above the ones sliding out of its way. */
+.row[data-dragging="true"] {
+  z-index: 2;
+  box-shadow: var(--ui-shadow-float-2);
+  cursor: grabbing;
+}
+
+.list:has(> [data-dragging="true"]) { user-select: none; }
+
+/* A drawing no longer where it was added from: struck through, as a layer that won't be drawn. */
+.row[data-missing="true"] > :first-child { text-decoration: line-through; }
+
+.nextUp {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  margin-top: 8px;
+}
+
+.nextUp > p { margin: 0; }

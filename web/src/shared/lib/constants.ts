@@ -94,6 +94,7 @@ export const STORAGE = {
   fileCard: "nextdraw-plot-file-card",
   paperCard: "nextdraw-plot-paper-card",
   penCard: "nextdraw-plot-pen-card",
+  queueCard: "nextdraw-plot-queue-card",
 };
 
 // The channel Studio's "Open in Plot" uses to find a Plot page already open in another tab.

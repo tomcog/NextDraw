@@ -70,6 +70,17 @@ interface Props {
   addMode?: boolean;
   /** Image: pictures are listed too - TIFFs and all - and picking one hands it here. */
   onImage?: (file: { name: string; path: string }) => void;
+  /** Plot's queue: files are ticked rather than opened, and handed over together, in the order
+   * they were ticked. Nothing is opened. */
+  pick?: Pick;
+}
+
+export interface Pick {
+  title: string;
+  hint: string;
+  /** The button that hands the ticked files over. */
+  label: string;
+  onPick: (files: { name: string; path: string }[]) => void;
 }
 
 // Where the browser opens, in both apps: the last folder browsed, or the folder of the drawing last
@@ -83,7 +94,7 @@ const fmtDate = (seconds = 0) =>
   new Date(seconds * 1000).toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
 
 // Browse the folders the server allows and open an SVG, or import an Illustrator file as SVG.
-export function FileBrowser({ open, onClose, onOpened, endpoint = "/api/open", combine, addMode = false, onImage }: Props) {
+export function FileBrowser({ open, onClose, onOpened, endpoint = "/api/open", combine, addMode = false, onImage, pick }: Props) {
   const dialog = useRef<HTMLDialogElement>(null);
   const [listing, setListing] = useState<Listing | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -226,8 +237,10 @@ export function FileBrowser({ open, onClose, onOpened, endpoint = "/api/open", c
   return (
     <dialog ref={dialog} className={styles.dialog} onClose={onClose} onCancel={(e) => { if (working) e.preventDefault(); }}>
       <div className={styles.header}>
-        <h2 className={styles.title}>{addMode ? "Add as a layer" : "Open drawing"}</h2>
-        {combine && addMode ? (
+        <h2 className={styles.title}>{pick ? pick.title : addMode ? "Add as a layer" : "Open drawing"}</h2>
+        {pick ? (
+          <p className={styles.hint}>{pick.hint}</p>
+        ) : combine && addMode ? (
           <p className={styles.hint}>
             Pick a file to put on top of this drawing as a layer of its own. Tick several to add a layer each, in the order they're ticked.
           </p>
@@ -348,11 +361,11 @@ export function FileBrowser({ open, onClose, onOpened, endpoint = "/api/open", c
           {listing?.files.map((file) => {
             const at = ticked.findIndex((f) => f.path === file.path);
             return (
-            <li key={file.path} className={combine ? styles.tickable : undefined}>
-              {combine && (
+            <li key={file.path} className={combine || pick ? styles.tickable : undefined}>
+              {(combine || pick) && (
                 <Checkbox
                   size="md"
-                  label={`Stack ${file.name} as a layer`}
+                  label={pick ? `Add ${file.name}` : `Stack ${file.name} as a layer`}
                   hideLabel
                   checked={at >= 0}
                   onChange={(e) => tick(file, e.target.checked)}
@@ -362,7 +375,8 @@ export function FileBrowser({ open, onClose, onOpened, endpoint = "/api/open", c
                 type="button"
                 className={styles.row}
                 onClick={() => {
-                  if (file.kind === "image") {
+                  if (pick) tick(file, at < 0);
+                  else if (file.kind === "image") {
                     onImage?.({ name: file.name, path: file.path });
                     onClose();
                   } else if (addMode) stack(true, undefined, [file]);
@@ -374,7 +388,7 @@ export function FileBrowser({ open, onClose, onOpened, endpoint = "/api/open", c
                   : <FileImage className={styles.icon} aria-hidden="true" />}
                 <span className={styles.name}>{file.name}</span>
                 <span className={styles.meta} data-layer={at >= 0 || undefined}>
-                  {at >= 0 ? `Layer ${at + 1}` : file.kind === "ai" ? "Illustrator, imports as SVG" : file.kind === "image" ? "Picture" : "SVG"}
+                  {at >= 0 ? (pick ? `${at + 1} in the queue` : `Layer ${at + 1}`) : file.kind === "ai" ? "Illustrator, imports as SVG" : file.kind === "image" ? "Picture" : "SVG"}
                 </span>
                 <span className={styles.meta}>{`${fmtSize(file.size)}, ${fmtDate(file.modified)}`}</span>
               </button>
@@ -388,7 +402,25 @@ export function FileBrowser({ open, onClose, onOpened, endpoint = "/api/open", c
       )}
 
       <div className={styles.footer}>
-        {combine && ticked.length > 0 && (
+        {pick && ticked.length > 0 && (
+          <>
+            <span className={styles.ticked}>
+              {ticked.length === 1 ? "1 file ticked" : `${ticked.length} files ticked`}
+            </span>
+            <Button size="md" variant="ghost" onClick={() => setTicked([])}>Clear</Button>
+            <Button
+              size="md"
+              variant="primary"
+              onClick={() => {
+                pick.onPick(ticked.map((f) => ({ name: f.name, path: f.path })));
+                onClose();
+              }}
+            >
+              {pick.label}
+            </Button>
+          </>
+        )}
+        {combine && !pick && ticked.length > 0 && (
           <>
             <span className={styles.ticked}>
               {ticked.length === 1 ? "1 file ticked" : `${ticked.length} files ticked`}

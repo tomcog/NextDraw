@@ -292,6 +292,71 @@ def mark_printed(layer_ids):
     with printed_lock:
         printed_layers.update(i for i in ids if i)
         write_printed()
+        done = set(printed_layers)
+    try:
+        queue_mark_done_if_printed(root, done)
+    except Exception:  # noqa: BLE001 - nor a queue mark
+        pass
+
+
+# The queue: drawings waiting their turn on the plotter, in the order they're to be plotted. Kept on
+# disk beside the jobs, so every open Plot page shows the same one and a restart keeps it. Only the
+# list - each drawing's own choices stay in the drawing. A drawing is marked done when every layer
+# Plot would draw of it has plotted to the end; the page can tick or untick it by hand as well.
+QUEUE_FILE = JOBS / "queue.json"
+queue_lock = threading.Lock()
+
+
+def read_queue():
+    try:
+        saved = json.loads(QUEUE_FILE.read_text())
+        items = [i for i in saved.get("items", []) if isinstance(i, dict) and i.get("path")]
+        return {"items": items, "version": saved.get("version")}
+    except (OSError, ValueError, AttributeError):
+        return {"items": [], "version": None}
+
+
+queue = read_queue()
+
+
+def write_queue(items):
+    """Called holding queue_lock."""
+    global queue
+    queue = {"items": items, "version": f"{time.time_ns():x}"}
+    try:
+        tmp = QUEUE_FILE.with_suffix(".tmp")
+        tmp.write_text(json.dumps(queue))
+        os.replace(tmp, QUEUE_FILE)
+    except OSError:
+        pass  # the queue still holds until the app restarts
+
+
+def queue_entry(path, item_id, done):
+    return {"id": item_id, "path": str(path), "name": path.name, "folder": display_path(path.parent),
+            "done": bool(done)}
+
+
+def queue_mark_done_if_printed(root, printed):
+    """The open drawing, if it's in the queue, is done once every layer Plot would draw is printed:
+    not skipped (%), not hidden in the file, not held back in Plot's own block."""
+    if not CURRENT_PATH.exists():
+        return
+    current = CURRENT_PATH.read_text()
+    held = set((read_plot(root) or {}).get("hidden_layers") or [])
+    wanted = [l["id"] for l in read_layers(root)
+              if l["id"] and not l["skipped"] and not l["hidden"] and l["id"] not in held]
+    if not wanted or not all(i in printed for i in wanted):
+        return
+    with queue_lock:
+        items = queue["items"]
+        if any(queue_is_open(i, current) and not i.get("done") for i in items):
+            write_queue([{**i, "done": True} if queue_is_open(i, current) else i for i in items])
+
+
+def queue_is_open(item, current):
+    """Whether a queued drawing is the one open: an Illustrator file opens as the SVG beside it."""
+    path = Path(item["path"])
+    return str(path) == current or (path.suffix.lower() == ".ai" and str(path.with_suffix(".svg")) == current)
 
 
 class Job:
@@ -2514,6 +2579,8 @@ def status():
     snap["drawing_saved"] = drawing_saved if snap["file"] else None
     with plot_settings_lock:
         snap["settings_version"] = shared_settings["version"]
+    with queue_lock:
+        snap["queue_version"] = queue["version"]
     with printed_lock:
         snap["printed_layers"] = sorted(printed_layers)
     snap["file_path"] = None
@@ -3423,6 +3490,39 @@ def put_plot_settings():
         tmp.write_text(json.dumps(shared_settings))
         os.replace(tmp, PLOT_SETTINGS)
         return jsonify(version=shared_settings["version"])
+
+
+@app.get("/api/queue")
+def get_queue():
+    with queue_lock:
+        items = [{**i, "missing": not Path(i["path"]).is_file()} for i in queue["items"]]
+        return jsonify(items=items, version=queue["version"])
+
+
+@app.put("/api/queue")
+def put_queue():
+    """The whole queue as a page now has it - added to, reordered, an entry removed or ticked. Each
+    entry is a path and whether it's done; anything outside the folders drawings open from, or not an
+    SVG or Illustrator file, is refused. A path listed twice is kept once, where it first comes."""
+    body = request.json or {}
+    raw = body.get("items")
+    if not isinstance(raw, list):
+        return jsonify(error="The queue must be a list of drawings."), 400
+    items, seen = [], set()
+    for entry in raw:
+        if not isinstance(entry, dict):
+            return jsonify(error="Each drawing in the queue needs its location."), 400
+        path = allowed_path(entry.get("path", ""))
+        if path is None or path.suffix.lower() not in (".svg", ".ai"):
+            return jsonify(error=f"{Path(str(entry.get('path', ''))).name or 'That file'} isn't a drawing the app can open."), 400
+        if str(path) in seen:
+            continue
+        seen.add(str(path))
+        item_id = entry.get("id") if isinstance(entry.get("id"), str) and entry.get("id") else f"{time.time_ns():x}{len(items)}"
+        items.append(queue_entry(path, item_id, entry.get("done")))
+    with queue_lock:
+        write_queue(items)
+    return get_queue()
 
 
 def saving_problem(body):

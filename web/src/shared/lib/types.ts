@@ -94,6 +94,7 @@ export interface Status {
   file_dirty?: boolean; // it has changes from Studio or Image not saved to its file yet
   drawing_saved?: string | null; // changes every time a page saves its choices for the drawing
   settings_version?: string | null; // changes every time a page changes the shared settings
+  queue_version?: string | null; // changes every time the queue of drawings to plot changes
   file_path: string | null;
   printed_layers: string[]; // ids of layers that finished plotting since the drawing was opened // where the loaded drawing lives; null for an uploaded copy
   file_folder: string | null; // that folder, for display (e.g. "~/Desktop")
@@ -259,4 +260,14 @@ export interface Confirmation {
 export interface Message {
   text: string;
   tone?: Tone;
+}
+
+/** A drawing waiting its turn on the plotter, in Plot's queue (kept by the server). */
+export interface QueueItem {
+  id: string;
+  path: string;
+  name: string;
+  folder: string; // where it is, for display (e.g. "iCloud Drive/NextDraw Studio/Drawings")
+  done: boolean; // every layer to plot has plotted, or ticked by hand
+  missing?: boolean; // the file is no longer where it was added from
 }

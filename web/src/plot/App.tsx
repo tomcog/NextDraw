@@ -9,7 +9,7 @@ import { fitsOnBed, fitsOnPaper, footprint, minPlacement, type FitAlign } from "
 import { parsePlotPaths, type PlotPaths } from "../shared/lib/progressPaths";
 import { parsePreview, type Preview } from "../shared/lib/preview";
 import { load, save } from "../shared/lib/storage";
-import type { Confirmation, Estimate, Info, Ink, Layer, PenColor, LayerView, Message, Placement, Preset, Settings, Status, Plot } from "../shared/lib/types";
+import type { Confirmation, Estimate, Info, Ink, Layer, PenColor, LayerView, Message, Placement, Preset, QueueItem, Settings, Status, Plot } from "../shared/lib/types";
 import { inkHex, isPalettePen, isVarnishLayer, joinLayerName, penNameAt, penNameOf, splitLayerName } from "../shared/lib/ink";
 import { Hints } from "../shared/components/controls/Hints";
 import { Header } from "./components/Header";
@@ -47,6 +47,7 @@ import { SpeedSection } from "./components/controls/SpeedSection";
 import { PlotOptionsSection } from "./components/controls/PlotOptionsSection";
 import { PlotterSection } from "./components/controls/PlotterSection";
 import { ActionBar } from "./components/controls/ActionBar";
+import { QueueSection } from "./components/controls/QueueSection";
 
 // The words on a calibration sheet, in the font every sheet so far has been made in.
 const SHEET_FONT = "EMSOsmotron";
@@ -397,6 +398,8 @@ export default function App() {
   useEffect(() => save(STORAGE.paperCard, paperCard), [paperCard]);
   const [penCard, setPenCard] = useState(() => load<boolean>(STORAGE.penCard) ?? true);
   useEffect(() => save(STORAGE.penCard, penCard), [penCard]);
+  const [queueCard, setQueueCard] = useState(() => load<boolean>(STORAGE.queueCard) ?? false);
+  useEffect(() => save(STORAGE.queueCard, queueCard), [queueCard]);
   const [zoomChoice, setZoomChoice] = useState<Zoom>(() => load<Zoom>(STORAGE.zoom) ?? "plotter");
   // The loupe over the preview, for a close look at the lines. Put away each time the page opens.
   const [loupe, setLoupe] = useState(false);
@@ -409,7 +412,9 @@ export default function App() {
     settingsVersion: undefined as string | null | undefined, settingsUnsent: false,
     drawingSaved: undefined as string | null | undefined, unsaved: false,
     // A tool's edited values are on their way to the presets file (see setToolValues).
-    toolSavePending: false, secondTool: null as string | null });
+    toolSavePending: false, secondTool: null as string | null,
+    // The queue: the version this page shows, and whether it has a change of its own on the way.
+    queueVersion: undefined as string | null | undefined, queueUnsent: false });
   refs.current.rotation = rotation;
   refs.current.hatchSpacing = hatchSpacing;
   refs.current.skipTiny = skipTiny;
@@ -872,6 +877,15 @@ export default function App() {
           if (cancelled) return;
           if (shared?.settings && !refs.current.settingsUnsent) takeShared(shared);
         }
+        // Another open page changed the queue: show it here too, unless this page has a change on the way.
+        if (next.queue_version !== refs.current.queueVersion && !refs.current.queueUnsent) {
+          const q = await api<{ items: QueueItem[]; version: string | null }>("/api/queue").catch(() => null);
+          if (cancelled) return;
+          if (q && !refs.current.queueUnsent) {
+            refs.current.queueVersion = q.version;
+            setQueue(q.items);
+          }
+        }
         // Another open page saved its choices for this drawing - moved it, scaled it, hid a layer,
         // chose an ink: take them up here too. Not over changes of this page's own not yet saved.
         if (refs.current.drawingSaved === undefined) {
@@ -1099,6 +1113,62 @@ export default function App() {
   };
 
   const resume = !busy ? status?.resume ?? null : null;
+
+  /* ---------- Queue ---------- */
+
+  // The drawings waiting their turn, kept by the server so every open page shows the same list. A
+  // change shows at once and is sent a moment later, so dragging a row isn't a request per slot.
+  const [queue, setQueue] = useState<QueueItem[]>([]);
+  const queueTimer = useRef<number>();
+  const changeQueue = (items: QueueItem[]) => {
+    setQueue(items);
+    refs.current.queueUnsent = true;
+    window.clearTimeout(queueTimer.current);
+    queueTimer.current = window.setTimeout(async () => {
+      try {
+        const res = await postJSON<{ items: QueueItem[]; version: string | null }>("/api/queue", { items: items.map(({ id, path, done }) => ({ id, path, done })) }, "PUT");
+        refs.current.queueVersion = res.version;
+        setQueue(res.items);
+      } catch (err) {
+        setLocalMessage({ text: (err as Error).message, tone: "error" });
+        refs.current.queueVersion = undefined; // the next poll fetches what the server has
+      } finally {
+        refs.current.queueUnsent = false;
+      }
+    }, 300);
+  };
+  // An Illustrator file in the queue opens as the SVG beside it.
+  const queuedOpen = (item: QueueItem) => item.path === status?.file_path || item.path.replace(/\.ai$/i, ".svg") === status?.file_path;
+  const queueCurrent = queue.find(queuedOpen) ?? null;
+  const queueNext = (() => {
+    const from = queueCurrent ? queue.indexOf(queueCurrent) + 1 : 0;
+    return [...queue.slice(from), ...queue.slice(0, from)].find((i) => !i.done && !i.missing && i !== queueCurrent) ?? null;
+  })();
+  const addToQueue = (files: { name: string; path: string }[]) => {
+    const fresh = files.filter((f) => !queue.some((i) => i.path === f.path));
+    if (!fresh.length) return;
+    changeQueue([...queue, ...fresh.map((f, n) => ({ id: `new-${Date.now()}-${n}`, path: f.path, name: f.name, folder: "", done: false }))]);
+  };
+  const moveInQueue = (id: string, to: number) => {
+    const item = queue.find((i) => i.id === id);
+    if (!item) return;
+    const rest = queue.filter((i) => i.id !== id);
+    changeQueue([...rest.slice(0, to), item, ...rest.slice(to)]);
+  };
+  // Opening a queued drawing is opening it by hand: asked first over changes not saved, and an
+  // Illustrator file uses the SVG beside it when there is one.
+  const openQueued = (item: QueueItem) => {
+    if (busy) return;
+    replacing(async () => {
+      setLocalMessage({ text: `Opening ${item.name}…` });
+      try {
+        onOpened(await postJSON<OpenResult>("/api/open", { path: item.path, mode: "existing" }));
+      } catch (err) {
+        setLocalMessage({ text: (err as Error).message, tone: "error" });
+      }
+    });
+  };
+  const [queuePicking, setQueuePicking] = useState(false);
 
   // Confirmations are shown in the page (above the panel), not with window.confirm: embedded
   // browsers, including the in-app Browser pane, block those pop-ups and they answer "no".
@@ -1715,6 +1785,17 @@ export default function App() {
           },
         }}
       />
+      <FileBrowser
+        open={queuePicking}
+        onClose={() => setQueuePicking(false)}
+        onOpened={() => {}}
+        pick={{
+          title: "Add to the queue",
+          hint: "Tick the drawings to plot, in the order they're to plot. They go on the end of the queue.",
+          label: "Add to queue",
+          onPick: addToQueue,
+        }}
+      />
       <Header plotterFound={Boolean(status?.plotter_found)} severalPlotters={severalPlotters} plotterName={onIdraw ? "iDraw" : undefined} lostContact={lostContact} />
 
       <main className={styles.layout}>
@@ -1725,6 +1806,7 @@ export default function App() {
               { key: "file", on: fileCard, toggle: () => setFileCard((on) => !on) },
               { key: "paper", on: paperCard, toggle: () => setPaperCard((on) => !on) },
               { key: "pen", on: penCard, toggle: () => setPenCard((on) => !on) },
+              { key: "queue", on: queueCard, toggle: () => setQueueCard((on) => !on) },
             ]}
           />
           {/* Setup's way in, at the foot of the toolbars, as it was in Studio and Image. */}
@@ -1925,6 +2007,26 @@ export default function App() {
                   </Button>
                 </div>
               )}
+            </div>
+          </Card>
+          )}
+          {queueCard && (
+          <Card variant="flat" className={styles.controls}>
+            <div className={`${styles.cardBody} ${controls.cardSections}`}>
+              <QueueSection
+                items={queue}
+                current={queueCurrent}
+                next={queueNext}
+                canAddOpen={Boolean(status?.file_path) && !queueCurrent}
+                disabled={busy}
+                onAddOpen={() => status?.file_path && fileName && addToQueue([{ name: fileName, path: status.file_path }])}
+                onAddFiles={() => setQueuePicking(true)}
+                onOpen={openQueued}
+                onDone={(id, done) => changeQueue(queue.map((i) => (i.id === id ? { ...i, done } : i)))}
+                onRemove={(id) => changeQueue(queue.filter((i) => i.id !== id))}
+                onRemoveDone={() => changeQueue(queue.filter((i) => !i.done))}
+                onMove={moveInQueue}
+              />
             </div>
           </Card>
           )}
