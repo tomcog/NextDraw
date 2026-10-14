@@ -47,13 +47,13 @@ export function AdjustCard({ photo, channels, set, setChannel }: Props) {
           <div className={`${styles.fillRow} ${styles.oneRow}`}>
             <NumberField label="Brightness" min={-100} max={100} step={5} value={photo.brightness} onChange={(brightness) => set({ brightness })} />
             <NumberField label="Contrast" min={-100} max={100} step={5} value={photo.contrast} onChange={(contrast) => set({ contrast })} />
-            {/* A separation is grayscale: there's no color to saturate. */}
-            {!photo.separation && <NumberField label="Saturation" min={-100} max={100} step={5} value={photo.saturation ?? 0} onChange={(v) => set({ saturation: v || undefined })} />}
+            {/* A separation is grayscale: there's no color to saturate. A profile split is made from the colors, so it has. */}
+            {(!photo.separation || photo.profile) && <NumberField label="Saturation" min={-100} max={100} step={5} value={photo.saturation ?? 0} onChange={(v) => set({ saturation: v || undefined })} />}
             {/* Separations: tones this dark or darker are full ink, so the shadows punch. */}
             {photo.separation && blackPoint(photo.blackPoint ?? 0, (v) => set({ blackPoint: v || undefined }))}
           </div>
           {/* Black and white is Saturation all the way down: on sets it to -100, off back to the photo's own. */}
-          {!photo.separation && (
+          {(!photo.separation || photo.profile) && (
             <Checkbox size="md"
               checked={photo.saturation === -100}
               label="B&W"

@@ -1113,8 +1113,8 @@ const pathHash = (path: string) => {
  * What an ink's share of the photo is kept under, as though it were a picture of its own - so every
  * cache keyed by a photo's picture tells one ink from another. Ends with what tells them apart.
  */
-const profileKey = (p: Pick<Photo, "src" | "profile" | "profileIntent" | "profileInk">) =>
-  `${p.src}#icc|${pathHash(p.profile!)}|${p.profileIntent ?? 0}|${p.profileInk ?? 0}`;
+const profileKey = (p: Pick<Photo, "src" | "profile" | "profileIntent" | "profileInk" | "saturation">) =>
+  `${p.src}#icc|${pathHash(p.profile!)}|${p.profileIntent ?? 0}|${p.saturation ?? 0}|${p.profileInk ?? 0}`;
 const splitting = new Set<string>();
 
 /**
@@ -1126,12 +1126,13 @@ export function profiled(p: Photo): Photo | null {
   if (!p.profile) return p;
   const key = profileKey(p);
   if (tonesCache.has(key)) return { ...p, src: key };
-  const whole = `${p.src}#icc|${pathHash(p.profile)}|${p.profileIntent ?? 0}`;
+  const whole = `${p.src}#icc|${pathHash(p.profile)}|${p.profileIntent ?? 0}|${p.saturation ?? 0}`;
   if (!splitting.has(whole)) {
     splitting.add(whole);
     Promise.all([loadProfile(p.profile), readTones(p.src)])
       .then(([profile, tones]) => {
-        const inks = inksOf(profile, tones.rgba, p.profileIntent ?? 0);
+        // Split from the colors as saturated: more vivid, more of the colored inks; greyer, more black.
+        const inks = inksOf(profile, saturatedTones(p.src, tones, p.saturation ?? 0).rgba, p.profileIntent ?? 0);
         inks.forEach((ink, i) => {
           const light = new Float32Array(ink.length);
           const rgba = new Uint8ClampedArray(ink.length * 4);
