@@ -38,7 +38,7 @@ import { lockBanner, useEditLock } from "../shared/lib/useEditLock";
 import { bakedCopies, flattened, handOutFills, joined, markRuns, pointCount, simplified, simplifyDrawing, splitApart } from "./lib/shapeEdits";
 import { PaletteMenu } from "../shared/components/controls/PaletteMenu";
 import { Hints } from "../shared/components/controls/Hints";
-import { RowMenu } from "./components/controls/RowMenu";
+import { RowMenu } from "../shared/components/controls/RowMenu";
 import { ShapeList } from "./components/panels/ShapeList";
 import { canFlatten, hasShapeCard, ShapeCard, type ShapePanel } from "./components/panels/ShapeCard";
 import { TextCard } from "./components/panels/TextCard";

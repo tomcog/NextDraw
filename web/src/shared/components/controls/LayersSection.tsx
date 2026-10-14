@@ -38,7 +38,7 @@ interface Props {
   onSwitch: (id: string, add?: boolean) => void;
   onVisible: (id: string, visible: boolean) => void;
   onColorMenu: (id: string, anchor: HTMLElement) => void;
-  /** Studio: duplicate, merge, rename or delete a layer, from the menu at the end of its row. */
+  /** The menu at the end of a layer's row: Studio's duplicate, merge, rename and delete; Image's delete. */
   onRowMenu?: (id: string, anchor: HTMLElement) => void;
   onRenameType?: (id: string, name: string) => void;
   /** Escape: put back the name it had before. */

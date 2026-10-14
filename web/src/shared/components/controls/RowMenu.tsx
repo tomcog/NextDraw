@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { KeyboardEvent, ReactNode } from "react";
 import { createPortal } from "react-dom";
-import menu from "../../../shared/components/controls/PaletteMenu.module.css";
+import menu from "./PaletteMenu.module.css";
 import styles from "./RowMenu.module.css";
 
 export interface RowAction {

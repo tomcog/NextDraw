@@ -35,6 +35,8 @@ import { EffectToolbar, effectOf, type Effect } from "./components/EffectToolbar
 import { PanelToolbar } from "../shared/components/PanelToolbar";
 import { LayersSection } from "../shared/components/controls/LayersSection";
 import { PaletteMenu } from "../shared/components/controls/PaletteMenu";
+import { RowMenu } from "../shared/components/controls/RowMenu";
+import { Trash2 } from "lucide-react";
 import { lightness } from "../shared/lib/color";
 import { dropWork, loadWork, type Work } from "./lib/workInProgress";
 import { PhotoCard } from "./components/PhotoCard";
@@ -537,6 +539,26 @@ export default function App() {
   // its swatch opens the pen's colors (any color, with no preset); the eye hides it from the lines;
   // dragging restacks, which is the order they plot in - and with opaque ink, which shows on top.
   const [colorMenu, setColorMenu] = useState<{ id: string; anchor: HTMLElement } | null>(null);
+  // A layer's own menu, from the button at the end of its row, as in Studio: Delete.
+  const [rowMenu, setRowMenu] = useState<{ id: string; anchor: HTMLElement } | null>(null);
+  /**
+   * Take a layer out of the image, with what it draws. The image keeps at least one layer: to be rid
+   * of it all, start a new drawing. Whatever was being set on that layer moves to another of the
+   * image's.
+   */
+  const removeLayer = (id: string) => {
+    const rest = photoLayerIds.filter((l) => l !== id);
+    if (!rest.length) return;
+    record();
+    const gone = new Set(shapes.filter((sh) => sh.layerId === id).map((sh) => sh.id));
+    setShapes((list) => list.filter((sh) => !gone.has(sh.id)));
+    setLayers((list) => list.filter((l) => l.id !== id));
+    if (active?.id === id || (selected && gone.has(selected))) {
+      const next = rest[rest.length - 1];
+      setActiveLayer(next);
+      pick(shapes.find((sh) => sh.layerId === next && ofImage(sh))?.id ?? null);
+    }
+  };
   const colorInput = useRef<HTMLInputElement>(null);
   const [customFor, setCustomFor] = useState<string | null>(null);
   const pickCustomColor = (id: string, near: HTMLElement) => {
@@ -569,7 +591,8 @@ export default function App() {
           tool={preset}
           busy={busy}
           colorMenuId={colorMenu?.id}
-          rowMenuId={undefined}
+          rowMenuId={rowMenu?.id}
+          onRowMenu={(id, anchor) => setRowMenu((open) => (open?.id === id ? null : { id, anchor }))}
           onSort={() => {
             record();
             // Lightest at the bottom, drawn first, darker over it.
@@ -781,6 +804,16 @@ export default function App() {
       />
       <PhotoHeader plotterFound={plotterFound} />
       {/* A layer's colors, from its swatch in the Layers card: the pen's, and any color besides. */}
+      {rowMenu && (
+        <RowMenu
+          anchor={rowMenu.anchor}
+          onClose={() => setRowMenu(null)}
+          actions={[
+            // The image keeps one layer at least: a new drawing is the way to be rid of it.
+            { label: "Delete", icon: <Trash2 />, danger: true, disabled: photoLayerIds.length < 2, onSelect: () => removeLayer(rowMenu.id) },
+          ]}
+        />
+      )}
       {colorMenu && (
         <PaletteMenu
           anchor={colorMenu.anchor}
