@@ -1258,7 +1258,7 @@ export function photoActions(ctx: PhotoContext) {
         // The picture and its place, from the image; everything else fresh.
         src: was.src, width: was.width, height: was.height, crop: was.crop, fit: was.fit, margin: was.margin, align: was.align,
         source: was.source, quarterTurns: was.quarterTurns,
-        edgeMask: was.edgeMask, edgeMaskName: was.edgeMaskName, edgeMaskInvert: was.edgeMaskInvert, edgeMaskSides: was.edgeMaskSides, edgeGen: was.edgeGen,
+        edgeMask: was.edgeMask, edgeMaskName: was.edgeMaskName, edgeMaskInvert: was.edgeMaskInvert, edgeMaskSides: was.edgeMaskSides, edgeGen: was.edgeGen, vignette: was.vignette,
         ...PHOTO_DEFAULTS, spacingMm: was.spacingMm,
         style: "edges", centerMode: "mixed", link,
       },
@@ -1312,9 +1312,11 @@ export function photoActions(ctx: PhotoContext) {
     if ("edgeMaskInvert" in patch) whole.edgeMaskInvert = patch.edgeMaskInvert;
     if ("edgeMaskSides" in patch) whole.edgeMaskSides = patch.edgeMaskSides;
     if ("edgeGen" in patch) whole.edgeGen = patch.edgeGen;
-    // What frames the picture itself - the edge mask - goes to the image's other passes too.
+    // So does the vignette.
+    if ("vignette" in patch) whole.vignette = patch.vignette;
+    // What frames the picture itself - the edge mask, the vignette - goes to the image's other passes too.
     const image: Partial<Photo> = {};
-    for (const k of ["edgeMask", "edgeMaskName", "edgeMaskInvert", "edgeMaskSides", "edgeGen"] as const) if (k in whole) (image as Record<string, unknown>)[k] = whole[k];
+    for (const k of ["edgeMask", "edgeMaskName", "edgeMaskInvert", "edgeMaskSides", "edgeGen", "vignette"] as const) if (k in whole) (image as Record<string, unknown>)[k] = whole[k];
     const link = chosen.photo.link;
     // A layer's own settings go to the layers targeted in the Layers card - all of them, some, or
     // none - and the photo's to every layer.

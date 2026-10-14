@@ -1,5 +1,5 @@
 import { Card, Checkbox, Segment, SegmentedControl, Toolbar } from "@tomcoggia/ui";
-import { SlidersHorizontal } from "lucide-react";
+import { Focus, SlidersHorizontal } from "lucide-react";
 import { Section } from "../../shared/components/controls/Section";
 import { NumberField } from "../../shared/components/controls/NumberField";
 import controls from "../../shared/components/controls/controls.module.css";
@@ -83,8 +83,11 @@ export function AdjustCard({ photo, channels, set, setChannel }: Props) {
   );
 }
 
-/** The Adjustments card's switch, in a toolbar of its own down the left: pressed while the card shows. */
-export function AdjustToolbar({ on, toggle, disabled }: { on: boolean; toggle: () => void; disabled?: boolean }) {
+/**
+ * The Adjustments and Vignette cards' switches, in a toolbar of their own down the left: each pressed
+ * while its card shows.
+ */
+export function AdjustToolbar({ on, toggle, vignette, disabled }: { on: boolean; toggle: () => void; vignette: { on: boolean; toggle: () => void }; disabled?: boolean }) {
   return (
     <span className={bar.row}>
       <Toolbar tone="white" orientation="vertical" aria-label="Adjustments">
@@ -97,6 +100,15 @@ export function AdjustToolbar({ on, toggle, disabled }: { on: boolean; toggle: (
             icon={<SlidersHorizontal />}
             title={`${on ? "Hide" : "Show"} the Adjustments card: the image's brightness and contrast, and each channel's`}
             aria-label="Adjustments card"
+          />
+          <Segment
+            aria-pressed={vignette.on}
+            className={vignette.on ? bar.on : undefined}
+            onClick={vignette.toggle}
+            disabled={disabled}
+            icon={<Focus />}
+            title={`${vignette.on ? "Hide" : "Show"} the Vignette card: the image darkened toward its edges, or faded toward the paper`}
+            aria-label="Vignette card"
           />
         </SegmentedControl>
       </Toolbar>

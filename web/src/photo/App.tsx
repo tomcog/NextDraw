@@ -31,6 +31,7 @@ import { usePhotoRead, usePhotosRead } from "../shared/lib/drawing/usePhotoRead"
 import { photoActions, pictureSources } from "./lib/photoActions";
 import { ConvertStage, type ConvertView } from "./components/ConvertStage";
 import { AdjustCard, AdjustToolbar } from "./components/AdjustCard";
+import { VignetteCard } from "./components/VignetteCard";
 import { EffectToolbar, effectOf, type Effect } from "./components/EffectToolbar";
 import { PanelToolbar } from "../shared/components/PanelToolbar";
 import { LayersSection } from "../shared/components/controls/LayersSection";
@@ -154,6 +155,9 @@ export default function App() {
   // And the Adjustments card, under Layers: brightness and contrast, the whole image's and each channel's.
   const [adjustCard, setAdjustCard] = useState(() => load<boolean>("photo-adjust-card") ?? true);
   useEffect(() => remember("photo-adjust-card", adjustCard), [adjustCard]);
+  // And the Vignette card, under Adjustments: the image darkened toward its edges.
+  const [vignetteCard, setVignetteCard] = useState(() => load<boolean>("photo-vignette-card") ?? false);
+  useEffect(() => remember("photo-vignette-card", vignetteCard), [vignetteCard]);
 
   const [toolName, setToolName] = useState<string>(() => load<string>(TOOL_KEY) ?? "");
   useEffect(() => remember(TOOL_KEY, toolName), [toolName]);
@@ -651,6 +655,8 @@ export default function App() {
     />
   ) : null;
 
+  const vignetteSection = chosen?.photo && vignetteCard ? <VignetteCard photo={chosen.photo} set={setPhotoOf} /> : null;
+
   // The chosen photo's card: how it's turned into lines.
   const photoCard = chosen?.photo ? (
     <PhotoCard
@@ -670,6 +676,7 @@ export default function App() {
       effectCards={effectCards}
       layersCard={layersSection}
       adjustCard={adjustSection}
+      vignetteCard={vignetteSection}
       actions={{
         replace: () => setBrowsing("replace"),
         savePreset,
@@ -761,7 +768,7 @@ export default function App() {
   // The toolbar's effect is the whole photo's. Silhouette has no tones or colours to split by, so a
   // split photo comes back together as one layer drawn that way; separations keep a plate each.
   // Whether the rail has any card to show; with none, the stage takes its width.
-  const railOut = Boolean(fileCard || paperCard || penCard || confirmNext || infoCard || (chosen?.photo && (effectCards || layersCard || adjustCard)));
+  const railOut = Boolean(fileCard || paperCard || penCard || confirmNext || infoCard || (chosen?.photo && (effectCards || layersCard || adjustCard || vignetteCard)));
 
   const setEffect = (effect: Effect) => {
     setEffectCards(true);
@@ -892,7 +899,7 @@ export default function App() {
             ]}
           />
           <EffectToolbar effect={chosen?.photo ? effectOf(chosen.photo) : undefined} onEffect={setEffect} onAgain={() => setEffectCards((on) => !on)} disabled={!chosen?.photo || busy} />
-          {chosen?.photo && <AdjustToolbar on={adjustCard} toggle={() => setAdjustCard((on) => !on)} />}
+          {chosen?.photo && <AdjustToolbar on={adjustCard} toggle={() => setAdjustCard((on) => !on)} vignette={{ on: vignetteCard, toggle: () => setVignetteCard((on) => !on) }} />}
           {chosen?.photo && <HistoryToolbar canUndo={canUndo} canRedo={canRedo} onUndo={undo} onRedo={redo} disabled={busy} />}
         </div>
         <section className={styles.stage} aria-label="Image conversion">

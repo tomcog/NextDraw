@@ -6,6 +6,7 @@
 import { colorNamed } from "../colorNames";
 import { FIT_CENTERED, type FitAlign } from "../geometry";
 import { edgeForLayer, edgeGenFromData, edgeGenKey, edgeKeep, type EdgeGen } from "./edgeMask";
+import { vignetted, vignetteFromData, vignetteKey, vignetteOn, vignetteStrength, type Vignette } from "./vignette";
 import { inksOf, parseProfile, type InkProfile } from "./icc";
 import type { Point } from "./parametric";
 import { fitNodes, pathData, type Node } from "./path";
@@ -336,6 +337,11 @@ export interface Photo {
    * the same edge is made again every time (edgeMask.ts). In place of `edgeMask`, never with it.
    */
   edgeGen?: EdgeGen;
+  /**
+   * A vignette: the picture darkened toward its edges, or faded toward the paper, inside the part that
+   * shows, before any effect reads it (vignette.ts). The whole photo's, like the edge mask. Absent, none.
+   */
+  vignette?: Vignette;
   /** Sized to the page: all of it as large as it fits, or filling the page and cropped. Absent once
    *  it has been moved or sized by hand. A photo sized to the page is sized again when the page is. */
   fit?: "fit" | "fill";
@@ -832,10 +838,10 @@ function saturatedTones(src: string, tones: Tones, sat: number): Tones {
 export const saturatedOf = (src: string, saturation: number) => photoTones({ src, saturation });
 
 /** A photo as its layers read it: its pixels, with its saturation applied and its edge mask laid over. Undefined until both have been read. */
-const photoTones = (photo: Pick<Photo, "src" | "saturation" | "edgeMask" | "edgeMaskInvert" | "edgeMaskSides" | "edgeGen" | "crop" | "band" | "side" | "plate" | "ink" | "region" | "key" | "separation">) => {
+const photoTones = (photo: Pick<Photo, "src" | "saturation" | "vignette" | "edgeMask" | "edgeMaskInvert" | "edgeMaskSides" | "edgeGen" | "crop" | "band" | "side" | "plate" | "ink" | "region" | "key" | "separation">) => {
   const tones = tonesOf(photo.src);
   if (!tones) return undefined;
-  const saturated = saturatedTones(photo.src, tones, photo.saturation ?? 0);
+  const saturated = vignettedTones(photo.src, saturatedTones(photo.src, tones, photo.saturation ?? 0), photo);
   if (photo.edgeGen) return maskedTones(photo.src, saturated, null, photo);
   if (!photo.edgeMask) return saturated;
   const mask = tonesOf(photo.edgeMask);
@@ -851,6 +857,50 @@ const photoTones = (photo: Pick<Photo, "src" | "saturation" | "edgeMask" | "edge
   }
   return maskedTones(photo.src, saturated, mask, photo);
 };
+
+const vignetteCache = new Map<string, Tones>();
+
+/**
+ * The photo under its vignette, stretched over the part of the picture that shows - inside the crop -
+ * so it frames what's drawn, whatever the crop. Each pixel is taken toward black, or toward white for
+ * a lightening one, by the vignette's strength there. Worked out once for each photo, vignette and crop.
+ */
+function vignettedTones(src: string, tones: Tones, photo: Pick<Photo, "vignette" | "crop">): Tones {
+  const v = photo.vignette;
+  if (!vignetteOn(v)) return tones;
+  const [c0, c1, c2, c3] = photo.crop ?? [0, 0, 1, 1];
+  const id = `vig:${vignetteKey(v)}|${c0},${c1},${c2},${c3}`;
+  const key = `${src.length}|${src.slice(-32)}|${tones.sat ?? 0}|${id}`;
+  const known = vignetteCache.get(key);
+  if (known) return known;
+  const { w, h } = tones;
+  // Worked out over the pixels that show, at their own shape.
+  const x0 = Math.round(c0 * w);
+  const y0 = Math.round(c1 * h);
+  const gw = Math.max(1, Math.round((c2 - c0) * w));
+  const gh = Math.max(1, Math.round((c3 - c1) * h));
+  const strength = vignetteStrength(v, gw, gh);
+  const darker = v.amount > 0;
+  const light = Float32Array.from(tones.light);
+  const rgba = Uint8ClampedArray.from(tones.rgba);
+  for (let gy = 0; gy < gh; gy++) {
+    const y = y0 + gy;
+    if (y < 0 || y >= h) continue;
+    for (let gx = 0; gx < gw; gx++) {
+      const x = x0 + gx;
+      if (x < 0 || x >= w) continue;
+      const k = strength[gy * gw + gx];
+      if (!k) continue;
+      const i = y * w + x;
+      light[i] = vignetted(light[i], k, darker);
+      for (let c = 0; c < 3; c++) rgba[i * 4 + c] = vignetted(rgba[i * 4 + c], k, darker, 255);
+    }
+  }
+  const out = { w, h, light, rgba, sat: tones.sat, mask: id };
+  if (vignetteCache.size > 4) vignetteCache.delete(vignetteCache.keys().next().value!);
+  vignetteCache.set(key, out);
+  return out;
+}
 
 const maskedCache = new Map<string, Tones>();
 const maskReading = new Set<string>();
@@ -875,7 +925,7 @@ function maskedTones(src: string, tones: Tones, mask: Tones | null, photo: Pick<
   const gen = photo.edgeGen && edgeForLayer(photo.edgeGen, layerOf(photo));
   const what = gen ? `gen:${edgeGenKey(gen)}` : `${photo.edgeMask!.length}|${photo.edgeMask!.slice(-32)}|${photo.edgeMaskInvert ? "inv" : ""}`;
   const id = `${what}|${c0},${c1},${c2},${c3}|${sides.join(",")}`;
-  const key = `${src.length}|${src.slice(-32)}|${tones.sat ?? 0}|${id}`;
+  const key = `${src.length}|${src.slice(-32)}|${tones.sat ?? 0}|${tones.mask ?? ""}|${id}`;
   const known = maskedCache.get(key);
   if (known) return known;
   const { w, h } = tones;
@@ -912,7 +962,8 @@ function maskedTones(src: string, tones: Tones, mask: Tones | null, photo: Pick<
       rgba[i * 4 + 3] = tones.rgba[i * 4 + 3];
     }
   }
-  const out = { w, h, light, rgba, sat: tones.sat, mask: id };
+  // Under a vignette as well: both kept in what's worked out from it.
+  const out = { w, h, light, rgba, sat: tones.sat, mask: tones.mask ? `${tones.mask}+${id}` : id };
   if (maskedCache.size > 8) maskedCache.delete(maskedCache.keys().next().value!);
   maskedCache.set(key, out);
   return out;
@@ -1264,7 +1315,7 @@ export function photoMarks(photo: Photo, w: number, h: number): PhotoMarks | nul
 
 /** Everything a photo's lines depend on, as one string: the same key, the same lines. */
 function marksKey(photo: Photo, w: number, h: number) {
-  return [photo.src.length, photo.src.slice(-32), w.toFixed(4), h.toFixed(4), photo.brightness, photo.contrast, photo.saturation ?? 0, photo.angle, photo.spacingMm, photo.levels, photo.hatchSmoothMm ?? "", photo.hatchShortestMm ?? "", photo.band?.join(",") ?? "", photo.side ?? "", photo.paperTone?.join(",") ?? "", photo.crop?.join(",") ?? "", photo.bleed ?? 0, photo.style ?? "hatch", photo.rowMm ?? "", photo.waveMm ?? "", photo.squiggleAmpMm ?? "", photo.squiggleHeight ?? "", photo.squiggleJoin ? "join" : "", photo.squiggleLift ? "lift" : "", photo.squiggleSmooth ?? "", JSON.stringify(photo.squiggleDraw ?? {}), photo.squiggleVersion ?? "", JSON.stringify(photo.squiggleInkscape ?? {}), photo.squiggleAngle ?? "", photo.ink ?? "", photo.regions?.join(",") ?? "", photo.region ?? "", photo.contours ?? "", photo.smoothMm ?? "", photo.key ? "key" : "", photo.keyInk ?? "", photo.regionInks?.join(",") ?? "", photo.keyStrength ?? "", photo.keyFrom ?? "", photo.plate ?? "", photo.plates?.join(",") ?? "", photo.blackShare ?? "", photo.centerFrom ?? "", photo.centerSmoothMm ?? "", photo.centerShortestMm ?? "", photo.centerMode ?? "", photo.centerStraightMm ?? "", photo.centerLongMm ?? "", photo.centerCornerDeg ?? "", photo.edgeFrom ?? "", photo.edgeSmoothMm ?? "", photo.edgeShortestMm ?? "", photo.silhouetteFrom ?? "", photo.silhouetteSmoothMm ?? "", photo.silhouetteSmallestMm ?? "", photo.fitPaper ?? "", photo.penMm ?? "", photo.fitPairs ? "pairs" : "", photo.fitOpaque ? "opaque" : "", photo.streamWidestMm ?? "", photo.streamPasses ?? "", photo.streamFlowMm ?? "", photo.scribbleLengthMm ?? "", photo.scribbleWiggle ?? "", photo.scribbleSeed ?? "", photo.profileInk ?? "", photo.lineDots ?? "", photo.lineLiftMm ?? "", photo.lineCurve ?? "", photo.lineAngle ?? "", photo.lineBias ?? "", photo.lineGrain ?? "", photo.lineContrast ?? "", photo.hilbertCoarsestMm ?? "", photo.hilbertLift ? "hlift" : "", photo.hilbertCurve ?? "", photo.hilbertRound ?? "", photo.hilbertBlend ?? "", photo.hilbertAngle ?? "", photo.edgeMask ? `${photo.edgeMask.length}|${photo.edgeMask.slice(-32)}` : "", photo.edgeMaskInvert ? "inv" : "", photo.edgeMaskSides?.join(",") ?? "", photo.edgeGen ? edgeGenKey(photo.edgeGen) : ""].join("|");
+  return [photo.src.length, photo.src.slice(-32), w.toFixed(4), h.toFixed(4), photo.brightness, photo.contrast, photo.saturation ?? 0, photo.angle, photo.spacingMm, photo.levels, photo.hatchSmoothMm ?? "", photo.hatchShortestMm ?? "", photo.band?.join(",") ?? "", photo.side ?? "", photo.paperTone?.join(",") ?? "", photo.crop?.join(",") ?? "", photo.bleed ?? 0, photo.style ?? "hatch", photo.rowMm ?? "", photo.waveMm ?? "", photo.squiggleAmpMm ?? "", photo.squiggleHeight ?? "", photo.squiggleJoin ? "join" : "", photo.squiggleLift ? "lift" : "", photo.squiggleSmooth ?? "", JSON.stringify(photo.squiggleDraw ?? {}), photo.squiggleVersion ?? "", JSON.stringify(photo.squiggleInkscape ?? {}), photo.squiggleAngle ?? "", photo.ink ?? "", photo.regions?.join(",") ?? "", photo.region ?? "", photo.contours ?? "", photo.smoothMm ?? "", photo.key ? "key" : "", photo.keyInk ?? "", photo.regionInks?.join(",") ?? "", photo.keyStrength ?? "", photo.keyFrom ?? "", photo.plate ?? "", photo.plates?.join(",") ?? "", photo.blackShare ?? "", photo.centerFrom ?? "", photo.centerSmoothMm ?? "", photo.centerShortestMm ?? "", photo.centerMode ?? "", photo.centerStraightMm ?? "", photo.centerLongMm ?? "", photo.centerCornerDeg ?? "", photo.edgeFrom ?? "", photo.edgeSmoothMm ?? "", photo.edgeShortestMm ?? "", photo.silhouetteFrom ?? "", photo.silhouetteSmoothMm ?? "", photo.silhouetteSmallestMm ?? "", photo.fitPaper ?? "", photo.penMm ?? "", photo.fitPairs ? "pairs" : "", photo.fitOpaque ? "opaque" : "", photo.streamWidestMm ?? "", photo.streamPasses ?? "", photo.streamFlowMm ?? "", photo.scribbleLengthMm ?? "", photo.scribbleWiggle ?? "", photo.scribbleSeed ?? "", photo.profileInk ?? "", photo.lineDots ?? "", photo.lineLiftMm ?? "", photo.lineCurve ?? "", photo.lineAngle ?? "", photo.lineBias ?? "", photo.lineGrain ?? "", photo.lineContrast ?? "", photo.hilbertCoarsestMm ?? "", photo.hilbertLift ? "hlift" : "", photo.hilbertCurve ?? "", photo.hilbertRound ?? "", photo.hilbertBlend ?? "", photo.hilbertAngle ?? "", photo.edgeMask ? `${photo.edgeMask.length}|${photo.edgeMask.slice(-32)}` : "", photo.edgeMaskInvert ? "inv" : "", photo.edgeMaskSides?.join(",") ?? "", photo.edgeGen ? edgeGenKey(photo.edgeGen) : "", vignetteKey(photo.vignette)].join("|");
 }
 
 /**
@@ -4694,6 +4745,7 @@ export function photoFromData(raw: Record<string, unknown>): Photo | null {
     ...(typeof raw.edgeMaskName === "string" ? { edgeMaskName: raw.edgeMaskName } : {}),
     ...(raw.edgeMaskInvert === true ? { edgeMaskInvert: true } : {}),
     ...(edgeGenFromData(raw.edgeGen) ? { edgeGen: edgeGenFromData(raw.edgeGen) } : {}),
+    ...(vignetteFromData(raw.vignette) ? { vignette: vignetteFromData(raw.vignette) } : {}),
     ...(Array.isArray(raw.edgeMaskSides) ? { edgeMaskSides: MASK_SIDES.filter((side) => (raw.edgeMaskSides as unknown[]).includes(side)) } : {}),
     ...(Array.isArray(raw.crop) && raw.crop.length === 4 && raw.crop.every((v) => Number.isFinite(Number(v)))
       ? { crop: raw.crop.map(Number) as [number, number, number, number] }
@@ -4803,6 +4855,7 @@ export const photoData = (p: Photo) => ({
   ...(p.crop ? { crop: p.crop } : {}),
   ...(p.edgeMask ? { edgeMask: p.edgeMask, ...(p.edgeMaskName ? { edgeMaskName: p.edgeMaskName } : {}), ...(p.edgeMaskInvert ? { edgeMaskInvert: true } : {}) } : {}),
   ...(p.edgeGen ? { edgeGen: p.edgeGen } : {}),
+  ...(p.vignette ? { vignette: p.vignette } : {}),
   ...((p.edgeMask || p.edgeGen) && p.edgeMaskSides ? { edgeMaskSides: p.edgeMaskSides } : {}),
   ...(p.fit ? { fit: p.fit } : {}),
   ...(p.align && (p.align.x !== 0.5 || p.align.y !== 0.5) ? { align: p.align } : {}),

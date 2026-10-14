@@ -97,13 +97,15 @@ interface Props {
   layersCard?: ReactNode;
   /** The Adjustments card, when it's out: under the Layers card. */
   adjustCard?: ReactNode;
+  /** The Vignette card, when it's out: under the Adjustments card. */
+  vignetteCard?: ReactNode;
 }
 
 /**
  * The chosen photo's card - in the drawing's rail, and in image conversion's under its own: how it is
  * split into layers, sized to the page, and what each layer's lines are drawn as.
  */
-export function PhotoCard({ shape, title, shapes, busy, targeted, layerCount, shownName, estimates, actions, penWidthMm = 0.5, palette = [], anyColor = false, infoCard = true, effectCards = true, layersCard, adjustCard }: Props) {
+export function PhotoCard({ shape, title, shapes, busy, targeted, layerCount, shownName, estimates, actions, penWidthMm = 0.5, palette = [], anyColor = false, infoCard = true, effectCards = true, layersCard, adjustCard, vignetteCard }: Props) {
   const maskInput = useRef<HTMLInputElement>(null);
   // The edge mask library, shared between Macs; read when the card opens and after each change to it.
   const [masks, setMasks] = useState<string[]>([]);
@@ -730,6 +732,7 @@ export function PhotoCard({ shape, title, shapes, busy, targeted, layerCount, sh
       )}
       {layersCard}
       {adjustCard}
+      {vignetteCard}
       {/* A card for each pass over the picture, in the order they were added: its Color mode, then its
         effect's own numbers. The pass being worked on is open; another, folded, opens when clicked -
         becoming the one the effect toolbar and the Layers card are about. */}

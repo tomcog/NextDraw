@@ -8,6 +8,7 @@ import type { View } from "../../shared/components/PreviewToolbar";
 import { DEFAULT_SETTINGS, UNITS } from "../../shared/lib/constants";
 import { channelAdjusted, photoMarks, photoOrigin, pictureOf, type Photo } from "../../shared/lib/drawing/photo";
 import type { Page } from "../../shared/lib/drawing/shapes";
+import { vignetteKey, vignetteOn, vignetteStrength, type Vignette } from "../../shared/lib/drawing/vignette";
 import { usePhotoRead } from "../../shared/lib/drawing/usePhotoRead";
 import type { PlotterModel } from "../../shared/lib/types";
 import styles from "./ConvertStage.module.css";
@@ -25,6 +26,36 @@ const rgbOf = (hex: string): [number, number, number] => {
   const v = m[1].length === 3 ? m[1].replace(/./g, (c) => c + c) : m[1];
   return [0, 2, 4].map((i) => parseInt(v.slice(i, i + 2), 16) / 255) as [number, number, number];
 };
+
+const vignetteImages = new Map<string, string>();
+
+/**
+ * A vignette as a picture to lay over the image's: black, or white for a lightening one, as opaque as
+ * the vignette is strong there - which over the image is just what the lines read. Small: it's soft.
+ */
+function vignetteImage(v: Vignette, w: number, h: number): string {
+  const long = 320;
+  const gw = Math.max(2, Math.round((long * w) / Math.max(w, h)));
+  const gh = Math.max(2, Math.round((long * h) / Math.max(w, h)));
+  const key = `${vignetteKey(v)}|${gw}x${gh}`;
+  const known = vignetteImages.get(key);
+  if (known) return known;
+  const strength = vignetteStrength(v, gw, gh);
+  const tone = v.amount > 0 ? 0 : 255;
+  const rgba = new Uint8ClampedArray(gw * gh * 4);
+  for (let i = 0; i < strength.length; i++) {
+    rgba[i * 4] = rgba[i * 4 + 1] = rgba[i * 4 + 2] = tone;
+    rgba[i * 4 + 3] = Math.round(strength[i] * 255);
+  }
+  const canvas = document.createElement("canvas");
+  canvas.width = gw;
+  canvas.height = gh;
+  canvas.getContext("2d")!.putImageData(new ImageData(rgba, gw, gh), 0, 0);
+  const url = canvas.toDataURL("image/png");
+  if (vignetteImages.size > 8) vignetteImages.delete(vignetteImages.keys().next().value!);
+  vignetteImages.set(key, url);
+  return url;
+}
 
 /** The tool's ink, as Studio and Plot preview it. */
 export interface Ink {
@@ -86,6 +117,8 @@ export function ConvertStage({ photo, parts, box, page, paperColor, model, ink, 
     const gain = c >= 0 ? 1 / (1 - c) : 1 + c;
     const shift = 0.5 - 0.5 * gain + p.brightness / 200;
     const saturate = 1 + (p.saturation ?? 0) / 100;
+    // The vignette goes on before brightness and contrast, as it does for the lines.
+    const vignette = vignetteOn(p.vignette) ? p.vignette : null;
     const adjusted = p.brightness !== 0 || p.contrast !== 0 || saturate !== 1;
     const ink = tint ? rgbOf(tint) : null;
     // A profile's ink is its share of the photo, worked out a moment after it's asked for.
@@ -112,7 +145,12 @@ export function ConvertStage({ photo, parts, box, page, paperColor, model, ink, 
             )}
           </filter>
         )}
-        <image href={href} width={p.width} height={p.height} preserveAspectRatio="none" filter={adjusted || ink ? `url(#${id})` : undefined} />
+        <g filter={adjusted || ink ? `url(#${id})` : undefined}>
+          <image href={href} width={p.width} height={p.height} preserveAspectRatio="none" />
+          {vignette && (
+            <image href={vignetteImage(vignette, (c2 - c0) * p.width, (c3 - c1) * p.height)} x={c0 * p.width} y={c1 * p.height} width={(c2 - c0) * p.width} height={(c3 - c1) * p.height} preserveAspectRatio="none" />
+          )}
+        </g>
       </svg>
     );
   };
