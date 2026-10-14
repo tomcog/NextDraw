@@ -4497,6 +4497,95 @@ def flattened_picture(data, suffix):
         return Response(out.read_bytes(), mimetype="image/png")
 
 
+# ---- Color profiles ----
+# Printer profiles from this Mac's ColorSync folders, for Image to split a photo into a profile's inks:
+# CMYK, and the 2- to 15-ink ones (Riso sets, extended gamut) macOS's converter refuses. Only what the
+# page can apply is listed: an output profile from Lab, whose photo-to-ink table is a 16- or 8-bit
+# lookup table (mft2, mft1). The page reads the file and does the converting itself.
+PROFILE_FOLDERS = [
+    (Path.home() / "Library" / "ColorSync" / "Profiles", "Yours"),
+    (Path("/Library/ColorSync/Profiles"), "This Mac"),
+    (Path("/Library/Application Support/Adobe/Color/Profiles/Recommended"), "Adobe"),
+    (Path("/Library/Application Support/Adobe/Color/Profiles"), "Adobe"),
+    (Path("/System/Library/ColorSync/Profiles"), "macOS"),
+]
+INK_SPACES = {"CMYK": 4, **{f"{n:X}CLR": n for n in range(2, 16)}}
+
+
+def profile_info(path):
+    """A profile Image can split a photo by, as {name, path, inks, folder}, or None."""
+    try:
+        with open(path, "rb") as f:
+            head = f.read(132)
+            if len(head) < 132 or head[36:40] != b"acsp" or head[12:16] != b"prtr" or head[20:24] != b"Lab ":
+                return None
+            inks = INK_SPACES.get(head[16:20].decode("latin1"))
+            if not inks:
+                return None
+            count, = struct.unpack(">I", head[128:132])
+            table = f.read(12 * count)
+            tags = {}
+            for i in range(count):
+                sig, off, size = struct.unpack(">4sII", table[12 * i:12 * i + 12])
+                tags[sig] = (off, size)
+            if b"B2A0" not in tags:
+                return None
+            f.seek(tags[b"B2A0"][0])
+            if f.read(4) not in (b"mft2", b"mft1"):
+                return None
+            name = path.stem
+            if b"desc" in tags:
+                f.seek(tags[b"desc"][0])
+                desc = f.read(min(tags[b"desc"][1], 2048))
+                name = profile_name(desc) or name
+    except (OSError, struct.error, UnicodeDecodeError):
+        return None
+    # Some name themselves after their file: "Ink set.icc" reads as "Ink set".
+    return {"name": re.sub(r"\.ic[cm]$", "", name, flags=re.I) or path.stem, "path": str(path), "inks": inks}
+
+
+def profile_name(desc):
+    """The name a profile's description tag gives: the old ASCII kind or the newer Unicode one."""
+    if desc[:4] == b"desc" and len(desc) >= 12:
+        n, = struct.unpack(">I", desc[8:12])
+        return desc[12:12 + n].split(b"\0")[0].decode("latin1").strip()
+    if desc[:4] == b"mluc" and len(desc) >= 28:
+        size, off = struct.unpack(">II", desc[20:28])
+        return desc[off:off + size].decode("utf-16-be", "replace").rstrip("\0").strip()
+    return ""
+
+
+def color_profiles():
+    """Every profile Image can split by, yours first, each file once."""
+    seen, out = set(), []
+    for folder, where in PROFILE_FOLDERS:
+        if not folder.is_dir():
+            continue
+        for path in sorted(folder.iterdir(), key=lambda p: p.name.lower()):
+            if path.suffix.lower() not in (".icc", ".icm") or path.resolve() in seen:
+                continue
+            seen.add(path.resolve())
+            info = profile_info(path)
+            if info:
+                out.append({**info, "folder": where})
+    return out
+
+
+@app.get("/api/color-profiles")
+def list_color_profiles():
+    return jsonify(profiles=color_profiles())
+
+
+@app.get("/api/color-profile")
+def color_profile():
+    """A profile's file, by its path - one of the listed ones only."""
+    from flask import Response
+    raw = request.args.get("path") or ""
+    if raw not in {p["path"] for p in color_profiles()}:
+        return jsonify(error="That profile isn't one Image can use, or it's gone."), 404
+    return Response(Path(raw).read_bytes(), mimetype="application/vnd.iccprofile")
+
+
 # ---- Multichannel Photoshop files ----
 # A Photoshop document in Multichannel mode is a picture already separated: a grayscale channel per
 # ink - Cyan, Magenta, Orange, Violet... - darker where more of it goes, each named and given its ink's

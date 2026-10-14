@@ -11,12 +11,17 @@ import type { FitAlign } from "../../shared/lib/geometry";
 import type { PenColor, Preset } from "../../shared/lib/types";
 import {
   BAND_NAMES, LAYER_SETTINGS, MOST_SIDE_LAYERS, paperToneOf, MOST_COLORS, MOST_LAYERS, PHOTO_DEFAULTS, PLATES, PLATE_AIMS, PLATE_OFF, colourGroups, isColourful, matchPens, photoMode,
-  placeOnPage, inkNamed, plateOfPhoto, platePens, presetAngle, readTones, hexLinear, linearHex, coverSteps, stemWithoutPlate, turnedCopy, turnedCrop, workingCopy, MASK_EDGE_PX, MASK_SIDES, type AnglePreset, type Photo, type PhotoPart, type Plate, type PlateSet, PLATE_SETS, plateSetOf, platesOf,
+  placeOnPage, inkNamed, loadProfile, plateOfPhoto, platePens, presetAngle, readTones, hexLinear, linearHex, coverSteps, stemWithoutPlate, turnedCopy, turnedCrop, workingCopy, MASK_EDGE_PX, MASK_SIDES, type AnglePreset, type Photo, type PhotoPart, type Plate, type PlateSet, PLATE_SETS, plateSetOf, platesOf,
 } from "../../shared/lib/drawing/photo";
 import { boxOf, newLayerId, newShapeId, type Layer, type Page, type Shape } from "../../shared/lib/drawing/shapes";
 import { samplePhoto, type Candidate } from "./choosePens";
 import { searchPensOffPage } from "./penSearch";
 import { folderOf, type Inks } from "./separationFolder";
+import { load, save as remember } from "../../shared/lib/storage";
+import type { InkProfile } from "../../shared/lib/drawing/icc";
+
+/** The profile a photo was last split by, and its intent: what the next is split by to start with. */
+export const PROFILE_KEY = "photo-profile";
 
 export interface PhotoContext {
   /** The one shape picked, if one is. */
@@ -269,7 +274,7 @@ export function photoActions(ctx: PhotoContext) {
     if (!keepAngles) {
       const preset = chosen.photo.anglePreset ?? "classic";
       const turn = chosen.photo.angleTurn ?? 0;
-      parts = parts.map((p, i) => ({ ...p, photo: { ...p.photo, angle: turnedBy(presetAngle(preset, i, p.photo.plate), turn) } }));
+      parts = parts.map((p, i) => ({ ...p, photo: { ...p.photo, angle: turnedBy(presetAngle(preset, i, plateOfPhoto(p.photo)), turn) } }));
     }
     const oldGroup = chosen.photo.group;
     const members = oldGroup ? shapes.filter((sh) => sh.photo?.group === oldGroup) : [chosen];
@@ -281,12 +286,16 @@ export function photoActions(ctx: PhotoContext) {
     const emptied = new Set(members.filter((m) => others.has(m.id)).map((m) => m.layerId)
       .filter((id) => id !== baseLayer.id && !shapes.some((sh) => sh.layerId === id && !others.has(sh.id))));
     const added: Layer[] = parts.slice(1).map((p) => ({ id: newLayerId(), name: p.layerName, color: p.layerColor }));
+    // Split by a profile before: what made each layer one of its inks goes, unless the parts say again.
+    const from = base.photo!.profile
+      ? { ...base.photo!, profile: undefined, profileName: undefined, profileIntent: undefined, profileInk: undefined, separation: undefined, channelBrightness: undefined, channelContrast: undefined, channelBlackPoint: undefined, blackPoint: undefined }
+      : base.photo!;
     const made: Shape[] = parts.map((p, i) => ({
       ...base,
       id: i === 0 ? base.id : newShapeId(),
       layerId: i === 0 ? baseLayer.id : added[i - 1].id,
       name: p.shapeName,
-      photo: { ...base.photo!, ...p.photo, group },
+      photo: { ...from, ...p.photo, group },
     }));
     setLayers((list) => {
       const kept = list
@@ -316,12 +325,25 @@ export function photoActions(ctx: PhotoContext) {
     * Split the chosen photo the other way - by value or by colour - keeping how it was split this way
     * for when it comes back, and putting back how it was split that way before, if it has been.
     */
-  const switchPhotoMode = (to: "value" | "colour" | "cmyk") => {
+  const switchPhotoMode = (to: "value" | "colour" | "cmyk" | "profile") => {
     if (!chosen?.photo) return;
     const from = photoMode(chosen.photo);
     if (from === to) return;
-    const modes = { ...(chosen.photo.modes ?? {}), [from]: photoParts() };
-    const back = modes[to];
+    // A profile split isn't kept to come back to: it's made again, as quickly, from the profile.
+    const modes = from === "profile" || from === "separations" ? { ...(chosen.photo.modes ?? {}) } : { ...(chosen.photo.modes ?? {}), [from]: photoParts() };
+    if (to === "profile") {
+      const last = load<{ path: string; intent?: number }>(PROFILE_KEY);
+      void (async () => {
+        const path = last?.path ?? (await api<{ profiles: { path: string }[] }>("/api/color-profiles").catch(() => ({ profiles: [] }))).profiles[0]?.path;
+        if (!path) {
+          setMessage({ text: "There are no printer profiles on this Mac to split by: add one to ColorSync's Profiles folder", ok: false });
+          return;
+        }
+        await splitPhotoProfile(path, last?.intent ?? 0, { modes });
+      })();
+      return;
+    }
+    const back = modes[to as "value" | "colour" | "cmyk"];
     if (back?.length) {
       // How it was split is the mode's own; how the photo is drawn and adjusted is the whole photo's,
       // and stays as it is now. Brought back as it was saved, a split kept from before a change of
@@ -340,6 +362,54 @@ export function photoActions(ctx: PhotoContext) {
     } else {
       splitPhoto(1, { modes });
     }
+  };
+
+  /**
+    * Split the chosen photo by a printer's color profile: a layer for each of its inks, each drawing
+    * that ink's share of the photo as the profile works it out. An ink named for a plate (Cyan, Orange)
+    * gets that plate's pen and angle, as a separation's file does; a pen's own name, that pen; any
+    * other, the color the profile gives it. Layers stack lightest at the bottom. The profile is
+    * remembered, for the next photo split this way.
+    */
+  const splitPhotoProfile = async (path: string, intent = 0, extra: Partial<Photo> = {}) => {
+    if (!chosen?.photo) return;
+    setMessage({ text: "Reading the profile…", ok: true, progress: true });
+    let profile: InkProfile;
+    let name = path.slice(path.lastIndexOf("/") + 1).replace(/\.ic[cm]$/i, "");
+    try {
+      profile = await loadProfile(path);
+      const listed = (await api<{ profiles: { path: string; name: string }[] }>("/api/color-profiles")).profiles.find((p) => p.path === path);
+      if (listed) name = listed.name;
+    } catch (err) {
+      setMessage({ text: `Couldn't use that profile: ${(err as Error).message}`, ok: false });
+      return;
+    }
+    remember(PROFILE_KEY, { path, intent });
+    const pens = tool2?.palette ?? [];
+    const inkNames = profile.names ?? Array.from({ length: profile.inks }, (_, i) => `Channel ${i + 1}`);
+    const found = inkNames.map((ink) => inkNamed(ink, pens));
+    const plates = found.map((f) => f?.plate);
+    const used = [...new Set(plates.filter((p): p is Plate => Boolean(p)))];
+    const matched = used.length ? platePens(pens, used) : [];
+    const darkest = darkestPen(pens);
+    const { name: stem } = photoStem();
+    const parts = inkNames.map((ink, i) => {
+      const plate = plates[i];
+      const pen = plate ? matched[used.indexOf(plate)] : found[i]?.pen;
+      const color = pen?.color ?? profile.colors?.[i] ?? found[i]?.color?.color ?? darkest?.color ?? "#262626";
+      return {
+        layerName: pen?.name ?? ink,
+        layerColor: color,
+        shapeName: `${stem} ${ink}`,
+        photo: {
+          band: undefined, side: undefined, paperTone: undefined, key: undefined, keyInk: undefined, regions: undefined, region: undefined, regionInks: undefined,
+          fitPaper: undefined, fitPairs: undefined, plate: undefined, plates: undefined, ink: undefined,
+          profile: path, profileName: name, profileIntent: intent || undefined, profileInk: i, separation: ink,
+          ...extra,
+        } as Partial<Photo>,
+      };
+    }).sort((a, b) => (lightness(b.layerColor) ?? 0) - (lightness(a.layerColor) ?? 0));
+    rebuildPhoto(parts, chosen.photo.group ?? newShapeId(), `Split by ${name}: ${parts.map((p) => p.layerName).join(", ")}`);
   };
 
   /**
@@ -749,7 +819,8 @@ export function photoActions(ctx: PhotoContext) {
       const { box, crop } = same ? { box: undefined, crop: was.crop } : placedInstead(chosen!, copy.width / copy.height);
       record();
       // A separation is one plate with a file of its own; a split photo's layers share one picture.
-      setShapes((list) => list.map((sh) => ((was.separation ? sh.id === chosen!.id : sameImage(sh))
+      // A profile's inks are all the one photo: reloaded together, and split again as they're drawn.
+      setShapes((list) => list.map((sh) => ((was.separation && !was.profile ? sh.id === chosen!.id : sameImage(sh))
         ? { ...sh, ...(box ?? {}), photo: { ...sh.photo!, src: copy.src, width: copy.width, height: copy.height, crop } }
         : sh)));
       setMessage(same
@@ -771,7 +842,7 @@ export function photoActions(ctx: PhotoContext) {
       const was = chosen.photo;
       const { box, crop } = placedInstead(chosen, aspect);
       record();
-      if (was.separation) {
+      if (was.separation && !was.profile) {
         // A separation is one plate of the photo: only its own picture changes, in the same place, so it
         // stays in register with the rest.
         setShapes((list) => list.map((sh) => (sh.id === chosen.id ? { ...sh, photo: { ...sh.photo!, src: copy.src, width: copy.width, height: copy.height, source: pictureSources.get(file), quarterTurns: undefined } } : sh)));
@@ -1132,7 +1203,7 @@ export function photoActions(ctx: PhotoContext) {
   };
 
   return {
-    setChannelOf,
+    setChannelOf, splitPhotoProfile,
     addPhoto, addSeparations, switchPhotoMode, setKeyLayer, splitPhoto, splitPhotoByColor, splitPhotoBestFit, bestPens,
     placePhoto, replacePhoto, reloadPhoto, turnPhoto, setPhotoOf, addEdgeMask, chooseEdgeMask, deleteEdgeMask, setEdgeGen, saveEdgeGen, setAngles, photoStem, splitPhotoCmyk, setPlatePen, setLayerColor,
     splitAroundPaper, setPaperTone, addPass, removePass,

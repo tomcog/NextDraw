@@ -56,6 +56,14 @@ get complicated, and it never needs Studio's tools for drawing and transforming 
     the whole image's and folded into one by `channelAdjusted`. They're no longer in the Image card.
     Separations also have a Black point (%), the whole image's and each channel's: Levels' black
     slider, tones that dark or darker full ink and white kept white - to punch the shadows.
+  - Profile, a fourth color mode: split by a printer's ICC profile from this Mac's ColorSync folders
+    (server.py `color_profiles`, `/api/color-profiles`, `/api/color-profile`) - CMYK, and the 3-, 6- or
+    7-ink ones macOS's own converter refuses. The page applies the profile itself (`shared/lib/drawing/icc.ts`:
+    sRGB to Lab D50, then the profile's mft2/mft1 table), within about 1% of macOS on CMYK. Each layer
+    keeps the photo and says which ink it is (`profile`, `profileIntent`, `profileInk`); `profiled`
+    works out that ink's share as it's drawn, so turning, replacing and switching modes just work.
+    Inks are named and colored from the profile's colorant table; a layer is a separation (`separation`
+    is the ink's name), so the composite, Adjustments and angle presets all apply.
   - A new color image opens split into CMYK, each plate in its nearest palette pen (2026-10-13); with
     fewer than four palette colors, by colour groups. A black and white one stays one B&W layer.
   - The stage is the shared NextDraw canvas (`shared/components/NextDrawCanvas.tsx`), the one Studio

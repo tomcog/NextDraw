@@ -311,7 +311,7 @@ export default function App() {
   const {
     addPhoto, addSeparations, switchPhotoMode, setKeyLayer, splitPhoto, splitPhotoByColor, splitPhotoBestFit, bestPens,
     placePhoto, replacePhoto, reloadPhoto, turnPhoto, setPhotoOf, addEdgeMask, chooseEdgeMask, deleteEdgeMask, setEdgeGen, saveEdgeGen, setAngles, photoStem, splitPhotoCmyk, setPlatePen, setLayerColor,
-    splitAroundPaper, setPaperTone, addPass, removePass, setChannelOf,
+    splitAroundPaper, setPaperTone, addPass, removePass, setChannelOf, splitPhotoProfile,
   } = photoActions({
     chosen, shapes, setShapes, layers, setLayers, active, setActiveLayer, page, tool,
     spacingMm: tool?.hatch?.spacing_mm ?? 1.5, targets, paper: paperColor, record, addShape, pick, setMessage, setBusy,
@@ -657,6 +657,7 @@ export default function App() {
         setEdgeGen,
         saveEdgeGen,
         switchMode: switchPhotoMode,
+        setProfile: (path: string, intent: number) => void splitPhotoProfile(path, intent),
         set: setPhotoOf,
         split: splitPhoto,
         splitByColor: splitPhotoByColor,

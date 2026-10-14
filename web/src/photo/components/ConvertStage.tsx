@@ -6,7 +6,7 @@ import { InkGroup, InkLayer } from "../../shared/components/Ink";
 import { NextDrawCanvas } from "../../shared/components/NextDrawCanvas";
 import type { View } from "../../shared/components/PreviewToolbar";
 import { DEFAULT_SETTINGS, UNITS } from "../../shared/lib/constants";
-import { channelAdjusted, photoMarks, photoOrigin, type Photo } from "../../shared/lib/drawing/photo";
+import { channelAdjusted, photoMarks, photoOrigin, pictureOf, type Photo } from "../../shared/lib/drawing/photo";
 import type { Page } from "../../shared/lib/drawing/shapes";
 import { usePhotoRead } from "../../shared/lib/drawing/usePhotoRead";
 import type { PlotterModel } from "../../shared/lib/types";
@@ -88,6 +88,9 @@ export function ConvertStage({ photo, parts, box, page, paperColor, model, ink, 
     const saturate = 1 + (p.saturation ?? 0) / 100;
     const adjusted = p.brightness !== 0 || p.contrast !== 0 || saturate !== 1;
     const ink = tint ? rgbOf(tint) : null;
+    // A profile's ink is its share of the photo, worked out a moment after it's asked for.
+    const href = pictureOf(shown);
+    if (!href) return null;
     return (
       <svg x={box.x0} y={box.y0} width={w} height={h} viewBox={`${c0 * p.width} ${c1 * p.height} ${(c2 - c0) * p.width} ${(c3 - c1) * p.height}`} preserveAspectRatio="none">
         {(adjusted || ink) && (
@@ -109,15 +112,17 @@ export function ConvertStage({ photo, parts, box, page, paperColor, model, ink, 
             )}
           </filter>
         )}
-        <image href={p.src} width={p.width} height={p.height} preserveAspectRatio="none" filter={adjusted || ink ? `url(#${id})` : undefined} />
+        <image href={href} width={p.width} height={p.height} preserveAspectRatio="none" filter={adjusted || ink ? `url(#${id})` : undefined} />
       </svg>
     );
   };
   // Separations are seen together, as they'll print: each plate in its layer's ink, multiplied over
   // the paper and the others, as inks laid on paper are. A hidden layer drops out, as from the lines.
-  // A pass over a plate draws from the same picture: each plate once.
+  // A pass over a plate draws from the same picture: each plate once. A profile's inks share the
+  // photo's picture, and are told apart by which ink they are.
+  const plateOf = (p: Photo) => `${p.src.length}|${p.src.slice(-48)}|${p.profile ?? ""}|${p.profileInk ?? ""}|${p.profileIntent ?? ""}`;
   const plates = photo.separation
-    ? parts.filter((part, i) => part.photo.separation && parts.findIndex((o) => o.photo.src === part.photo.src) === i)
+    ? parts.filter((part, i) => part.photo.separation && parts.findIndex((o) => plateOf(o.photo) === plateOf(part.photo)) === i)
     : [];
   const picture = (faded?: boolean) => (
     <g opacity={faded ? 0.3 : 1}>

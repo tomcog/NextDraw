@@ -11,6 +11,7 @@ import { boxOf, type Shape } from "../../shared/lib/drawing/shapes";
 import type { PenColor } from "../../shared/lib/types";
 import styles from "../App.module.css";
 import { EFFECTS, effectOf } from "./EffectToolbar";
+import { INTENTS } from "../../shared/lib/drawing/icc";
 
 /** What the card does to the photo. Each acts on the chosen photo, and on all its layers where it should. */
 export interface PhotoActions {
@@ -33,7 +34,9 @@ export interface PhotoActions {
   setEdgeGen: (gen: EdgeGen) => void;
   /** Keep the made edge in the library as a picture. */
   saveEdgeGen: (taken: string[]) => Promise<void>;
-  switchMode: (to: "value" | "colour" | "cmyk") => void;
+  switchMode: (to: "value" | "colour" | "cmyk" | "profile") => void;
+  /** Split the image by a printer's color profile, by its path, at a rendering intent (0 to 2). */
+  setProfile: (path: string, intent: number) => void;
   /** Change settings of the photo - this layer's, or every layer's when "All layers" is on. */
   set: (patch: Partial<Photo>) => void;
   split: (count: number) => void;
@@ -102,6 +105,11 @@ export function PhotoCard({ shape, title, shapes, busy, targeted, layerCount, sh
   const readMasks = () => api<{ masks: string[] }>("/api/edge-masks").then((r) => setMasks(r.masks)).catch(() => {});
   useEffect(() => { readMasks(); }, []);
   const photo = shape.photo;
+  // The printer profiles on the server's Mac a photo can be split by: read once Profile is chosen.
+  const [profiles, setProfiles] = useState<{ name: string; path: string; inks: number; folder: string }[]>([]);
+  useEffect(() => {
+    if (photo.profile && !profiles.length) api<{ profiles: typeof profiles }>("/api/color-profiles").then((r) => setProfiles(r.profiles)).catch(() => {});
+  }, [photo.profile, profiles.length]);
   // A mask this drawing carries that isn't in the library: added before there was one, or taken out since.
   const ownMask = Boolean(photo.edgeMask) && !masks.includes(photo.edgeMaskName ?? "");
   // Mask edges is ticked while the image has a mask, or once ticked to choose one.
@@ -172,7 +180,7 @@ export function PhotoCard({ shape, title, shapes, busy, targeted, layerCount, sh
   // drawing's - in the Color mode card, above every effect's own card.
   const colourMode = (
     <>
-      {photo.separation ? (
+      {photoMode(photo) === "separations" ? (
         // Separations made elsewhere: each layer is its own picture, so there's nothing to split.
         // Which plate each is, and its pen, came from its file's name; its color is its swatch's.
         <>
@@ -184,8 +192,33 @@ export function PhotoCard({ shape, title, shapes, busy, targeted, layerCount, sh
             <Segment selected={photoMode(photo) === "value"} title="B&W: the image as black and white, in one color or split into tone bands" onClick={() => actions.switchMode("value")}>B&amp;W</Segment>
             <Segment selected={photoMode(photo) === "cmyk"} title="CMYK: print's four plates - cyan, magenta, yellow and black - in the pen's nearest colors, blended on paper" onClick={() => actions.switchMode("cmyk")}>CMYK</Segment>
             <Segment selected={photoMode(photo) === "colour"} title="Color: as many colors as you choose from the pen's palette, the ones that best match the image" onClick={() => actions.switchMode("colour")}>Color</Segment>
+            <Segment selected={photoMode(photo) === "profile"} title="Profile: split by a printer's color profile on this Mac - CMYK, a Riso set, extended gamut - a layer for each of its inks" onClick={() => actions.switchMode("profile")}>Profile</Segment>
           </SegmentedControl>
-          {photoMode(photo) === "cmyk" ? (
+          {photoMode(photo) === "profile" ? (
+            <>
+              {/* Which profile, and how it fits the photo's colors into its inks. Changing either splits again. */}
+              <InputSelect
+                size="md"
+                label="Profile"
+                value={photo.profile}
+                title={photo.profile}
+                onChange={(e) => actions.setProfile(e.target.value, photo.profileIntent ?? 0)}
+              >
+                {!profiles.some((p) => p.path === photo.profile) && <option value={photo.profile}>{photo.profileName ?? photo.profile}</option>}
+                {profiles.map((p) => <option key={p.path} value={p.path}>{`${p.name} - ${p.inks} inks (${p.folder})`}</option>)}
+              </InputSelect>
+              <InputSelect
+                size="md"
+                label="Intent"
+                value={String(photo.profileIntent ?? 0)}
+                title="How the photo's colors are fitted to the inks: Perceptual keeps how they relate, Relative colorimetric keeps the ones the inks can make exact, Saturation keeps them vivid"
+                onChange={(e) => actions.setProfile(photo.profile!, Number(e.target.value))}
+              >
+                {INTENTS.map((name, i) => <option key={name} value={i}>{name}</option>)}
+              </InputSelect>
+              <p className={styles.empty}>Each layer draws its ink's share of the image, as the profile works it out for a printer - a starting point for pens, set further in the Adjustments card.</p>
+            </>
+          ) : photoMode(photo) === "cmyk" ? (
             <>
               {/* Which plates: print's four, or CMYK with more inks for truer, brighter color. */}
               <InputSelect
@@ -442,7 +475,7 @@ export function PhotoCard({ shape, title, shapes, busy, targeted, layerCount, sh
                       onClick={actions.reload}
                     />
                   )}
-                  <Button size="sm" variant="secondary" title={photo.separation ? "Put a different picture in for this plate, keeping its settings" : "Put a different image in, keeping every setting"} onClick={() => replaceInput.current?.click()}>
+                  <Button size="sm" variant="secondary" title={photoMode(photo) === "separations" ? "Put a different picture in for this plate, keeping its settings" : "Put a different image in, keeping every setting"} onClick={() => replaceInput.current?.click()}>
                     Replace…
                   </Button>
                   <input
@@ -616,7 +649,7 @@ export function PhotoCard({ shape, title, shapes, busy, targeted, layerCount, sh
           <div className={`${styles.cardBody} ${controls.cardSections}`}>
             {/* Color mode first - how the picture is divided into layers and pens - then the effect. */}
             {splits && (
-              <Section title={photo.separation ? "Separation" : "Color mode"} collapsibleKey="photo-layers">
+              <Section title={photoMode(photo) === "separations" ? "Separation" : "Color mode"} collapsibleKey="photo-layers">
                 {/* How many layers the photo is split into by tone. Each band layer has its own settings
                   below; the photo's picture, brightness and contrast are what the bands are cut from. */}
                 {/* By value: read as black and white, split into tone bands. By colour: split into groups

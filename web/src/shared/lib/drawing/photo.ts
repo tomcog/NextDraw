@@ -6,6 +6,7 @@
 import { colorNamed } from "../colorNames";
 import { FIT_CENTERED, type FitAlign } from "../geometry";
 import { edgeForLayer, edgeGenFromData, edgeGenKey, edgeKeep, type EdgeGen } from "./edgeMask";
+import { inksOf, parseProfile, type InkProfile } from "./icc";
 import type { Point } from "./parametric";
 import { fitNodes, pathData, type Node } from "./path";
 
@@ -37,6 +38,17 @@ export interface Photo {
    */
   blackPoint?: number;
   channelBlackPoint?: number;
+  /**
+   * Split by a printer's color profile: the profile's file (its path on the server's Mac), its name,
+   * the rendering intent (0 perceptual, 1 relative colorimetric, 2 saturation) and which of its inks
+   * this layer is. The layer draws that ink's share of the photo, worked out from `src` as it's drawn -
+   * the photo itself stays as it is, so turning or replacing it splits it again. Its `separation` is
+   * the ink's name, so it's set and seen as a separation is.
+   */
+  profile?: string;
+  profileName?: string;
+  profileIntent?: number;
+  profileInk?: number;
   /** -100 to 100: greyer or more vivid - -100 grey, 100 twice as colourful. The lightness stays. Absent, 0. */
   saturation?: number;
   /** Degrees: the direction of the first set of lines. The second crosses it at a right angle. */
@@ -324,7 +336,7 @@ export interface Photo {
 }
 
 /** How a photo is split: by value, into colour groups, into CMYK plates, or already split into separations elsewhere. */
-export const photoMode = (p: Photo) => (p.separation ? "separations" : p.plate ? "cmyk" : p.ink ? "colour" : "value");
+export const photoMode = (p: Photo) => (p.profile ? "profile" : p.separation ? "separations" : p.plate ? "cmyk" : p.ink ? "colour" : "value");
 
 /**
  * Where a photo goes to fit or fill a page, inside a margin: its box, and the part of it that shows.
@@ -999,6 +1011,100 @@ export function readTones(src: string): Promise<Tones> {
   return job;
 }
 
+// ---------- Splitting by a color profile ----------
+
+const profiles = new Map<string, InkProfile>();
+const profileLoading = new Map<string, Promise<InkProfile>>();
+
+/** A printer profile from the server, read once however many layers ask. */
+export function loadProfile(path: string): Promise<InkProfile> {
+  const known = profiles.get(path);
+  if (known) return Promise.resolve(known);
+  const pending = profileLoading.get(path);
+  if (pending) return pending;
+  const job = (async () => {
+    const res = await fetch(`/api/color-profile?path=${encodeURIComponent(path)}`);
+    if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error ?? "That profile couldn't be read");
+    const made = parseProfile(await res.arrayBuffer());
+    profiles.set(path, made);
+    return made;
+  })().finally(() => profileLoading.delete(path));
+  profileLoading.set(path, job);
+  return job;
+}
+
+/** A short, steady stand-in for a profile's path in the keys below. */
+const pathHash = (path: string) => {
+  let h = 2166136261;
+  for (let i = 0; i < path.length; i++) h = Math.imul(h ^ path.charCodeAt(i), 16777619);
+  return (h >>> 0).toString(36);
+};
+
+/**
+ * What an ink's share of the photo is kept under, as though it were a picture of its own - so every
+ * cache keyed by a photo's picture tells one ink from another. Ends with what tells them apart.
+ */
+const profileKey = (p: Pick<Photo, "src" | "profile" | "profileIntent" | "profileInk">) =>
+  `${p.src}#icc|${pathHash(p.profile!)}|${p.profileIntent ?? 0}|${p.profileInk ?? 0}`;
+const splitting = new Set<string>();
+
+/**
+ * The photo as a profile ink's layer draws it: its picture that ink's share, darker where more of it
+ * goes, as a separation's is. Null while the profile or the photo is still being read - asked for now,
+ * and whatever is drawing told when it's ready. Any other photo comes back as it is.
+ */
+export function profiled(p: Photo): Photo | null {
+  if (!p.profile) return p;
+  const key = profileKey(p);
+  if (tonesCache.has(key)) return { ...p, src: key };
+  const whole = `${p.src}#icc|${pathHash(p.profile)}|${p.profileIntent ?? 0}`;
+  if (!splitting.has(whole)) {
+    splitting.add(whole);
+    Promise.all([loadProfile(p.profile), readTones(p.src)])
+      .then(([profile, tones]) => {
+        const inks = inksOf(profile, tones.rgba, p.profileIntent ?? 0);
+        inks.forEach((ink, i) => {
+          const light = new Float32Array(ink.length);
+          const rgba = new Uint8ClampedArray(ink.length * 4);
+          for (let k = 0; k < ink.length; k++) {
+            light[k] = 1 - ink[k];
+            const v = Math.round(light[k] * 255);
+            rgba[k * 4] = rgba[k * 4 + 1] = rgba[k * 4 + 2] = v;
+            rgba[k * 4 + 3] = 255;
+          }
+          tonesCache.set(`${whole}|${i}`, { w: tones.w, h: tones.h, light, rgba });
+        });
+        separationListeners.forEach((heard) => heard());
+      })
+      .catch(() => {})
+      .finally(() => splitting.delete(whole));
+  }
+  return null;
+}
+
+const plateImages = new Map<string, string>();
+
+/**
+ * A profile ink's share of the photo as a picture, for the stage to show - gray, darker where more of
+ * it goes. Undefined until it's worked out (see profiled). Any other photo: its own picture.
+ */
+export function pictureOf(p: Photo): string | undefined {
+  if (!p.profile) return p.src;
+  const shown = profiled(p);
+  if (!shown) return undefined;
+  const known = plateImages.get(shown.src);
+  if (known) return known;
+  const tones = tonesCache.get(shown.src)!;
+  const canvas = document.createElement("canvas");
+  canvas.width = tones.w;
+  canvas.height = tones.h;
+  canvas.getContext("2d")!.putImageData(new ImageData(new Uint8ClampedArray(tones.rgba), tones.w, tones.h), 0, 0);
+  const url = canvas.toDataURL("image/png");
+  if (plateImages.size > 24) plateImages.delete(plateImages.keys().next().value!);
+  plateImages.set(shown.src, url);
+  return url;
+}
+
 /**
  * A photo file made into a working copy: no longer than WORKING_EDGE on its longer side, as a JPEG,
  * so a drawing that carries it stays a size a browser opens without a pause. Rejects with a sentence
@@ -1103,7 +1209,10 @@ const marksCache = new Map<string, PhotoMarks>();
  * size or new numbers draws them again.
  */
 export function photoMarks(photo: Photo, w: number, h: number): PhotoMarks | null {
-  photo = channelAdjusted(photo);
+  // A profile's ink: drawn from its own share of the photo, once the profile and the photo are read.
+  const inked = profiled(photo);
+  if (!inked) return null;
+  photo = channelAdjusted(inked);
   const tones = photoTones(photo);
   if (!tones || w <= 0 || h <= 0) return null;
   const key = marksKey(photo, w, h);
@@ -4416,6 +4525,12 @@ export function photoFromData(raw: Record<string, unknown>): Photo | null {
     ...(num(raw.channel_contrast, 0) ? { channelContrast: num(raw.channel_contrast, 0) } : {}),
     ...(num(raw.channel_black_point, 0) ? { channelBlackPoint: num(raw.channel_black_point, 0) } : {}),
     ...(num(raw.black_point, 0) ? { blackPoint: num(raw.black_point, 0) } : {}),
+    ...(typeof raw.profile === "string" && raw.profile ? {
+      profile: raw.profile,
+      ...(typeof raw.profile_name === "string" ? { profileName: raw.profile_name } : {}),
+      ...([1, 2].includes(Number(raw.profile_intent)) ? { profileIntent: Number(raw.profile_intent) } : {}),
+      profileInk: Math.max(0, Math.floor(num(raw.profile_ink, 0))),
+    } : {}),
     angle: num(raw.angle, PHOTO_DEFAULTS.angle),
     spacingMm: num(raw.spacing_mm, 0.3),
     ...(typeof raw.source === "string" && raw.source ? { source: raw.source } : {}),
@@ -4521,6 +4636,7 @@ export const photoData = (p: Photo) => ({
   ...(p.channelContrast ? { channel_contrast: p.channelContrast } : {}),
   ...(p.channelBlackPoint ? { channel_black_point: p.channelBlackPoint } : {}),
   ...(p.blackPoint ? { black_point: p.blackPoint } : {}),
+  ...(p.profile ? { profile: p.profile, profile_name: p.profileName, profile_intent: p.profileIntent || undefined, profile_ink: p.profileInk ?? 0 } : {}),
   angle: p.angle, spacing_mm: p.spacingMm, levels: p.levels,
   ...(p.source ? { source: p.source } : {}),
   ...(p.quarterTurns ? { quarter_turns: p.quarterTurns } : {}),
