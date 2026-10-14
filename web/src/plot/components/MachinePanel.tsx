@@ -46,7 +46,7 @@ function carriageText(c: Carriage | undefined, model: PlotterModel | undefined, 
   return text;
 }
 
-// Manual pen and carriage controls, collapsed under "Utilities" since they're not needed for every plot.
+// Manual pen and carriage controls, in the Utilities card - out from its own toolbar, since they're not needed for every plot.
 export function MachinePanel(props: Props) {
   const { busy, walkSupported } = props;
   const walkDisabled = busy || !walkSupported;
@@ -65,7 +65,7 @@ export function MachinePanel(props: Props) {
   };
 
   return (
-    <Section title="Utilities" collapsibleKey="plot-utilities" defaultOpen={false}>
+    <Section title="Utilities" collapsibleKey="plot-utilities-card">
       <section className={styles.panel} aria-label="Pen and carriage">
         <div className={styles.jog} role="group" aria-label="Move the carriage (arrow keys work here)" onKeyDown={onKeyDown}>
           <ButtonRound className={styles.up} size="md" icon={<ArrowUp />} aria-label="Move carriage toward the back" disabled={walkDisabled} onClick={() => props.onWalk("y", -1)} />

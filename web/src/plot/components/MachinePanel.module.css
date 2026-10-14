@@ -24,8 +24,8 @@
 .down { grid-area: down; }
 
 .side {
-  flex: 1;
-  min-width: 15rem;
+  flex: 1 1 12rem;
+  min-width: 0; /* a narrow card: under the arrows, never past its edge */
   display: flex;
   flex-direction: column;
   gap: 0.6rem;

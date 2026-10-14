@@ -134,11 +134,18 @@
 }
 
 /* Same columns in every group, so all the fields line up at one width. */
+/* Shared out across the card's width: the two fields take what the round buttons leave, and in a
+   narrow card the buttons go under them rather than squeezing them. */
 .offsetRow {
-  display: grid;
-  grid-template-columns: 9.5rem 9.5rem auto;
-  gap: 0.75rem;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem 0.75rem;
   align-items: center;
+}
+
+.offsetRow > :not(.offsetButtons) {
+  flex: 1 1 6rem;
+  min-width: 0;
 }
 
 /* The round buttons at the end of an offset row, side by side. */

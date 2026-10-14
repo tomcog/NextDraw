@@ -22,7 +22,7 @@ const FALLBACK_PEN_MM = 0.3;
 
 const clampInt = (text: string, min: number, max: number) => Math.min(max, Math.max(min, Math.round(Number(text) || min)));
 
-// Plot options, shown in the collapsed "Plot options" section under the preview.
+// Plot options: the Plot options card, in the rail.
 export function PlotOptionsSection({ settings: s, disabled, onChange, handling, skipTiny, onSkipTiny, skipped }: Props) {
   return (
     <div className={styles.plotOptions}>

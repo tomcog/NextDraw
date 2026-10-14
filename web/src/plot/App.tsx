@@ -400,6 +400,14 @@ export default function App() {
   useEffect(() => save(STORAGE.penCard, penCard), [penCard]);
   const [queueCard, setQueueCard] = useState(() => load<boolean>(STORAGE.queueCard) ?? false);
   useEffect(() => save(STORAGE.queueCard, queueCard), [queueCard]);
+  // What is set less often - where the drawing sits, how it's plotted, the pen and carriage by hand -
+  // a card each, from a toolbar of their own at the foot of the others. Put away until wanted.
+  const [positionCard, setPositionCard] = useState(() => load<boolean>(STORAGE.positionCard) ?? false);
+  useEffect(() => save(STORAGE.positionCard, positionCard), [positionCard]);
+  const [optionsCard, setOptionsCard] = useState(() => load<boolean>(STORAGE.optionsCard) ?? false);
+  useEffect(() => save(STORAGE.optionsCard, optionsCard), [optionsCard]);
+  const [utilitiesCard, setUtilitiesCard] = useState(() => load<boolean>(STORAGE.utilitiesCard) ?? false);
+  useEffect(() => save(STORAGE.utilitiesCard, utilitiesCard), [utilitiesCard]);
   const [zoomChoice, setZoomChoice] = useState<Zoom>(() => load<Zoom>(STORAGE.zoom) ?? "plotter");
   // The loupe over the preview, for a close look at the lines. Put away each time the page opens.
   const [loupe, setLoupe] = useState(false);
@@ -1113,6 +1121,8 @@ export default function App() {
   };
 
   const resume = !busy ? status?.resume ?? null : null;
+  // The header's "No plotter" says the same.
+  const plotterConnected = Boolean(status?.plotter_found);
 
   /* ---------- Queue ---------- */
 
@@ -1815,6 +1825,17 @@ export default function App() {
           />
           {/* Setup's way in, at the foot of the toolbars, as it was in Studio and Image. */}
           <SetupToolbar open={setupOpen} onToggle={() => setSetupOpen((open) => !open)} orientation="vertical" />
+          {/* Last: what is set less often, a card each. */}
+          {/* Only with a plotter connected: switched off, and their cards put away, until there is one.
+            Each card's own on or off is kept for when it's back. */}
+          <PanelToolbar
+            label="Less often"
+            cards={[
+              { key: "position", on: positionCard, toggle: () => setPositionCard((on) => !on), disabled: !plotterConnected, why: "connect a plotter first" },
+              { key: "options", on: optionsCard, toggle: () => setOptionsCard((on) => !on), disabled: !plotterConnected, why: "connect a plotter first" },
+              { key: "utilities", on: utilitiesCard, toggle: () => setUtilitiesCard((on) => !on), disabled: !plotterConnected, why: "connect a plotter first" },
+            ]}
+          />
         </div>
         <section className={styles.stage} aria-label={paletteOpen ? "Pen colors" : "Drawing preview"}>
           <div className={styles.bedArea}>
@@ -1897,62 +1918,11 @@ export default function App() {
             )}
           </div>
 
-          {/* What is set less often, in sections that start folded - the same sections as the cards
-            beside the preview, rather than rows of their own - set on the page rather than in a card. */}
+          {/* The plot's summary under the preview. Where the drawing sits, how it's plotted and the pen
+            and carriage by hand are cards in the rail, from their own toolbar. */}
           {(!paletteOpen || (preview && estimate)) && (
           <div className={styles.lessOften}>
             <div className={`${styles.cardBody} ${controls.cardSections}`}>
-              {!paletteOpen && <>
-              {/* Where it goes and how it's plotted only mean something once there's a drawing. */}
-              {fileName && <>
-              <Section title="Drawing position" collapsibleKey="plot-position" defaultOpen={false}>
-                <PositionSection
-                  placement={placement}
-                  minPlacement={minPlace}
-                  units={settings.units}
-                  disabled={plotting}
-                  onChange={(p) => setPlacement(p)}
-                  paperX={settings.paper_x}
-                  paperY={settings.paper_y}
-                  onPaperChange={updateSettings}
-                  onCentre={centreOnPaper}
-                />
-              </Section>
-
-              <Section title="Plot options" collapsibleKey="plot-options" defaultOpen={false}>
-                <PlotOptionsSection
-                  settings={settings}
-                  disabled={plotting}
-                  onChange={updateSettings}
-                  handling={info?.handling ?? []}
-                  skipTiny={skipTiny}
-                  onSkipTiny={setSkipTiny}
-                  skipped={estimate?.skipped_tiny ?? null}
-                />
-              </Section>
-              </>}
-
-              <MachinePanel
-                model={model}
-                units={settings.units}
-                carriage={status?.carriage}
-                stepIndex={stepIndex}
-                onStepIndex={setStepIndex}
-                busy={busy}
-                walkSupported={info?.walk_supported ?? true}
-                message={machineMessage}
-                onWalk={walk}
-                onHome={() => manual("home")}
-                onRaise={() => manual("raise_pen")}
-                onLower={() => manual("lower_pen")}
-                onRelease={() => manual("release")}
-                onSetupHeight={() => manual("pen_setup")}
-                onTestPen={() => manual("pen_test")}
-                showPenUp={showPenUp}
-                onShowPenUp={setShowPenUp}
-              />
-              </>}
-
               <PlotSummary
                 estimate={preview ? estimate : null}
                 preview={preview}
@@ -2171,6 +2141,69 @@ export default function App() {
                 )}
               </form>
             </Card>
+          )}
+          {/* Last in the rail, always: what is set less often, from its own toolbar. Where it goes and
+            how it's plotted only mean something once there's a drawing. */}
+          {plotterConnected && fileName && positionCard && (
+          <Card variant="flat" className={styles.controls}>
+            <div className={`${styles.cardBody} ${controls.cardSections}`}>
+              <Section title="Drawing position" collapsibleKey="plot-position-card">
+                <PositionSection
+                  placement={placement}
+                  minPlacement={minPlace}
+                  units={settings.units}
+                  disabled={plotting}
+                  onChange={(p) => setPlacement(p)}
+                  paperX={settings.paper_x}
+                  paperY={settings.paper_y}
+                  onPaperChange={updateSettings}
+                  onCentre={centreOnPaper}
+                />
+              </Section>
+            </div>
+          </Card>
+          )}
+          {plotterConnected && fileName && optionsCard && (
+          <Card variant="flat" className={styles.controls}>
+            <div className={`${styles.cardBody} ${controls.cardSections}`}>
+              <Section title="Plot options" collapsibleKey="plot-options-card">
+                <PlotOptionsSection
+                  settings={settings}
+                  disabled={plotting}
+                  onChange={updateSettings}
+                  handling={info?.handling ?? []}
+                  skipTiny={skipTiny}
+                  onSkipTiny={setSkipTiny}
+                  skipped={estimate?.skipped_tiny ?? null}
+                />
+              </Section>
+            </div>
+          </Card>
+          )}
+          {plotterConnected && utilitiesCard && (
+          <Card variant="flat" className={styles.controls}>
+            <div className={`${styles.cardBody} ${controls.cardSections}`}>
+              <MachinePanel
+                model={model}
+                units={settings.units}
+                carriage={status?.carriage}
+                stepIndex={stepIndex}
+                onStepIndex={setStepIndex}
+                busy={busy}
+                walkSupported={info?.walk_supported ?? true}
+                message={machineMessage}
+                onWalk={walk}
+                onHome={() => manual("home")}
+                onRaise={() => manual("raise_pen")}
+                onLower={() => manual("lower_pen")}
+                onRelease={() => manual("release")}
+                onSetupHeight={() => manual("pen_setup")}
+                onTestPen={() => manual("pen_test")}
+                showPenUp={showPenUp}
+                onShowPenUp={setShowPenUp}
+              />
+            </div>
+          </Card>
           )}
         </div>
       </main>

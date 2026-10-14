@@ -53,8 +53,7 @@ function OffsetPair({ heading, x, y, units, disabled, resetLabel, min, onChange,
   );
 }
 
-// Where the drawing and the paper sit, measured from home. Shown in the collapsed
-// "Drawing position" section under the preview.
+// Where the drawing and the paper sit, measured from home. The Drawing position card, in the rail.
 export function PositionSection({ placement, minPlacement, units, disabled, onChange, paperX, paperY, onPaperChange, onCentre }: Props) {
   return (
     <div className={styles.position}>
