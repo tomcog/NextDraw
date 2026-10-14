@@ -1141,8 +1141,8 @@ export default function App() {
       }
     }, 300);
   };
-  // An Illustrator file in the queue opens as the SVG beside it.
-  const queuedOpen = (item: QueueItem) => item.path === status?.file_path || item.path.replace(/\.ai$/i, ".svg") === status?.file_path;
+  // An Illustrator or VectorCraft file in the queue opens as the SVG beside it.
+  const queuedOpen = (item: QueueItem) => item.path === status?.file_path || item.path.replace(/\.(ai|vectorcraft)$/i, ".svg") === status?.file_path;
   const queueCurrent = queue.find(queuedOpen) ?? null;
   const queueNext = (() => {
     const from = queueCurrent ? queue.indexOf(queueCurrent) + 1 : 0;

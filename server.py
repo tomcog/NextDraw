@@ -354,9 +354,9 @@ def queue_mark_done_if_printed(root, printed):
 
 
 def queue_is_open(item, current):
-    """Whether a queued drawing is the one open: an Illustrator file opens as the SVG beside it."""
+    """Whether a queued drawing is the one open: an Illustrator or VectorCraft file opens as the SVG beside it."""
     path = Path(item["path"])
-    return str(path) == current or (path.suffix.lower() == ".ai" and str(path.with_suffix(".svg")) == current)
+    return str(path) == current or (path.suffix.lower() in IMPORTERS and str(path.with_suffix(".svg")) == current)
 
 
 class Job:
@@ -2673,7 +2673,7 @@ def browse():
         try:
             if entry.is_dir():
                 folders.append({"name": entry.name, "path": str(entry)})
-            elif entry.suffix.lower() in (".svg", ".ai"):
+            elif entry.suffix.lower() in DRAWING_SUFFIXES:
                 info = entry.stat()
                 files.append({
                     "name": entry.name,
@@ -2681,7 +2681,7 @@ def browse():
                     "kind": entry.suffix.lower()[1:],
                     "size": info.st_size,
                     "modified": info.st_mtime,
-                    "has_svg": entry.suffix.lower() == ".ai" and entry.with_suffix(".svg").exists(),
+                    "has_svg": entry.suffix.lower() in IMPORTERS and entry.with_suffix(".svg").exists(),
                 })
             elif images and entry.suffix.lower() in PICTURE_SUFFIXES:
                 info = entry.stat()
@@ -2841,6 +2841,220 @@ def import_from_illustrator(ai_path):
         tmp_svg.write_bytes(declare_known_prefixes(tmp_svg.read_bytes()))
         os.replace(tmp_svg, svg_path)  # swap in the finished file
     return svg_path
+
+
+# ---------- VectorCraft ----------
+#
+# VectorCraft saves its documents as JSON: artboards, then layers of paths whose anchors carry their
+# Bezier handles, in points (72 to the inch), y down. Read here into an SVG next to the file, as an
+# Illustrator file is, so it opens everywhere an SVG does. Layers, sublayers, groups and paths come
+# across with their fills and strokes; anything else it can hold (text, images, symbols, blends) is
+# left out and said so.
+
+def vectorcraft_color(paint):
+    """A paint's colour as hex, or None for no paint. A gradient is taken as its first stop."""
+    if not isinstance(paint, dict):
+        return None
+    if paint.get("type") == "gradient":
+        stops = ((paint.get("gradient") or {}).get("stops") or []) if isinstance(paint.get("gradient"), dict) else []
+        return vectorcraft_color({"type": "solid", "color": stops[0].get("color")}) if stops and isinstance(stops[0], dict) else None
+    if paint.get("type") != "solid":
+        return None
+    c = paint.get("color") or {}
+    model = c.get("model")
+    num = lambda k: max(0.0, min(1.0, float(c.get(k) or 0)))  # noqa: E731
+    if model == "rgb":
+        rgb = (num("r"), num("g"), num("b"))
+    elif model == "cmyk":
+        k = num("k")
+        rgb = tuple((1 - num(ch)) * (1 - k) for ch in ("c", "m", "y"))
+    elif model == "lab":
+        rgb = lab_to_srgb(float(c.get("l") or 0), float(c.get("a") or 0), float(c.get("b") or 0))
+    elif model in ("gray", "grey"):
+        v = 1 - num("gray" if "gray" in c else "k")
+        rgb = (v, v, v)
+    else:
+        rgb = (0.0, 0.0, 0.0)
+    return "#" + "".join(f"{round(max(0.0, min(1.0, v)) * 255):02x}" for v in rgb)
+
+
+def lab_to_srgb(L, a, b):
+    """CIE Lab (D65) to sRGB, 0 to 1."""
+    fy = (L + 16) / 116
+    fx, fz = fy + a / 500, fy - b / 200
+    f = lambda t: t ** 3 if t ** 3 > 0.008856 else (t - 16 / 116) / 7.787  # noqa: E731
+    x, y, z = 0.95047 * f(fx), 1.0 * f(fy), 1.08883 * f(fz)
+    lin = (3.2406 * x - 1.5372 * y - 0.4986 * z, -0.9689 * x + 1.8758 * y + 0.0415 * z,
+           0.0557 * x - 0.2040 * y + 1.0570 * z)
+    return tuple(12.92 * v if v <= 0.0031308 else 1.055 * max(v, 0) ** (1 / 2.4) - 0.055 for v in lin)
+
+
+def vectorcraft_d(path):
+    """A path's subpaths as SVG path data: a line where neither end has a handle out, a curve otherwise."""
+    out = []
+    fmt = lambda pt: f"{float(pt[0]):.4f},{float(pt[1]):.4f}".replace(".0000", "")  # noqa: E731
+    for sub in (path or {}).get("subpaths") or []:
+        anchors = [a for a in sub.get("anchors") or [] if isinstance(a, dict) and a.get("p")]
+        if not anchors:
+            continue
+        out.append("M" + fmt(anchors[0]["p"]))
+        pairs = list(zip(anchors, anchors[1:]))
+        if sub.get("closed") and len(anchors) > 1:
+            pairs.append((anchors[-1], anchors[0]))
+        for a, b in pairs:
+            h1, h2 = a.get("out") or a["p"], b.get("in") or b["p"]
+            if list(h1) == list(a["p"]) and list(h2) == list(b["p"]):
+                out.append("L" + fmt(b["p"]))
+            else:
+                out.append(f"C{fmt(h1)} {fmt(h2)} {fmt(b['p'])}")
+        if sub.get("closed"):
+            out.append("Z")
+    return "".join(out)
+
+
+def vectorcraft_pen(swatch, presets):
+    """The pen color a swatch names: "EnerGel Pink" is Pink - a pen preset's name before it taken off,
+    and the color spelt as that preset's palette spells it. Any other swatch is its own name."""
+    found = None
+    for preset in sorted(presets or [], key=lambda p: -len(str(p.get("name") or ""))):
+        tool = str(preset.get("name") or "")
+        if tool and swatch.lower().startswith(tool.lower() + " "):
+            color = swatch[len(tool):].strip()
+            known = [str(c.get("name")) for c in preset.get("palette") or [] if isinstance(c, dict) and c.get("name")]
+            spelt = next((k for k in known if k.lower() == color.lower()), None)
+            if spelt:
+                return spelt
+            found = found or color
+    return found or swatch
+
+
+def vectorcraft_layer_name(name, layer, presets):
+    """
+    A layer named after its pen, as Studio names them: when every fill in it is the same swatch, that
+    swatch's pen color - with the layer's own name after it ("Pink - Petals"), unless that's just
+    VectorCraft's "Layer 2". Otherwise the layer's own name.
+    """
+    swatches, unnamed = set(), False
+
+    def walk(node):
+        nonlocal unnamed
+        kind = node.get("kind") or {}
+        if kind.get("type") == "path":
+            for item in ((node.get("appearance") or {}).get("items") or []):
+                paint = item.get("paint") if isinstance(item, dict) and item.get("kind") == "fill" else None
+                if paint and paint.get("type") != "none":
+                    if paint.get("swatch"):
+                        swatches.add(str(paint["swatch"]))
+                    else:
+                        unnamed = True
+        for child in kind.get("children") or []:
+            if isinstance(child, dict):
+                walk(child)
+
+    walk(layer)
+    own = str(name or "").strip()
+    if len(swatches) != 1 or unnamed:
+        return own or "Layer"
+    pen = vectorcraft_pen(swatches.pop(), presets)
+    return pen if not own or re.fullmatch(r"Layer \d+", own) or own.lower() == pen.lower() else f"{pen} - {own}"
+
+
+def vectorcraft_svg(doc, presets=None):
+    """A VectorCraft document as SVG text, and the kinds of thing in it that couldn't come across.
+    `presets` are the pen presets, for naming layers after their pens."""
+    from lxml import etree
+    d = doc.get("document") or {}
+    boards = d.get("artboards") or []
+    rect = (boards[0].get("rect") if boards and isinstance(boards[0], dict) else None) or {}
+    x0, y0 = float(rect.get("x0", 0)), float(rect.get("y0", 0))
+    w, h = float(rect.get("x1", 792)) - x0, float(rect.get("y1", 612)) - y0
+    left_out = []
+    root = etree.Element(SVG_NS + "svg", nsmap={None: SVG_NS[1:-1], "inkscape": INKSCAPE_NS[1:-1]})
+    root.set("width", f"{w / 72:g}in")
+    root.set("height", f"{h / 72:g}in")
+    root.set("viewBox", f"{x0:g} {y0:g} {w:g} {h:g}")
+
+    def paint_attrs(el, node):
+        fill, stroke, width = None, None, None
+        for item in ((node.get("appearance") or {}).get("items") or []):
+            if not isinstance(item, dict) or item.get("visible") is False:
+                continue
+            if item.get("kind") == "fill" and fill is None:
+                fill = vectorcraft_color(item.get("paint")) or "none"
+            elif item.get("kind") == "stroke" and stroke is None:
+                stroke = vectorcraft_color(item.get("paint")) or "none"
+                width = item.get("width")
+        el.set("fill", fill or "none")
+        if stroke and stroke != "none":
+            el.set("stroke", stroke)
+            el.set("stroke-width", f"{float(width or 1):g}")
+
+    def hide(el, node, kind):
+        if kind.get("visible") is False or node.get("visible") is False or kind.get("printable") is False:
+            el.set("style", "display:none")
+
+    def add(parent, node):
+        kind = node.get("kind") or {}
+        what = kind.get("type")
+        if what in ("layer", "group"):
+            g = etree.SubElement(parent, SVG_NS + "g")
+            if node.get("id") is not None:
+                g.set("id", f"vc{node['id']}")
+            name = kind.get("name") or node.get("name")
+            if what == "layer":
+                g.set(INKSCAPE_NS + "groupmode", "layer")
+                g.set(INKSCAPE_NS + "label", vectorcraft_layer_name(name, node, presets))
+            elif name:
+                g.set(INKSCAPE_NS + "label", str(name))
+            hide(g, node, kind)
+            for child in kind.get("children") or []:
+                if isinstance(child, dict):
+                    add(g, child)
+        elif what == "path":
+            path_data = vectorcraft_d(kind.get("path"))
+            if not path_data:
+                return
+            el = etree.SubElement(parent, SVG_NS + "path")
+            if node.get("id") is not None:
+                el.set("id", f"vc{node['id']}")
+            el.set("d", path_data)
+            paint_attrs(el, node)
+            if "EvenOdd" in json.dumps(kind.get("path", {}).get("fill_rule", kind.get("fill_rule", ""))):
+                el.set("fill-rule", "evenodd")
+            hide(el, node, kind)
+        else:
+            left_out.append(what or "unknown")
+
+    for layer in d.get("layers") or []:
+        if isinstance(layer, dict):
+            add(root, layer)
+    root.text = "\n"
+    head = f"<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<!-- Generator: {doc.get('generator') or 'VectorCraft'}, read by NextDraw -->\n"
+    return head + etree.tostring(root, encoding="unicode"), left_out
+
+
+def import_from_vectorcraft(vc_path):
+    """Read a VectorCraft file into an SVG next to it. Returns the SVG path."""
+    try:
+        doc = json.loads(vc_path.read_text(encoding="utf-8"))
+    except (OSError, ValueError) as exc:
+        raise RuntimeError(f"Couldn't read {vc_path.name} as a VectorCraft file: {exc}")
+    if not isinstance(doc, dict) or doc.get("format") != "vectorcraft":
+        raise RuntimeError(f"{vc_path.name} isn't a VectorCraft document.")
+    svg, left_out = vectorcraft_svg(doc, load_presets())
+    svg_path = vc_path.with_suffix(".svg")
+    tmp = svg_path.with_name(f".{svg_path.name}.tmp")
+    tmp.write_text(svg, encoding="utf-8")
+    os.replace(tmp, svg_path)
+    if left_out:
+        kinds = sorted(set(left_out))
+        logging.getLogger(__name__).warning("VectorCraft %s: left out %s", vc_path.name, ", ".join(kinds))
+    return svg_path
+
+
+# Drawings that open by being made into an SVG next to them, by their suffix.
+IMPORTERS = {".ai": import_from_illustrator, ".vectorcraft": import_from_vectorcraft}
+DRAWING_SUFFIXES = (".svg", *IMPORTERS)
 
 
 KNOWN_PREFIXES = {
@@ -3139,18 +3353,18 @@ def combine_sources(raw_paths, mode):
         path = allowed_path(raw)
         if path is None or not path.is_file():
             return None, (jsonify(error="One of those files isn't in a folder the app can open drawings from."), 403)
-        if path.suffix.lower() not in (".svg", ".ai"):
-            return None, (jsonify(error=f"{path.name} isn't an SVG or Illustrator (.ai) file."), 400)
+        if path.suffix.lower() not in DRAWING_SUFFIXES:
+            return None, (jsonify(error=f"{path.name} isn't an SVG, Illustrator (.ai) or VectorCraft file."), 400)
         paths.append(path)
-    waiting = [p.with_suffix(".svg").name for p in paths if p.suffix.lower() == ".ai" and p.with_suffix(".svg").exists()]
+    waiting = [p.with_suffix(".svg").name for p in paths if p.suffix.lower() in IMPORTERS and p.with_suffix(".svg").exists()]
     if waiting and mode not in ("existing", "import"):
         return None, (jsonify(choice=True, svg_names=waiting))
     parts = []
     try:
         for path in paths:
-            if path.suffix.lower() == ".ai":
+            if path.suffix.lower() in IMPORTERS:
                 existing = path.with_suffix(".svg")
-                path = existing if existing.exists() and mode == "existing" else import_from_illustrator(path)
+                path = existing if existing.exists() and mode == "existing" else IMPORTERS[path.suffix.lower()](path)
             if path.stat().st_size > MAX_STUDIO_SVG:
                 return None, (jsonify(error=f"{path.name} is too big to combine."), 413)
             parts.append((path.stem, parse_svg(path).getroot()))
@@ -3254,8 +3468,8 @@ def studio_combine():
 @app.post("/api/open")
 def open_file():
     """
-    Open a drawing by its location. SVGs open directly. An .ai file is imported: Illustrator exports
-    an SVG next to it, which becomes the working file. If that SVG already exists, the page is asked
+    Open a drawing by its location. SVGs open directly. An .ai or .vectorcraft file is imported: an SVG
+    is made next to it (by Illustrator, or read here from VectorCraft's JSON), which becomes the working file. If that SVG already exists, the page is asked
     whether to open it or import again (mode: "existing" or "import").
     """
     if job.busy():
@@ -3268,14 +3482,14 @@ def open_file():
     try:
         if suffix == ".svg":
             svg_path = path
-        elif suffix == ".ai":
+        elif suffix in IMPORTERS:
             existing = path.with_suffix(".svg")
             mode = body.get("mode")
             if existing.exists() and mode not in ("existing", "import"):
                 return jsonify(choice=True, svg_name=existing.name)
-            svg_path = existing if (existing.exists() and mode == "existing") else import_from_illustrator(path)
+            svg_path = existing if (existing.exists() and mode == "existing") else IMPORTERS[suffix](path)
         else:
-            return jsonify(error="Choose an SVG or Illustrator (.ai) file."), 400
+            return jsonify(error="Choose an SVG, Illustrator (.ai) or VectorCraft file."), 400
         plot = load_drawing(svg_path)
     except (OSError, ValueError, RuntimeError) as exc:
         return jsonify(error=str(exc)), 400
@@ -3513,7 +3727,7 @@ def put_queue():
         if not isinstance(entry, dict):
             return jsonify(error="Each drawing in the queue needs its location."), 400
         path = allowed_path(entry.get("path", ""))
-        if path is None or path.suffix.lower() not in (".svg", ".ai"):
+        if path is None or path.suffix.lower() not in DRAWING_SUFFIXES:
             return jsonify(error=f"{Path(str(entry.get('path', ''))).name or 'That file'} isn't a drawing the app can open."), 400
         if str(path) in seen:
             continue
@@ -3777,15 +3991,15 @@ def studio_read():
             return jsonify(name=path.name, path=str(path), folder=display_path(path.parent), svg=svg,
                            note=f"{path.name} is no longer in {display_path(path.parent)}, so this is Plot's copy of it. Saving puts it back there.")
         return jsonify(error=f"{path.name} is no longer in {display_path(path.parent)}: it was moved, renamed or deleted."), 404
-    if path is None or not path.is_file() or path.suffix.lower() not in (".svg", ".ai"):
+    if path is None or not path.is_file() or path.suffix.lower() not in DRAWING_SUFFIXES:
         return jsonify(error="That isn't a drawing the app can open."), 403
-    if path.suffix.lower() == ".ai":
+    if path.suffix.lower() in IMPORTERS:
         existing = path.with_suffix(".svg")
         mode = request.args.get("mode")
         if existing.exists() and mode not in ("existing", "import"):
             return jsonify(choice=True, svg_name=existing.name)
         try:
-            path = existing if (existing.exists() and mode == "existing") else import_from_illustrator(path)
+            path = existing if (existing.exists() and mode == "existing") else IMPORTERS[path.suffix.lower()](path)
         except (OSError, ValueError, RuntimeError) as exc:
             return jsonify(error=str(exc)), 400
     if path.stat().st_size > MAX_STUDIO_SVG:

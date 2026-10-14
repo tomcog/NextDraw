@@ -9,7 +9,7 @@ import { load, save } from "../lib/storage";
 interface Entry {
   name: string;
   path: string;
-  kind?: "svg" | "ai" | "image";
+  kind?: "svg" | "ai" | "vectorcraft" | "image";
   size?: number;
   modified?: number;
   has_svg?: boolean;
@@ -93,7 +93,7 @@ const fmtSize = (bytes = 0) =>
 const fmtDate = (seconds = 0) =>
   new Date(seconds * 1000).toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
 
-// Browse the folders the server allows and open an SVG, or import an Illustrator file as SVG.
+// Browse the folders the server allows and open an SVG, or import an Illustrator or VectorCraft file as SVG.
 export function FileBrowser({ open, onClose, onOpened, endpoint = "/api/open", combine, addMode = false, onImage, pick }: Props) {
   const dialog = useRef<HTMLDialogElement>(null);
   const [listing, setListing] = useState<Listing | null>(null);
@@ -177,6 +177,7 @@ export function FileBrowser({ open, onClose, onOpened, endpoint = "/api/open", c
     setError(null);
     setChoice(null);
     const importing = file.kind === "ai" && mode !== "existing";
+    // A VectorCraft file is read by the server itself: quick, so it's just opening.
     setWorking(importing ? `Importing ${file.name} from Illustrator… This can take a few seconds.` : `Opening ${file.name}…`);
     try {
       // Plot posts, because opening makes the file the loaded drawing. Studio reads it back, so a
@@ -325,8 +326,8 @@ export function FileBrowser({ open, onClose, onOpened, endpoint = "/api/open", c
 
       {stackChoice ? (
         <div className={styles.panel}>
-          <p>{`${stackChoice.svgNames.join(", ")} already ${stackChoice.svgNames.length === 1 ? "exists" : "exist"} next to ${stackChoice.svgNames.length === 1 ? "its Illustrator file" : "their Illustrator files"}.`}</p>
-          <p className={styles.muted}>Use them to keep the changes saved in them, or import again if you’ve changed the artwork in Illustrator.</p>
+          <p>{`${stackChoice.svgNames.join(", ")} already ${stackChoice.svgNames.length === 1 ? "exists" : "exist"} next to ${stackChoice.svgNames.length === 1 ? "the file it was imported from" : "the files they were imported from"}.`}</p>
+          <p className={styles.muted}>Use them to keep the changes saved in them, or import again if you’ve changed the artwork since.</p>
           <div className={styles.buttons}>
             <Button size="md" variant="ghost" onClick={() => setStackChoice(null)}>Back</Button>
             <Button size="md" variant="secondary" onClick={() => stack(stackChoice.add, "import", stackChoice.files)}>Import again</Button>
@@ -336,7 +337,7 @@ export function FileBrowser({ open, onClose, onOpened, endpoint = "/api/open", c
       ) : choice ? (
         <div className={styles.panel}>
           <p>{`${choice.svgName} already exists next to ${choice.file.name}.`}</p>
-          <p className={styles.muted}>Open it to keep the changes saved in it, or import again if you’ve changed the artwork in Illustrator.</p>
+          <p className={styles.muted}>Open it to keep the changes saved in it, or import again if you’ve changed the artwork in {choice.file.kind === "vectorcraft" ? "VectorCraft" : "Illustrator"}.</p>
           <div className={styles.buttons}>
             <Button size="md" variant="ghost" onClick={() => setChoice(null)}>Back</Button>
             <Button size="md" variant="secondary" onClick={() => openFile(choice.file, "import")}>Import again</Button>
@@ -383,12 +384,12 @@ export function FileBrowser({ open, onClose, onOpened, endpoint = "/api/open", c
                   else openFile(file);
                 }}
               >
-                {file.kind === "ai"
+                {file.kind === "ai" || file.kind === "vectorcraft"
                   ? <PenTool className={styles.icon} aria-hidden="true" />
                   : <FileImage className={styles.icon} aria-hidden="true" />}
                 <span className={styles.name}>{file.name}</span>
                 <span className={styles.meta} data-layer={at >= 0 || undefined}>
-                  {at >= 0 ? (pick ? `${at + 1} in the queue` : `Layer ${at + 1}`) : file.kind === "ai" ? "Illustrator, imports as SVG" : file.kind === "image" ? "Picture" : "SVG"}
+                  {at >= 0 ? (pick ? `${at + 1} in the queue` : `Layer ${at + 1}`) : file.kind === "ai" ? "Illustrator, imports as SVG" : file.kind === "vectorcraft" ? "VectorCraft, imports as SVG" : file.kind === "image" ? "Picture" : "SVG"}
                 </span>
                 <span className={styles.meta}>{`${fmtSize(file.size)}, ${fmtDate(file.modified)}`}</span>
               </button>
@@ -396,7 +397,7 @@ export function FileBrowser({ open, onClose, onOpened, endpoint = "/api/open", c
             );
           })}
           {listing && !listing.folders.length && !listing.files.length && (
-            <li className={styles.empty}>{onImage ? "No pictures or drawings in this folder." : "No SVG or Illustrator files in this folder."}</li>
+            <li className={styles.empty}>{onImage ? "No pictures or drawings in this folder." : "No SVG, Illustrator or VectorCraft files in this folder."}</li>
           )}
         </ul>
       )}
