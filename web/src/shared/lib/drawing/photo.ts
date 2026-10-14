@@ -84,7 +84,7 @@ export interface Photo {
    * drawn the way SquiggleDraw draws it - smooth curves, unbroken through white, rows joinable into
    * one line. Absent, hatching.
    */
-  style?: "hatch" | "waves" | "squiggle" | "streamlines" | "oneline" | "hilbert" | "outlines" | "centerlines" | "silhouette" | "edges";
+  style?: "hatch" | "waves" | "squiggle" | "streamlines" | "scribble" | "oneline" | "hilbert" | "outlines" | "centerlines" | "silhouette" | "edges";
   /**
    * Edges: how sharp a change of tone, 0 to 1 against the picture's sharpest, counts as an edge - the
    * line where a wall meets a ceiling, round a window. Lower finds fainter edges.
@@ -123,6 +123,14 @@ export interface Photo {
    * Streamlines: the widest the lines ever get apart, in mm - lighter than that is paper. The closest
    * is `spacingMm`, at black; between, the spacing follows the tone.
    */
+  /**
+   * Scribble: how long one stroke runs at most, in mm; how much it curls, 0 to 100 - gentle bends to
+   * tight loops; and which of its random scribbles it is - a new number, a new scribble. Absent, the
+   * defaults (SCRIBBLE_DEFAULTS).
+   */
+  scribbleLengthMm?: number;
+  scribbleWiggle?: number;
+  scribbleSeed?: number;
   streamWidestMm?: number;
   /** Streamlines: 1, or 2 for a second pass across the first in the darker half of the tones. Absent, 1. */
   streamPasses?: number;
@@ -601,7 +609,7 @@ export interface PhotoPart {
 
 /** The settings a layer of a photo keeps as its own, as opposed to the photo's: what a mode remembers. */
 export const LAYER_SETTINGS = [
-  "style", "angle", "spacingMm", "levels", "hatchSmoothMm", "hatchShortestMm", "rowMm", "waveMm", "squiggleAmpMm", "squiggleHeight", "squiggleJoin", "squiggleLift", "squiggleSmooth", "squiggleDraw", "squiggleVersion", "squiggleInkscape", "squiggleAngle", "contours", "smoothMm", "centerFrom", "centerSmoothMm", "centerShortestMm", "centerMode", "centerStraightMm", "centerLongMm", "centerCornerDeg", "edgeFrom", "edgeSmoothMm", "edgeShortestMm", "silhouetteFrom", "silhouetteSmoothMm", "silhouetteSmallestMm", "streamWidestMm", "streamPasses", "streamFlowMm", "lineDots", "lineLiftMm", "lineCurve", "lineAngle", "lineBias", "lineGrain", "lineContrast", "hilbertCoarsestMm", "hilbertLift", "hilbertCurve", "hilbertRound", "hilbertBlend", "hilbertAngle", "offsetMm",
+  "style", "angle", "spacingMm", "levels", "hatchSmoothMm", "hatchShortestMm", "rowMm", "waveMm", "squiggleAmpMm", "squiggleHeight", "squiggleJoin", "squiggleLift", "squiggleSmooth", "squiggleDraw", "squiggleVersion", "squiggleInkscape", "squiggleAngle", "contours", "smoothMm", "centerFrom", "centerSmoothMm", "centerShortestMm", "centerMode", "centerStraightMm", "centerLongMm", "centerCornerDeg", "edgeFrom", "edgeSmoothMm", "edgeShortestMm", "silhouetteFrom", "silhouetteSmoothMm", "silhouetteSmallestMm", "streamWidestMm", "streamPasses", "streamFlowMm", "scribbleLengthMm", "scribbleWiggle", "scribbleSeed", "lineDots", "lineLiftMm", "lineCurve", "lineAngle", "lineBias", "lineGrain", "lineContrast", "hilbertCoarsestMm", "hilbertLift", "hilbertCurve", "hilbertRound", "hilbertBlend", "hilbertAngle", "offsetMm",
   "band", "side", "paperTone", "ink", "regions", "region", "key", "regionInks", "keyInk", "plate", "plates", "fitPaper", "penMm", "fitPairs", "fitOpaque",
 ] as const;
 
@@ -754,6 +762,9 @@ const ONE_LINE_SPREAD = 12;
 
 /** Streamlines' starting numbers: widest spacing in mm, passes, and how broadly the flow is read, in mm. */
 export const STREAM_DEFAULTS = { widestMm: 3, passes: 1, flowMm: 2 };
+
+/** What a scribble starts from: strokes up to 60 mm long, curling moderately - loops of about 5 mm. */
+export const SCRIBBLE_DEFAULTS = { lengthMm: 60, wiggle: 50, seed: 1 };
 
 export const OUTLINE_DEFAULTS = { contours: 6, smoothMm: 1 };
 
@@ -1236,6 +1247,7 @@ export function photoMarks(photo: Photo, w: number, h: number): PhotoMarks | nul
   const made = photo.style === "waves" ? waves(tones, photo, w, h)
     : photo.style === "squiggle" ? (photo.squiggleVersion === "inkscape" ? squiggleInkscape(tones, photo, w, h) : squiggle(tones, photo, w, h))
     : photo.style === "streamlines" ? streamlines(tones, photo, w, h)
+    : photo.style === "scribble" ? scribble(tones, photo, w, h)
     : photo.style === "oneline" ? oneLine(tones, photo, w, h)
     : photo.style === "hilbert" ? hilbert(tones, photo, w, h)
     : photo.style === "outlines" ? outlines(tones, photo, w, h)
@@ -1250,7 +1262,7 @@ export function photoMarks(photo: Photo, w: number, h: number): PhotoMarks | nul
 
 /** Everything a photo's lines depend on, as one string: the same key, the same lines. */
 function marksKey(photo: Photo, w: number, h: number) {
-  return [photo.src.length, photo.src.slice(-32), w.toFixed(4), h.toFixed(4), photo.brightness, photo.contrast, photo.saturation ?? 0, photo.angle, photo.spacingMm, photo.levels, photo.hatchSmoothMm ?? "", photo.hatchShortestMm ?? "", photo.band?.join(",") ?? "", photo.side ?? "", photo.paperTone?.join(",") ?? "", photo.crop?.join(",") ?? "", photo.bleed ?? 0, photo.style ?? "hatch", photo.rowMm ?? "", photo.waveMm ?? "", photo.squiggleAmpMm ?? "", photo.squiggleHeight ?? "", photo.squiggleJoin ? "join" : "", photo.squiggleLift ? "lift" : "", photo.squiggleSmooth ?? "", JSON.stringify(photo.squiggleDraw ?? {}), photo.squiggleVersion ?? "", JSON.stringify(photo.squiggleInkscape ?? {}), photo.squiggleAngle ?? "", photo.ink ?? "", photo.regions?.join(",") ?? "", photo.region ?? "", photo.contours ?? "", photo.smoothMm ?? "", photo.key ? "key" : "", photo.keyInk ?? "", photo.regionInks?.join(",") ?? "", photo.keyStrength ?? "", photo.keyFrom ?? "", photo.plate ?? "", photo.plates?.join(",") ?? "", photo.blackShare ?? "", photo.centerFrom ?? "", photo.centerSmoothMm ?? "", photo.centerShortestMm ?? "", photo.centerMode ?? "", photo.centerStraightMm ?? "", photo.centerLongMm ?? "", photo.centerCornerDeg ?? "", photo.edgeFrom ?? "", photo.edgeSmoothMm ?? "", photo.edgeShortestMm ?? "", photo.silhouetteFrom ?? "", photo.silhouetteSmoothMm ?? "", photo.silhouetteSmallestMm ?? "", photo.fitPaper ?? "", photo.penMm ?? "", photo.fitPairs ? "pairs" : "", photo.fitOpaque ? "opaque" : "", photo.streamWidestMm ?? "", photo.streamPasses ?? "", photo.streamFlowMm ?? "", photo.lineDots ?? "", photo.lineLiftMm ?? "", photo.lineCurve ?? "", photo.lineAngle ?? "", photo.lineBias ?? "", photo.lineGrain ?? "", photo.lineContrast ?? "", photo.hilbertCoarsestMm ?? "", photo.hilbertLift ? "hlift" : "", photo.hilbertCurve ?? "", photo.hilbertRound ?? "", photo.hilbertBlend ?? "", photo.hilbertAngle ?? "", photo.edgeMask ? `${photo.edgeMask.length}|${photo.edgeMask.slice(-32)}` : "", photo.edgeMaskInvert ? "inv" : "", photo.edgeMaskSides?.join(",") ?? "", photo.edgeGen ? edgeGenKey(photo.edgeGen) : ""].join("|");
+  return [photo.src.length, photo.src.slice(-32), w.toFixed(4), h.toFixed(4), photo.brightness, photo.contrast, photo.saturation ?? 0, photo.angle, photo.spacingMm, photo.levels, photo.hatchSmoothMm ?? "", photo.hatchShortestMm ?? "", photo.band?.join(",") ?? "", photo.side ?? "", photo.paperTone?.join(",") ?? "", photo.crop?.join(",") ?? "", photo.bleed ?? 0, photo.style ?? "hatch", photo.rowMm ?? "", photo.waveMm ?? "", photo.squiggleAmpMm ?? "", photo.squiggleHeight ?? "", photo.squiggleJoin ? "join" : "", photo.squiggleLift ? "lift" : "", photo.squiggleSmooth ?? "", JSON.stringify(photo.squiggleDraw ?? {}), photo.squiggleVersion ?? "", JSON.stringify(photo.squiggleInkscape ?? {}), photo.squiggleAngle ?? "", photo.ink ?? "", photo.regions?.join(",") ?? "", photo.region ?? "", photo.contours ?? "", photo.smoothMm ?? "", photo.key ? "key" : "", photo.keyInk ?? "", photo.regionInks?.join(",") ?? "", photo.keyStrength ?? "", photo.keyFrom ?? "", photo.plate ?? "", photo.plates?.join(",") ?? "", photo.blackShare ?? "", photo.centerFrom ?? "", photo.centerSmoothMm ?? "", photo.centerShortestMm ?? "", photo.centerMode ?? "", photo.centerStraightMm ?? "", photo.centerLongMm ?? "", photo.centerCornerDeg ?? "", photo.edgeFrom ?? "", photo.edgeSmoothMm ?? "", photo.edgeShortestMm ?? "", photo.silhouetteFrom ?? "", photo.silhouetteSmoothMm ?? "", photo.silhouetteSmallestMm ?? "", photo.fitPaper ?? "", photo.penMm ?? "", photo.fitPairs ? "pairs" : "", photo.fitOpaque ? "opaque" : "", photo.streamWidestMm ?? "", photo.streamPasses ?? "", photo.streamFlowMm ?? "", photo.scribbleLengthMm ?? "", photo.scribbleWiggle ?? "", photo.scribbleSeed ?? "", photo.profileInk ?? "", photo.lineDots ?? "", photo.lineLiftMm ?? "", photo.lineCurve ?? "", photo.lineAngle ?? "", photo.lineBias ?? "", photo.lineGrain ?? "", photo.lineContrast ?? "", photo.hilbertCoarsestMm ?? "", photo.hilbertLift ? "hlift" : "", photo.hilbertCurve ?? "", photo.hilbertRound ?? "", photo.hilbertBlend ?? "", photo.hilbertAngle ?? "", photo.edgeMask ? `${photo.edgeMask.length}|${photo.edgeMask.slice(-32)}` : "", photo.edgeMaskInvert ? "inv" : "", photo.edgeMaskSides?.join(",") ?? "", photo.edgeGen ? edgeGenKey(photo.edgeGen) : ""].join("|");
 }
 
 /**
@@ -4204,6 +4216,135 @@ function tour(px: Float64Array, py: Float64Array): Int32Array {
 }
 
 
+// ---------- Scribble ----------
+
+/**
+ * Tone as scribbling: strokes that wander and curl at random, overlapping freely, laid down until each
+ * part of the picture has about as much ink as it's dark. Ink is kept count of on a grid as it goes
+ * down. Random lines a spacing apart on average cover only part of the paper - they overlap - so the
+ * count aims at what random lines need for the darkness: -ln(1 - darkness) spacings' worth. A stroke
+ * starts where ink is most wanted (picked at random, likelier the more is wanted), turns a little more
+ * or less at every step, and leans toward whichever side still wants ink, so it keeps to the dark
+ * parts and tangles there; it ends at its longest, at the box's edge, or once it has run a few
+ * spacings through parts that have enough. Strokes are tried until a long run of tries finds nothing
+ * wanting. Random, but the same each time for the same layer and seed; each layer of a photo scribbles
+ * its own way, so their lines don't fall together.
+ */
+function scribble(tones: Tones, photo: Photo, w: number, h: number): PhotoMarks {
+  const spacing = Math.max(0.05, photo.spacingMm) / 25.4;
+  const longest = Math.max(2, photo.scribbleLengthMm ?? SCRIBBLE_DEFAULTS.lengthMm) / 25.4;
+  const wiggle = Math.min(100, Math.max(0, photo.scribbleWiggle ?? SCRIBBLE_DEFAULTS.wiggle)) / 100;
+  const { toneAt } = toneSampler(tones, photo, w, h, true);
+  const n = (v: number) => Number(v.toFixed(4));
+  // Random, from the seed and the layer: the same scribble every time it's worked out.
+  let state = (photo.scribbleSeed ?? SCRIBBLE_DEFAULTS.seed) * 0x9e3779b1;
+  for (const ch of layerOf(photo)) state = Math.imul(state ^ ch.charCodeAt(0), 0x01000193);
+  const random = () => {
+    state = (state + 0x6d2b79f5) | 0;
+    let t = Math.imul(state ^ (state >>> 15), 1 | state);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+  const gauss = () => Math.sqrt(-2 * Math.log(1 - random())) * Math.cos(2 * Math.PI * random());
+
+  // The ink grid: each cell's ink wanted and laid, in spacings' worth of line across it.
+  const cell = Math.max(spacing * 2, 1 / 25.4);
+  const cols = Math.max(1, Math.ceil(w / cell));
+  const rows = Math.max(1, Math.ceil(h / cell));
+  const MOST = 3; // -ln(1 - 0.95): past that, random lines add little the eye sees
+  const want = new Float32Array(cols * rows);
+  for (let r = 0; r < rows; r++) {
+    for (let c = 0; c < cols; c++) {
+      const t = toneAt(Math.min(w, (c + 0.5) * cell), Math.min(h, (r + 0.5) * cell));
+      want[r * cols + c] = t > 0 ? Math.min(MOST, -Math.log(1 - Math.min(0.999, t))) : 0;
+    }
+  }
+  const laid = new Float32Array(cols * rows);
+  const cellAt = (x: number, y: number) => Math.min(rows - 1, Math.max(0, Math.floor(y / cell))) * cols + Math.min(cols - 1, Math.max(0, Math.floor(x / cell)));
+  const need = (x: number, y: number) => (x < 0 || x > w || y < 0 || y > h ? -1 : want[cellAt(x, y)] - laid[cellAt(x, y)]);
+  // A step of line `step` long, in spacings' worth across its cell.
+  const step = Math.max(spacing, 0.4 / 25.4);
+  const inkPerStep = (step * spacing) / (cell * cell);
+
+  // How tightly it curls: about 30 mm across at 0, 1 mm at 100. The turn wanders at random about
+  // nothing, steadied each step, so it bends one way for a while and then the other.
+  const curl = 1 / (30 / 25.4 * (1 / 30) ** wiggle);
+  const steady = 0.85;
+  const jolt = curl * Math.sqrt(1 - steady * steady);
+  const look = Math.max(spacing * 3, 1.5 / 25.4);
+  const slack = spacing * 4; // how far a stroke may run through what has enough before it stops
+
+  const drawn: number[][][] = [];
+  let misses = 0;
+  const tries = 4000;
+  for (let guard = 0; misses < tries && guard < 400000; guard++) {
+    const sx = random() * w;
+    const sy = random() * h;
+    const wanted = need(sx, sy);
+    if (wanted <= 0.05 || random() * MOST > wanted) {
+      misses++;
+      continue;
+    }
+    misses = 0;
+    let x = sx;
+    let y = sy;
+    let heading = random() * Math.PI * 2;
+    let turn = gauss() * curl;
+    const pts: number[][] = [[x, y]];
+    let length = 0;
+    let idle = 0;
+    while (length < longest) {
+      // Lean toward the side that wants more ink, a little ahead.
+      const toLeft = need(x + Math.cos(heading - 0.6) * look, y + Math.sin(heading - 0.6) * look);
+      const toRight = need(x + Math.cos(heading + 0.6) * look, y + Math.sin(heading + 0.6) * look);
+      turn = turn * steady + gauss() * jolt + Math.sign(toRight - toLeft) * Math.min(1, Math.abs(toRight - toLeft)) * curl * 0.5;
+      heading += turn * step;
+      const nx = x + Math.cos(heading) * step;
+      const ny = y + Math.sin(heading) * step;
+      const here = need(nx, ny);
+      if (here < -0.5) break; // off the box, or outside the picture
+      idle = here > 0 ? 0 : idle + step;
+      if (idle > slack) break;
+      laid[cellAt(nx, ny)] += inkPerStep;
+      x = nx;
+      y = ny;
+      pts.push([x, y]);
+      length += step;
+    }
+    // Trailing steps through what had enough are taken back off.
+    while (idle > 0 && pts.length > 1) {
+      pts.pop();
+      idle -= step;
+    }
+    if (length >= spacing * 2 && pts.length > 2) drawn.push(pts);
+  }
+
+  // Drawn nearest first, each from whichever end is nearer the pen, so it doesn't cross the page between them.
+  const parts: string[] = [];
+  const left = new Set(drawn.map((_, i) => i));
+  let px = 0;
+  let py = 0;
+  while (left.size) {
+    let best = -1;
+    let bestD = Infinity;
+    let flip = false;
+    for (const i of left) {
+      const a = drawn[i][0];
+      const b = drawn[i][drawn[i].length - 1];
+      const da = (a[0] - px) ** 2 + (a[1] - py) ** 2;
+      const db = (b[0] - px) ** 2 + (b[1] - py) ** 2;
+      if (da < bestD) [best, bestD, flip] = [i, da, false];
+      if (db < bestD) [best, bestD, flip] = [i, db, true];
+    }
+    left.delete(best);
+    const run = flip ? [...drawn[best]].reverse() : drawn[best];
+    const kept = simplified(run, 0.02 / 25.4);
+    parts.push(`M${kept.map(([x, y]) => `${n(x)} ${n(y)}`).join("L")}`);
+    [px, py] = run[run.length - 1];
+  }
+  return { passes: [parts.join("")], strokes: parts.length };
+}
+
 // ---------- Streamlines ----------
 
 /**
@@ -4558,7 +4699,7 @@ export function photoFromData(raw: Record<string, unknown>): Photo | null {
     ...(raw.align && typeof raw.align === "object"
       && [0, 0.5, 1].includes((raw.align as FitAlign).x) && [0, 0.5, 1].includes((raw.align as FitAlign).y)
       ? { align: { x: (raw.align as FitAlign).x, y: (raw.align as FitAlign).y } } : {}),
-    ...(raw.style === "waves" || raw.style === "squiggle" || raw.style === "streamlines" || raw.style === "oneline" || raw.style === "hilbert" || raw.style === "outlines" || raw.style === "centerlines" || raw.style === "silhouette" || raw.style === "edges" ? { style: raw.style } : {}),
+    ...(raw.style === "waves" || raw.style === "squiggle" || raw.style === "streamlines" || raw.style === "scribble" || raw.style === "oneline" || raw.style === "hilbert" || raw.style === "outlines" || raw.style === "centerlines" || raw.style === "silhouette" || raw.style === "edges" ? { style: raw.style } : {}),
     ...(Number.isFinite(Number(raw.center_from)) && raw.center_from !== undefined ? { centerFrom: Number(raw.center_from) } : {}),
     ...(Number.isFinite(Number(raw.center_smooth_mm)) && raw.center_smooth_mm !== undefined ? { centerSmoothMm: Number(raw.center_smooth_mm) } : {}),
     ...(Number.isFinite(Number(raw.center_shortest_mm)) && raw.center_shortest_mm !== undefined ? { centerShortestMm: Number(raw.center_shortest_mm) } : {}),
@@ -4581,6 +4722,9 @@ export function photoFromData(raw: Record<string, unknown>): Photo | null {
     ...(Number.isFinite(Number(raw.line_dots)) && raw.line_dots !== undefined ? { lineDots: Number(raw.line_dots) } : {}),
     ...(Number.isFinite(Number(raw.line_lift_mm)) && raw.line_lift_mm !== undefined ? { lineLiftMm: Number(raw.line_lift_mm) } : {}),
     ...(Number.isFinite(Number(raw.stream_widest_mm)) && raw.stream_widest_mm !== undefined ? { streamWidestMm: Number(raw.stream_widest_mm) } : {}),
+    ...(Number.isFinite(Number(raw.scribble_length_mm)) && raw.scribble_length_mm !== undefined ? { scribbleLengthMm: Number(raw.scribble_length_mm) } : {}),
+    ...(Number.isFinite(Number(raw.scribble_wiggle)) && raw.scribble_wiggle !== undefined ? { scribbleWiggle: Number(raw.scribble_wiggle) } : {}),
+    ...(Number.isFinite(Number(raw.scribble_seed)) && raw.scribble_seed !== undefined ? { scribbleSeed: Number(raw.scribble_seed) } : {}),
     ...(Number.isFinite(Number(raw.stream_passes)) && raw.stream_passes !== undefined ? { streamPasses: Number(raw.stream_passes) } : {}),
     ...(Number.isFinite(Number(raw.stream_flow_mm)) && raw.stream_flow_mm !== undefined ? { streamFlowMm: Number(raw.stream_flow_mm) } : {}),
     ...(Number.isFinite(Number(raw.contours)) && raw.contours !== undefined ? { contours: Number(raw.contours) } : {}),
@@ -4683,6 +4827,9 @@ export const photoData = (p: Photo) => ({
   ...(p.lineContrast !== undefined ? { line_contrast: p.lineContrast } : {}),
   ...(p.lineLiftMm ? { line_lift_mm: p.lineLiftMm } : {}),
   ...(p.streamWidestMm !== undefined ? { stream_widest_mm: p.streamWidestMm } : {}),
+  ...(p.scribbleLengthMm !== undefined ? { scribble_length_mm: p.scribbleLengthMm } : {}),
+  ...(p.scribbleWiggle !== undefined ? { scribble_wiggle: p.scribbleWiggle } : {}),
+  ...(p.scribbleSeed !== undefined ? { scribble_seed: p.scribbleSeed } : {}),
   ...(p.streamPasses !== undefined ? { stream_passes: p.streamPasses } : {}),
   ...(p.streamFlowMm !== undefined ? { stream_flow_mm: p.streamFlowMm } : {}),
   ...(p.contours !== undefined ? { contours: p.contours } : {}),

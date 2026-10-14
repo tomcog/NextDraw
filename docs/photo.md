@@ -65,6 +65,10 @@ get complicated, and it never needs Studio's tools for drawing and transforming 
     works out that ink's share as it's drawn, so turning, replacing and switching modes just work.
     Inks are named and colored from the profile's colorant table; a layer is a separation (`separation`
     is the ink's name), so the composite, Adjustments and angle presets all apply.
+  - Scribble (2026-10-14), an effect: random wandering, curling strokes laid down until each part of
+    the picture has about as much ink as it's dark (`scribble` in photo.ts: an ink grid aiming at
+    -ln(1 - darkness) spacings' worth, strokes seeded where ink is most wanted and leaning toward it).
+    Spacing, Length, Wiggle, and New scribble (`scribbleSeed`); random but the same for a layer and seed.
   - Fill, beside Fit in the Paper card's Drawing transform (Image only - paths can't be cropped):
     the image covers the paper inside the margin, cropped on the sides that don't fit; the alignment
     says which part stays (`placeOnPage(..., "fill", ...)`).
