@@ -1130,8 +1130,12 @@ export default function App() {
         refs.current.queueVersion = res.version;
         setQueue(res.items);
       } catch (err) {
-        setLocalMessage({ text: (err as Error).message, tone: "error" });
-        refs.current.queueVersion = undefined; // the next poll fetches what the server has
+        // Not saved: the list goes back to what the server has, so nothing shows as queued that isn't.
+        // A server that can't say has nothing kept - an empty list.
+        setLocalMessage({ text: `The queue wasn't saved: ${(err as Error).message}`, tone: "error" });
+        const q = await api<{ items: QueueItem[]; version: string | null }>("/api/queue").catch(() => null);
+        refs.current.queueVersion = q?.version;
+        setQueue(q?.items ?? []);
       } finally {
         refs.current.queueUnsent = false;
       }
