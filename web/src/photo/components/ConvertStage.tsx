@@ -18,6 +18,14 @@ import styles from "./ConvertStage.module.css";
  */
 export type ConvertView = "picture" | "lines" | "over" | "side";
 
+/** A hex color as sRGB 0 to 1. */
+const rgbOf = (hex: string): [number, number, number] => {
+  const m = /^#?([0-9a-f]{6}|[0-9a-f]{3})$/i.exec(hex.trim());
+  if (!m) return [0, 0, 0];
+  const v = m[1].length === 3 ? m[1].replace(/./g, (c) => c + c) : m[1];
+  return [0, 2, 4].map((i) => parseInt(v.slice(i, i + 2), 16) / 255) as [number, number, number];
+};
+
 /** The tool's ink, as Studio and Plot preview it. */
 export interface Ink {
   penWidthMm: number;
@@ -67,30 +75,56 @@ export function ConvertStage({ photo, parts, box, page, paperColor, model, ink, 
   // The "drawing" zoom frames the photo.
   const drawingBox: Box = [box.x0 * UNITS, box.y0 * UNITS, box.x1 * UNITS, box.y1 * UNITS];
 
-  const [c0, c1, c2, c3] = photo.crop ?? [0, 0, 1, 1];
   // The picture as the lines see it: brightness and contrast applied as the photo is read for them
   // (each channel stretched about middle grey by the contrast, then lifted by the brightness).
   const adjustId = `adjust-${useId().replace(/[^\w-]/g, "")}`;
-  const c = Math.max(-99, Math.min(99, photo.contrast)) / 100;
-  const gain = c >= 0 ? 1 / (1 - c) : 1 + c;
-  const shift = 0.5 - 0.5 * gain + photo.brightness / 200;
-  const saturate = 1 + (photo.saturation ?? 0) / 100;
-  const adjusted = photo.brightness !== 0 || photo.contrast !== 0 || saturate !== 1;
+  const plate = (p: Photo, id: string, tint?: string) => {
+    const [c0, c1, c2, c3] = p.crop ?? [0, 0, 1, 1];
+    const c = Math.max(-99, Math.min(99, p.contrast)) / 100;
+    const gain = c >= 0 ? 1 / (1 - c) : 1 + c;
+    const shift = 0.5 - 0.5 * gain + p.brightness / 200;
+    const saturate = 1 + (p.saturation ?? 0) / 100;
+    const adjusted = p.brightness !== 0 || p.contrast !== 0 || saturate !== 1;
+    const ink = tint ? rgbOf(tint) : null;
+    return (
+      <svg x={box.x0} y={box.y0} width={w} height={h} viewBox={`${c0 * p.width} ${c1 * p.height} ${(c2 - c0) * p.width} ${(c3 - c1) * p.height}`} preserveAspectRatio="none">
+        {(adjusted || ink) && (
+          <filter id={id} colorInterpolationFilters="sRGB">
+            {/* Saturation first, about each pixel's own grey, as the photo is read for the lines. */}
+            {saturate !== 1 && <feColorMatrix type="saturate" values={String(saturate)} />}
+            <feComponentTransfer>
+              <feFuncR type="linear" slope={gain} intercept={shift} />
+              <feFuncG type="linear" slope={gain} intercept={shift} />
+              <feFuncB type="linear" slope={gain} intercept={shift} />
+            </feComponentTransfer>
+            {/* A plate in its ink: white paper where it's white, all of the ink where it's black. */}
+            {ink && (
+              <feComponentTransfer>
+                <feFuncR type="linear" slope={1 - ink[0]} intercept={ink[0]} />
+                <feFuncG type="linear" slope={1 - ink[1]} intercept={ink[1]} />
+                <feFuncB type="linear" slope={1 - ink[2]} intercept={ink[2]} />
+              </feComponentTransfer>
+            )}
+          </filter>
+        )}
+        <image href={p.src} width={p.width} height={p.height} preserveAspectRatio="none" filter={adjusted || ink ? `url(#${id})` : undefined} />
+      </svg>
+    );
+  };
+  // Separations are seen together, as they'll print: each plate in its layer's ink, multiplied over
+  // the paper and the others, as inks laid on paper are. A hidden layer drops out, as from the lines.
+  // A pass over a plate draws from the same picture: each plate once.
+  const plates = photo.separation
+    ? parts.filter((part, i) => part.photo.separation && parts.findIndex((o) => o.photo.src === part.photo.src) === i)
+    : [];
   const picture = (faded?: boolean) => (
-    <svg x={box.x0} y={box.y0} width={w} height={h} viewBox={`${c0 * photo.width} ${c1 * photo.height} ${(c2 - c0) * photo.width} ${(c3 - c1) * photo.height}`} preserveAspectRatio="none" opacity={faded ? 0.3 : 1}>
-      {adjusted && (
-        <filter id={adjustId} colorInterpolationFilters="sRGB">
-          {/* Saturation first, about each pixel's own grey, as the photo is read for the lines. */}
-          <feColorMatrix type="saturate" values={String(saturate)} />
-          <feComponentTransfer>
-            <feFuncR type="linear" slope={gain} intercept={shift} />
-            <feFuncG type="linear" slope={gain} intercept={shift} />
-            <feFuncB type="linear" slope={gain} intercept={shift} />
-          </feComponentTransfer>
-        </filter>
-      )}
-      <image href={photo.src} width={photo.width} height={photo.height} preserveAspectRatio="none" filter={adjusted ? `url(#${adjustId})` : undefined} />
-    </svg>
+    <g opacity={faded ? 0.3 : 1}>
+      {photo.separation
+        ? plates.map((part, i) => (
+            <g key={i} style={{ mixBlendMode: "multiply" }}>{plate(part.photo, `${adjustId}-${i}`, part.color)}</g>
+          ))
+        : plate(photo, adjustId)}
+    </g>
   );
   const at = photoOrigin(photo, box.x0, box.y0);
   // The lines as ink, drawn the way Studio draws a drawing's layers: Outline or Preview.
@@ -113,7 +147,7 @@ export function ConvertStage({ photo, parts, box, page, paperColor, model, ink, 
   // Photo's own views, first in the bar, ahead of the shared Outline and Preview.
   const extras = (
     <SegmentedControl size="sm" variant="dark" aria-label="What the stage shows">
-      <Segment selected={show === "picture"} onClick={() => onShow("picture")} icon={<Image />} aria-label="Picture" title="Picture: the image as it was opened, with no effect" />
+      <Segment selected={show === "picture"} onClick={() => onShow("picture")} icon={<Image />} aria-label="Picture" title={photo.separation ? "Picture: the separations together, each in its ink, with no effect" : "Picture: the image as it was opened, with no effect"} />
       <Segment selected={show === "lines"} onClick={() => onShow("lines")} icon={<Spline />} aria-label="Lines" title="Lines: the drawing the effect makes, with nothing of the image" />
       <Segment selected={show === "over"} onClick={() => onShow("over")} icon={<Layers />} aria-label="Lines over picture" title="Lines over picture: the drawing on top of a faded copy of the image" />
       <Segment selected={show === "side"} onClick={() => onShow("side")} icon={<Columns2 />} aria-label="Side by side" title="Side by side: the picture on the left, the drawing on the right" />

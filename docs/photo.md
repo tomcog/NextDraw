@@ -48,6 +48,9 @@ get complicated, and it never needs Studio's tools for drawing and transforming 
     macOS's converter can't read one, so the server does (`psd_channels`, `/api/image-channels`),
     giving each channel's name and ink color; `channelsOf` in `photo/lib/separationFolder.ts` hands
     them to the separations path. Channels have no file of their own, so they have no Reload.
+    Separations show together in the Picture view, each plate tinted with its layer's ink and
+    multiplied over the paper (`ConvertStage.tsx`). Their brightness and contrast are each plate's
+    own, set on the targeted layers; Saturation and B&W are hidden for them.
   - The stage is the shared NextDraw canvas (`shared/components/NextDrawCanvas.tsx`), the one Studio
     and Plot show a drawing on: the bed, the paper, the rulers and the one bar - Outline and Preview (the lines drawn with Studio's ink, `Ink.tsx`), the zooms and the loupe.
     After the shared views, Photo's own: Picture (the image alone, what a new photo opens in), Lines,

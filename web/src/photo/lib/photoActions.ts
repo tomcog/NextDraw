@@ -1074,11 +1074,12 @@ export function photoActions(ctx: PhotoContext) {
     if (!chosen?.photo) return;
     record();
     // Brightness and contrast are the photo's, not a band's: they decide where the bands are cut, and
-    // bands cut from different photos would overlap or leave gaps. The rest is each band's own.
+    // bands cut from different photos would overlap or leave gaps. The rest is each band's own. A
+    // separation's are its own too: each plate is a picture of its own, set as the targets say.
     const group = chosen.photo.group;
     const whole: Partial<Photo> = {};
-    if (patch.brightness !== undefined) whole.brightness = patch.brightness;
-    if (patch.contrast !== undefined) whole.contrast = patch.contrast;
+    if (patch.brightness !== undefined && !chosen.photo.separation) whole.brightness = patch.brightness;
+    if (patch.contrast !== undefined && !chosen.photo.separation) whole.contrast = patch.contrast;
     if ("saturation" in patch) whole.saturation = patch.saturation;
     if (patch.bleed !== undefined) whole.bleed = patch.bleed;
     if (patch.keyStrength !== undefined) whole.keyStrength = patch.keyStrength;
