@@ -30,6 +30,7 @@ import { lockBanner, useEditLock } from "../shared/lib/useEditLock";
 import { usePhotoRead, usePhotosRead } from "../shared/lib/drawing/usePhotoRead";
 import { photoActions, pictureSources } from "./lib/photoActions";
 import { ConvertStage, type ConvertView } from "./components/ConvertStage";
+import { AdjustCard, AdjustToolbar } from "./components/AdjustCard";
 import { EffectToolbar, effectOf, type Effect } from "./components/EffectToolbar";
 import { PanelToolbar } from "../shared/components/PanelToolbar";
 import { LayersSection } from "../shared/components/controls/LayersSection";
@@ -148,6 +149,9 @@ export default function App() {
   // And the Layers card, last: the image's layers, which one is being set, their colors and order.
   const [layersCard, setLayersCard] = useState(() => load<boolean>("photo-layers-card") ?? true);
   useEffect(() => remember("photo-layers-card", layersCard), [layersCard]);
+  // And the Adjustments card, under Layers: brightness and contrast, the whole image's and each channel's.
+  const [adjustCard, setAdjustCard] = useState(() => load<boolean>("photo-adjust-card") ?? true);
+  useEffect(() => remember("photo-adjust-card", adjustCard), [adjustCard]);
 
   const [toolName, setToolName] = useState<string>(() => load<string>(TOOL_KEY) ?? "");
   useEffect(() => remember(TOOL_KEY, toolName), [toolName]);
@@ -307,7 +311,7 @@ export default function App() {
   const {
     addPhoto, addSeparations, switchPhotoMode, setKeyLayer, splitPhoto, splitPhotoByColor, splitPhotoBestFit, bestPens,
     placePhoto, replacePhoto, reloadPhoto, turnPhoto, setPhotoOf, addEdgeMask, chooseEdgeMask, deleteEdgeMask, setEdgeGen, saveEdgeGen, setAngles, photoStem, splitPhotoCmyk, setPlatePen, setLayerColor,
-    splitAroundPaper, setPaperTone, addPass, removePass,
+    splitAroundPaper, setPaperTone, addPass, removePass, setChannelOf,
   } = photoActions({
     chosen, shapes, setShapes, layers, setLayers, active, setActiveLayer, page, tool,
     spacingMm: tool?.hatch?.spacing_mm ?? 1.5, targets, paper: paperColor, record, addShape, pick, setMessage, setBusy,
@@ -607,6 +611,21 @@ export default function App() {
     </Card>
   ) : null;
 
+  // The Adjustments card: the whole image's settings, then - for separations - each plate's, listed
+  // as the Layers card lists them, top first.
+  const adjustSection = chosen?.photo && adjustCard ? (
+    <AdjustCard
+      photo={chosen.photo}
+      channels={chosen.photo.separation && chosen.photo.group
+        ? [...layers].reverse().flatMap((l) => shapes
+            .filter((sh) => sh.layerId === l.id && sh.photo?.separation && sh.photo.group === chosen.photo!.group)
+            .map((sh) => ({ id: sh.id, name: l.name, color: l.color, brightness: sh.photo!.channelBrightness ?? 0, contrast: sh.photo!.channelContrast ?? 0 })))
+        : []}
+      set={setPhotoOf}
+      setChannel={setChannelOf}
+    />
+  ) : null;
+
   // The chosen photo's card: how it's turned into lines.
   const photoCard = chosen?.photo ? (
     <PhotoCard
@@ -625,6 +644,7 @@ export default function App() {
       infoCard={infoCard}
       effectCards={effectCards}
       layersCard={layersSection}
+      adjustCard={adjustSection}
       actions={{
         replace: replacePhoto,
         reload: reloadPhoto,
@@ -712,7 +732,7 @@ export default function App() {
   // The toolbar's effect is the whole photo's. Silhouette has no tones or colours to split by, so a
   // split photo comes back together as one layer drawn that way; separations keep a plate each.
   // Whether the rail has any card to show; with none, the stage takes its width.
-  const railOut = Boolean(fileCard || paperCard || penCard || confirmNext || infoCard || (chosen?.photo && (effectCards || layersCard)));
+  const railOut = Boolean(fileCard || paperCard || penCard || confirmNext || infoCard || (chosen?.photo && (effectCards || layersCard || adjustCard)));
 
   const setEffect = (effect: Effect) => {
     setEffectCards(true);
@@ -821,6 +841,7 @@ export default function App() {
             ]}
           />
           <EffectToolbar effect={chosen?.photo ? effectOf(chosen.photo) : undefined} onEffect={setEffect} onAgain={() => setEffectCards((on) => !on)} disabled={!chosen?.photo || busy} />
+          {chosen?.photo && <AdjustToolbar on={adjustCard} toggle={() => setAdjustCard((on) => !on)} />}
           {chosen?.photo && <HistoryToolbar canUndo={canUndo} canRedo={canRedo} onUndo={undo} onRedo={redo} disabled={busy} />}
         </div>
         <section className={styles.stage} aria-label="Image conversion">

@@ -6,7 +6,7 @@ import { InkGroup, InkLayer } from "../../shared/components/Ink";
 import { NextDrawCanvas } from "../../shared/components/NextDrawCanvas";
 import type { View } from "../../shared/components/PreviewToolbar";
 import { DEFAULT_SETTINGS, UNITS } from "../../shared/lib/constants";
-import { photoMarks, photoOrigin, type Photo } from "../../shared/lib/drawing/photo";
+import { channelAdjusted, photoMarks, photoOrigin, type Photo } from "../../shared/lib/drawing/photo";
 import type { Page } from "../../shared/lib/drawing/shapes";
 import { usePhotoRead } from "../../shared/lib/drawing/usePhotoRead";
 import type { PlotterModel } from "../../shared/lib/types";
@@ -78,7 +78,9 @@ export function ConvertStage({ photo, parts, box, page, paperColor, model, ink, 
   // The picture as the lines see it: brightness and contrast applied as the photo is read for them
   // (each channel stretched about middle grey by the contrast, then lifted by the brightness).
   const adjustId = `adjust-${useId().replace(/[^\w-]/g, "")}`;
-  const plate = (p: Photo, id: string, tint?: string) => {
+  const plate = (shown: Photo, id: string, tint?: string) => {
+    // A separation's own brightness and contrast, then the whole image's, as its lines see them.
+    const p = channelAdjusted(shown);
     const [c0, c1, c2, c3] = p.crop ?? [0, 0, 1, 1];
     const c = Math.max(-99, Math.min(99, p.contrast)) / 100;
     const gain = c >= 0 ? 1 / (1 - c) : 1 + c;

@@ -49,8 +49,13 @@ get complicated, and it never needs Studio's tools for drawing and transforming 
     giving each channel's name and ink color; `channelsOf` in `photo/lib/separationFolder.ts` hands
     them to the separations path. Channels have no file of their own, so they have no Reload.
     Separations show together in the Picture view, each plate tinted with its layer's ink and
-    multiplied over the paper (`ConvertStage.tsx`). Their brightness and contrast are each plate's
-    own, set on the targeted layers; Saturation and B&W are hidden for them.
+    multiplied over the paper (`ConvertStage.tsx`).
+  - The Adjustments card (`AdjustCard.tsx`), under Layers, opened from its own toolbar button: the
+    whole image's Brightness, Contrast and Saturation (and B&W) at the top, then for separations each
+    channel's own Brightness and Contrast (`channelBrightness`, `channelContrast`), applied before
+    the whole image's and folded into one by `channelAdjusted`. They're no longer in the Image card.
+  - A new image opens split into CMYK, each plate in its nearest palette pen (2026-10-13); with fewer
+    than four palette colors it falls back to colour groups or one B&W layer as before.
   - The stage is the shared NextDraw canvas (`shared/components/NextDrawCanvas.tsx`), the one Studio
     and Plot show a drawing on: the bed, the paper, the rulers and the one bar - Outline and Preview (the lines drawn with Studio's ink, `Ink.tsx`), the zooms and the loupe.
     After the shared views, Photo's own: Picture (the image alone, what a new photo opens in), Lines,
@@ -65,7 +70,8 @@ get complicated, and it never needs Studio's tools for drawing and transforming 
     Silhouette, which brings a split photo back to one layer).
   - Hatching's card holds it all, for the whole drawing: the color mode at the top (B&W, CMYK,
     Color) with that mode's settings, Bleed, an angle preset (Classic - print's screen angles,
-    Cardinal, Golden spread) applied to every layer and to each new split, then Angle (turns the
+    Complementary - extra inks on their opposites' angles, Cardinal, Golden spread, Uniform) applied
+    to every layer and to each new split (separations find their plate by name, `plateOfPhoto`), then Angle (turns the
     whole set), Spacing, Passes and Smoothing. "Set each layer on its own" shows the layer picker
     and makes those four the picked layer's. Squiggle's and Tone lines' cards are built the same way,
     from the same pieces (color mode, angle preset, each layer on its own); Outlines' too, without

@@ -86,13 +86,15 @@ interface Props {
   effectCards?: boolean;
   /** The Layers card, the app's: under the Image card, above the effect's. */
   layersCard?: ReactNode;
+  /** The Adjustments card, when it's out: under the Layers card. */
+  adjustCard?: ReactNode;
 }
 
 /**
  * The chosen photo's card - in the drawing's rail, and in image conversion's under its own: how it is
  * split into layers, sized to the page, and what each layer's lines are drawn as.
  */
-export function PhotoCard({ shape, title, shapes, busy, targeted, layerCount, shownName, estimates, actions, penWidthMm = 0.5, palette = [], anyColor = false, infoCard = true, effectCards = true, layersCard }: Props) {
+export function PhotoCard({ shape, title, shapes, busy, targeted, layerCount, shownName, estimates, actions, penWidthMm = 0.5, palette = [], anyColor = false, infoCard = true, effectCards = true, layersCard, adjustCard }: Props) {
   const replaceInput = useRef<HTMLInputElement>(null);
   const maskInput = useRef<HTMLInputElement>(null);
   // The edge mask library, shared between Macs; read when the card opens and after each change to it.
@@ -174,7 +176,7 @@ export function PhotoCard({ shape, title, shapes, busy, targeted, layerCount, sh
         // Separations made elsewhere: each layer is its own picture, so there's nothing to split.
         // Which plate each is, and its pen, came from its file's name; its color is its swatch's.
         <>
-          <p className={styles.empty}>A separation: this layer draws its own grayscale picture, more of its color where it's darker. The Picture view shows every plate in its ink, together; a layer's eye takes it out. Click a layer's name in the Layers card to see its settings; the targeted layers are the ones the settings change, brightness and contrast too. Replace swaps the shown plate alone.</p>
+          <p className={styles.empty}>A separation: this layer draws its own grayscale picture, more of its color where it's darker. The Picture view shows every plate in its ink, together; a layer's eye takes it out. Click a layer's name in the Layers card to see its settings; the targeted layers are the ones the settings change. Each plate's brightness and contrast are in the Adjustments card. Replace swaps the shown plate alone.</p>
         </>
       ) : (
         <>
@@ -458,23 +460,7 @@ export function PhotoCard({ shape, title, shapes, busy, targeted, layerCount, sh
             >
               {/* The photo's name under the card's, small, as the File card says where a drawing is. */}
               <p className={controls.fileWhere} title={title}>{title}</p>
-              {/* From -100 to 100, 0 the photo as it is: typed, or stepped by 5 with the arrow keys (50 with Shift). */}
-              <div className={`${styles.fillRow} ${styles.oneRow}`}>
-                <NumberField label="Brightness" min={-100} max={100} step={5} value={photo.brightness} onChange={(brightness) => actions.set({ brightness })} />
-                <NumberField label="Contrast" min={-100} max={100} step={5} value={photo.contrast} onChange={(contrast) => actions.set({ contrast })} />
-                {/* A separation is grayscale: there's no color to saturate. */}
-                {!photo.separation && <NumberField label="Saturation" min={-100} max={100} step={5} value={photo.saturation ?? 0} onChange={(v) => actions.set({ saturation: v || undefined })} />}
-              </div>
-              {/* A separation's brightness and contrast are each plate's own, set on the targeted layers. */}
-              {photo.separation && eachLayer("Brightness and contrast")}
-              {/* Black and white is Saturation all the way down: on sets it to -100, off back to the photo's own. */}
-              {!photo.separation && (
-                <Checkbox size="md"
-                  checked={photo.saturation === -100}
-                  label="B&W"
-                  onChange={(e) => actions.set({ saturation: e.target.checked ? -100 : undefined })}
-                />
-              )}
+              {/* Brightness, contrast and saturation are in the Adjustments card, from its own toolbar. */}
               {/* Passes over the picture: hatching for the shading and edges over it, say - each its own
                 effect, settings and layers, the picture and its place shared. Each has a card of its own
                 below, where it's taken off again. */}
@@ -621,6 +607,7 @@ export function PhotoCard({ shape, title, shapes, busy, targeted, layerCount, sh
         </Card>
       )}
       {layersCard}
+      {adjustCard}
       {/* A card for each pass over the picture, in the order they were added: its Color mode, then its
         effect's own numbers. The pass being worked on is open; another, folded, opens when clicked -
         becoming the one the effect toolbar and the Layers card are about. */}

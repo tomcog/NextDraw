@@ -24,6 +24,12 @@ export interface Photo {
   brightness: number;
   /** -100 to 100: flatter or more contrasty. */
   contrast: number;
+  /**
+   * A separation's own brightness and contrast, -100 to 100, applied to its plate before the whole
+   * image's `brightness` and `contrast`, which every plate shares. Absent, 0.
+   */
+  channelBrightness?: number;
+  channelContrast?: number;
   /** -100 to 100: greyer or more vivid - -100 grey, 100 twice as colourful. The lightness stays. Absent, 0. */
   saturation?: number;
   /** Degrees: the direction of the first set of lines. The second crosses it at a right angle. */
@@ -543,6 +549,10 @@ export function inkNamed<P extends { name: string }>(name: string, pens: P[] = [
 /** Which plate a separation's file is, from its name (see inkNamed). Undefined when it names none. */
 export const plateNamed = (name: string): Plate | undefined => inkNamed(name)?.plate;
 
+/** The plate a layer is: a CMYK split's, or a separation's by its name ("Cyan"). For its angle. */
+export const plateOfPhoto = (p: Pick<Photo, "plate" | "separation">): Plate | undefined =>
+  p.plate ?? (p.separation ? plateNamed(p.separation) : undefined);
+
 /**
  * A separation file's name without its ink, for naming the drawing they make together: "Portrait_Cyan"
  * and "portrait-cyan-channel" are both "Portrait". The ink's word goes, and the words that say a file
@@ -616,22 +626,29 @@ export const PHOTO_DEFAULTS = { brightness: 0, contrast: 0, angle: 45, levels: 4
  * The angle presets: how a photo's layers are set apart, so one pen's lines never lie along
  * another's. Classic is print's: CMYK's screen angles, and for layers by tone or colour a spread from
  * 45°. Cardinal keeps to the square and its diagonals. Golden spread turns each layer by the golden
- * angle from the last - for any number of layers, as far apart as they can be.
+ * angle from the last - for any number of layers, as far apart as they can be. Complementary is
+ * print's way with more than four inks: CMYK as Classic, and each extra ink on the angle of the one
+ * opposite it on the color wheel, since the two seldom print in the same place.
  */
-export type AnglePreset = "classic" | "cardinal" | "golden" | "uniform";
+export type AnglePreset = "classic" | "complementary" | "cardinal" | "golden" | "uniform";
 export const ANGLE_PRESETS: { key: AnglePreset; label: string; about: string }[] = [
   { key: "classic", label: "Classic", about: "Print's screen angles: cyan 15°, magenta 75°, yellow 0°, black 45°; layers by tone or color 45°, 15°, 75°, 0°, 30°, 60°" },
+  { key: "complementary", label: "Complementary", about: "Print's way with extra inks: CMYK as Classic, orange on cyan's 15°, green on magenta's 75°, violet on yellow's 0°, red at 7.5°; layers by tone or color as Classic" },
   { key: "cardinal", label: "Cardinal", about: "The square and its diagonals: 0°, 90°, 45°, 135°, then 22.5°, 112.5°" },
   { key: "golden", label: "Golden spread", about: "Each layer turned 137.5° - the golden angle - from the last: 0°, 137.5°, 95°, 52.5°, 10°, 147.5°" },
   { key: "uniform", label: "Uniform", about: "Every layer's lines at the same angle: the Angle setting, which then turns them all together" },
 ];
 const CLASSIC = [45, 15, 75, 0, 30, 60];
+/** The plate whose angle an extra ink shares in Complementary: the one opposite it on the color wheel. */
+const COMPLEMENT: Partial<Record<Plate, Plate>> = { o: "c", g: "m", v: "y" };
 const CARDINAL = [0, 90, 45, 135, 22.5, 112.5];
 const GOLDEN = 180 * (3 - Math.sqrt(5)); // 137.5077...°, the golden angle
 
 /** The angle a preset gives the layer at `index` (bottom first), or the plate it is. */
 export function presetAngle(preset: AnglePreset, index: number, plate?: Plate): number {
   if (preset === "classic") return plate ? PLATE_AIMS[plate].angle : CLASSIC[index % CLASSIC.length];
+  // Red is cyan's opposite too, but orange has that angle and the two print side by side: its own.
+  if (preset === "complementary") return plate ? PLATE_AIMS[COMPLEMENT[plate] ?? plate].angle : CLASSIC[index % CLASSIC.length];
   if (preset === "cardinal") return CARDINAL[index % CARDINAL.length];
   if (preset === "uniform") return 0; // all alike: the angle they share is the turn on top of it
   return Math.round(((index * GOLDEN) % 180) * 10) / 10;
@@ -1079,6 +1096,7 @@ const marksCache = new Map<string, PhotoMarks>();
  * size or new numbers draws them again.
  */
 export function photoMarks(photo: Photo, w: number, h: number): PhotoMarks | null {
+  photo = channelAdjusted(photo);
   const tones = photoTones(photo);
   if (!tones || w <= 0 || h <= 0) return null;
   const key = marksKey(photo, w, h);
@@ -1216,6 +1234,28 @@ export const hexLab = (hex: string) => {
 };
 const dist2 = (a: number[], b: number[]) => (a[0] - b[0]) ** 2 + (a[1] - b[1]) ** 2 + (a[2] - b[2]) ** 2;
 const toHex = (rgb: number[]) => `#${rgb.map((v) => Math.round(Math.min(255, Math.max(0, v))).toString(16).padStart(2, "0")).join("")}`;
+
+/** How much a contrast of -100 to 100 stretches the tones about middle grey. */
+const contrastGain = (contrast: number) => {
+  const c = Math.max(-99, Math.min(99, contrast)) / 100;
+  return c >= 0 ? 1 / (1 - c) : 1 + c;
+};
+
+/**
+ * A separation as its lines see it: its own brightness and contrast, then the whole image's, made
+ * one brightness and contrast - both are a stretch about middle grey and a lift, so two in a row are
+ * one. A photo with no channel settings comes back as it is.
+ */
+export function channelAdjusted(p: Photo): Photo {
+  const b = p.channelBrightness ?? 0;
+  const c = p.channelContrast ?? 0;
+  if (!b && !c) return p;
+  const whole = contrastGain(p.contrast);
+  const gain = contrastGain(c) * whole;
+  const lift = (b / 200) * whole + p.brightness / 200;
+  const contrast = gain >= 1 ? (1 - 1 / gain) * 100 : (gain - 1) * 100;
+  return { ...p, brightness: lift * 200, contrast: Math.max(-99, Math.min(99, contrast)), channelBrightness: undefined, channelContrast: undefined };
+}
 
 /** Brightness and contrast, applied to a channel value 0 to 255. */
 const adjuster = (brightness: number, contrast: number) => {
@@ -4343,6 +4383,8 @@ export function photoFromData(raw: Record<string, unknown>): Photo | null {
     height: num(raw.height, 1),
     brightness: num(raw.brightness, PHOTO_DEFAULTS.brightness),
     contrast: num(raw.contrast, PHOTO_DEFAULTS.contrast),
+    ...(num(raw.channel_brightness, 0) ? { channelBrightness: num(raw.channel_brightness, 0) } : {}),
+    ...(num(raw.channel_contrast, 0) ? { channelContrast: num(raw.channel_contrast, 0) } : {}),
     angle: num(raw.angle, PHOTO_DEFAULTS.angle),
     spacingMm: num(raw.spacing_mm, 0.3),
     ...(typeof raw.source === "string" && raw.source ? { source: raw.source } : {}),
@@ -4420,7 +4462,7 @@ export function photoFromData(raw: Record<string, unknown>): Photo | null {
     ...(Number.isFinite(Number(raw.squiggle_amp_mm)) && raw.squiggle_amp_mm !== undefined ? { squiggleAmpMm: Number(raw.squiggle_amp_mm) } : {}),
     ...(Number.isFinite(Number(raw.squiggle_height)) && raw.squiggle_height !== undefined ? { squiggleHeight: Number(raw.squiggle_height) } : {}),
     ...(raw.squiggle_join === true ? { squiggleJoin: true } : {}),
-    ...(raw.angle_preset === "classic" || raw.angle_preset === "cardinal" || raw.angle_preset === "golden" || raw.angle_preset === "uniform" ? { anglePreset: raw.angle_preset } : {}),
+    ...(raw.angle_preset === "classic" || raw.angle_preset === "complementary" || raw.angle_preset === "cardinal" || raw.angle_preset === "golden" || raw.angle_preset === "uniform" ? { anglePreset: raw.angle_preset } : {}),
     ...(Number.isFinite(Number(raw.angle_turn)) && raw.angle_turn !== undefined ? { angleTurn: Number(raw.angle_turn) } : {}),
     ...(raw.squiggle_lift === true ? { squiggleLift: true } : {}),
     ...(Number.isFinite(Number(raw.squiggle_smooth)) && raw.squiggle_smooth !== undefined ? { squiggleSmooth: Number(raw.squiggle_smooth) } : {}),
@@ -4444,6 +4486,8 @@ export function photoFromData(raw: Record<string, unknown>): Photo | null {
 /** A photo as the design block keeps it. */
 export const photoData = (p: Photo) => ({
   src: p.src, width: p.width, height: p.height, brightness: p.brightness, contrast: p.contrast,
+  ...(p.channelBrightness ? { channel_brightness: p.channelBrightness } : {}),
+  ...(p.channelContrast ? { channel_contrast: p.channelContrast } : {}),
   angle: p.angle, spacing_mm: p.spacingMm, levels: p.levels,
   ...(p.source ? { source: p.source } : {}),
   ...(p.quarterTurns ? { quarter_turns: p.quarterTurns } : {}),
