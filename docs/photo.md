@@ -44,6 +44,10 @@ get complicated, and it never needs Studio's tools for drawing and transforming 
   - The shared File card. Open a photo, or several separations, starts a new drawing named after it.
     Open a drawing opens one with a photo in it (anything else is Studio's to edit). Photo also has
     New, Save, Send to Plot and Edit in Studio, which saves and then opens the drawing in Studio.
+    A Photoshop file (PSD or PSB) in Multichannel mode opens as separations, a layer per channel:
+    macOS's converter can't read one, so the server does (`psd_channels`, `/api/image-channels`),
+    giving each channel's name and ink color; `channelsOf` in `photo/lib/separationFolder.ts` hands
+    them to the separations path. Channels have no file of their own, so they have no Reload.
   - The stage is the shared NextDraw canvas (`shared/components/NextDrawCanvas.tsx`), the one Studio
     and Plot show a drawing on: the bed, the paper, the rulers and the one bar - Outline and Preview (the lines drawn with Studio's ink, `Ink.tsx`), the zooms and the loupe.
     After the shared views, Photo's own: Picture (the image alone, what a new photo opens in), Lines,

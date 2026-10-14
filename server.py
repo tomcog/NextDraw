@@ -19,6 +19,7 @@ import os
 import re
 import shutil
 import socket
+import struct
 import subprocess
 import sys
 import tempfile
@@ -26,6 +27,7 @@ import threading
 import time
 import warnings
 import webbrowser
+import zlib
 from pathlib import Path
 
 warnings.filterwarnings("ignore", module="urllib3")
@@ -4435,13 +4437,13 @@ def delete_preset(name):
 # macOS's own converter does, and it reads what Photoshop saves for other programs to see: the picture
 # flattened, adjustment layers and all. It comes back as one PNG, no larger than Image ever needs.
 FLAT_IMAGE_EDGE = 2400
-FLAT_IMAGE_SUFFIXES = {".tif", ".tiff", ".heic", ".heif", ".psd", ".bmp", ".jp2", ".gif", ".webp", ".png", ".jpg", ".jpeg"}
+FLAT_IMAGE_SUFFIXES = {".tif", ".tiff", ".heic", ".heif", ".psd", ".psb", ".bmp", ".jp2", ".gif", ".webp", ".png", ".jpg", ".jpeg"}
 SRGB_PROFILE = Path("/System/Library/ColorSync/Profiles/sRGB Profile.icc")
 
 
 # Pictures the file browser lists for Image: what it can open, the browser reading some and the
 # converter the rest.
-PICTURE_SUFFIXES = {".tif", ".tiff", ".png", ".jpg", ".jpeg", ".gif", ".webp", ".heic", ".heif", ".psd", ".bmp"}
+PICTURE_SUFFIXES = {".tif", ".tiff", ".png", ".jpg", ".jpeg", ".gif", ".webp", ".heic", ".heif", ".psd", ".psb", ".bmp"}
 BROWSER_PICTURES = {".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".gif": "image/gif", ".webp": "image/webp"}
 
 
@@ -4493,6 +4495,184 @@ def flattened_picture(data, suffix):
         if not out.is_file():
             return jsonify(error="That picture couldn't be read. Save it as a JPEG or PNG and add that."), 400
         return Response(out.read_bytes(), mimetype="image/png")
+
+
+# ---- Multichannel Photoshop files ----
+# A Photoshop document in Multichannel mode is a picture already separated: a grayscale channel per
+# ink - Cyan, Magenta, Orange, Violet... - darker where more of it goes, each named and given its ink's
+# color. macOS's converter can't read one at all, so it's read here: the merged channels (never the
+# layers), raw or run-length packed, 8 or 16 bits, from a PSD or a PSB. Image opens the channels as
+# separations, a layer each.
+PSD_MULTICHANNEL = 7
+
+
+def psd_channels(data):
+    """A Multichannel PSD or PSB as [{name, color, png}], or None when it's any other picture -
+    another mode, or not a Photoshop file - which the converter reads as usual."""
+    if len(data) < 26 or data[:4] != b"8BPS":
+        return None
+    version, = struct.unpack(">H", data[4:6])
+    count, height, width, depth, mode = struct.unpack(">HIIHH", data[12:26])
+    if mode != PSD_MULTICHANNEL or version not in (1, 2) or depth not in (8, 16) or not count:
+        return None
+    big = version == 2
+    at = 26
+    skip, = struct.unpack(">I", data[at:at + 4])  # color mode data: none in Multichannel
+    at += 4 + skip
+    size, = struct.unpack(">I", data[at:at + 4])
+    names, colors = psd_channel_info(data[at + 4:at + 4 + size])
+    at += 4 + size
+    skip = int.from_bytes(data[at:at + (8 if big else 4)], "big")  # layers: the merged image is after
+    at += (8 if big else 4) + skip
+    compression, = struct.unpack(">H", data[at:at + 2])
+    at += 2
+    row = width * depth // 8
+    planes = []
+    if compression == 0:
+        for _ in range(count):
+            planes.append(data[at:at + row * height])
+            at += row * height
+    elif compression == 1:
+        step = 4 if big else 2
+        lengths = [int.from_bytes(data[at + i * step:at + i * step + step], "big") for i in range(count * height)]
+        at += count * height * step
+        for c in range(count):
+            plane = bytearray()
+            for r in range(height):
+                n = lengths[c * height + r]
+                plane += unpack_bits(data[at:at + n], row)
+                at += n
+            planes.append(bytes(plane))
+    else:
+        return None
+    if depth == 16:
+        planes = [p[::2] for p in planes]  # the high byte of each: 8 bits is all a pen needs
+    return [{
+        "name": names[i] if i < len(names) and names[i] else f"Channel {i + 1}",
+        "color": colors[i] if i < len(colors) else None,
+        "png": gray_png(planes[i], width, height),
+    } for i in range(count) if len(planes[i]) >= width * height]
+
+
+def unpack_bits(src, length):
+    """One row of Photoshop's run-length packing (PackBits), unpacked to `length` bytes."""
+    out = bytearray()
+    i = 0
+    while i < len(src) and len(out) < length:
+        n = src[i]
+        i += 1
+        if n < 128:
+            out += src[i:i + n + 1]
+            i += n + 1
+        elif n > 128:
+            out += src[i:i + 1] * (257 - n)
+            i += 1
+    return bytes(out[:length]).ljust(length, b"\xff")
+
+
+def psd_channel_info(resources):
+    """The channels' names and ink colors (hex, or None) from a PSD's image resources."""
+    names, colors, old_colors, old_names = [], [], [], []
+    at = 0
+    while at + 12 <= len(resources) and resources[at:at + 4] == b"8BIM":
+        rid, = struct.unpack(">H", resources[at + 4:at + 6])
+        n = resources[at + 6]
+        at += 6 + 1 + n + ((1 + n) % 2)  # the resource's name, padded to even
+        size, = struct.unpack(">I", resources[at:at + 4])
+        block = resources[at + 4:at + 4 + size]
+        at += 4 + size + (size % 2)
+        if rid == 1045:  # the channels' names, in Unicode
+            b = 0
+            while b + 4 <= len(block):
+                k, = struct.unpack(">I", block[b:b + 4])
+                names.append(block[b + 4:b + 4 + 2 * k].decode("utf-16-be", "replace").rstrip("\x00"))
+                b += 4 + 2 * k
+        elif rid == 1006:  # the same, as Pascal strings, from older Photoshops
+            b = 0
+            while b < len(block):
+                k = block[b]
+                old_names.append(block[b + 1:b + 1 + k].decode("mac_roman", "replace"))
+                b += 1 + k
+        elif rid == 1077:  # each channel's ink: color, opacity, kind
+            colors = [psd_color(block[b:b + 10]) for b in range(4, len(block) - 12, 13)]
+        elif rid == 1007:  # the same, older
+            old_colors = [psd_color(block[b:b + 10]) for b in range(0, len(block) - 13, 14)]
+    return names or old_names, colors or old_colors
+
+
+def psd_color(raw):
+    """A Photoshop color - space, then four 16-bit numbers - as hex, or None for a space not read."""
+    space, c0, c1, c2, c3 = struct.unpack(">HHHHH", raw)
+    if space == 0:  # RGB
+        return "#%02x%02x%02x" % (c0 >> 8, c1 >> 8, c2 >> 8)
+    if space == 2:  # CMYK, 0 meaning all the ink
+        c, m, y, k = (1 - v / 65535 for v in (c0, c1, c2, c3))
+        return "#%02x%02x%02x" % tuple(round(255 * (1 - v) * (1 - k)) for v in (c, m, y))
+    if space == 7:  # Lab: L 0-10000, a and b signed hundredths
+        signed = lambda v: v - 65536 if v > 32767 else v
+        return lab_hex(c0 / 100, signed(c1) / 100, signed(c2) / 100)
+    if space == 8:  # gray, 0-10000 of black
+        g = round(255 * (1 - c0 / 10000))
+        return "#%02x%02x%02x" % (g, g, g)
+    return None
+
+
+def lab_hex(L, a, b):
+    """A Lab color (D50, as Photoshop's) as sRGB hex."""
+    fy = (L + 16) / 116
+    fx, fz = fy + a / 500, fy - b / 200
+    f = lambda t: t ** 3 if t ** 3 > 0.008856 else (t - 16 / 116) / 7.787
+    x, y, z = 0.9642 * f(fx), 1.0 * f(fy), 0.8249 * f(fz)
+    # Straight from D50 XYZ to linear sRGB, Bradford-adapted to sRGB's D65.
+    r = 3.1338561 * x - 1.6168667 * y - 0.4906146 * z
+    g = -0.9787684 * x + 1.9161415 * y + 0.0334540 * z
+    bl = 0.0719453 * x - 0.2289914 * y + 1.4052427 * z
+    gamma = lambda v: 12.92 * v if v <= 0.0031308 else 1.055 * v ** (1 / 2.4) - 0.055
+    return "#%02x%02x%02x" % tuple(round(255 * min(1, max(0, gamma(v)))) for v in (r, g, bl))
+
+
+def gray_png(plane, width, height):
+    """8-bit grayscale pixels, a row after another, as a PNG - no larger than Image ever needs."""
+    raw = b"".join(b"\x00" + plane[y * width:(y + 1) * width] for y in range(height))
+    chunk = lambda kind, body: struct.pack(">I", len(body)) + kind + body + struct.pack(">I", zlib.crc32(kind + body))
+    png = (b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", struct.pack(">IIBBBBB", width, height, 8, 0, 0, 0, 0))
+           + chunk(b"IDAT", zlib.compress(raw, 6)) + chunk(b"IEND", b""))
+    if max(width, height) <= FLAT_IMAGE_EDGE or not shutil.which("sips"):
+        return png
+    with tempfile.TemporaryDirectory() as tmp:
+        src = Path(tmp) / "in.png"
+        src.write_bytes(png)
+        try:
+            subprocess.run(["sips", "-Z", str(FLAT_IMAGE_EDGE), str(src)], capture_output=True, timeout=120, check=True)
+            return src.read_bytes()
+        except (subprocess.CalledProcessError, subprocess.TimeoutExpired):
+            return png
+
+
+def channels_response(data):
+    """A picture's channels, if it's a Multichannel Photoshop file, for Image to open as separations."""
+    try:
+        channels = psd_channels(data)
+    except (struct.error, IndexError, ValueError):
+        return jsonify(error="That Photoshop file couldn't be read. Save a copy in RGB or CMYK and add that."), 400
+    if channels is None:
+        return jsonify(channels=None)
+    return jsonify(channels=[{"name": c["name"], "color": c["color"], "png": base64.b64encode(c["png"]).decode("ascii")} for c in channels])
+
+
+@app.post("/api/image-channels")
+def image_channels_sent():
+    """The picture sent - the whole body - as its channels, or channels: null when it's not Multichannel."""
+    return channels_response(request.get_data())
+
+
+@app.get("/api/image-channels")
+def image_channels_file():
+    """A picture in one of the allowed folders, by its path, as its channels (see above)."""
+    path = allowed_path(request.args.get("path"))
+    if path is None or not path.is_file() or path.suffix.lower() not in PICTURE_SUFFIXES:
+        return jsonify(error="That picture isn't in a folder the app can open, or it's gone."), 404
+    return channels_response(path.read_bytes())
 
 
 # ---- Edge masks ----

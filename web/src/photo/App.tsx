@@ -39,7 +39,7 @@ import { dropWork, loadWork, type Work } from "./lib/workInProgress";
 import { PhotoCard } from "./components/PhotoCard";
 import { PhotoHeader } from "./components/PhotoHeader";
 import { GENERAL_PEN } from "./lib/generalPen";
-import { folderOf, type Inks } from "./lib/separationFolder";
+import { channelsOf, folderOf, isPhotoshop, type Inks } from "./lib/separationFolder";
 import styles from "./App.module.css";
 
 // NextDraw Photo: a photo turned into lines for the tool's pens, saved as an ordinary layered drawing
@@ -66,7 +66,7 @@ const NO_FILLS: Fill[] = [];
 const firstLayer = (): Layer => ({ id: newLayerId(), name: "Black", color: "#262626" });
 
 /** What waits on the question about unsaved work: a new drawing, photos opened, or a file opened. */
-type Next = { kind: "new" } | { kind: "photos"; files: File[]; skipped?: string[]; found?: Inks } | { kind: "open"; path: string } | { kind: "snapshot"; app: "studio" | "plot"; path: string };
+type Next = { kind: "new" } | { kind: "photos"; files: File[]; skipped?: string[]; found?: Inks; name?: string } | { kind: "open"; path: string } | { kind: "snapshot"; app: "studio" | "plot"; path: string };
 
 export default function App() {
   const [page, setPage] = useState<Page>({ w: 11, h: 8.5 });
@@ -328,11 +328,11 @@ export default function App() {
   // Photos opened: a new drawing named after them, and the photo put in once it's in place - one
   // photo, or several separations (…_C, …_M, …_Y, …_K) for a layer each.
   const [pendingPhotos, setPendingPhotos] = useState<{ files: File[]; skipped: string[]; found?: Inks } | null>(null);
-  const startPhotos = (files: File[], skipped: string[] = [], found?: Inks) => {
+  const startPhotos = (files: File[], skipped: string[] = [], found?: Inks, name?: string) => {
     newDrawing();
     // A new photo is first seen as it is, before any effect: the first view in the bar.
     setConvertView("picture");
-    file.setName(files.length > 1 || skipped.length ? stemWithoutPlate(files[0].name, tool.palette, folderOf(files[0])) : files[0].name.replace(/\.[^.]+$/, ""));
+    file.setName(name ?? (files.length > 1 || skipped.length ? stemWithoutPlate(files[0].name, tool.palette, folderOf(files[0])) : files[0].name.replace(/\.[^.]+$/, "")));
     setPendingPhotos({ files, skipped, found });
   };
   useEffect(() => {
@@ -414,7 +414,7 @@ export default function App() {
   const goOn = (next: Next) => {
     setConfirmNext(null);
     if (next.kind === "new") newDrawing();
-    else if (next.kind === "photos") startPhotos(next.files, next.skipped, next.found);
+    else if (next.kind === "photos") startPhotos(next.files, next.skipped, next.found, next.name);
     else if (next.kind === "open") void file.open(next.path);
     else void file.openIn(next.app, next.path);
   };
@@ -736,6 +736,13 @@ export default function App() {
         onImage={async ({ name, path }) => {
           setMessage({ text: `Opening ${name}…`, ok: true, progress: true });
           try {
+            // A Multichannel Photoshop file is separations already: a layer for each of its channels.
+            const channels = isPhotoshop(name) ? await channelsOf({ name, path }, tool.palette ?? []) : null;
+            if (channels) {
+              setMessage({ text: "", ok: true });
+              ask({ kind: "photos", ...channels });
+              return;
+            }
             const res = await fetch(`/api/image-file?path=${encodeURIComponent(path)}`);
             if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error ?? `${name} couldn't be read`);
             const blob = await res.blob();
@@ -779,13 +786,24 @@ export default function App() {
       <input
         ref={photoInput}
         type="file"
-        accept="image/*"
+        accept="image/*,.psd,.psb"
         hidden
         multiple
-        onChange={(e) => {
+        onChange={async (e) => {
           const files = [...(e.target.files ?? [])];
-          if (files.length) ask({ kind: "photos", files });
           e.target.value = ""; // so the same photo can be opened again
+          if (files.length === 1 && isPhotoshop(files[0].name)) {
+            // A Multichannel Photoshop file is separations already: a layer for each of its channels.
+            setMessage({ text: `Opening ${files[0].name}…`, ok: true, progress: true });
+            try {
+              const channels = await channelsOf(files[0], tool.palette ?? []);
+              setMessage({ text: "", ok: true });
+              if (channels) return ask({ kind: "photos", ...channels });
+            } catch (err) {
+              return setMessage({ text: (err as Error).message, ok: false });
+            }
+          }
+          if (files.length) ask({ kind: "photos", files });
         }}
       />
 

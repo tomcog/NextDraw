@@ -9,7 +9,7 @@
 // comes back peach - and the layer is drawn in that color, before any pen is chosen for it.
 
 import { inkNamed } from "../../shared/lib/drawing/photo";
-import { postJSON } from "../../shared/lib/api";
+import { api, postJSON } from "../../shared/lib/api";
 import type { PenColor } from "../../shared/lib/types";
 
 const IMAGE = /\.(png|jpe?g|gif|webp|bmp|avif|tiff?|heic)$/i;
@@ -76,3 +76,40 @@ export const folderOf = (file: File) => {
   const parts = (file.webkitRelativePath || "").split("/");
   return parts.length > 1 ? parts[parts.length - 2] : "";
 };
+
+/** A Photoshop file: one in Multichannel mode is already separations, a channel per ink. */
+export const isPhotoshop = (name: string) => /\.ps[db]$/i.test(name);
+
+/**
+ * A Multichannel Photoshop file's channels as separations: a grayscale PNG each, named "<file>_<channel>"
+ * so they read as the file's, each ink from its channel's name as a separation file's would be
+ * (Cyan, Orange...) or else the color Photoshop keeps for it. Null when the file isn't Multichannel -
+ * an RGB or CMYK one - and opens as a picture. The server reads it: macOS's converter can't. Sent
+ * as the file, or read by its path from one of the server's folders.
+ */
+export async function channelsOf(source: File | { name: string; path: string }, pens: PenColor[]): Promise<{ files: File[]; found: Inks; name: string } | null> {
+  type Sent = { channels: { name: string; color: string | null; png: string }[] | null };
+  let channels: Sent["channels"];
+  try {
+    ({ channels } = await (source instanceof File
+      ? api<Sent>("/api/image-channels", { method: "POST", body: source })
+      : api<Sent>(`/api/image-channels?path=${encodeURIComponent(source.path)}`)));
+  } catch (err) {
+    // A server from before it read these says nothing of its own: the file opens as any picture would.
+    if ((err as { body?: { error?: string } }).body?.error) throw err;
+    return null;
+  }
+  if (!channels) return null;
+  const name = source.name.replace(/\.[^.]+$/, "");
+  const inks = new Map<File, FileInk>();
+  const unknown: string[] = [];
+  const files = channels.map((ch) => {
+    const bytes = Uint8Array.from(atob(ch.png), (c) => c.charCodeAt(0));
+    const file = new File([bytes], `${name}_${ch.name}.png`, { type: "image/png" });
+    const ink = inkNamed(ch.name, pens) ?? (ch.color ? { color: { name: ch.name, color: ch.color } } : undefined);
+    if (ink) inks.set(file, ink);
+    else unknown.push(file.name);
+    return file;
+  });
+  return { files, found: { inks, unknown, why: unknown.length ? "Photoshop gave no color for it" : undefined }, name };
+}
