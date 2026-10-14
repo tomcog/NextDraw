@@ -16,7 +16,7 @@ import {
 import { boxOf, newLayerId, newShapeId, type Layer, type Page, type Shape } from "../../shared/lib/drawing/shapes";
 import { samplePhoto, type Candidate } from "./choosePens";
 import { searchPensOffPage } from "./penSearch";
-import { folderOf, type Inks } from "./separationFolder";
+import { folderOf, pictureChannels, pictureSources, type Inks } from "./separationFolder";
 import { load, save as remember } from "../../shared/lib/storage";
 import type { InkProfile } from "../../shared/lib/drawing/icc";
 
@@ -73,11 +73,7 @@ export function autoPaperTone(paper: string, dark: number, light: number): [numb
   return [Math.round(lo * 100) / 100, Math.round((lo + 1 / 3) * 100) / 100];
 }
 
-/**
- * Where a picture came from, for one opened from NextDraw's own file browser: the browser's file
- * has no path of its own, so it's kept beside it, and the photo made from it remembers it for Reload.
- */
-export const pictureSources = new WeakMap<File, string>();
+export { pictureSources } from "./separationFolder";
 
 export function photoActions(ctx: PhotoContext) {
   const { chosen, shapes, setShapes, layers, setLayers, active, setActiveLayer, page, tool: tool2, targets, paper, record, addShape, pick, setMessage, setBusy } = ctx;
@@ -221,7 +217,7 @@ export function photoActions(ctx: PhotoContext) {
           layerName: pen?.name ?? separation,
           layerColor: pen?.color ?? active.color,
           photo: {
-            ...copy, ...PHOTO_DEFAULTS, spacingMm: defaults.spacingMm, crop, fit: "fit" as const, margin, group, separation, source: pictureSources.get(file),
+            ...copy, ...PHOTO_DEFAULTS, spacingMm: defaults.spacingMm, crop, fit: "fit" as const, margin, group, separation, source: pictureSources.get(file), sourceChannel: pictureChannels.get(file),
             angle: plate ? PLATE_AIMS[plate].angle : PHOTO_DEFAULTS.angle + 15 * i,
           } as Photo,
         };
@@ -813,22 +809,52 @@ export function photoActions(ctx: PhotoContext) {
     const name = was.source.slice(was.source.lastIndexOf("/") + 1);
     setBusy(true);
     try {
-      const res = await fetch(`/api/image-file?path=${encodeURIComponent(was.source)}`);
-      if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error ?? `${name} couldn't be read`);
-      const blob = await res.blob();
-      let copy = await workingCopy(new File([blob], name, { type: blob.type }));
-      const turns = was.quarterTurns ?? 0;
-      if (turns === 3) copy = await turnedCopy(copy.src, -1);
-      else for (let i = 0; i < turns; i++) copy = await turnedCopy(copy.src, 1);
-      await readTones(copy.src);
+      // A split photo's layers share one picture. Separations each have their own - a file each, or a
+      // channel each of one Photoshop file - and are all reloaded together, so they stay in register.
+      // A profile's inks are all the one photo, split again as they're drawn.
+      const plates = was.separation && !was.profile && was.group
+        ? shapes.filter((sh) => sh.photo?.group === was.group && sh.photo?.source)
+        : null;
+      const turn = async (copy: { src: string; width: number; height: number }, turns: number) => {
+        if (turns === 3) copy = await turnedCopy(copy.src, -1);
+        else for (let i = 0; i < turns; i++) copy = await turnedCopy(copy.src, 1);
+        await readTones(copy.src);
+        return copy;
+      };
+      // Each file read once, however many layers it's for: a Photoshop file's channels together.
+      const files = new Map<string, Promise<Blob | Blob[]>>();
+      const read = (p: Photo) => {
+        const key = p.source!;
+        if (!files.has(key)) {
+          files.set(key, (async () => {
+            const res = await fetch(p.sourceChannel !== undefined
+              ? `/api/image-channels?path=${encodeURIComponent(key)}`
+              : `/api/image-file?path=${encodeURIComponent(key)}`);
+            if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error ?? `${name} couldn't be read`);
+            if (p.sourceChannel === undefined) return res.blob();
+            const { channels } = await res.json() as { channels: { png: string }[] | null };
+            if (!channels) throw new Error("it isn't a Multichannel file any more");
+            return channels.map((ch) => new Blob([Uint8Array.from(atob(ch.png), (c) => c.charCodeAt(0))], { type: "image/png" }));
+          })());
+        }
+        return files.get(key)!;
+      };
+      const fresh = async (p: Photo) => {
+        const got = await read(p);
+        const blob = Array.isArray(got) ? got[p.sourceChannel!] : got;
+        if (!blob) throw new Error(`it has no channel ${p.sourceChannel! + 1} any more`);
+        return turn(await workingCopy(new File([blob], name, { type: blob.type })), p.quarterTurns ?? 0);
+      };
+      const copies = new Map<string, { src: string; width: number; height: number }>();
+      for (const sh of plates ?? [chosen!]) copies.set(sh.id, await fresh(sh.photo!));
+      const copy = copies.get(chosen!.id) ?? [...copies.values()][0];
       const same = Math.abs(copy.width / copy.height / (was.width / was.height) - 1) < 0.01;
       const { box, crop } = same ? { box: undefined, crop: was.crop } : placedInstead(chosen!, copy.width / copy.height);
       record();
-      // A separation is one plate with a file of its own; a split photo's layers share one picture.
-      // A profile's inks are all the one photo: reloaded together, and split again as they're drawn.
-      setShapes((list) => list.map((sh) => ((was.separation && !was.profile ? sh.id === chosen!.id : sameImage(sh))
-        ? { ...sh, ...(box ?? {}), photo: { ...sh.photo!, src: copy.src, width: copy.width, height: copy.height, crop } }
-        : sh)));
+      setShapes((list) => list.map((sh) => {
+        const mine = plates ? copies.get(sh.id) : sameImage(sh) ? copy : undefined;
+        return mine ? { ...sh, ...(box ?? {}), photo: { ...sh.photo!, src: mine.src, width: mine.width, height: mine.height, crop } } : sh;
+      }));
       setMessage(same
         ? { text: `Reloaded ${name}`, ok: true }
         : { text: `Reloaded ${name}: it's a different shape now, so it was placed again`, ok: true });
@@ -841,6 +867,7 @@ export function photoActions(ctx: PhotoContext) {
 
   const replacePhoto = async (file: File | undefined) => {
     if (!file || !chosen?.photo) return;
+    setBusy(true);
     try {
       const copy = await workingCopy(file);
       await readTones(copy.src);
@@ -864,6 +891,8 @@ export function photoActions(ctx: PhotoContext) {
       setMessage({ text: `Replaced the image with ${file.name}, keeping its settings`, ok: true });
     } catch (err) {
       setMessage({ text: (err as Error).message, ok: false });
+    } finally {
+      setBusy(false);
     }
   };
 

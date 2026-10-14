@@ -12,6 +12,14 @@ import { inkNamed } from "../../shared/lib/drawing/photo";
 import { api, postJSON } from "../../shared/lib/api";
 import type { PenColor } from "../../shared/lib/types";
 
+/**
+ * Where a picture came from, for one opened from NextDraw's own file browser: the browser's file
+ * has no path of its own, so it's kept beside it, and the photo made from it remembers it for Reload.
+ */
+export const pictureSources = new WeakMap<File, string>();
+/** And which channel of it, for a channel of a Multichannel Photoshop file. */
+export const pictureChannels = new WeakMap<File, number>();
+
 const IMAGE = /\.(png|jpe?g|gif|webp|bmp|avif|tiff?|heic)$/i;
 
 export type FileInk = NonNullable<ReturnType<typeof inkNamed<PenColor>>>;
@@ -103,9 +111,14 @@ export async function channelsOf(source: File | { name: string; path: string }, 
   const name = source.name.replace(/\.[^.]+$/, "");
   const inks = new Map<File, FileInk>();
   const unknown: string[] = [];
-  const files = channels.map((ch) => {
+  const files = channels.map((ch, i) => {
     const bytes = Uint8Array.from(atob(ch.png), (c) => c.charCodeAt(0));
     const file = new File([bytes], `${name}_${ch.name}.png`, { type: "image/png" });
+    // Opened from NextDraw's file browser, its place is known: each channel can be reloaded from it.
+    if (!(source instanceof File)) {
+      pictureSources.set(file, source.path);
+      pictureChannels.set(file, i);
+    }
     const ink = inkNamed(ch.name, pens) ?? (ch.color ? { color: { name: ch.name, color: ch.color } } : undefined);
     if (ink) inks.set(file, ink);
     else unknown.push(file.name);

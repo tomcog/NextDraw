@@ -19,6 +19,8 @@ export interface Photo {
   height: number;
   /** The file it was made from, where it was opened from NextDraw's own file browser: what Reload reads again. */
   source?: string;
+  /** A channel of a Multichannel Photoshop `source`, counted from 0: what Reload reads it from. */
+  sourceChannel?: number;
   /** Quarter turns given it since it came from its file, clockwise, 0 to 3: what Reload turns the file again by. */
   quarterTurns?: number;
   /** -100 to 100: lighter or darker overall. */
@@ -4680,6 +4682,7 @@ export function photoFromData(raw: Record<string, unknown>): Photo | null {
     angle: num(raw.angle, PHOTO_DEFAULTS.angle),
     spacingMm: num(raw.spacing_mm, 0.3),
     ...(typeof raw.source === "string" && raw.source ? { source: raw.source } : {}),
+    ...(Number.isInteger(raw.source_channel) && Number(raw.source_channel) >= 0 ? { sourceChannel: Number(raw.source_channel) } : {}),
     ...([1, 2, 3].includes(Number(raw.quarter_turns)) ? { quarterTurns: Number(raw.quarter_turns) } : {}),
     levels: num(raw.levels, PHOTO_DEFAULTS.levels),
     ...(typeof raw.group === "string" ? { group: raw.group } : {}),
@@ -4788,6 +4791,7 @@ export const photoData = (p: Photo) => ({
   ...(p.profile ? { profile: p.profile, profile_name: p.profileName, profile_intent: p.profileIntent || undefined, profile_ink: p.profileInk ?? 0 } : {}),
   angle: p.angle, spacing_mm: p.spacingMm, levels: p.levels,
   ...(p.source ? { source: p.source } : {}),
+  ...(p.source && p.sourceChannel !== undefined ? { source_channel: p.sourceChannel } : {}),
   ...(p.quarterTurns ? { quarter_turns: p.quarterTurns } : {}),
   ...(p.group ? { group: p.group } : {}),
   ...(p.link ? { link: p.link } : {}),

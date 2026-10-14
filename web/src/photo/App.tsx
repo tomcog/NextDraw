@@ -451,7 +451,8 @@ export default function App() {
   // ---- The rail ----
 
   // The file browser, open to pick a drawing.
-  const [browsing, setBrowsing] = useState<"drawing" | null>(null);
+  // What the file browser is for: a drawing to open, or a picture to put in place of the image.
+  const [browsing, setBrowsing] = useState<"drawing" | "replace" | null>(null);
 
   const paperSection = (
     <PaperSection
@@ -670,7 +671,7 @@ export default function App() {
       layersCard={layersSection}
       adjustCard={adjustSection}
       actions={{
-        replace: replacePhoto,
+        replace: () => setBrowsing("replace"),
         reload: reloadPhoto,
         addPass,
         removePass,
@@ -781,6 +782,16 @@ export default function App() {
         onImage={async ({ name, path }) => {
           setMessage({ text: `Opening ${name}…`, ok: true, progress: true });
           try {
+            // Replace: the new picture goes in the image's place, with every setting it had.
+            if (browsing === "replace") {
+              const res = await fetch(`/api/image-file?path=${encodeURIComponent(path)}`);
+              if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error ?? `${name} couldn't be read`);
+              const blob = await res.blob();
+              const picked = new File([blob], name, { type: blob.type });
+              pictureSources.set(picked, path);
+              await replacePhoto(picked);
+              return;
+            }
             // A Multichannel Photoshop file is separations already: a layer for each of its channels.
             const channels = isPhotoshop(name) ? await channelsOf({ name, path }, tool.palette ?? []) : null;
             if (channels) {
@@ -800,7 +811,9 @@ export default function App() {
           }
         }}
         // Read to pick it, then - once any unsaved work here is dealt with - made the current drawing.
-        onOpened={(res) => ask({ kind: "open", path: res.path })}
+        onOpened={(res) => (browsing === "replace"
+          ? setMessage({ text: "Pick a picture to put in place of the image, not a drawing", ok: false })
+          : ask({ kind: "open", path: res.path }))}
       />
       <PhotoHeader plotterFound={plotterFound} />
       {/* A layer's colors, from its swatch in the Layers card: the pen's, and any color besides. */}

@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { api, postJSON } from "../../shared/lib/api";
 import { Button, ButtonRound, Card, Checkbox, InputSelect, Segment, SegmentedControl } from "@tomcoggia/ui";
-import { ChevronRight, RefreshCw, Trash2 } from "lucide-react";
+import { ChevronRight, Trash2 } from "lucide-react";
 import { Section } from "../../shared/components/controls/Section";
 import { NumberField } from "../../shared/components/controls/NumberField";
 import controls from "../../shared/components/controls/controls.module.css";
@@ -15,7 +15,8 @@ import { INTENTS } from "../../shared/lib/drawing/icc";
 
 /** What the card does to the photo. Each acts on the chosen photo, and on all its layers where it should. */
 export interface PhotoActions {
-  replace: (file: File | undefined) => void;
+  /** Pick a picture to put in place of the image, keeping every setting. */
+  replace: () => void;
   /** Read the photo's file again, where it was opened from NextDraw's file browser and so is known. */
   reload: () => void;
   /** Another pass over the image - drawn as Edges to start with, on a layer of its own on top. */
@@ -98,7 +99,6 @@ interface Props {
  * split into layers, sized to the page, and what each layer's lines are drawn as.
  */
 export function PhotoCard({ shape, title, shapes, busy, targeted, layerCount, shownName, estimates, actions, penWidthMm = 0.5, palette = [], anyColor = false, infoCard = true, effectCards = true, layersCard, adjustCard }: Props) {
-  const replaceInput = useRef<HTMLInputElement>(null);
   const maskInput = useRef<HTMLInputElement>(null);
   // The edge mask library, shared between Macs; read when the card opens and after each change to it.
   const [masks, setMasks] = useState<string[]>([]);
@@ -258,10 +258,6 @@ export function PhotoCard({ shape, title, shapes, busy, targeted, layerCount, sh
               >
                 {INTENTS.map((name, i) => <option key={name} value={i}>{name}</option>)}
               </InputSelect>
-              <p className={styles.empty}>Each layer draws its ink's share of the image, as the profile works it out for a printer - a starting point for pens, set further in the Adjustments card. The profiles are the ones in NextDraw's Color profiles folder.</p>
-              <Button size="sm" variant="secondary" title="Open NextDraw's Color profiles folder in the Finder, to add or take out profiles" onClick={showProfiles}>
-                Show folder
-              </Button>
             </>
           ) : photoMode(photo) === "cmyk" ? (
             <>
@@ -509,30 +505,30 @@ export function PhotoCard({ shape, title, shapes, busy, targeted, layerCount, sh
               closedAction={<span className={controls.toolInTitle} title={title}>{title}</span>}
               action={
                 <span className={controls.headerTools}>
-                  {/* Only for a picture opened from NextDraw's file browser: its file is known. */}
-                  {photo.source && (
-                    <ButtonRound
-                      size="sm"
-                      icon={<RefreshCw />}
-                      aria-label="Reload the image"
-                      title={`Reload ${photo.source.slice(photo.source.lastIndexOf("/") + 1)} from its file, keeping every setting - after editing it elsewhere`}
-                      disabled={busy}
-                      onClick={actions.reload}
-                    />
-                  )}
-                  <Button size="sm" variant="secondary" title={photoMode(photo) === "separations" ? "Put a different picture in for this plate, keeping its settings" : "Put a different image in, keeping every setting"} onClick={() => replaceInput.current?.click()}>
+                  {/* Read the image's file again, keeping every setting - after editing it elsewhere. Only
+                      for one opened from NextDraw's file browser, whose file is known. */}
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    title={photo.source
+                      ? `Reload ${photo.source.slice(photo.source.lastIndexOf("/") + 1)} from its file, keeping every setting - after editing it elsewhere`
+                      : "Opened from the Mac's own dialog, so its file isn't known: open it from NextDraw's file browser to be able to reload it"}
+                    disabled={busy || !photo.source}
+                    onClick={actions.reload}
+                  >
+                    Reload
+                  </Button>
+                  {/* The same settings on another picture: picked from NextDraw's file browser, so its
+                      file is known and Reload works on it too. */}
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    title={photoMode(photo) === "separations" ? "Put a different picture in for this plate, keeping its settings" : "Put a different image in, keeping every setting"}
+                    disabled={busy}
+                    onClick={actions.replace}
+                  >
                     Replace…
                   </Button>
-                  <input
-                    ref={replaceInput}
-                    type="file"
-                    accept="image/*"
-                    hidden
-                    onChange={(e) => {
-                      actions.replace(e.target.files?.[0]);
-                      e.target.value = "";
-                    }}
-                  />
                 </span>
               }
             >
