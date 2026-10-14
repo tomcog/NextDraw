@@ -119,6 +119,30 @@ export function PhotoCard({ shape, title, shapes, busy, targeted, layerCount, sh
     window.addEventListener("focus", again);
     return () => window.removeEventListener("focus", again);
   }, [photo.profile]); // eslint-disable-line react-hooks/exhaustive-deps
+  // Profile chosen with no profiles in the folder yet: said here, in the card, with the way to the
+  // folder - not at the top of the page, which may be scrolled out of sight. Where the folder is.
+  const [noProfiles, setNoProfiles] = useState<string | null>(null);
+  useEffect(() => setNoProfiles(null), [shape.id, photo.profile]);
+  const chooseProfile = () => {
+    api<{ profiles: typeof profiles; folder: string }>("/api/color-profiles").then((r) => {
+      setProfiles(r.profiles);
+      if (r.profiles.length) actions.switchMode("profile");
+      else setNoProfiles(r.folder);
+    }).catch(() => actions.switchMode("profile"));
+  };
+  const showProfiles = () => void postJSON("/api/color-profiles/show").then(() => readProfiles()).catch(() => {});
+  // Back from the Finder with profiles added: Profile, as was asked for.
+  useEffect(() => {
+    if (noProfiles === null) return;
+    const again = () => void api<{ profiles: typeof profiles }>("/api/color-profiles").then((r) => {
+      if (r.profiles.length) {
+        setProfiles(r.profiles);
+        actions.switchMode("profile");
+      }
+    }).catch(() => {});
+    window.addEventListener("focus", again);
+    return () => window.removeEventListener("focus", again);
+  }, [noProfiles]); // eslint-disable-line react-hooks/exhaustive-deps
   // A drawing from before the folder kept the profile's whole path: its file name is what's listed.
   const profileFile = photo.profile ? photo.profile.slice(photo.profile.lastIndexOf("/") + 1) : "";
   // A mask this drawing carries that isn't in the library: added before there was one, or taken out since.
@@ -200,12 +224,19 @@ export function PhotoCard({ shape, title, shapes, busy, targeted, layerCount, sh
       ) : (
         <>
           <SegmentedControl size="sm" variant="dark" aria-label="Color mode">
-            <Segment selected={photoMode(photo) === "value"} title="B&W: the image as black and white, in one color or split into tone bands" onClick={() => actions.switchMode("value")}>B&amp;W</Segment>
-            <Segment selected={photoMode(photo) === "cmyk"} title="CMYK: print's four plates - cyan, magenta, yellow and black - in the pen's nearest colors, blended on paper" onClick={() => actions.switchMode("cmyk")}>CMYK</Segment>
-            <Segment selected={photoMode(photo) === "colour"} title="Color: as many colors as you choose from the pen's palette, the ones that best match the image" onClick={() => actions.switchMode("colour")}>Color</Segment>
-            <Segment selected={photoMode(photo) === "profile"} title="Profile: split by a printer's color profile on this Mac - CMYK, a Riso set, extended gamut - a layer for each of its inks" onClick={() => actions.switchMode("profile")}>Profile</Segment>
+            <Segment selected={noProfiles === null && photoMode(photo) === "value"} title="B&W: the image as black and white, in one color or split into tone bands" onClick={() => { setNoProfiles(null); actions.switchMode("value"); }}>B&amp;W</Segment>
+            <Segment selected={noProfiles === null && photoMode(photo) === "cmyk"} title="CMYK: print's four plates - cyan, magenta, yellow and black - in the pen's nearest colors, blended on paper" onClick={() => { setNoProfiles(null); actions.switchMode("cmyk"); }}>CMYK</Segment>
+            <Segment selected={noProfiles === null && photoMode(photo) === "colour"} title="Color: as many colors as you choose from the pen's palette, the ones that best match the image" onClick={() => { setNoProfiles(null); actions.switchMode("colour"); }}>Color</Segment>
+            <Segment selected={noProfiles !== null || photoMode(photo) === "profile"} title="Profile: split by a printer's color profile in NextDraw's Color profiles folder - CMYK, a Riso set, extended gamut - a layer for each of its inks" onClick={chooseProfile}>Profile</Segment>
           </SegmentedControl>
-          {photoMode(photo) === "profile" ? (
+          {noProfiles !== null ? (
+            <>
+              <p className={styles.empty}>No color profiles yet. Put printer profiles (.icc) in {noProfiles} - Show folder opens it - and the image is split by the first of them when you come back.</p>
+              <Button size="sm" variant="secondary" title="Open NextDraw's Color profiles folder in the Finder, making it the first time" onClick={showProfiles}>
+                Show folder
+              </Button>
+            </>
+          ) : photoMode(photo) === "profile" ? (
             <>
               {/* Which profile, and how it fits the photo's colors into its inks. Changing either splits again. */}
               <InputSelect
@@ -228,7 +259,7 @@ export function PhotoCard({ shape, title, shapes, busy, targeted, layerCount, sh
                 {INTENTS.map((name, i) => <option key={name} value={i}>{name}</option>)}
               </InputSelect>
               <p className={styles.empty}>Each layer draws its ink's share of the image, as the profile works it out for a printer - a starting point for pens, set further in the Adjustments card. The profiles are the ones in NextDraw's Color profiles folder.</p>
-              <Button size="sm" variant="secondary" title="Open NextDraw's Color profiles folder in the Finder, to add or take out profiles" onClick={() => void postJSON("/api/color-profiles/show").then(readProfiles).catch(() => {})}>
+              <Button size="sm" variant="secondary" title="Open NextDraw's Color profiles folder in the Finder, to add or take out profiles" onClick={showProfiles}>
                 Show folder
               </Button>
             </>
