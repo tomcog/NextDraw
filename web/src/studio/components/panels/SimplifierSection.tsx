@@ -92,7 +92,7 @@ export function SimplifierSection({ value, onChange, scope, onScope, layerName, 
   return (
     <Section title={title} collapsibleKey="simplifier">
       <SegmentedControl size="sm" variant="dark" aria-label="What to simplify">
-        <Segment selected={scope === "drawing"} title="Every path in the drawing" onClick={() => onScope("drawing")}>Whole drawing</Segment>
+        <Segment selected={scope === "drawing"} title="Every path in the drawing, on the layers that are showing" onClick={() => onScope("drawing")}>Whole drawing</Segment>
         <Segment selected={scope === "layer"} title={`Only the paths on ${layerName}`} onClick={() => onScope("layer")}>This layer</Segment>
       </SegmentedControl>
       {/* Merge has no distance: lines are on the same line or they aren't. */}

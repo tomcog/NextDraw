@@ -1158,13 +1158,17 @@ export default function App() {
   * The Simplifier over the drawing, or the layer being drawn on, worked out while its card is out so
   * the card can say how many points go before anything changes.
   */
+ // What the Simplifier works on: the paths on the layers it's set to, and only those showing - a
+ // hidden layer is left as it is.
+ const hiddenLayerIds = useMemo(() => new Set(layers.filter((l) => l.hidden).map((l) => l.id)), [layers]);
+ const simplifierOn = (s: Shape) => !hiddenLayerIds.has(s.layerId) && (simplifyScope === "drawing" || targetIds.has(s.layerId));
  const simplifierRun = (list: Shape[]) => {
   const inches = (k: keyof SimplifierState["on"]) => (simplifier.on[k] ? simplifier.mm[k] / 25.4 : 0);
   const opts = {
    mergeShort: inches("mergeShort"), straighten: inches("straighten"), joinEnds: inches("joinEnds"), dropTiny: inches("dropTiny"),
    pruneEvery: simplifier.prune.on ? simplifier.prune.every : 0, pruneMode: simplifier.prune.mode, pruneSeed: simplifier.prune.seed,
   };
-  const onLayer = (s: Shape) => simplifyScope === "drawing" || targetIds.has(s.layerId);
+  const onLayer = simplifierOn;
   // Overlapping straight lines merged first, so the rest - and Prune's count of strokes - work on the
   // strokes they come to.
   const merged = simplifier.merge ? mergeLines(list, fills.map((f) => f.shapeId), onLayer)?.shapes ?? list : list;
@@ -1175,9 +1179,9 @@ export default function App() {
  const simplifierPreview = useMemo(() => {
   if (!simplifierCard) return null;
   const run = simplifierRun(shapes);
-  return { ...run, after: pointCount(run.shapes.filter((s) => simplifyScope === "drawing" || targetIds.has(s.layerId))) };
+  return { ...run, after: pointCount(run.shapes.filter(simplifierOn)) };
   // eslint-disable-next-line react-hooks/exhaustive-deps
- }, [simplifierCard, shapes, fills, simplifier, simplifyScope, targetIds]);
+ }, [simplifierCard, shapes, fills, simplifier, simplifyScope, targetIds, hiddenLayerIds]);
  const applySimplifier = () => {
   if (!simplifierPreview) return;
   const { shapes: simpler, gone } = simplifierPreview;
