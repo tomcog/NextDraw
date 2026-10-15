@@ -1,6 +1,8 @@
-import { Segment, SegmentedControl, Toolbar } from "@tomcoggia/ui";
-import { AudioWaveform, Circle, LassoSelect, LoaderPinwheel, Minus, MousePointer2, Pentagon, Rainbow, Shell, Signal, Signature, Spline, Square, SwatchBook, SquareDashedMousePointer, Star, Type, Layers } from "lucide-react";
+import { useState } from "react";
+import { Segment, SegmentedControl, Toolbar, ToolbarExpander } from "@tomcoggia/ui";
+import { AudioWaveform, Circle, LassoSelect, LoaderPinwheel, Minus, MousePointer2, Pentagon, PencilRuler, Rainbow, Shell, Signal, Signature, Spline, Square, SwatchBook, SquareDashedMousePointer, Star, Type, Layers, Vibrate } from "lucide-react";
 import bar from "../../../shared/components/PreviewToolbar.module.css";
+import { load, save } from "../../../shared/lib/storage";
 import type { Tool } from "../Canvas";
 import type { Shape } from "../../../shared/lib/drawing/shapes";
 
@@ -39,6 +41,9 @@ interface Props {
   /** The Simplifier is the tool in hand: its card is out, and the page picks as Select does. */
   simplifying: boolean;
   onSimplify: () => void;
+  /** Jiggle, the same way: its card out, the page picking as Select does. */
+  jiggling: boolean;
+  onJiggle: () => void;
   /** The Layers card - and the card of the layer being drawn on - is out; its switch heads the tools. */
   layersOut: boolean;
   onLayers: () => void;
@@ -54,9 +59,15 @@ interface Props {
  * one pressed is what a drag on the page makes. Last, on its own, the Simplifier, which works on
  * what's drawn from its card. One tool in hand at a time across all of them. The names are in the tooltips.
  */
-export function ToolPicker({ tool, onTool, simplifying, onSimplify, layersOut, onLayers, onSignature, onRegistration }: Props) {
+export function ToolPicker({ tool, onTool, simplifying, onSimplify, jiggling, onJiggle, layersOut, onLayers, onSignature, onRegistration }: Props) {
+  // The drawing tools fold away behind their Tool button, open or shut as it was last left.
+  const [drawerOpen, setDrawerOpen] = useState(() => load<boolean>("studio-tools-drawer") ?? true);
+  const toggleDrawer = (open: boolean) => {
+    setDrawerOpen(open);
+    save("studio-tools-drawer", open);
+  };
   const segment = (t: (typeof TOOLS)[number]) => (
-    <Segment key={t.kind} selected={!simplifying && tool === t.kind} icon={t.icon} title={t.hint} onClick={() => onTool(t.kind)}>
+    <Segment key={t.kind} selected={!simplifying && !jiggling && tool === t.kind} icon={t.icon} title={t.hint} onClick={() => onTool(t.kind)}>
       {t.label}
     </Segment>
   );
@@ -83,9 +94,10 @@ export function ToolPicker({ tool, onTool, simplifying, onSimplify, layersOut, o
         <SegmentedControl size="sm" variant="dark" aria-label="Picking tool">
           {TOOLS.filter((t) => PICKERS.includes(t.kind)).map(segment)}
         </SegmentedControl>
-        <SegmentedControl size="sm" variant="dark" aria-label="Drawing tool">
+        {/* The tools that draw, in a drawer: the Tool button at its head opens and shuts it. */}
+        <ToolbarExpander size="sm" icon={<PencilRuler />} label="Tool" open={drawerOpen} onOpenChange={toggleDrawer} aria-label="Drawing tool">
           {TOOLS.filter((t) => !PICKERS.includes(t.kind)).map(segment)}
-        </SegmentedControl>
+        </ToolbarExpander>
         {/* Not a tool held in hand but a thing added at once, so an action: the drawing's
           signature, placed in the corner, to be moved from there. */}
         <SegmentedControl size="sm" variant="dark" actions aria-label="Add">
@@ -99,9 +111,12 @@ export function ToolPicker({ tool, onTool, simplifying, onSimplify, layersOut, o
       </Toolbar>
       {/* The Simplifier, under the tools: it works on what's drawn, from its card. */}
       <Toolbar tone="white" orientation="vertical" aria-label="Simplifier">
-        <SegmentedControl size="sm" aria-label="Simplify">
+        <SegmentedControl size="sm" aria-label="Work on what's drawn">
           <Segment selected={simplifying} icon={<Spline />} title="Simplifier: fewer points in the drawing's paths, set from its card" onClick={onSimplify}>
             Simplifier
+          </Segment>
+          <Segment selected={jiggling} icon={<Vibrate />} title="Jiggle: the targeted layers' strokes moved a little, set from its card - on a copy, for another pass" onClick={onJiggle}>
+            Jiggle
           </Segment>
         </SegmentedControl>
       </Toolbar>

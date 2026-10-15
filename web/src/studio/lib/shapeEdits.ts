@@ -240,7 +240,7 @@ export interface Simplify {
 export type PruneMode = "even" | "blocks" | "random";
 
 /** A repeatable run of numbers from 0 to 1 out of a seed (mulberry32), so a shuffle can be shown again. */
-function seeded(seed: number) {
+export function seeded(seed: number) {
   let a = seed >>> 0;
   return () => {
     a = (a + 0x6d2b79f5) >>> 0;

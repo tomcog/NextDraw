@@ -52,6 +52,8 @@ import { FileSection } from "../shared/components/controls/FileSection";
 import { useUnits } from "../shared/lib/useUnits";
 import { GridSection } from "./components/panels/GridSection";
 import { SIMPLIFIER_START, SimplifierSection, type SimplifierState } from "./components/panels/SimplifierSection";
+import { JIGGLE_START, JiggleSection, newJiggleSeed, type JiggleState } from "./components/panels/JiggleSection";
+import { jiggled } from "./lib/jiggle";
 import { ToolPicker } from "./components/panels/ToolPicker";
 import { LayersSection } from "../shared/components/controls/LayersSection";
 import { shapeIcon } from "./components/panels/ToolPicker";
@@ -286,6 +288,11 @@ export default function App() {
  useEffect(() => remember("studio-grid-card", gridCard), [gridCard]);
  // The Simplifier as the tool in hand, its card out. Put down each time the page opens, as a tool is.
  const [simplifierCard, setSimplifierCard] = useState(false);
+ // Jiggle the same way: a tool in hand with its card out, put down when another is taken up. Its
+ // numbers are kept between visits - a second pass is usually jiggled the way the last one was.
+ const [jiggleCard, setJiggleCard] = useState(false);
+ const [jiggle, setJiggle] = useState<JiggleState>(() => ({ ...JIGGLE_START, ...load<JiggleState>("studio-jiggle") }));
+ useEffect(() => remember("studio-jiggle", jiggle), [jiggle]);
  // The Layers card, out or put away from its switch under Select; remembered, like the other cards.
  const [layersCard, setLayersCard] = useState(() => load<boolean>("studio-layers-card") ?? true);
  useEffect(() => remember("studio-layers-card", layersCard), [layersCard]);
@@ -622,6 +629,7 @@ export default function App() {
    if (el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement || (el as HTMLElement)?.isContentEditable) return;
    setTool(picked);
    setSimplifierCard(false); // another tool taken up puts the Simplifier down
+   setJiggleCard(false);
   };
   window.addEventListener("keydown", onKey);
   return () => window.removeEventListener("keydown", onKey);
@@ -1200,11 +1208,46 @@ export default function App() {
  // there would be written back simplified, and kept without Simplify being pressed.
  const simplifierShowing = Boolean(simplifierCard && simplifierPreview && (Object.values(simplifier.on).some(Boolean) || simplifier.prune.on || simplifier.merge));
  const keepAsIs = () => {};
- // What the page draws: the drawing, or the Simplifier's version of it, less the paths hidden by eye.
+
+ /**
+  * Jiggle over the targeted layers that are showing, worked out while its card is out so the page
+  * shows it as it's set: the layers moved, or - jiggling a copy - the copy beside them.
+  */
+ const jiggleOn = (s: Shape) => targetIds.has(s.layerId) && !hiddenLayerIds.has(s.layerId);
+ const jiggleStrokes = useMemo(
+  () => shapes.filter(jiggleOn).reduce((n, s) => n + Math.max(1, s.runs?.length ?? 1), 0),
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  [shapes, targetIds, hiddenLayerIds],
+ );
+ const jiggleRun = (list: Shape[]) =>
+  jiggled(list, jiggleOn, { distance: jiggle.mm / 25.4, angle: jiggle.angle, randomness: jiggle.randomness / 100, noise: jiggle.noiseMm / 25.4, seed: jiggle.seed });
+ const jigglePreview = useMemo(() => {
+  if (!jiggleCard || !jiggleStrokes) return null;
+  const moved = jiggleRun(shapes);
+  if (!jiggle.copy) return moved;
+  // The copy beside the layer, on it for now, as it will be on its own layer above it.
+  return [...shapes, ...moved.filter(jiggleOn).map((s) => ({ ...s, id: `jiggle-${s.id}`, group: s.group && `jiggle-${s.group}` }))];
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+ }, [jiggleCard, jiggleStrokes, shapes, jiggle, targetIds, hiddenLayerIds]);
+ const jiggleShowing = Boolean(jigglePreview);
+ // The page takes no edits while it shows either: what was dragged would be kept as it's shown.
+ const previewing = simplifierShowing || jiggleShowing;
+ const applyJiggle = () => {
+  if (!jigglePreview) return;
+  if (jiggle.copy) {
+   duplicateLayers(targetLayers.filter((l) => !l.hidden).map((l) => l.id), jiggleRun);
+  } else {
+   record();
+   setShapes(jiggleRun(shapes));
+  }
+  setJiggle((j) => ({ ...j, seed: newJiggleSeed() })); // the next go is a fresh draw
+ };
+
+ // What the page draws: the drawing, or the Simplifier's or Jiggle's version of it, less the paths hidden by eye.
  const canvasShapes = useMemo(() => {
-  const list = simplifierShowing ? simplifierPreview!.shapes : shapes;
+  const list = simplifierShowing ? simplifierPreview!.shapes : jiggleShowing ? jigglePreview! : shapes;
   return hiddenShapes.size ? list.filter((sh) => !hiddenShapes.has(sh.id)) : list;
- }, [simplifierShowing, simplifierPreview, shapes, hiddenShapes]);
+ }, [simplifierShowing, simplifierPreview, jiggleShowing, jigglePreview, shapes, hiddenShapes]);
 
  /** Take a joined shape apart again: each run becomes a shape of its own. */
  const splitShape = (id: string) => {
@@ -1291,26 +1334,34 @@ export default function App() {
 
  // A copy of a layer, directly above it: the same colour and every shape and fill on it, in the same
  // places, under the next free name. Plotted after the original, it's a second coat.
- const duplicateLayer = (id: string) => {
-  const layer = layers.find((l) => l.id === id);
-  if (!layer) return;
+ const duplicateLayer = (id: string) => duplicateLayers([id]);
+ // The same for several at once, each copy above its own layer; `change` works on the shapes as they
+ // are copied - Jiggle's way of making its copy.
+ const duplicateLayers = (layerIds: string[], change: (list: Shape[]) => Shape[] = (list) => list) => {
+  const originals = layers.filter((l) => layerIds.includes(l.id));
+  if (!originals.length) return;
   record();
-  const copy: Layer = { ...layer, id: newLayerId(), name: uniqueName(layer.name, layers.map((l) => l.name)) };
-  const ids = new Map(shapes.filter((sh) => sh.layerId === id).map((sh) => [sh.id, newShapeId()]));
+  const names = layers.map((l) => l.name);
+  const copies = new Map(originals.map((layer) => {
+   const name = uniqueName(layer.name, names);
+   names.push(name);
+   return [layer.id, { ...layer, id: newLayerId(), name } as Layer];
+  }));
+  const ids = new Map(shapes.filter((sh) => copies.has(sh.layerId)).map((sh) => [sh.id, newShapeId()]));
   // The copy's shapes are shapes of their own, not more paths of the ones they were copied from.
-  const groupIds = new Map(shapes.filter((sh) => sh.layerId === id && sh.group).map((sh) => [sh.group!, newGroupId()]));
-  setLayers((list) => {
-   const next = [...list];
-   next.splice(next.findIndex((l) => l.id === id) + 1, 0, copy);
-   return next;
-  });
-  setShapes((list) => [...list, ...list.filter((sh) => ids.has(sh.id)).map((sh) => ({ ...sh, id: ids.get(sh.id)!, layerId: copy.id, group: sh.group && groupIds.get(sh.group) }))]);
+  const groupIds = new Map(shapes.filter((sh) => copies.has(sh.layerId) && sh.group).map((sh) => [sh.group!, newGroupId()]));
+  setLayers((list) => list.flatMap((l) => (copies.has(l.id) ? [l, copies.get(l.id)!] : [l])));
+  setShapes((list) => [
+   ...list,
+   ...change(list.filter((sh) => ids.has(sh.id))).map((sh) => ({ ...sh, id: ids.get(sh.id)!, layerId: copies.get(sh.layerId)!.id, group: sh.group && groupIds.get(sh.group) })),
+  ]);
   setFills((list) => [
    ...list,
    ...list.filter((f) => ids.has(f.shapeId)).map((f) => ({ ...f, id: newFillId(), shapeId: ids.get(f.shapeId)! })),
    ...list.filter((f) => groupIds.has(f.shapeId)).map((f) => ({ ...f, id: newFillId(), shapeId: groupIds.get(f.shapeId)! })),
   ]);
-  setActiveLayer(copy.id);
+  const activeCopy = copies.get(activeLayer) ?? [...copies.values()][0];
+  setActiveLayer(activeCopy.id);
  };
 
  // The Varnish layer: clear glitter gel (Gelly Roll Stardust) over the finished drawing, so what's
@@ -1961,16 +2012,24 @@ export default function App() {
       onTool={(t) => {
        setTool(t);
        setSimplifierCard(false);
+       setJiggleCard(false);
       }}
       layersOut={layersCard}
       onLayers={() => setLayersCard((on) => !on)}
       simplifying={simplifierCard}
+      jiggling={jiggleCard}
       onSignature={() => void addSignature()}
       onRegistration={addRegistration}
       // Picked, the page picks shapes as Select does; picked again, it's put down for Select.
       onSimplify={() => {
        setTool("select");
+       setJiggleCard(false);
        setSimplifierCard((on) => !on);
+      }}
+      onJiggle={() => {
+       setTool("select");
+       setSimplifierCard(false);
+       setJiggleCard((on) => !on);
       }}
      />
      <HistoryToolbar canUndo={canUndo} canRedo={canRedo} onUndo={undo} onRedo={redo} disabled={busy} />
@@ -2009,13 +2068,13 @@ export default function App() {
       snap={snapping ? snapStep : 0}
       selected={selected}
       onSelect={selectOnCanvas}
-      onUpdateMany={simplifierShowing ? keepAsIs : updateShapes}
-      onAdd={simplifierShowing ? keepAsIs : addShape}
-      onUpdate={simplifierShowing ? keepAsIs : updateShape}
-      onEditStart={simplifierShowing ? keepAsIs : record}
+      onUpdateMany={previewing ? keepAsIs : updateShapes}
+      onAdd={previewing ? keepAsIs : addShape}
+      onUpdate={previewing ? keepAsIs : updateShape}
+      onEditStart={previewing ? keepAsIs : record}
       onPick={pickingLayer ? pickArea : undefined}
       strokePick={strokePick}
-      onStrokePick={simplifierShowing ? () => {} : setStrokePick}
+      onStrokePick={previewing ? () => {} : setStrokePick}
      />
     </section>
 
@@ -2162,6 +2221,21 @@ export default function App() {
         images={shapes.filter((sh) => sh.kind === "photo").length}
         hasPaths={pointCount(shapes) > 0}
         onSnapshot={shapes.some((sh) => sh.kind === "photo") ? workOnSnapshot : undefined}
+       />
+      </div>
+     </Card>
+     )}
+
+     {jiggleCard && (
+     <Card variant="flat" className={styles.controls}>
+      <div className={`${styles.cardBody} ${controls.cardSections}`}>
+       <JiggleSection
+        value={jiggle}
+        onChange={setJiggle}
+        layerName={targetLayers.length > 1 ? "the targeted layers" : active?.name ?? "this layer"}
+        strokes={jiggleStrokes}
+        busy={busy}
+        onApply={applyJiggle}
        />
       </div>
      </Card>
