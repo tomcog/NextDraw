@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent } from "react";
 import { Button, Card } from "@tomcoggia/ui";
 // Separations into many plates are solved off the page (importing this turns it on).
 import "../shared/lib/drawing/separationWorker";
@@ -34,7 +34,7 @@ import { ConvertStage, type ConvertView } from "./components/ConvertStage";
 import { AdjustCard, AdjustToolbar } from "./components/AdjustCard";
 import { VignetteCard } from "./components/VignetteCard";
 import { EffectToolbar, effectOf, type Effect } from "./components/EffectToolbar";
-import { PanelToolbar } from "../shared/components/PanelToolbar";
+import { PanelToolbar, panelIcon } from "../shared/components/PanelToolbar";
 import { LayersSection } from "../shared/components/controls/LayersSection";
 import { PaletteMenu } from "../shared/components/controls/PaletteMenu";
 import { RowMenu } from "../shared/components/controls/RowMenu";
@@ -432,6 +432,51 @@ export default function App() {
     else void file.openIn(next.app, next.path);
   };
   const ask = (next: Next) => (file.dirty && shapes.length ? setConfirmNext(next) : goOn(next));
+
+  // Pictures from the Open button or dropped on the stage.
+  const openPicked = async (files: File[]) => {
+    if (files.length === 1 && isPhotoshop(files[0].name)) {
+      // A Multichannel Photoshop file is separations already: a layer for each of its channels.
+      setMessage({ text: `Opening ${files[0].name}…`, ok: true, progress: true });
+      try {
+        const channels = await channelsOf(files[0], tool.palette ?? []);
+        setMessage({ text: "", ok: true });
+        if (channels) return ask({ kind: "photos", ...channels });
+      } catch (err) {
+        return setMessage({ text: (err as Error).message, ok: false });
+      }
+    }
+    if (files.length) ask({ kind: "photos", files });
+  };
+
+  // Drag pictures onto the stage to open them, as Open… does.
+  const dragDepth = useRef(0);
+  const [draggingFile, setDraggingFile] = useState(false);
+  const stageDrop = {
+    onDragEnter: (e: DragEvent) => {
+      if (!e.dataTransfer.types.includes("Files") || busy) return;
+      dragDepth.current++;
+      setDraggingFile(true);
+    },
+    onDragLeave: () => {
+      dragDepth.current = Math.max(0, dragDepth.current - 1);
+      if (!dragDepth.current) setDraggingFile(false);
+    },
+    onDragOver: (e: DragEvent) => {
+      if (e.dataTransfer.types.includes("Files")) e.preventDefault();
+    },
+    onDrop: (e: DragEvent) => {
+      if (!e.dataTransfer.types.includes("Files")) return;
+      e.preventDefault();
+      dragDepth.current = 0;
+      setDraggingFile(false);
+      if (busy) return;
+      const files = [...e.dataTransfer.files];
+      const pictures = files.filter((f) => f.type.startsWith("image/") || isPhotoshop(f.name));
+      if (!pictures.length) return setMessage({ text: "Drop an image file to open it.", ok: false });
+      void openPicked(pictures);
+    },
+  };
   const confirmBlock = confirmNext && (
     <div className={styles.confirm} role="alertdialog" aria-label="Replace this drawing">
       <p>{file.saved ? `“${file.name}” has` : "This drawing has"} changes that aren’t saved.</p>
@@ -757,7 +802,7 @@ export default function App() {
       {!chosen?.photo && infoCard && (
         <Card variant="flat" className={styles.controls}>
           <div className={`${styles.cardBody} ${controls.cardSections}`}>
-            <Section title="Image">
+            <Section title="Image" icon={panelIcon("image")}>
               <p className={controls.hint}>No image yet. Open one to turn it into lines: a new drawing, named after it.</p>
               <Button size="sm" variant="secondary" disabled={busy} onClick={() => photoInput.current?.click()}>
                 Open an image
@@ -871,21 +916,10 @@ export default function App() {
         accept="image/*,.psd,.psb"
         hidden
         multiple
-        onChange={async (e) => {
+        onChange={(e) => {
           const files = [...(e.target.files ?? [])];
           e.target.value = ""; // so the same photo can be opened again
-          if (files.length === 1 && isPhotoshop(files[0].name)) {
-            // A Multichannel Photoshop file is separations already: a layer for each of its channels.
-            setMessage({ text: `Opening ${files[0].name}…`, ok: true, progress: true });
-            try {
-              const channels = await channelsOf(files[0], tool.palette ?? []);
-              setMessage({ text: "", ok: true });
-              if (channels) return ask({ kind: "photos", ...channels });
-            } catch (err) {
-              return setMessage({ text: (err as Error).message, ok: false });
-            }
-          }
-          if (files.length) ask({ kind: "photos", files });
+          void openPicked(files);
         }}
       />
 
@@ -907,7 +941,7 @@ export default function App() {
           {chosen?.photo && <AdjustToolbar on={adjustCard} toggle={() => setAdjustCard((on) => !on)} vignette={{ on: vignetteCard, toggle: () => setVignetteCard((on) => !on) }} />}
           {chosen?.photo && <HistoryToolbar canUndo={canUndo} canRedo={canRedo} onUndo={undo} onRedo={redo} disabled={busy} />}
         </div>
-        <section className={styles.stage} aria-label="Image conversion">
+        <section className={styles.stage} aria-label="Image conversion" data-dragging-file={draggingFile || undefined} {...stageDrop}>
           {chosen?.photo && convertBox ? (
             <ConvertStage
               photo={chosen.photo}

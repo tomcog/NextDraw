@@ -3,6 +3,7 @@ import { Button, ButtonRound, LayerController } from "@tomcoggia/ui";
 import { Check, EllipsisVertical, FilePlus, FolderOpen, ListChecks, ListPlus, SkipForward, Trash2, Undo2 } from "lucide-react";
 import styles from "./QueueSection.module.css";
 import { Section } from "../../../shared/components/controls/Section";
+import { panelIcon } from "../../../shared/components/PanelToolbar";
 import { RowMenu } from "../../../shared/components/controls/RowMenu";
 import { useRowDrag } from "../../../shared/lib/useRowDrag";
 import controls from "../../../shared/components/controls/controls.module.css";
@@ -48,6 +49,7 @@ export function QueueSection({ items, current, next, canAddOpen, disabled, onAdd
   return (
     <Section
       title={items.length ? `Queue · ${left} to plot` : "Queue"}
+      icon={panelIcon("queue")}
       collapsibleKey="plot-queue"
       action={
         <span className={styles.headerTools}>

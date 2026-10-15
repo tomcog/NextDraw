@@ -37,10 +37,10 @@ function block(layerId: string, at: Point): Shape {
 
 /**
  * A block for each layer, butted side by side from `at` (the row's bottom left), layer 1 first: the
- * order Plot draws them in.
+ * order Plot draws them in. A hidden layer gets none, and leaves no gap: the next one butts up.
  */
 export function registrationShapes(layers: Layer[], at: Point): Shape[] {
-  return layers.map((l, i) => block(l.id, { x: at.x + i * BLOCK_W, y: at.y - BLOCK_H }));
+  return layers.filter((l) => !l.hidden).map((l, i) => block(l.id, { x: at.x + i * BLOCK_W, y: at.y - BLOCK_H }));
 }
 
 /** Whether a shape is one of the blocks: what pressing Registration again takes away first. */

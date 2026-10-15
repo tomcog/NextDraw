@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 import { Section } from "./Section";
+import { panelIcon } from "../PanelToolbar";
 import controls from "./controls.module.css";
 
 interface Props {
@@ -27,6 +28,7 @@ export function FileCard({ fileName, collapsibleKey, action, keep, children, for
   return (
     <Section
       title="File"
+      icon={panelIcon("file")}
       collapsibleKey={collapsibleKey}
       actionWhenOpen
       closedAction={keep ? <span className={controls.headerTools}>{name}{keep}</span> : name ?? undefined}

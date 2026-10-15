@@ -5,6 +5,7 @@ import styles from "./controls.module.css";
 import { LengthField } from "./LengthField";
 import { UnitSwitch } from "./UnitSwitch";
 import { Section } from "./Section";
+import { panelIcon } from "../PanelToolbar";
 import { PAPER_SIZES } from "../../lib/constants";
 import { fmtLen } from "../../lib/format";
 import type { Units } from "../../lib/types";
@@ -46,6 +47,17 @@ const MARGIN_KEY = "nextdraw.fitMargin";
 const ALIGN_KEY = "nextdraw.fitAlign";
 const ALIGN_STEPS = [0, 0.5, 1] as const;
 
+/** The margin set in the Paper card, in mm: half an inch until one is chosen. */
+export function paperMarginMm(): number {
+  try {
+    const raw = localStorage.getItem(MARGIN_KEY);
+    const saved = raw === null ? NaN : Number(raw);
+    return saved >= 0 ? saved : 12.7;
+  } catch {
+    return 12.7;
+  }
+}
+
 const PAPER_COLORS = [
   { name: "White", color: "#ffffff" },
   { name: "Cream", color: "#f4ecd8" },
@@ -70,15 +82,7 @@ export function PaperSection({ w, h, sizeId, units, color, collapsibleKey, disab
   // Paper colour rarely changes, so its swatches stay tucked behind the dot in its colour.
   const [colorsOpen, setColorsOpen] = useState(false);
   // Kept between visits, so the margin a sheet is usually given is the one the button fits to.
-  const [margin, setMargin] = useState(() => {
-    try {
-      const raw = localStorage.getItem(MARGIN_KEY);
-      const saved = raw === null ? NaN : Number(raw);
-      return saved >= 0 ? saved : 12.7; // half an inch until one is chosen
-    } catch {
-      return 12.7;
-    }
-  });
+  const [margin, setMargin] = useState(paperMarginMm);
   const keepMargin = (mm: number) => {
     setMargin(mm);
     try { localStorage.setItem(MARGIN_KEY, String(mm)); } catch { /* kept for this visit only */ }
@@ -107,6 +111,7 @@ export function PaperSection({ w, h, sizeId, units, color, collapsibleKey, disab
   return (
     <Section
       title="Paper"
+      icon={panelIcon("paper")}
       collapsibleKey={collapsibleKey}
       actionWhenOpen
       // Folded, the row says what paper the drawing is on - its size, and a dot in its color - as the

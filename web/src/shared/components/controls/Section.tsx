@@ -6,6 +6,8 @@ import styles from "./controls.module.css";
 interface Props {
   /** A node rather than a string, so a heading can carry a mark - a layer's ink, say - before it. */
   title: ReactNode;
+  /** The card's glyph before its title: the same one as the toolbar button that shows the card. */
+  icon?: ReactNode;
   action?: ReactNode;
   children: ReactNode;
   /**
@@ -25,11 +27,18 @@ interface Props {
   forceOpen?: boolean;
 }
 
-export function Section({ title, action, children, collapsibleKey, defaultOpen = true, forget = false, actionWhenOpen = false, closedAction, forceOpen = false }: Props) {
+export function Section({ title: text, icon, action, children, collapsibleKey, defaultOpen = true, forget = false, actionWhenOpen = false, closedAction, forceOpen = false }: Props) {
   const [chosen, setOpen] = useState(() =>
     collapsibleKey ? (forget ? undefined : load<boolean>(`studio-open-${collapsibleKey}`)) ?? defaultOpen : true,
   );
   const open = chosen || forceOpen;
+  // Folded, a card with a glyph is the glyph alone: its name is still there for a screen reader.
+  const title = icon ? (
+    <span className={styles.iconTitle}>
+      {icon}
+      {open ? text : <span className={styles.hiddenTitle}>{text}</span>}
+    </span>
+  ) : text;
   const toggle = () => {
     const next = !open;
     setOpen(next);

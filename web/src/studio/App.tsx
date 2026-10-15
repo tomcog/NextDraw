@@ -2,10 +2,10 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { DrawingToolSection } from "../shared/components/controls/DrawingToolSection";
 // Separations into many plates are solved off the page (importing this turns it on).
 import "../shared/lib/drawing/separationWorker";
-import { PaperSection } from "../shared/components/controls/PaperSection";
-import { PanelToolbar } from "../shared/components/PanelToolbar";
+import { PaperSection, paperMarginMm } from "../shared/components/controls/PaperSection";
+import { PanelToolbar, panelIcon } from "../shared/components/PanelToolbar";
 import { Button, Card } from "@tomcoggia/ui";
-import { ArrowDownToLine, ClipboardCopy, ClipboardPaste, Copy, Layers2, LayersArrowDown, MousePointer2, PenLine, Sparkles, Spline, SquareDimensions, Trash2, Ungroup } from "lucide-react";
+import { ArrowDownToLine, ClipboardCopy, ClipboardPaste, Copy, Layers, Layers2, LayersArrowDown, MousePointer2, PenLine, Sparkles, Spline, SquareDimensions, Trash2, Ungroup } from "lucide-react";
 import { FileBrowser, type CombineResult } from "../shared/components/FileBrowser";
 import { Section } from "../shared/components/controls/Section";
 import controls from "../shared/components/controls/controls.module.css";
@@ -54,6 +54,7 @@ import { GridSection } from "./components/panels/GridSection";
 import { SIMPLIFIER_START, SimplifierSection, type SimplifierState } from "./components/panels/SimplifierSection";
 import { ToolPicker } from "./components/panels/ToolPicker";
 import { LayersSection } from "../shared/components/controls/LayersSection";
+import { shapeIcon } from "./components/panels/ToolPicker";
 import { addPointOnLongest, boxAround, boxOf, clampToPage, groupLabel, groupsOf, moveBy, newGroupId, newLayerId, newShapeId, pointsBox, resizeTo, scaleInto, shapeName, turnAround, withWholeGroups, type Layer, type Page, type Shape } from "../shared/lib/drawing/shapes";
 import { areaPicker, silhouetteOf } from "../shared/lib/drawing/silhouette";
 import { buildSvg, svgForMarks } from "../shared/lib/drawing/svg";
@@ -1062,8 +1063,8 @@ export default function App() {
  };
 
  /**
-  * The signature (signature.ts): TC and this year, in the page's bottom right corner half an inch in,
-  * picked so it can be dragged where it goes. On its own layer - the one labelled Signature if there
+  * The signature (signature.ts): TC and this year, in the page's bottom right corner inside the Paper
+  * card's margin, picked so it can be dragged where it goes. On its own layer - the one labelled Signature if there
   * is one, else a new one in Black (or the darkest pen) - kept under Varnish, so it's plotted last
   * and can be any pen.
   */
@@ -1093,7 +1094,7 @@ export default function App() {
   }
   const year = new Date().getFullYear();
   const size = signatureSize(year, font);
-  const inset = 0.5;
+  const inset = paperMarginMm() / 25.4;
   const at = { x: Math.max(0, page.w - inset - size.w), y: Math.max(0, page.h - inset - size.h) };
   const made = signatureShapes(year, font, layer.id, at);
   const on = layer.id;
@@ -1104,14 +1105,16 @@ export default function App() {
  };
 
  /**
-  * Registration blocks (registration.ts): one for each layer, in the page's lower left corner half an
-  * inch in, left to right in plotting order. Any already there go first, so pressing it again after
-  * the layers change makes them afresh rather than piling up.
+  * Registration blocks (registration.ts): one for each shown layer, butted with no gap for a hidden
+  * one, in the page's lower left corner inside the Paper card's margin, left to right in plotting
+  * order. Any already there go first, so pressing it again after the layers change makes them afresh
+  * rather than piling up.
   */
  const addRegistration = () => {
   if (!layers.length) return;
   record();
-  const made = registrationShapes(layers, { x: 0.5, y: page.h - 0.5 });
+  const inset = paperMarginMm() / 25.4;
+  const made = registrationShapes(layers, { x: inset, y: page.h - inset });
   const gone = new Set(shapes.filter(isRegistrationBlock).map((s) => s.id));
   setShapes((list) => [...list.filter((s) => !gone.has(s.id)), ...made]);
   setFills((list) => list.filter((f) => !gone.has(f.shapeId)));
@@ -1700,7 +1703,7 @@ export default function App() {
  const photoCard = chosen?.kind === "photo" && chosen.photo ? (
   <Card variant="flat" className={styles.controls}>
    <div className={`${styles.cardBody} ${controls.cardSections}`}>
-    <Section title="Image">
+    <Section title="Image" icon={panelIcon("image")}>
      <div className={styles.confirm}>
       <p>This is an image, drawn as lines worked out from its picture, so they can’t be edited one by one. Bake it to work on them: a snapshot of the drawing with its images made into paths, opened here. This drawing stays as it is.</p>
       <Button size="sm" disabled={busy} title="Save a snapshot of this drawing with its images baked into paths, and open it to edit" onClick={workOnSnapshot}>
@@ -2067,6 +2070,7 @@ export default function App() {
      <Card variant="flat" className={styles.controls}>
       <div className={`${styles.cardBody} ${controls.cardSections}`}>
        <LayersSection
+        icon={<Layers />}
         layers={layers}
         active={active}
         targets={targetIds}
@@ -2188,6 +2192,7 @@ export default function App() {
      {chosen && hasShapeCard(chosen) && (
       <ShapeCard
        shape={chosen}
+       icon={shapeIcon(chosen)}
        title={shapeName(chosen, onActive.indexOf(chosen))}
        busy={busy}
        hasFill={fills.some((f) => f.shapeId === chosen.id)}

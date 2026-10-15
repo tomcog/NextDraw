@@ -163,3 +163,10 @@
   opacity: 0;
   pointer-events: none;
 }
+
+/* While a picture is dragged over the stage, an outline says it can be dropped there. */
+.stage[data-dragging-file] {
+  outline: 2px dashed var(--ui-action);
+  outline-offset: 4px;
+  border-radius: 4px;
+}

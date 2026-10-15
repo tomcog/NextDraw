@@ -1,4 +1,5 @@
 import { Card, InputSelect, InputTextarea } from "@tomcoggia/ui";
+import { Type } from "lucide-react";
 import { Section } from "../../../shared/components/controls/Section";
 import { NumberField } from "../../../shared/components/controls/NumberField";
 import type { Shape } from "../../../shared/lib/drawing/shapes";
@@ -19,7 +20,7 @@ export function TextCard({ shape, fonts, onChange }: Props) {
   return (
     <Card variant="flat" className={styles.controls}>
       <div className={styles.cardBody}>
-        <Section title="Text" collapsibleKey="text">
+        <Section title="Text" icon={<Type />} collapsibleKey="text">
           <InputTextarea
             size="md"
             label="Words"

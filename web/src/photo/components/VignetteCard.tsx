@@ -1,4 +1,5 @@
 import { Button, Card, Checkbox } from "@tomcoggia/ui";
+import { Focus } from "lucide-react";
 import { Section } from "../../shared/components/controls/Section";
 import { NumberField } from "../../shared/components/controls/NumberField";
 import controls from "../../shared/components/controls/controls.module.css";
@@ -23,7 +24,7 @@ export function VignetteCard({ photo, set }: Props) {
   return (
     <Card variant="flat" className={styles.controls}>
       <div className={`${styles.cardBody} ${controls.cardSections}`}>
-        <Section title="Vignette" collapsibleKey="photo-vignette">
+        <Section title="Vignette" icon={<Focus />} collapsibleKey="photo-vignette">
           <div className={styles.fillRow}>
             <Checkbox size="md"
               checked={on}

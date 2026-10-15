@@ -29,6 +29,7 @@ import { parseDrawing } from "../shared/lib/drawing/parse";
 import { goToApp } from "../shared/lib/apps";
 import { FileBrowser, type OpenResult } from "../shared/components/FileBrowser";
 import { MachinePanel } from "./components/MachinePanel";
+import { Settings as SettingsIcon } from "lucide-react";
 import { Section } from "../shared/components/controls/Section";
 import controls from "../shared/components/controls/controls.module.css";
 import { StatusBanner } from "../shared/components/StatusBanner";
@@ -42,7 +43,7 @@ import { LayersSection } from "./components/controls/LayersSection";
 import { PositionSection } from "./components/controls/PositionSection";
 import { PresetSection } from "./components/controls/PresetSection";
 import { PaperSection } from "../shared/components/controls/PaperSection";
-import { PanelToolbar } from "../shared/components/PanelToolbar";
+import { PanelToolbar, panelIcon } from "../shared/components/PanelToolbar";
 import { PenSection } from "./components/controls/PenSection";
 import { SpeedSection } from "./components/controls/SpeedSection";
 import { PlotOptionsSection } from "./components/controls/PlotOptionsSection";
@@ -2083,7 +2084,7 @@ export default function App() {
           {setupOpen && (
           <Card variant="flat" className={styles.controls}>
             <div className={`${styles.cardBody} ${controls.cardSections}`}>
-              <Section title="Setup">
+              <Section title="Setup" icon={<SettingsIcon />}>
                 <p className={controls.hint}>Getting the pens ready, for the pen and paper chosen above. The gear puts this away.</p>
               </Section>
               <CalibrationSection
@@ -2160,7 +2161,7 @@ export default function App() {
           {plotterConnected && fileName && positionCard && (
           <Card variant="flat" className={styles.controls}>
             <div className={`${styles.cardBody} ${controls.cardSections}`}>
-              <Section title="Drawing position" collapsibleKey="plot-position-card">
+              <Section title="Drawing position" icon={panelIcon("position")} collapsibleKey="plot-position-card">
                 <PositionSection
                   placement={placement}
                   minPlacement={minPlace}
@@ -2179,7 +2180,7 @@ export default function App() {
           {plotterConnected && fileName && optionsCard && (
           <Card variant="flat" className={styles.controls}>
             <div className={`${styles.cardBody} ${controls.cardSections}`}>
-              <Section title="Plot options" collapsibleKey="plot-options-card">
+              <Section title="Plot options" icon={panelIcon("options")} collapsibleKey="plot-options-card">
                 <PlotOptionsSection
                   settings={settings}
                   disabled={plotting}

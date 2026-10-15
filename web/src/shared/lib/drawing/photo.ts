@@ -4720,6 +4720,10 @@ export function simplified(pts: number[][], tolerance: number): number[][] {
   return pts.filter((_, i) => keep[i]);
 }
 
+// Every style but hatching, which is what no style means: one list for writing and reading, so
+// none is written that isn't read back, or the other way round.
+const SAVED_STYLES = ["waves", "squiggle", "streamlines", "scribble", "oneline", "hilbert", "outlines", "centerlines", "silhouette", "edges"] as const;
+const isSavedStyle = (v: unknown): v is (typeof SAVED_STYLES)[number] => (SAVED_STYLES as readonly unknown[]).includes(v);
 
 /** A photo read back from a saved drawing: only a picture and numbers are kept, so check them on the way in. */
 export function photoFromData(raw: Record<string, unknown>): Photo | null {
@@ -4767,7 +4771,7 @@ export function photoFromData(raw: Record<string, unknown>): Photo | null {
     ...(raw.align && typeof raw.align === "object"
       && [0, 0.5, 1].includes((raw.align as FitAlign).x) && [0, 0.5, 1].includes((raw.align as FitAlign).y)
       ? { align: { x: (raw.align as FitAlign).x, y: (raw.align as FitAlign).y } } : {}),
-    ...(raw.style === "waves" || raw.style === "squiggle" || raw.style === "streamlines" || raw.style === "scribble" || raw.style === "oneline" || raw.style === "hilbert" || raw.style === "outlines" || raw.style === "centerlines" || raw.style === "silhouette" || raw.style === "edges" ? { style: raw.style } : {}),
+    ...(isSavedStyle(raw.style) ? { style: raw.style } : {}),
     ...(Number.isFinite(Number(raw.center_from)) && raw.center_from !== undefined ? { centerFrom: Number(raw.center_from) } : {}),
     ...(Number.isFinite(Number(raw.center_smooth_mm)) && raw.center_smooth_mm !== undefined ? { centerSmoothMm: Number(raw.center_smooth_mm) } : {}),
     ...(Number.isFinite(Number(raw.center_shortest_mm)) && raw.center_shortest_mm !== undefined ? { centerShortestMm: Number(raw.center_shortest_mm) } : {}),
@@ -4872,7 +4876,7 @@ export const photoData = (p: Photo) => ({
   ...((p.edgeMask || p.edgeGen) && p.edgeMaskSides ? { edgeMaskSides: p.edgeMaskSides } : {}),
   ...(p.fit ? { fit: p.fit } : {}),
   ...(p.align && (p.align.x !== 0.5 || p.align.y !== 0.5) ? { align: p.align } : {}),
-  ...(p.style === "waves" || p.style === "squiggle" || p.style === "streamlines" || p.style === "oneline" || p.style === "hilbert" || p.style === "outlines" || p.style === "centerlines" || p.style === "silhouette" || p.style === "edges" ? { style: p.style } : {}),
+  ...(isSavedStyle(p.style) ? { style: p.style } : {}),
   ...(p.centerFrom !== undefined ? { center_from: p.centerFrom } : {}),
   ...(p.centerSmoothMm !== undefined ? { center_smooth_mm: p.centerSmoothMm } : {}),
   ...(p.centerShortestMm !== undefined ? { center_shortest_mm: p.centerShortestMm } : {}),

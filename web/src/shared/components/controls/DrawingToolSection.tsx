@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 import type { Preset } from "../../lib/types";
 import styles from "./controls.module.css";
 import { Section } from "./Section";
+import { panelIcon } from "../PanelToolbar";
 import { ToolPicker } from "./ToolPicker";
 
 interface Props {
@@ -39,6 +40,7 @@ export function DrawingToolSection({ tools, value, onPick, collapsibleKey, disab
   return (
     <Section
       title="Pen"
+      icon={panelIcon("pen")}
       collapsibleKey={collapsibleKey}
       action={action}
       actionWhenOpen

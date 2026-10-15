@@ -3,6 +3,7 @@ import { api, postJSON } from "../../shared/lib/api";
 import { Button, ButtonRound, Card, Checkbox, InputSelect, Segment, SegmentedControl } from "@tomcoggia/ui";
 import { ChevronRight, Trash2 } from "lucide-react";
 import { Section } from "../../shared/components/controls/Section";
+import { panelIcon } from "../../shared/components/PanelToolbar";
 import { NumberField } from "../../shared/components/controls/NumberField";
 import controls from "../../shared/components/controls/controls.module.css";
 import { BLACK_SHARE, CENTER_DEFAULTS, KEY_FROM, MOST_COLORS, MOST_LAYERS, MOST_SIDE_LAYERS, MOST_PASSES, paperToneOf, OUTLINE_DEFAULTS, PLATE_AIMS, PLATE_OFF, SILHOUETTE_DEFAULTS, STREAM_DEFAULTS, ONE_LINE_DEFAULTS, ONE_LINE_MOST, SCRIBBLE_DEFAULTS, HILBERT_DEFAULTS, WAVE_DEFAULTS, ANGLE_PRESETS, centerModeOf, EDGE_DEFAULTS, hatchShortestOf, MASK_SIDES, PLATE_SETS, SQUIGGLE_DRAW, SQUIGGLE_INKSCAPE, SQUIGGLE_INKSCAPE_RANGES, SQUIGGLE_RANGES, coverSteps, plateSetOf, platesOf, squiggleDrawOf, squiggleInkscapeOf, type AnglePreset, type SquiggleDraw, type SquiggleInkscape, type PlateSet, photoMarks, photoMode, type Photo, type Plate } from "../../shared/lib/drawing/photo";
@@ -313,6 +314,8 @@ export function PhotoCard({ shape, title, shapes, busy, targeted, layerCount, sh
                       key={plate}
                       size="md"
                       label={PLATE_AIMS[plate].name}
+                      // The plate's color before its name; with any color allowed, the swatch in front says it.
+                      icon={!anyColor && photo.plates![i] !== PLATE_OFF ? <span className={controls.selectDot} style={{ background: photo.plates![i] }} /> : undefined}
                       value={photo.plates![i] === PLATE_OFF ? PLATE_OFF : palette.find((p) => p.color.toLowerCase() === photo.plates![i]?.toLowerCase())?.name ?? ""}
                       onChange={(e) => actions.setPlatePen(plate, e.target.value)}
                     >
@@ -531,6 +534,7 @@ export function PhotoCard({ shape, title, shapes, busy, targeted, layerCount, sh
           <div className={`${styles.cardBody} ${controls.cardSections}`}>
             <Section
               title="Image"
+              icon={panelIcon("image")}
               collapsibleKey="photo"
               // Folded, the row names the photo in place of its buttons, as the Pen card names its pen.
               actionWhenOpen

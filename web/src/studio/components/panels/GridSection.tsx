@@ -1,5 +1,6 @@
 import { Checkbox } from "@tomcoggia/ui";
 import { Section } from "../../../shared/components/controls/Section";
+import { panelIcon } from "../../../shared/components/PanelToolbar";
 import { NumberField } from "../../../shared/components/controls/NumberField";
 import controls from "../../../shared/components/controls/controls.module.css";
 
@@ -16,6 +17,7 @@ export function GridSection({ snapping, onSnapping, step, onStep }: Props) {
   return (
     <Section
       title="Grid"
+      icon={panelIcon("grid")}
       collapsibleKey="grid"
       actionWhenOpen
       // Folded, the row says whether shapes are snapping, as Paper and Drawing tool say theirs.

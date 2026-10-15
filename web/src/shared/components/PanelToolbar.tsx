@@ -18,6 +18,9 @@ const PANELS = {
 
 export type Panel = keyof typeof PANELS;
 
+/** A card's glyph, for its heading: the same as its button here. */
+export const panelIcon = (key: Panel) => PANELS[key].icon;
+
 /**
  * Shared: which of the rail's cards are out - File, Paper, Pen and whatever is the app's own. Each a
  * switch like Setup's, pressed while its card shows. Under the app switch, in every app.

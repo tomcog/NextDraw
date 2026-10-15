@@ -2,6 +2,7 @@ import { Segment, SegmentedControl, Toolbar } from "@tomcoggia/ui";
 import { AudioWaveform, Circle, LassoSelect, LoaderPinwheel, Minus, MousePointer2, Pentagon, Rainbow, Shell, Signal, Signature, Spline, Square, SwatchBook, SquareDashedMousePointer, Star, Type, Layers } from "lucide-react";
 import bar from "../../../shared/components/PreviewToolbar.module.css";
 import type { Tool } from "../Canvas";
+import type { Shape } from "../../../shared/lib/drawing/shapes";
 
 /** The tools that pick rather than draw: a group of their own at the head of the Tools bar. */
 const PICKERS: Tool[] = ["select", "strokes", "lasso"];
@@ -24,6 +25,13 @@ const TOOLS: { kind: Tool; label: string; hint: string; icon: JSX.Element }[] = 
   { kind: "wave", label: "Wave", hint: "Draw a wave: drag on the page, then set how many", icon: <AudioWaveform /> },
   { kind: "text", label: "Text", hint: "Text (T): drag to say how tall, then type the words", icon: <Type /> },
 ];
+
+/** A shape's glyph, for its card: the tool that draws its kind, or for a path, which none does, a curve. */
+export function shapeIcon(shape: Shape): JSX.Element | undefined {
+  if (shape.kind === "path") return <Spline />;
+  const kind = shape.curve?.kind ?? shape.kind;
+  return TOOLS.find((t) => t.kind === kind)?.icon;
+}
 
 interface Props {
   tool: Tool;

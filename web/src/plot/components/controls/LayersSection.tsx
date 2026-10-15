@@ -3,6 +3,7 @@ import { ButtonRound, LayerController, Segment, SegmentedControl } from "@tomcog
 import { Layers, LayersArrowUp, Link2, Link2Off, RotateCcw, Waypoints } from "lucide-react";
 import styles from "./LayersSection.module.css";
 import { Section } from "../../../shared/components/controls/Section";
+import { panelIcon } from "../../../shared/components/PanelToolbar";
 import { Slider } from "../../../shared/components/controls/Slider";
 import { PaletteMenu } from "../../../shared/components/controls/PaletteMenu";
 import type { LayerView, PenColor } from "../../../shared/lib/types";
@@ -83,6 +84,7 @@ export function LayersSection({ mode, onMode, layers, target, linksOf, onLink, o
   return (
     <Section
       title="Layers"
+      icon={panelIcon("layers")}
       collapsibleKey="plot-layers"
       action={
         <span className={styles.headerTools}>

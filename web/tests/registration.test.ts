@@ -24,6 +24,12 @@ test("a block for each layer, left to right in plotting order, butted, from the 
   made.slice(1).forEach((s, i) => assert.ok(Math.abs(s.x - made[i].x2) < 1e-9, "each starts where the last ends"));
 });
 
+test("a hidden layer gets no block, and the next butts up against the last", () => {
+  const made = registrationShapes(LAYERS.map((l) => (l.id === "p" ? { ...l, hidden: true } : l)), { x: 0.5, y: 8 });
+  assert.deepEqual(made.map((s) => s.layerId), ["y", "t", "g", "v"]);
+  made.slice(1).forEach((s, i) => assert.ok(Math.abs(s.x - made[i].x2) < 1e-9, "each starts where the last ends"));
+});
+
 test("each block is the drawing's: the same zigzag, the same size, turning where it turns", { skip: !existsSync(REFERENCE) }, () => {
   const ds = [...readFileSync(REFERENCE, "utf8").matchAll(/<path d="([^"]*)"/g)].map((m) => m[1]);
   assert.equal(ds.length, 4);

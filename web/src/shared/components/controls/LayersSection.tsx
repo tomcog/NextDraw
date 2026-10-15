@@ -2,6 +2,7 @@ import { useRef, type ReactNode } from "react";
 import { ButtonRound, LayerController } from "@tomcoggia/ui";
 import { EllipsisVertical, Layers2, LayersArrowUp, Plus, Sparkles } from "lucide-react";
 import { Section } from "./Section";
+import { panelIcon } from "../PanelToolbar";
 import { isPalettePen, labelAfter, LABEL_SEPARATOR } from "../../lib/ink";
 import type { Preset } from "../../lib/types";
 import { useRowDrag } from "../../lib/useRowDrag";
@@ -11,6 +12,8 @@ import styles from "./LayersSection.module.css";
 
 
 interface Props {
+  /** The heading's glyph, when the app's switch for the card shows another than the Layers button's. */
+  icon?: ReactNode;
   /** What goes under the list, folded away with it: the shapes on the layer being drawn on. */
   children?: ReactNode;
   /** Bottom first, the order they're drawn in. Listed top first, the way they stack on the paper. */
@@ -98,6 +101,7 @@ export function LayersSection(props: Props) {
   return (
     <Section
       title="Layers"
+      icon={props.icon ?? panelIcon("layers")}
       collapsibleKey={props.collapsibleKey ?? "layers"}
       action={
         <span className={styles.headerTools}>

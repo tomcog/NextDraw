@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 import { Button, ButtonRound, Card } from "@tomcoggia/ui";
-import { PaintRoller } from "lucide-react";
+import { MousePointer2, PaintRoller } from "lucide-react";
 import { Section } from "../../../shared/components/controls/Section";
 import controls from "../../../shared/components/controls/controls.module.css";
 import styles from "../../App.module.css";
@@ -33,7 +33,7 @@ export function SelectionCard({ count, fillable, busy, shapeName, asOne, canGrou
   return (
     <Card variant="flat" className={styles.controls}>
       <div className={styles.cardBody}>
-        <Section title={shapeName ? `${shapeName} · ${count} paths` : `${count} paths`} collapsibleKey="selection">
+        <Section icon={<MousePointer2 />} title={shapeName ? `${shapeName} · ${count} paths` : `${count} paths`} collapsibleKey="selection">
           <div className={controls.buttonRow}>
             {canGroup && <Button size="md" variant="secondary" disabled={busy} onClick={onGroup}>Group into one shape</Button>}
             {canUngroup && <Button size="md" variant="secondary" disabled={busy} onClick={onUngroup}>Ungroup</Button>}

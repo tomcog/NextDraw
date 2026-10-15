@@ -48,6 +48,8 @@ export interface ShapeActions {
 interface Props {
   shape: Shape;
   title: string;
+  /** The glyph of the tool that draws this kind of shape, before its name. */
+  icon?: ReactNode;
   busy: boolean;
   /** Whether the shape has a fill to copy, and whether there is a copied one to paste. */
   hasFill: boolean;
@@ -67,7 +69,7 @@ interface Props {
  * What the shape itself is made of: the numbers that draw it, and what can be done to it - simplified,
  * hatched, turned, repeated. Named after the shape it is about.
  */
-export function ShapeCard({ shape, title, busy, hasFill, canPaste, panel, onPanel, fillPanel, simplifyMm, onSimplifyMm, actions, varnish }: Props) {
+export function ShapeCard({ shape, title, icon, busy, hasFill, canPaste, panel, onPanel, fillPanel, simplifyMm, onSimplifyMm, actions, varnish }: Props) {
   // On the Varnish layer a shape is a mask the glitter gel fills, or lines it goes over again: its
   // fill is all there is to set. Turning, repeating, simplifying and the rest don't apply - its
   // points are shaped by dragging them on the page.
@@ -75,7 +77,7 @@ export function ShapeCard({ shape, title, busy, hasFill, canPaste, panel, onPane
     return (
       <Card variant="flat" className={styles.controls}>
         <div className={`${styles.cardBody} ${controls.cardSections}`}>
-          <Section title={title} collapsibleKey="shape">
+          <Section title={title} icon={icon} collapsibleKey="shape">
             {canFill(shape)
               ? fillPanel
               : <p className={styles.empty}>Only a closed shape can be filled. This one is gone over as it is.</p>}
@@ -102,6 +104,7 @@ export function ShapeCard({ shape, title, busy, hasFill, canPaste, panel, onPane
           and what can be done to it. The fold is remembered under one key all the same. */}
         <Section
           title={title}
+          icon={icon}
           collapsibleKey="shape"
           // Beside the shape's name rather than in the row below it: every button in that
           // row opens something to adjust, and this one is done the moment it is pressed.

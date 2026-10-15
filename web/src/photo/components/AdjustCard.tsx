@@ -42,7 +42,7 @@ export function AdjustCard({ photo, channels, set, setChannel }: Props) {
   return (
     <Card variant="flat" className={styles.controls}>
       <div className={`${styles.cardBody} ${controls.cardSections}`}>
-        <Section title="Adjustments" collapsibleKey="photo-adjust">
+        <Section title="Adjustments" icon={<SlidersHorizontal />} collapsibleKey="photo-adjust">
           <p className={controls.subheading}>Whole image</p>
           <div className={`${styles.fillRow} ${styles.oneRow}`}>
             <NumberField label="Bright" min={-100} max={100} step={5} value={photo.brightness} onChange={(brightness) => set({ brightness })} />
