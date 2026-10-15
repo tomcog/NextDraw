@@ -3,17 +3,16 @@ import { createPortal } from "react-dom";
 import styles from "./Hints.module.css";
 
 /**
- * The app's tooltips, shown sooner than the browser shows its own.
+ * The app's tooltips, on a delay the page sets rather than the browser.
  *
- * A browser waits about a second before a `title` appears and doesn't let a page say otherwise, and
- * a second is a long time in a row of round buttons that are nothing but icons. So this takes the
- * job over: it watches for a hover anywhere in the page, takes the element's `title` off it (which
- * is what stops the browser's own tooltip appearing), and puts the text up itself after `delay`.
- * The title goes back the moment the pointer leaves, so nothing is lost for anything that reads the
- * page rather than looks at it - and every `title` already written is a tooltip without being
- * changed.
+ * A browser picks its own wait before a `title` appears and doesn't let a page say otherwise. So this
+ * takes the job over: it watches for a hover anywhere in the page, takes the element's `title` off it
+ * (which is what stops the browser's own tooltip appearing), and puts the text up itself after
+ * `delay` - a second, long enough that sweeping across a toolbar doesn't leave a trail of them. The
+ * title goes back the moment the pointer leaves, so nothing is lost for anything that reads the page
+ * rather than looks at it - and every `title` already written is a tooltip without being changed.
  */
-export function Hints({ delay = 500 }: { delay?: number }) {
+export function Hints({ delay = 1000 }: { delay?: number }) {
   const [hint, setHint] = useState<{ text: string; at: DOMRect } | null>(null);
   // The element whose title is currently held, so it can always be given back.
   const held = useRef<{ el: Element; title: string } | null>(null);
@@ -22,7 +21,9 @@ export function Hints({ delay = 500 }: { delay?: number }) {
 
   useEffect(() => {
     const give = () => {
-      if (held.current) held.current.el.setAttribute("title", held.current.title);
+      // Unless the page has given it a new one meanwhile - a switch pressed, Show become Hide - which
+      // the one held back would otherwise overwrite.
+      if (held.current && !held.current.el.hasAttribute("title")) held.current.el.setAttribute("title", held.current.title);
       held.current = null;
     };
     const hide = () => {

@@ -88,35 +88,38 @@ export function ToolPicker({ tool, onTool, simplifying, onSimplify, jiggling, on
           </SegmentedControl>
         </Toolbar>
       </span>
-      {/* One bar, two groups (Figma, NextDraw 76:401): the tools that pick - Select, Stroke select,
-          the Lasso - then the ones that draw. Still one tool in hand across both. */}
+      {/* The tools that pick - Select, Stroke select, the Lasso. One tool in hand across these and
+          the drawer below. */}
       <Toolbar tone="white" orientation="vertical" aria-label="Tools">
         <SegmentedControl size="sm" variant="dark" aria-label="Picking tool">
           {TOOLS.filter((t) => PICKERS.includes(t.kind)).map(segment)}
         </SegmentedControl>
-        {/* The tools that draw, in a drawer: the Tool button at its head opens and shuts it. */}
-        <ToolbarExpander size="sm" icon={<PencilRuler />} label="Tool" open={drawerOpen} onOpenChange={toggleDrawer} aria-label="Drawing tool">
+      </Toolbar>
+      {/* The tools that draw, in a toolbar of their own that opens and shuts from the Tool button at its head. */}
+      <Toolbar tone="white" orientation="vertical" aria-label="Drawing tools">
+        <ToolbarExpander size="sm" icon={<PencilRuler />} label="Tool" open={drawerOpen} onOpenChange={toggleDrawer} aria-label="Drawing tool"
+          // On the drawer, which the Tool button takes it from; each tool in it has its own.
+          title={drawerOpen ? "Tool: put the drawing tools away" : "Tool: the drawing tools - rectangle, oval, line, the curves and text"}>
           {TOOLS.filter((t) => !PICKERS.includes(t.kind)).map(segment)}
         </ToolbarExpander>
-        {/* Not a tool held in hand but a thing added at once, so an action: the drawing's
-          signature, placed in the corner, to be moved from there. */}
-        <SegmentedControl size="sm" variant="dark" actions aria-label="Add">
-          <Segment icon={<Signature />} title="Signature: TC and this year, in the page's bottom right corner on its own Signature layer - drag it where it goes" onClick={onSignature}>
-            Signature
-          </Segment>
-          <Segment icon={<SwatchBook />} title="Registration: a solid block for each layer in the page's lower left corner, left to right in the order they're plotted - again to make them afresh after the layers change" onClick={onRegistration}>
-            Registration
-          </Segment>
-        </SegmentedControl>
       </Toolbar>
-      {/* The Simplifier, under the tools: it works on what's drawn, from its card. */}
-      <Toolbar tone="white" orientation="vertical" aria-label="Simplifier">
+      {/* What works on what's drawn: the Simplifier and Jiggle, from their cards; then what's added at
+          once, so actions - the signature and the registration blocks, placed to be moved from there. */}
+      <Toolbar tone="white" orientation="vertical" aria-label="Work on the drawing">
         <SegmentedControl size="sm" aria-label="Work on what's drawn">
           <Segment selected={simplifying} icon={<Spline />} title="Simplifier: fewer points in the drawing's paths, set from its card" onClick={onSimplify}>
             Simplifier
           </Segment>
           <Segment selected={jiggling} icon={<Vibrate />} title="Jiggle: the targeted layers' strokes moved a little, set from its card - on a copy, for another pass" onClick={onJiggle}>
             Jiggle
+          </Segment>
+        </SegmentedControl>
+        <SegmentedControl size="sm" variant="dark" actions aria-label="Add">
+          <Segment icon={<Signature />} title="Signature: TC and this year, in the page's bottom right corner on its own Signature layer - drag it where it goes" onClick={onSignature}>
+            Signature
+          </Segment>
+          <Segment icon={<SwatchBook />} title="Registration: a solid block for each layer in the page's lower left corner, left to right in the order they're plotted - again to make them afresh after the layers change" onClick={onRegistration}>
+            Registration
           </Segment>
         </SegmentedControl>
       </Toolbar>

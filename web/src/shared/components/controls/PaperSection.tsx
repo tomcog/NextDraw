@@ -33,6 +33,8 @@ interface Props {
   /** Turn the drawing a quarter turn, 1 right or -1 left, about its middle; the paper stays as it lies.
    *  Left out while there is no drawing to turn. */
   onTurnDrawing?: (dir: 1 | -1) => void;
+  /** The turn takes the paper with it - landscape to portrait, all on it turned - rather than the drawing alone. */
+  turnsPaper?: boolean;
   /** Scale the drawing to fill the paper less a margin all round (in mm), placed in the room left
    *  over as `align` says - centred, or against an edge. Left out while there is no drawing to fit. */
   onFit?: (marginMm: number, align: FitAlign) => void;
@@ -71,7 +73,7 @@ const PAPER_COLORS = [
  * drawing on it: its turn, and fitting it to the paper. Each app does those to the drawing
  * itself, so all three show the same. Every app passes all of it: the card is the same everywhere.
  */
-export function PaperSection({ w, h, sizeId, units, color, collapsibleKey, disabled, onSize, onDimensions, onColor, onUnits, onTurnDrawing, onFit, onFill }: Props) {
+export function PaperSection({ w, h, sizeId, units, color, collapsibleKey, disabled, onSize, onDimensions, onColor, onUnits, onTurnDrawing, turnsPaper = false, onFit, onFill }: Props) {
   const landscape = w >= h;
   // Custom chosen by hand stays chosen while its width and height are typed, even through a size
   // that happens to be one of the list's on the way. The size belongs to this drawing alone: it is
@@ -189,14 +191,15 @@ export function PaperSection({ w, h, sizeId, units, color, collapsibleKey, disab
           it inside a margin. Folds on its own, its choice remembered per app. */}
       <Section title="Drawing transform" collapsibleKey={`${collapsibleKey}-transform`}>
         {/* One row: the drawing turned a quarter about its own middle - the paper stays as it is, the
-            switch beside its size is what turns the paper - then Fit: as big as the paper allows
+            switch beside its size is what turns the paper - or, where an app says so (Studio), the
+            paper and everything on it turned together; then Fit: as big as the paper allows
             inside the margin. A drawing of another proportion than the paper fills it only one way;
             the alignment below says where it sits the other way - centred, or against an edge. */}
         <div className={styles.transformRow}>
           {onTurnDrawing && (
             <>
-              <ButtonRound size="sm" icon={<RotateCcwSquare />} aria-label="Turn the drawing left" title="Turn the drawing 90° left, on the paper" disabled={disabled} onClick={() => onTurnDrawing(-1)} />
-              <ButtonRound size="sm" icon={<RotateCwSquare />} aria-label="Turn the drawing right" title="Turn the drawing 90° right, on the paper" disabled={disabled} onClick={() => onTurnDrawing(1)} />
+              <ButtonRound size="sm" icon={<RotateCcwSquare />} aria-label={turnsPaper ? "Turn the paper and drawing left" : "Turn the drawing left"} title={turnsPaper ? "Turn the paper and everything on it 90° left: landscape becomes portrait, the drawing still on it as it was" : "Turn the drawing 90° left, on the paper"} disabled={disabled} onClick={() => onTurnDrawing(-1)} />
+              <ButtonRound size="sm" icon={<RotateCwSquare />} aria-label={turnsPaper ? "Turn the paper and drawing right" : "Turn the drawing right"} title={turnsPaper ? "Turn the paper and everything on it 90° right: landscape becomes portrait, the drawing still on it as it was" : "Turn the drawing 90° right, on the paper"} disabled={disabled} onClick={() => onTurnDrawing(1)} />
             </>
           )}
           <div className={styles.marginField}>

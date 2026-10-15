@@ -119,6 +119,17 @@ export function turnDrawingLeft(shapes: Shape[], fills: Fill[], page: Page): { s
 }
 
 /**
+ * The whole drawing and its page a quarter turn, 1 to the right (clockwise) or -1 to the left: landscape
+ * becomes portrait with everything on it, as the sheet would be turned by hand. A right turn is three
+ * left ones.
+ */
+export function turnWhole(shapes: Shape[], fills: Fill[], page: Page, dir: 1 | -1): { shapes: Shape[]; fills: Fill[]; page: Page } {
+  let turned = { shapes, fills, page };
+  for (let i = 0; i < (dir < 0 ? 1 : 3); i++) turned = turnDrawingLeft(turned.shapes, turned.fills, turned.page);
+  return turned;
+}
+
+/**
  * The drawing turned a quarter turn, 1 to the right or -1 to the left, about the middle of what it
  * draws - the paper staying as it lies, which the Landscape and Portrait switch turns on its own.
  */

@@ -64,6 +64,9 @@ interface Drag {
 // overlapping each other, and the turns doubling back along the edge, would never darken, while on paper
 // the pen goes over its own ink there. So in the build pass each straight piece of a polyline, or of a
 // path drawn only with straight lines, becomes a mark of its own. The ink pass underneath is left alone.
+/** The layer a preview group draws: its own id, or for a layer's registration blocks, that layer's (see preview.ts). */
+const layerKey = (g: SVGGElement) => g.dataset.layer ?? g.id;
+
 function splitIntoMarks(root: SVGGElement) {
   const NS = "http://www.w3.org/2000/svg";
   const pointsOf = (el: Element): number[][] | null => {
@@ -186,7 +189,7 @@ export function Bed(props: Props) {
     // Layers drawn with a different tool get their own width.
     node.querySelectorAll<SVGGElement>(".pv-layer").forEach((g) => {
       // The Varnish layer is drawn in the glitter gel's own line, whatever pen the rest is in.
-      const w = varnishLayers?.[g.id] ? VARNISH_LINE_MM : layerPenWidths?.[g.id];
+      const w = varnishLayers?.[layerKey(g)] ? VARNISH_LINE_MM : layerPenWidths?.[layerKey(g)];
       if (w && w > 0) g.style.setProperty("--pen-art", String((w / 25.4) * unitsPerInch));
       else g.style.removeProperty("--pen-art");
     });
@@ -207,21 +210,21 @@ export function Bed(props: Props) {
     node.dataset.opaque = String(inkOpaque === true);
 
     node.querySelectorAll<SVGGElement>(".pv-layer").forEach((g) => {
-      const o = layerInkOpacity?.[g.id];
+      const o = layerInkOpacity?.[layerKey(g)];
       if (o && o > 0) g.style.setProperty("--ink-opacity", String(o));
       else g.style.removeProperty("--ink-opacity");
-      const builds = layerInkBuilds?.[g.id];
+      const builds = layerInkBuilds?.[layerKey(g)];
       const buildsHere = builds === undefined ? inkBuilds !== false : builds;
       g.dataset.builds = String(buildsHere);
-      const opaque = layerInkOpaque?.[g.id];
+      const opaque = layerInkOpaque?.[layerKey(g)];
       g.dataset.opaque = String(opaque === undefined ? inkOpaque === true : opaque);
-      if (layerVarnish?.[g.id] && inkSim !== false) g.dataset.varnish = "true";
+      if (layerVarnish?.[layerKey(g)] && inkSim !== false) g.dataset.varnish = "true";
       else delete g.dataset.varnish;
       // How much darker this layer gets where it crosses itself. Separate from whether it builds:
       // that decides how the layer blends with the OTHER colours (see index.css), this only what
       // happens inside it - an outline over its own hatch, say. A building ink with no amount set
       // builds fully, as it always has; any other ink without one doesn't darken over itself at all.
-      const own = layerInkBuild && g.id in layerInkBuild ? layerInkBuild[g.id] : inkBuild;
+      const own = layerInkBuild && layerKey(g) in layerInkBuild ? layerInkBuild[layerKey(g)] : inkBuild;
       const buildHere = Math.min(1, Math.max(0, own ?? (buildsHere ? build : 0)));
       g.style.setProperty("--ink-build-alpha", String(buildHere));
 
@@ -234,7 +237,7 @@ export function Bed(props: Props) {
       }
       if (!wanted) {
         existing?.remove();
-        const color = layerLooks?.[g.id]?.color;
+        const color = layerLooks?.[layerKey(g)]?.color;
         if (color) g.style.setProperty("--layer-color", color);
         return;
       }
@@ -247,7 +250,7 @@ export function Bed(props: Props) {
         copy.dataset.marks = "split";
         g.appendChild(copy);
       }
-      const color = layerLooks?.[g.id]?.color;
+      const color = layerLooks?.[layerKey(g)]?.color;
       if (color) {
         const { base, buildPass } = inkLayer(color, buildHere, true, true); // wanted, so a build pass is due
         g.style.setProperty("--layer-color", base);
@@ -276,7 +279,7 @@ export function Bed(props: Props) {
     const colored = Boolean(layerLooks && preview.layers > 0);
     preview.node.classList.toggle("pv-colored", colored);
     preview.node.querySelectorAll<SVGGElement>(".pv-layer").forEach((g) => {
-      const look = colored ? layerLooks![g.id] : undefined;
+      const look = colored ? layerLooks![layerKey(g)] : undefined;
       if (!look?.color) g.style.removeProperty("--layer-color");
       g.dataset.skipped = String(Boolean(look?.skipped));
       g.dataset.hidden = String(Boolean(look?.hidden));

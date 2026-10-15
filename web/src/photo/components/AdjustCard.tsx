@@ -1,5 +1,5 @@
 import { Card, Checkbox, Segment, SegmentedControl, Toolbar } from "@tomcoggia/ui";
-import { Focus, SlidersHorizontal } from "lucide-react";
+import { Focus, SlidersHorizontal, SquareDashed } from "lucide-react";
 import { Section } from "../../shared/components/controls/Section";
 import { NumberField } from "../../shared/components/controls/NumberField";
 import controls from "../../shared/components/controls/controls.module.css";
@@ -84,10 +84,10 @@ export function AdjustCard({ photo, channels, set, setChannel }: Props) {
 }
 
 /**
- * The Adjustments and Vignette cards' switches, in a toolbar of their own down the left: each pressed
- * while its card shows.
+ * The Adjustments, Vignette and Mask cards' switches, in a toolbar of their own down the left: each
+ * pressed while its card shows.
  */
-export function AdjustToolbar({ on, toggle, vignette, disabled }: { on: boolean; toggle: () => void; vignette: { on: boolean; toggle: () => void }; disabled?: boolean }) {
+export function AdjustToolbar({ on, toggle, vignette, mask, disabled }: { on: boolean; toggle: () => void; vignette: { on: boolean; toggle: () => void }; mask: { on: boolean; toggle: () => void }; disabled?: boolean }) {
   return (
     <span className={bar.row}>
       <Toolbar tone="white" orientation="vertical" aria-label="Adjustments">
@@ -109,6 +109,15 @@ export function AdjustToolbar({ on, toggle, vignette, disabled }: { on: boolean;
             icon={<Focus />}
             title={`${vignette.on ? "Hide" : "Show"} the Vignette card: the image darkened toward its edges, or faded toward the paper`}
             aria-label="Vignette card"
+          />
+          <Segment
+            aria-pressed={mask.on}
+            className={mask.on ? bar.on : undefined}
+            onClick={mask.toggle}
+            disabled={disabled}
+            icon={<SquareDashed />}
+            title={`${mask.on ? "Hide" : "Show"} the Mask card: the image's edges left as paper - a grunge border, a torn edge`}
+            aria-label="Mask card"
           />
         </SegmentedControl>
       </Toolbar>

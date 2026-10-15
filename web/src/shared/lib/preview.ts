@@ -65,6 +65,15 @@ export function parsePreview(svgText: string | null): Preview | null {
   const layerGroups = (inkscapeLayers.length ? inkscapeLayers : art)
     .filter((g) => g.querySelector("path, rect, circle, ellipse, line, polyline, polygon, use"));
   layerGroups.forEach((g) => g.classList.add("pv-layer"));
+  // The registration blocks come to the plot ahead of everything, each layer's in a layer of its own
+  // named for it (registration_first in server.py): drawn in that layer's pen and color, so it says
+  // which layer it is - its color, ink and width are looked up under that layer's id.
+  // Matched against every layer, empty ones too: a layer holding only its block is left empty here.
+  const ids = new Set((inkscapeLayers.length ? inkscapeLayers : art).map((g) => g.id));
+  for (const g of layerGroups) {
+    const base = g.id.endsWith("-registration") ? g.id.slice(0, -"-registration".length) : "";
+    if (base && ids.has(base)) g.setAttribute("data-layer", base);
+  }
 
   const node = document.importNode(root, true) as unknown as SVGSVGElement;
   node.removeAttribute("width");

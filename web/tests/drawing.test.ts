@@ -1,7 +1,7 @@
 // The whole-drawing operations in shared/lib/drawing/whole.ts: turning, scaling, fitting.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { drawnBox, fitToPage, reshapeDrawing, runsOffPage, turnDrawing, turnDrawingLeft } from "../src/shared/lib/drawing/whole";
+import { drawnBox, fitToPage, reshapeDrawing, runsOffPage, turnDrawing, turnDrawingLeft, turnWhole } from "../src/shared/lib/drawing/whole";
 import type { Fill } from "../src/shared/lib/drawing/hatch";
 import type { Page, Shape } from "../src/shared/lib/drawing/shapes";
 
@@ -128,4 +128,16 @@ test("turning the drawing on the paper keeps its middle and the paper, and right
   close(r.x2, 3); close(r.y2, 3);
   const back = turnDrawing(right.shapes, right.fills, page, -1).shapes[0];
   close(back.x, 1); close(back.y, 1); close(back.x2, 5); close(back.y2, 1);
+});
+
+test("turning everything: the page swaps sides, a right turn is clockwise, and left undoes it", () => {
+  const path = shape({ id: "p", kind: "path", x: 1, y: 1, x2: 3, y2: 2, points: [{ x: 1, y: 1 }, { x: 3, y: 2 }] });
+  const right = turnWhole([path], [], page, 1);
+  assert.deepEqual(right.page, { w: 8.5, h: 11 });
+  // Clockwise on an 8.5-tall page: x' = 8.5 - y, y' = x.
+  const [a, z] = right.shapes[0].points!;
+  assert.ok(Math.abs(a.x - 7.5) < 1e-9 && Math.abs(a.y - 1) < 1e-9 && Math.abs(z.x - 6.5) < 1e-9 && Math.abs(z.y - 3) < 1e-9);
+  const back = turnWhole(right.shapes, right.fills, right.page, -1);
+  assert.deepEqual(back.page, page);
+  back.shapes[0].points!.forEach((p, i) => assert.ok(Math.hypot(p.x - path.points![i].x, p.y - path.points![i].y) < 1e-9));
 });

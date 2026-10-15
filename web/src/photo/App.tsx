@@ -7,6 +7,7 @@ import { FileSection } from "../shared/components/controls/FileSection";
 import { useUnits } from "../shared/lib/useUnits";
 import { PaperSection } from "../shared/components/controls/PaperSection";
 import { Section } from "../shared/components/controls/Section";
+import { Hints } from "../shared/components/controls/Hints";
 import controls from "../shared/components/controls/controls.module.css";
 import { FileBrowser } from "../shared/components/FileBrowser";
 import { HistoryToolbar, type View } from "../shared/components/PreviewToolbar";
@@ -159,6 +160,9 @@ export default function App() {
   // And the Vignette card, under Adjustments: the image darkened toward its edges.
   const [vignetteCard, setVignetteCard] = useState(() => load<boolean>("photo-vignette-card") ?? false);
   useEffect(() => remember("photo-vignette-card", vignetteCard), [vignetteCard]);
+  // And the Mask card, under Vignette: the image's edges left as paper.
+  const [maskCard, setMaskCard] = useState(() => load<boolean>("photo-mask-card") ?? false);
+  useEffect(() => remember("photo-mask-card", maskCard), [maskCard]);
 
   // None until a pen is picked: the server's None pen, first in the list (once "", before it was one).
   const [toolName, setToolName] = useState<string>(() => load<string>(TOOL_KEY) || NONE_PEN);
@@ -725,6 +729,7 @@ export default function App() {
       layersCard={layersSection}
       adjustCard={adjustSection}
       vignetteCard={vignetteSection}
+      maskCard={maskCard}
       actions={{
         replace: () => setBrowsing("replace"),
         savePreset,
@@ -817,7 +822,7 @@ export default function App() {
   // The toolbar's effect is the whole photo's. Silhouette has no tones or colours to split by, so a
   // split photo comes back together as one layer drawn that way; separations keep a plate each.
   // Whether the rail has any card to show; with none, the stage takes its width.
-  const railOut = Boolean(fileCard || paperCard || penCard || confirmNext || infoCard || (chosen?.photo && (effectCards || layersCard || adjustCard || vignetteCard)));
+  const railOut = Boolean(fileCard || paperCard || penCard || confirmNext || infoCard || (chosen?.photo && (effectCards || layersCard || adjustCard || vignetteCard || maskCard)));
 
   const setEffect = (effect: Effect) => {
     setEffectCards(true);
@@ -832,6 +837,7 @@ export default function App() {
     <div className={styles.app}>
       {/* Problems, and what's under way, across the top of the page - never on the preview's rulers. */}
       <StatusBanner message={file.lock && !(message.text && !message.ok) ? lockBanner(file.lock, () => void file.goTo("plot")) : banner} />
+      <Hints />
       <FileBrowser
         open={browsing !== null}
         endpoint="/api/studio/read"
@@ -938,7 +944,7 @@ export default function App() {
             ]}
           />
           <EffectToolbar effect={chosen?.photo ? effectOf(chosen.photo) : undefined} onEffect={setEffect} onAgain={() => setEffectCards((on) => !on)} disabled={!chosen?.photo || busy} />
-          {chosen?.photo && <AdjustToolbar on={adjustCard} toggle={() => setAdjustCard((on) => !on)} vignette={{ on: vignetteCard, toggle: () => setVignetteCard((on) => !on) }} />}
+          {chosen?.photo && <AdjustToolbar on={adjustCard} toggle={() => setAdjustCard((on) => !on)} vignette={{ on: vignetteCard, toggle: () => setVignetteCard((on) => !on) }} mask={{ on: maskCard, toggle: () => setMaskCard((on) => !on) }} />}
           {chosen?.photo && <HistoryToolbar canUndo={canUndo} canRedo={canRedo} onUndo={undo} onRedo={redo} disabled={busy} />}
         </div>
         <section className={styles.stage} aria-label="Image conversion" data-dragging-file={draggingFile || undefined} {...stageDrop}>

@@ -35,7 +35,7 @@ import { fontNames, loadFont, type StrokeFont } from "../shared/lib/drawing/font
 import { fitText } from "../shared/lib/drawing/text";
 import { type Repeat } from "../shared/lib/drawing/repeat";
 import { parseDrawing } from "../shared/lib/drawing/parse";
-import { PLATE_OFF, platesOf, placeOnPage } from "../shared/lib/drawing/photo";
+import { PLATE_OFF, platesOf, placeOnPage, readTones, turnedCopy, turnedCrop, type Photo } from "../shared/lib/drawing/photo";
 import { useHistory } from "../shared/lib/useHistory";
 import { useDrawingFile, type Current } from "../shared/lib/drawing/useDrawingFile";
 import { lockBanner, useEditLock } from "../shared/lib/useEditLock";
@@ -60,7 +60,7 @@ import { shapeIcon } from "./components/panels/ToolPicker";
 import { addPointOnLongest, boxAround, boxOf, clampToPage, groupLabel, groupsOf, moveBy, newGroupId, newLayerId, newShapeId, pointsBox, resizeTo, scaleInto, shapeName, turnAround, withWholeGroups, type Layer, type Page, type Shape } from "../shared/lib/drawing/shapes";
 import { areaPicker, silhouetteOf } from "../shared/lib/drawing/silhouette";
 import { buildSvg, svgForMarks } from "../shared/lib/drawing/svg";
-import { fitToPage, reshapeDrawing, runsOffPage, turnDrawing as turnedDrawing } from "../shared/lib/drawing/whole";
+import { fitToPage, reshapeDrawing, runsOffPage, turnWhole } from "../shared/lib/drawing/whole";
 import styles from "./App.module.css";
 
 // Page sizes, in inches, from the list Plot already offers. Stored width-first the way they're drawn
@@ -1025,15 +1025,44 @@ export default function App() {
   setShapes((list) => list.map((s) => (s.id === chosen.id ? { ...scaled, scale: percent === 100 ? undefined : percent } : s)));
  };
 
- /** Turn the whole drawing a quarter turn anticlockwise, page and all (see turnDrawingLeft). */
- /** A quarter turn of the drawing on the paper, right or left, about its middle: the paper stays. */
- const turnDrawing = (dir: 1 | -1) => {
-  if (!shapes.length) return;
+ /** The paper and everything on it a quarter turn, right or left: landscape to portrait, as a sheet is turned. */
+ // An image layer is drawn from its picture, which a shape's turn doesn't reach: the picture itself is
+ // turned instead, as Image's own turn does, and its box stands the other way round about its middle.
+ const turnedAlign = (a: FitAlign, dir: 1 | -1) => (dir < 0 ? { x: a.y, y: 1 - a.x } : { x: 1 - a.y, y: a.x }) as FitAlign;
+ const turnAll = async (dir: 1 | -1) => {
+  const turned = turnWhole(shapes, fills, page, dir);
+  const pictures = new Map<string, Pick<Photo, "src" | "width" | "height">>();
+  try {
+   for (const sh of shapes) {
+    if (sh.photo && !pictures.has(sh.photo.src)) pictures.set(sh.photo.src, await turnedCopy(sh.photo.src, dir));
+   }
+   await Promise.all([...pictures.values()].map((t) => readTones(t.src)));
+  } catch (err) {
+   setMessage({ text: `Couldn’t turn the image: ${(err as Error).message}`, ok: false });
+   return;
+  }
+  const before = new Map(shapes.map((sh) => [sh.id, sh]));
+  const next = turned.shapes.map((sh) => {
+   const was = before.get(sh.id);
+   if (!sh.photo || !was?.photo) return sh;
+   const b = boxOf(sh);
+   const cx = (b.x0 + b.x1) / 2;
+   const cy = (b.y0 + b.y1) / 2;
+   const w = b.y1 - b.y0;
+   const h = b.x1 - b.x0;
+   return {
+    ...sh,
+    x: cx - w / 2, y: cy - h / 2, x2: cx + w / 2, y2: cy + h / 2,
+    rotation: was.rotation,
+    // A picture fitted to the page is placed again by its alignment, so that turns too: on a left turn
+    // what was against the top is against the left, on a right turn against the right.
+    photo: { ...sh.photo, ...pictures.get(was.photo.src)!, crop: turnedCrop(was.photo.crop, dir), ...(was.photo.align && { align: turnedAlign(was.photo.align, dir) }), quarterTurns: (((was.photo.quarterTurns ?? 0) + dir) % 4 + 4) % 4 || undefined },
+   };
+  });
   record();
-  const turned = turnedDrawing(shapes, fills, page, dir);
+  setPage(turned.page);
   setFills(turned.fills);
-  setShapes(turned.shapes);
-  setMessage(runsOffPage(turned.shapes, page) ? { text: "The drawing now runs off the paper", ok: false } : { text: "", ok: true });
+  setShapes(next);
  };
 
  /** Scale the whole drawing by `k` about one point, then move it by `by`, leaving the paper as it is. */
@@ -1695,7 +1724,9 @@ export default function App() {
     setPage({ w: w / 25.4, h: h / 25.4 });
    }}
    onColor={pickPaperColor}
-   onTurnDrawing={shapes.length ? turnDrawing : undefined}
+   // The paper turns with the drawing: landscape to portrait with everything on it, as a sheet is turned.
+   onTurnDrawing={(dir) => void turnAll(dir)}
+   turnsPaper
    onFit={shapes.length ? fitDrawing : undefined}
   />
  );
