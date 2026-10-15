@@ -20,6 +20,7 @@ const shapes: Shape[] = [
   { id: "ellipse", kind: "ellipse", x: 4, y: 1, x2: 6, y2: 2.5, layerId: "a" },
   { id: "line", kind: "line", x: 7, y: 3, x2: 9, y2: 1, layerId: "a" },
   { id: "turned", kind: "rect", x: 1, y: 4, x2: 2, y2: 5, rotation: 30, layerId: "b" },
+  { id: "scaled", kind: "ellipse", x: 3, y: 4, x2: 3.75, y2: 4.5, scale: 150, rotation: 20, layerId: "b" },
   {
     id: "path", kind: "path", x: 4, y: 4, x2: 6, y2: 6, layerId: "b",
     points: [{ x: 4, y: 6 }, { x: 5, y: 4, in: { x: 4.5, y: 4 }, out: { x: 5.5, y: 4 } }, { x: 6, y: 6 }],
@@ -47,7 +48,7 @@ test("the page, layers and tool come back", () => {
   assert.equal(back.unsupported, 0);
 });
 
-test("every shape comes back once, on its layer, with its box, turn and copies", () => {
+test("every shape comes back once, on its layer, with its box, turn, scale and copies", () => {
   const back = reopened();
   assert.equal(back.shapes.length, shapes.length, `shapes: ${back.shapes.map((s) => s.kind).join(", ")}`);
   const layerName = (list: Layer[], id: string) => list.find((l) => l.id === id)?.name;
@@ -58,7 +59,19 @@ test("every shape comes back once, on its layer, with its box, turn and copies",
     assert.equal(layerName(back.layers, after.layerId), layerName(layers, before.layerId), `${before.id}'s layer`);
     for (const k of ["x", "y", "x2", "y2"] as const) near(after[k], before[k], `${before.id}.${k}`);
     near(after.rotation, before.rotation, `${before.id}'s turn`);
+    near(after.scale ?? 100, before.scale ?? 100, `${before.id}'s scale`);
     assert.deepEqual(after.repeat, before.repeat, `${before.id}'s copies`);
+  }
+});
+
+test("a turned shape's copies are each turned in their own place, as its fills are", () => {
+  // The turn goes inside each copy's placement. Wrapped round the whole set instead, it swings every
+  // copy's offset about the first one's middle, and Plot - which draws the file as written - shows
+  // the outlines away from the fills and from where Studio draws them.
+  const svg = buildSvg(shapes, fills, layers, page, { paperSizeId: "letter", toolName: "Paper-Mate Flair Medium" });
+  assert.doesNotMatch(svg, /<g transform="rotate\(45 [^"]+">\s*<g transform="translate/, "the turn wraps the copies");
+  for (const id of ["turnedRow", "turnedRow-r2", "turnedRow-r3"]) {
+    assert.match(svg, new RegExp(`<g transform="rotate\\(45 [^"]+">\\s*<[a-z]+[^>]*\\bid="${id}"`), `${id} is not turned on its own`);
   }
 });
 

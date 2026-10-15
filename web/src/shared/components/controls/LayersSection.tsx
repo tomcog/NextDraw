@@ -5,6 +5,7 @@ import { Section } from "./Section";
 import { isPalettePen, labelAfter, LABEL_SEPARATOR } from "../../lib/ink";
 import type { Preset } from "../../lib/types";
 import { useRowDrag } from "../../lib/useRowDrag";
+import { useTargetPaint } from "../../lib/useTargetPaint";
 import type { Layer } from "../../lib/drawing/shapes";
 import styles from "./LayersSection.module.css";
 
@@ -79,6 +80,20 @@ export function LayersSection(props: Props) {
     onStart: props.onRestackStart,
     onMove: (id, to) => props.onRestack(id, layers.length - 1 - to),
   });
+  // Press a layer's target box, or its eye, and drag down the list to do the same to every layer
+  // passed over: target or let go, show or hide.
+  const paint = useTargetPaint([
+    { control: "label", isOn: (id) => props.targets.has(id), toggle: (id) => props.onSwitch(id, true) },
+    {
+      control: "button[aria-pressed]",
+      isOn: (id) => !layers.find((l) => l.id === id)?.hidden,
+      toggle: (id) => props.onVisible(id, !!layers.find((l) => l.id === id)?.hidden),
+      // Option-click an eye: this layer shown, every other hidden. Only those that change are touched.
+      solo: (id) => layers.forEach((l) => {
+        if (!l.hidden !== (l.id === id)) props.onVisible(l.id, l.id === id);
+      }),
+    },
+  ], busy);
 
   return (
     <Section
@@ -103,7 +118,7 @@ export function LayersSection(props: Props) {
         </span>
       }
     >
-      <ul className={styles.layerList} ref={layerList}>
+      <ul className={styles.layerList} ref={layerList} {...paint.listProps}>
         {[...layers].reverse().map((layer) => {
           const at = layers.indexOf(layer); // 0 is the bottom layer, as in Plot
           // Struck through when the layer isn't one of this tool's pens by name and colour - the
@@ -113,6 +128,7 @@ export function LayersSection(props: Props) {
             <li
               key={layer.id}
               className={styles.layerRow}
+              {...paint.rowProps(layer.id)}
               data-dragging={dragging === layer.id}
               ref={(el) => {
                 if (el) layerRows.current.set(layer.id, el);
@@ -144,9 +160,11 @@ export function LayersSection(props: Props) {
                 onVisibleChange={(visible) => props.onVisible(layer.id, visible)}
                 disabled={busy}
                 // The box is a checkbox in all but looks, as a path's is: each click puts this layer
-                // in with the targeted ones or takes it out. The name, below, targets it alone.
+                // in with the targeted ones or takes it out. Option-click targets it alone, the others
+                // let go - as the name, below, does.
                 onChange={() => {}}
-                onClick={() => props.onSwitch(layer.id, true)}
+                onClick={(e) => props.onSwitch(layer.id, !e.altKey)}
+                title="Click to target this layer too, or let it go - drag down to do the same to every one you pass; Option-click to target it alone"
                 aria-label={`${props.verb ?? "Draw on"} layer ${at + 1}, ${layer.name}`}
                 label={renaming === layer.id ? (
                   <span className={styles.shapeLabel}>

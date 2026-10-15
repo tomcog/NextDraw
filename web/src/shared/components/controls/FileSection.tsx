@@ -29,6 +29,19 @@ interface Props {
  * Open and Save - in the File card every app has (FileCard).
  */
 export function FileSection({ name, onName, saved, dirty, hasShapes, busy, confirm, onSave, onOpen, onNew, collapsibleKey }: Props) {
+  // A safety-toned round button: the half of "are you sure?" that keeps the work, and the one button
+  // here that writes a file. Folded, the card keeps it beside the drawing's name.
+  const save = (
+    <ButtonRound
+      size="sm"
+      tone="safety"
+      icon={<Save />}
+      aria-label="Save"
+      title={`Save this drawing${saved ? ` to ${saved.folder}` : ""}`}
+      disabled={busy || !hasShapes || !dirty}
+      onClick={onSave}
+    />
+  );
   return (
     <FileCard
       fileName={name || null}
@@ -39,19 +52,10 @@ export function FileSection({ name, onName, saved, dirty, hasShapes, busy, confi
         <span className={controls.headerTools}>
           <ButtonRound size="sm" icon={<FilePlus />} aria-label="New drawing" title="Close this drawing and start a new one" disabled={busy} onClick={onNew} />
           <ButtonRound size="sm" icon={<FolderOpen />} aria-label="Open a drawing" title="Open another drawing in this one's place" disabled={busy} onClick={onOpen} />
-          {/* A safety-toned round button: the half of "are you sure?" that keeps the work, and the one
-              button here that writes a file. */}
-          <ButtonRound
-            size="sm"
-            tone="safety"
-            icon={<Save />}
-            aria-label="Save"
-            title={`Save this drawing${saved ? ` to ${saved.folder}` : ""}`}
-            disabled={busy || !hasShapes || !dirty}
-            onClick={onSave}
-          />
+          {save}
         </span>
       }
+      keep={save}
     >
       <InputText
         size="md"

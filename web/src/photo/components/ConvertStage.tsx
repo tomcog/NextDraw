@@ -158,7 +158,7 @@ export function ConvertStage({ photo, parts, box, page, paperColor, model, ink, 
   // the paper and the others, as inks laid on paper are. A hidden layer drops out, as from the lines.
   // A pass over a plate draws from the same picture: each plate once. A profile's inks share the
   // photo's picture, and are told apart by which ink they are.
-  const plateOf = (p: Photo) => `${p.src.length}|${p.src.slice(-48)}|${p.profile ?? ""}|${p.profileInk ?? ""}|${p.profileIntent ?? ""}`;
+  const plateOf = (p: Photo) => `${p.src.length}|${p.src.slice(-48)}|${p.profile ?? ""}|${p.profileInk ?? ""}|${p.profileIntent ?? ""}|${p.profileBpc ? "b" : ""}`;
   const plates = photo.separation
     ? parts.filter((part, i) => part.photo.separation && parts.findIndex((o) => plateOf(o.photo) === plateOf(part.photo)) === i)
     : [];

@@ -4,13 +4,16 @@
 @layer base {
   *, *::before, *::after { box-sizing: border-box; }
   html, body { margin: 0; }
+  /* A shade darker than the library's pale surface in light mode, so the white cards stand off it
+     more; dark mode keeps the library's own. */
   body {
-    background: var(--ui-surface-pale);
+    background: var(--ui-neutral-150);
     color: var(--ui-text-default);
     font-size: 15px;
     line-height: 1.45;
     min-height: 100vh;
   }
+  [data-theme="dark"] body { background: var(--ui-surface-pale); }
   [hidden] { display: none !important; }
   :focus-visible { outline: 2px solid var(--ui-action); outline-offset: 2px; }
   details > summary { cursor: pointer; }

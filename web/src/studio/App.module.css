@@ -167,6 +167,19 @@
 /* A row of round buttons in a card - what's done to a shape, what a fill is made of - wrapping when
    there are more than fit. A name of its own: sharing .tools with the column of toolbars at the left
    stood these on end, one under another. */
+/* The shape card's toolbar, and its fill's Copy and Paste pushed to the card's right edge. */
+.shapeTools {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.shapeToolsEnd {
+  margin-left: auto;
+  display: flex;
+  gap: 0.375rem;
+}
+
 .toolRow {
   display: flex;
   flex-wrap: wrap;
@@ -296,6 +309,7 @@ span.shapeName { cursor: pointer; }
   .stage { position: static; margin-left: 0; }
   .stage, .side, .tools { grid-column: auto; grid-row: auto; }
   .tools { position: static; flex-direction: row; margin-right: 0; }
+  .tools .toolsSeparator { width: 1px; height: 2rem; margin: 0 4px; } /* the column is a row: the rule stands on end */
 }
 
 /* The system colour picker, opened from "Other colour…" in a layer's pen menu. Fixed to the window and

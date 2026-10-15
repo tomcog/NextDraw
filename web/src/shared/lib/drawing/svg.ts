@@ -45,13 +45,16 @@ function allCopies(s: Shape, one: (copy: number) => string): string {
 
 function shapeMarkup(s: Shape, fonts: Record<string, StrokeFont> = {}): string {
   const b = boxOf(s);
+  // Copies carry the shape's id with a number after it, which is how reading the drawing back knows
+  // they are copies rather than shapes of their own. Copies before the turn: each copy is turned
+  // about its own middle, inside its own placement, as Studio draws it and as a fill is written.
+  // The other way round the turn wraps the whole set and swings every copy's offset with it, so
+  // Plot drew the outlines somewhere the fills and Studio were not.
+  if (s.repeat) return allCopies(s, (i) => shapeMarkup({ ...s, repeat: undefined, id: i ? `${s.id}-r${i + 1}` : s.id }, fonts));
   // A turned shape is written as its own geometry inside one turn, which every SVG reader applies -
   // and Studio reads the angle back from the design block rather than from the transform.
   const turn = turnAttr(s);
   if (turn) return `<g transform="${escapeAttr(turn)}">${shapeMarkup({ ...s, rotation: 0 }, fonts)}</g>`;
-  // Copies carry the shape's id with a number after it, which is how reading the drawing back knows
-  // they are copies rather than shapes of their own.
-  if (s.repeat) return allCopies(s, (i) => shapeMarkup({ ...s, repeat: undefined, id: i ? `${s.id}-r${i + 1}` : s.id }, fonts));
   if (s.kind === "photo" && s.photo) {
     // The hatching, one path per pass of lines, in the photo's own corner moved to where it sits.
     // In a group named after the photo, so reading the drawing back leaves the lines to be made
@@ -232,6 +235,7 @@ function designBlock(fills: Fill[], shapes: Shape[], layers: Layer[]): string {
   const photos = shapes.filter((s) => s.kind === "photo" && s.photo);
   const texts = shapes.filter((s) => s.kind === "text");
   const turned = shapes.filter((s) => s.rotation);
+  const scaled = shapes.filter((s) => s.scale && s.scale !== 100);
   const repeated = shapes.filter((s) => s.repeat);
   const smoothed = shapes.filter((s) => s.smooth && s.kind === "path");
   const named = shapes.filter((s) => s.name?.trim());
@@ -240,6 +244,9 @@ function designBlock(fills: Fill[], shapes: Shape[], layers: Layer[]): string {
     // How far each turned shape is turned. The file already draws it turned; this is what lets it be
     // picked up again as a square box with an angle, rather than as geometry nobody can resize.
     ...(turned.length ? { turned: Object.fromEntries(turned.map((s) => [s.id, s.rotation])) } : {}),
+    // The percent each scaled shape is at. The file draws it at that size already; this is only what
+    // lets the Scale field read it back, and go on changing it, when the drawing is opened again.
+    ...(scaled.length ? { scaled: Object.fromEntries(scaled.map((s) => [s.id, s.scale])) } : {}),
     // How each repeated shape repeats. The copies are all in the file for Plot to draw; this is what
     // lets Studio pick them up again as one shape drawn many times.
     ...(repeated.length ? { repeats: Object.fromEntries(repeated.map((s) => [s.id, s.repeat])) } : {}),

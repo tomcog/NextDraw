@@ -20,9 +20,13 @@ import { isVarnishLayer, joinLayerName, labelAfter, splitLayerName, VARNISH, VAR
 import { HistoryToolbar, type View } from "../shared/components/PreviewToolbar";
 import { StatusBanner } from "../shared/components/StatusBanner";
 import { AppSwitch } from "../shared/components/AppSwitch";
+import { ToolbarSeparator } from "../shared/components/ToolbarSeparator";
 import type { Zoom } from "../shared/components/BedCanvas";
-import { Canvas, type Tool } from "./components/Canvas";
+import { Canvas, isStrokeTool, type Tool } from "./components/Canvas";
+import { strokeKey, withoutStrokes } from "./lib/strokePick";
 import { mergeLines } from "./lib/mergeLines";
+import { SIGNATURE_FONT, SIGNATURE_LABEL, signatureShapes, signatureSize } from "./lib/signature";
+import { isRegistrationBlock, registrationShapes } from "./lib/registration";
 import { SizePopover } from "./components/SizePopover";
 import { StudioHeader } from "./components/StudioHeader";
 import { canFill, newFillId, shapeAsOne, type Fill } from "../shared/lib/drawing/hatch";
@@ -50,7 +54,7 @@ import { GridSection } from "./components/panels/GridSection";
 import { SIMPLIFIER_START, SimplifierSection, type SimplifierState } from "./components/panels/SimplifierSection";
 import { ToolPicker } from "./components/panels/ToolPicker";
 import { LayersSection } from "../shared/components/controls/LayersSection";
-import { addPointOnLongest, boxAround, boxOf, clampToPage, groupLabel, groupsOf, moveBy, newGroupId, newLayerId, newShapeId, pointsBox, resizeTo, shapeName, turnAround, withWholeGroups, type Layer, type Page, type Shape } from "../shared/lib/drawing/shapes";
+import { addPointOnLongest, boxAround, boxOf, clampToPage, groupLabel, groupsOf, moveBy, newGroupId, newLayerId, newShapeId, pointsBox, resizeTo, scaleInto, shapeName, turnAround, withWholeGroups, type Layer, type Page, type Shape } from "../shared/lib/drawing/shapes";
 import { areaPicker, silhouetteOf } from "../shared/lib/drawing/silhouette";
 import { buildSvg, svgForMarks } from "../shared/lib/drawing/svg";
 import { fitToPage, reshapeDrawing, runsOffPage, turnDrawing as turnedDrawing } from "../shared/lib/drawing/whole";
@@ -84,6 +88,8 @@ const TOOL_KEYS: Record<string, Tool> = {
  p: "polygon",
  s: "star",
  a: "arc",
+ d: "strokes",
+ q: "lasso",
 };
 
 const PAPER_COLOR_KEY = "studio-paper-color";
@@ -121,7 +127,7 @@ function withPhotoGroups(list: Shape[], changed: Shape[]): Shape[] {
   const lead = s.photo?.group ? leads.get(s.photo.group) : undefined;
   if (!lead || moved.has(s.id)) return s;
   return {
-   ...s, x: lead.x, y: lead.y, x2: lead.x2, y2: lead.y2, rotation: lead.rotation,
+   ...s, x: lead.x, y: lead.y, x2: lead.x2, y2: lead.y2, rotation: lead.rotation, scale: lead.scale,
    photo: { ...s.photo!, crop: lead.photo?.crop, fit: lead.photo?.fit, margin: lead.photo?.margin },
   };
  });
@@ -207,6 +213,32 @@ export default function App() {
  // was asked for is kept as it was; the selection everything else works from is that, made whole.
  const [picks, setSelected] = useState<string[]>([]);
  const selected = useMemo(() => withWholeGroups(picks, shapes), [picks, shapes]);
+ // Strokes picked with Stroke select or the Lasso - single runs of paths, by strokeKey - for Delete
+ // to take out without taking their paths apart. Only while one of those tools is in hand: taking it
+ // up lets the shapes go, putting it down lets the strokes go.
+ const [strokePick, setStrokePick] = useState<string[]>([]);
+ useEffect(() => {
+  if (isStrokeTool(tool)) setSelected([]);
+  else setStrokePick([]);
+ }, [tool]);
+ // A stroke that's gone - undone, deleted, its path joined or taken apart - is no longer picked.
+ useEffect(() => {
+  if (!strokePick.length) return;
+  const live = new Set(shapes.flatMap((sh) => (sh.runs ?? (sh.points ? [sh.points] : [])).map((_, i) => strokeKey(sh.id, i))));
+  setStrokePick((list) => (list.every((k) => live.has(k)) ? list : list.filter((k) => live.has(k))));
+ }, [shapes]); // eslint-disable-line react-hooks/exhaustive-deps
+ /** Take the picked strokes out. Their paths keep the rest; a path left with none goes, and its fill. */
+ const deleteStrokes = () => {
+  if (!strokePick.length) return;
+  const { shapes: next, gone } = withoutStrokes(shapes, new Set(strokePick));
+  record();
+  setShapes(next);
+  if (gone.length) {
+   setFills((list) => list.filter((f) => !gone.includes(f.shapeId)));
+   setSelected((current) => current.filter((id) => !gone.includes(id)));
+  }
+  setStrokePick([]);
+ };
  const pick = (id: string | null) => setSelected(id ? [id] : []);
  // Choosing a layer in the Layers card only chooses the layer: its paths are listed, but none is
  // selected until one is clicked, on the page or in the list. Whatever was selected on the layer
@@ -220,9 +252,11 @@ export default function App() {
    setSelected([]);
    return;
   }
-  const next = targets.includes(id) ? targets.filter((t) => t !== id) : [...targets, id];
-  setTargets(next);
-  setSelected((ids) => ids.filter((sid) => next.includes(shapes.find((sh) => sh.id === sid)?.layerId ?? "")));
+  // From the list as it is now, not as this render saw it: a stroke down the boxes (useTargetPaint)
+  // can switch several layers before the next render, and each must add to the last.
+  const leaving = targets.includes(id);
+  setTargets((list) => (list.includes(id) ? list.filter((t) => t !== id) : [...list, id]));
+  if (leaving) setSelected((ids) => ids.filter((sid) => shapes.find((sh) => sh.id === sid)?.layerId !== id));
  };
  const [busy, setBusy] = useState(false);
  const [browserOpen, setBrowserOpen] = useState(false);
@@ -616,18 +650,30 @@ export default function App() {
  // belong to the text. Undo brings it back, since removeShapes records first.
  const remove = useRef(removeShapes);
  remove.current = removeShapes;
+ const removeStrokes = useRef(deleteStrokes);
+ removeStrokes.current = deleteStrokes;
  useEffect(() => {
   const onKey = (e: KeyboardEvent) => {
-   if (e.key !== "Delete" && e.key !== "Backspace") return;
-   if (!selected.length || e.metaKey || e.ctrlKey || e.altKey) return;
+   if (e.key !== "Delete" && e.key !== "Backspace" && e.key !== "Escape") return;
+   if (e.metaKey || e.ctrlKey || e.altKey) return;
    const el = document.activeElement;
    if (el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement || (el as HTMLElement)?.isContentEditable) return;
+   // With Stroke select or the Lasso, Delete takes out the strokes picked - never whole shapes -
+   // and Escape lets them go.
+   if (isStrokeTool(tool)) {
+    if (!strokePick.length) return;
+    e.preventDefault();
+    if (e.key === "Escape") setStrokePick([]);
+    else removeStrokes.current();
+    return;
+   }
+   if (e.key === "Escape" || !selected.length) return;
    e.preventDefault();
    remove.current(selected);
   };
   window.addEventListener("keydown", onKey);
   return () => window.removeEventListener("keydown", onKey);
- }, [selected]);
+ }, [selected, tool, strokePick]);
 
  // Close whatever is open and begin again on a blank page. The page size stays as it is: it's the
  // paper you're working on today, and a new drawing is almost always for the same sheet.
@@ -954,6 +1000,22 @@ export default function App() {
   setShapes((list) => list.map((s) => (s.id === chosen.id ? { ...s, rotation: turn || undefined } : s)));
  };
 
+ /** Set the chosen shape's scale, about the middle of its box: a stored percent, like the turn, so
+  *  it can be changed again. The geometry moves by new / old, so 100 puts it back as it was. */
+ const setScale = (percent: number) => {
+  if (!chosen || !(percent > 0)) return;
+  const was = chosen.scale ?? 100;
+  if (percent === was) return;
+  const b = boxOf(chosen);
+  const k = percent / was;
+  const cx = (b.x0 + b.x1) / 2;
+  const cy = (b.y0 + b.y1) / 2;
+  const to = { x0: cx - ((b.x1 - b.x0) * k) / 2, y0: cy - ((b.y1 - b.y0) * k) / 2, x1: cx + ((b.x1 - b.x0) * k) / 2, y1: cy + ((b.y1 - b.y0) * k) / 2 };
+  const [scaled] = scaleInto([chosen], b, to);
+  record();
+  setShapes((list) => list.map((s) => (s.id === chosen.id ? { ...scaled, scale: percent === 100 ? undefined : percent } : s)));
+ };
+
  /** Turn the whole drawing a quarter turn anticlockwise, page and all (see turnDrawingLeft). */
  /** A quarter turn of the drawing on the paper, right or left, about its middle: the paper stays. */
  const turnDrawing = (dir: 1 | -1) => {
@@ -997,6 +1059,64 @@ export default function App() {
   setShapes((list) => list.flatMap((s) => (s.id === id ? made : [s])));
   setFills((list) => handOutFills(list, id, made));
   pick(made[0].id);
+ };
+
+ /**
+  * The signature (signature.ts): TC and this year, in the page's bottom right corner half an inch in,
+  * picked so it can be dragged where it goes. On its own layer - the one labelled Signature if there
+  * is one, else a new one in Black (or the darkest pen) - kept under Varnish, so it's plotted last
+  * and can be any pen.
+  */
+ const addSignature = async () => {
+  let font = fonts[SIGNATURE_FONT];
+  if (!font) {
+   try {
+    font = await loadFont(SIGNATURE_FONT);
+    const loaded = font;
+    setFonts((all) => ({ ...all, [SIGNATURE_FONT]: loaded }));
+   } catch (err) {
+    setMessage({ text: `Couldn't add the signature: ${(err as Error).message}`, ok: false });
+    return;
+   }
+  }
+  record();
+  let layer = layers.find((l) => splitLayerName(l.name, palette).label.trim().toLowerCase() === SIGNATURE_LABEL.toLowerCase());
+  if (!layer) {
+   const pen = palette.find((p) => p.name.toLowerCase() === "black")
+    ?? [...palette].sort((a, b) => (lightness(a.color) ?? 1) - (lightness(b.color) ?? 1))[0];
+   const made: Layer = { id: newLayerId(), name: uniqueName(joinLayerName(pen.name, SIGNATURE_LABEL), layers.map((l) => l.name)), color: pen.color };
+   layer = made;
+   setLayers((list) => {
+    const varnish = list.findIndex((l) => isVarnishLayer(l.name));
+    return varnish >= 0 ? [...list.slice(0, varnish), made, ...list.slice(varnish)] : [...list, made];
+   });
+  }
+  const year = new Date().getFullYear();
+  const size = signatureSize(year, font);
+  const inset = 0.5;
+  const at = { x: Math.max(0, page.w - inset - size.w), y: Math.max(0, page.h - inset - size.h) };
+  const made = signatureShapes(year, font, layer.id, at);
+  const on = layer.id;
+  setShapes((list) => [...list, ...made]);
+  setTargets((list) => (list.includes(on) ? list : [...list, on]));
+  setSelected(made.map((s) => s.id));
+  setTool("select");
+ };
+
+ /**
+  * Registration blocks (registration.ts): one for each layer, in the page's lower left corner half an
+  * inch in, left to right in plotting order. Any already there go first, so pressing it again after
+  * the layers change makes them afresh rather than piling up.
+  */
+ const addRegistration = () => {
+  if (!layers.length) return;
+  record();
+  const made = registrationShapes(layers, { x: 0.5, y: page.h - 0.5 });
+  const gone = new Set(shapes.filter(isRegistrationBlock).map((s) => s.id));
+  setShapes((list) => [...list.filter((s) => !gone.has(s.id)), ...made]);
+  setFills((list) => list.filter((f) => !gone.has(f.shapeId)));
+  setSelected((ids) => ids.filter((id) => !gone.has(id)));
+  setTool("select");
  };
 
  /** Bake a shape's copies into shapes of their own (see bakedCopies), each with the fills it had. */
@@ -1820,6 +1940,7 @@ export default function App() {
    <main ref={mainRef} className={styles.layout}>
     <div className={styles.tools}>
      <AppSwitch current="studio" orientation="vertical" onRefused={(why) => setMessage({ text: why, ok: false })} />
+     <ToolbarSeparator className={styles.toolsSeparator} />
      <PanelToolbar
       cards={[
        { key: "file", on: fileCard, toggle: () => setFileCard((on) => !on) },
@@ -1837,6 +1958,8 @@ export default function App() {
       layersOut={layersCard}
       onLayers={() => setLayersCard((on) => !on)}
       simplifying={simplifierCard}
+      onSignature={() => void addSignature()}
+      onRegistration={addRegistration}
       // Picked, the page picks shapes as Select does; picked again, it's put down for Select.
       onSimplify={() => {
        setTool("select");
@@ -1884,6 +2007,8 @@ export default function App() {
       onUpdate={simplifierShowing ? keepAsIs : updateShape}
       onEditStart={simplifierShowing ? keepAsIs : record}
       onPick={pickingLayer ? pickArea : undefined}
+      strokePick={strokePick}
+      onStrokePick={simplifierShowing ? () => {} : setStrokePick}
      />
     </section>
 
@@ -2077,6 +2202,7 @@ export default function App() {
         copyFill: () => setFillClipboard(fills.filter((f) => f.shapeId === chosen.id)),
         pasteFill,
         setRotation,
+        setScale,
         setRepeat,
         addPoint: () => {
          record();

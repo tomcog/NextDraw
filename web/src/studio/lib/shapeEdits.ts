@@ -49,14 +49,17 @@ export function flattened(shape: Shape, font: StrokeFont | undefined): Shape[] {
       }
     }
   } else if (shape.curve) {
+    // A polygon, a star and curve stitching are corners joined by straight lines: flattened, they stay
+    // straight. A curve through a hexagon's six corners is a circle.
+    const straight = shape.curve.kind === "polygon" || shape.curve.kind === "star" || shape.curve.kind === "parabolic";
     for (const points of curveStrokes(shape)) {
       if (points.length < 2) continue;
       const b = pointsBox(points);
       made.push({
         ...shape, id: made.length ? newShapeId() : shape.id,
-        // The curve's numbers are given up, but not its shape: the points are kept as a curve
-        // through them, so simplifying down to a handful still draws what was drawn.
-        kind: "path", points, curve: undefined, smooth: true,
+        // The curve's numbers are given up, but not its shape: the points of a curved one are kept
+        // as a curve through them, so simplifying down to a handful still draws what was drawn.
+        kind: "path", points, curve: undefined, smooth: straight ? undefined : true,
         x: b.x0, y: b.y0, x2: b.x1, y2: b.y1,
       });
     }
@@ -178,7 +181,7 @@ export function joined(shapes: Shape[], fonts: Record<string, StrokeFont>): Shap
   const b = pointsBox(runs.flatMap((run) => flattenRun(run)));
   return {
     ...picked[0], kind: "path", runs, points: undefined,
-    curve: undefined, repeat: undefined, rotation: undefined, group: undefined, groupName: undefined,
+    curve: undefined, repeat: undefined, rotation: undefined, scale: undefined, group: undefined, groupName: undefined,
     text: undefined, font: undefined, tracking: undefined, leading: undefined,
     x: b.x0, y: b.y0, x2: b.x1, y2: b.y1,
   };

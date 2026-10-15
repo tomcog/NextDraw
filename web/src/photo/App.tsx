@@ -11,6 +11,7 @@ import controls from "../shared/components/controls/controls.module.css";
 import { FileBrowser } from "../shared/components/FileBrowser";
 import { HistoryToolbar, type View } from "../shared/components/PreviewToolbar";
 import { AppSwitch } from "../shared/components/AppSwitch";
+import { ToolbarSeparator } from "../shared/components/ToolbarSeparator";
 import { StatusBanner } from "../shared/components/StatusBanner";
 import { api, postJSON } from "../shared/lib/api";
 import { PAPER_SIZES } from "../shared/lib/constants";
@@ -319,7 +320,7 @@ export default function App() {
   const {
     addPhoto, addSeparations, switchPhotoMode, setKeyLayer, splitPhoto, splitPhotoByColor, splitPhotoBestFit, bestPens,
     placePhoto, replacePhoto, reloadPhoto, savePreset, applyPreset, deletePreset, turnPhoto, setPhotoOf, addEdgeMask, chooseEdgeMask, deleteEdgeMask, setEdgeGen, saveEdgeGen, setAngles, photoStem, splitPhotoCmyk, setPlatePen, setLayerColor,
-    splitAroundPaper, setPaperTone, addPass, removePass, setChannelOf, splitPhotoProfile,
+    splitAroundPaper, setPaperTone, addPass, removePass, setChannelOf, splitPhotoProfile, exportPhotoPsd,
   } = photoActions({
     chosen, shapes, setShapes, layers, setLayers, active, setActiveLayer, page, tool,
     spacingMm: tool?.hatch?.spacing_mm ?? 1.5, targets, paper: paperColor, record, addShape, pick, setMessage, setBusy,
@@ -694,7 +695,8 @@ export default function App() {
         setEdgeGen,
         saveEdgeGen,
         switchMode: switchPhotoMode,
-        setProfile: (path: string, intent: number) => void splitPhotoProfile(path, intent),
+        setProfile: (path, rendering) => void splitPhotoProfile(path, rendering),
+        exportPsd: () => void exportPhotoPsd(),
         set: setPhotoOf,
         split: splitPhoto,
         splitByColor: splitPhotoByColor,
@@ -891,6 +893,7 @@ export default function App() {
       <main ref={mainRef} className={styles.layout} data-rail={railOut ? undefined : "none"}>
         <div className={styles.tools}>
           <AppSwitch current="photo" orientation="vertical" onRefused={(why) => setMessage({ text: why, ok: false })} />
+          <ToolbarSeparator />
           <PanelToolbar
             cards={[
               { key: "file", on: fileCard, toggle: () => setFileCard((on) => !on) },

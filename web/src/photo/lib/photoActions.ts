@@ -18,7 +18,8 @@ import { samplePhoto, type Candidate } from "./choosePens";
 import { searchPensOffPage } from "./penSearch";
 import { folderOf, pictureChannels, pictureSources, type Inks } from "./separationFolder";
 import { load, save as remember } from "../../shared/lib/storage";
-import type { InkProfile } from "../../shared/lib/drawing/icc";
+import type { InkProfile, Rendering } from "../../shared/lib/drawing/icc";
+import { exportProfilePsd } from "./profilePsd";
 
 /** The profile a photo was last split by, and its intent: what the next is split by to start with. */
 export const PROFILE_KEY = "photo-profile";
@@ -286,7 +287,7 @@ export function photoActions(ctx: PhotoContext) {
     const added: Layer[] = parts.slice(1).map((p) => ({ id: newLayerId(), name: p.layerName, color: p.layerColor }));
     // Split by a profile before: what made each layer one of its inks goes, unless the parts say again.
     const from = base.photo!.profile
-      ? { ...base.photo!, profile: undefined, profileName: undefined, profileIntent: undefined, profileInk: undefined, separation: undefined, channelBrightness: undefined, channelContrast: undefined, channelBlackPoint: undefined, blackPoint: undefined }
+      ? { ...base.photo!, profile: undefined, profileName: undefined, profileIntent: undefined, profileBpc: undefined, profileInk: undefined, separation: undefined, channelBrightness: undefined, channelContrast: undefined, channelBlackPoint: undefined, blackPoint: undefined }
       : base.photo!;
     const made: Shape[] = parts.map((p, i) => ({
       ...base,
@@ -331,7 +332,7 @@ export function photoActions(ctx: PhotoContext) {
     const modes = from === "profile" || from === "separations" ? { ...(chosen.photo.modes ?? {}) } : { ...(chosen.photo.modes ?? {}), [from]: photoParts() };
     if (to === "profile") {
       // The profile split by last, while it's still in the folder; or the folder's first.
-      const last = load<{ file?: string; path?: string; intent?: number }>(PROFILE_KEY);
+      const last = load<{ file?: string; path?: string; intent?: number; bpc?: boolean }>(PROFILE_KEY);
       void (async () => {
         const { profiles, folder } = await api<{ profiles: { file: string }[]; folder: string }>("/api/color-profiles").catch(() => ({ profiles: [], folder: "" }));
         const was = baseName(last?.file ?? last?.path ?? "");
@@ -340,7 +341,7 @@ export function photoActions(ctx: PhotoContext) {
           setMessage({ text: `No color profiles to split by yet: put printer profiles (.icc) in ${folder || "the Color profiles folder"}, then choose Profile again`, ok: false });
           return;
         }
-        await splitPhotoProfile(file, last?.intent ?? 0, { modes });
+        await splitPhotoProfile(file, { intent: last?.intent ?? 0, bpc: last?.bpc }, { modes });
       })();
       return;
     }
@@ -372,7 +373,7 @@ export function photoActions(ctx: PhotoContext) {
     * other, the color the profile gives it. Layers stack lightest at the bottom. The profile is
     * remembered, for the next photo split this way.
     */
-  const splitPhotoProfile = async (file: string, intent = 0, extra: Partial<Photo> = {}) => {
+  const splitPhotoProfile = async (file: string, { intent = 0, bpc = false }: Rendering = {}, extra: Partial<Photo> = {}) => {
     if (!chosen?.photo) return;
     setMessage({ text: "Reading the profile…", ok: true, progress: true });
     let profile: InkProfile;
@@ -386,7 +387,7 @@ export function photoActions(ctx: PhotoContext) {
       setMessage({ text: `Couldn't use that profile: ${(err as Error).message}`, ok: false });
       return;
     }
-    remember(PROFILE_KEY, { file: path, intent });
+    remember(PROFILE_KEY, { file: path, intent, bpc });
     const pens = tool2?.palette ?? [];
     const inkNames = profile.names ?? Array.from({ length: profile.inks }, (_, i) => `Channel ${i + 1}`);
     const found = inkNames.map((ink) => inkNamed(ink, pens));
@@ -406,7 +407,7 @@ export function photoActions(ctx: PhotoContext) {
         photo: {
           band: undefined, side: undefined, paperTone: undefined, key: undefined, keyInk: undefined, regions: undefined, region: undefined, regionInks: undefined,
           fitPaper: undefined, fitPairs: undefined, plate: undefined, plates: undefined, ink: undefined,
-          profile: path, profileName: name, profileIntent: intent || undefined, profileInk: i, separation: ink,
+          profile: path, profileName: name, profileIntent: intent || undefined, profileBpc: bpc || undefined, profileInk: i, separation: ink,
           ...extra,
         } as Partial<Photo>,
       };
@@ -1342,8 +1343,26 @@ export function photoActions(ctx: PhotoContext) {
     }));
   };
 
+  /**
+   * The chosen photo, split by its profile as Image has it - the same intent and black point
+   * compensation - written as a Multichannel Photoshop file, a channel per ink, and downloaded.
+   */
+  const exportPhotoPsd = async () => {
+    if (!chosen?.photo?.profile) return;
+    setMessage({ text: "Making the Photoshop file…", ok: true, progress: true });
+    try {
+      const made = await exportProfilePsd(chosen.photo, photoStem().name);
+      // Full size goes unsaid, as anything done as asked; smaller than the photo is worth knowing.
+      setMessage(made.full
+        ? { text: "", ok: true }
+        : { text: `Downloaded ${made.name} at Image's working size, ${made.width} × ${made.height}: the original file isn't one Image knows. Open the photo from NextDraw's file browser to export it at full size`, ok: false });
+    } catch (err) {
+      setMessage({ text: `Couldn't make the Photoshop file: ${(err as Error).message}`, ok: false });
+    }
+  };
+
   return {
-    setChannelOf, splitPhotoProfile,
+    setChannelOf, splitPhotoProfile, exportPhotoPsd,
     addPhoto, addSeparations, switchPhotoMode, setKeyLayer, splitPhoto, splitPhotoByColor, splitPhotoBestFit, bestPens,
     placePhoto, replacePhoto, reloadPhoto, savePreset, applyPreset, deletePreset, turnPhoto, setPhotoOf, addEdgeMask, chooseEdgeMask, deleteEdgeMask, setEdgeGen, saveEdgeGen, setAngles, photoStem, splitPhotoCmyk, setPlatePen, setLayerColor,
     splitAroundPaper, setPaperTone, addPass, removePass,

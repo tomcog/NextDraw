@@ -7,7 +7,7 @@ import { colorNamed } from "../colorNames";
 import { FIT_CENTERED, type FitAlign } from "../geometry";
 import { edgeForLayer, edgeGenFromData, edgeGenKey, edgeKeep, type EdgeGen } from "./edgeMask";
 import { vignetted, vignetteFromData, vignetteKey, vignetteOn, vignetteStrength, type Vignette } from "./vignette";
-import { inksOf, parseProfile, type InkProfile } from "./icc";
+import { inksOf, parseProfile, usesBpc, type InkProfile } from "./icc";
 import type { Point } from "./parametric";
 import { fitNodes, pathData, type Node } from "./path";
 
@@ -51,6 +51,9 @@ export interface Photo {
   profile?: string;
   profileName?: string;
   profileIntent?: number;
+  /** Black point compensation, for Relative colorimetric: the photo's black brought to the inks' own
+   *  rather than clipped (see icc.ts, pcsFit). Absent, off. */
+  profileBpc?: boolean;
   profileInk?: number;
   /** -100 to 100: greyer or more vivid - -100 grey, 100 twice as colourful. The lightness stays. Absent, 0. */
   saturation?: number;
@@ -811,23 +814,29 @@ const saturatedCache = new Map<string, Tones>();
  * toward or away from its own grey - the lightness the photo is read by - so a black and white reading
  * of it is the same, and only its colours change. Worked out once for each photo and amount.
  */
+/** Pixels made greyer or more colourful about their own grey (see saturatedTones), into `out` - which
+ *  may be `rgba` itself, for a whole photo too big to copy. */
+export function saturate(rgba: Uint8ClampedArray, sat: number, out: Uint8ClampedArray = rgba): Uint8ClampedArray {
+  const k = 1 + Math.max(-100, Math.min(100, sat)) / 100;
+  for (let i = 0; i < rgba.length; i += 4) {
+    const r = rgba[i];
+    const g = rgba[i + 1];
+    const b = rgba[i + 2];
+    const grey = 0.2126 * r + 0.7152 * g + 0.0722 * b;
+    out[i] = grey + (r - grey) * k;
+    out[i + 1] = grey + (g - grey) * k;
+    out[i + 2] = grey + (b - grey) * k;
+    out[i + 3] = rgba[i + 3];
+  }
+  return out;
+}
+
 function saturatedTones(src: string, tones: Tones, sat: number): Tones {
   if (!sat) return tones;
   const key = `${src.length}|${src.slice(-32)}|${sat}`;
   const known = saturatedCache.get(key);
   if (known) return known;
-  const k = 1 + Math.max(-100, Math.min(100, sat)) / 100;
-  const rgba = new Uint8ClampedArray(tones.rgba.length);
-  for (let i = 0; i < rgba.length; i += 4) {
-    const r = tones.rgba[i];
-    const g = tones.rgba[i + 1];
-    const b = tones.rgba[i + 2];
-    const grey = 0.2126 * r + 0.7152 * g + 0.0722 * b;
-    rgba[i] = grey + (r - grey) * k;
-    rgba[i + 1] = grey + (g - grey) * k;
-    rgba[i + 2] = grey + (b - grey) * k;
-    rgba[i + 3] = tones.rgba[i + 3];
-  }
+  const rgba = saturate(tones.rgba, sat, new Uint8ClampedArray(tones.rgba.length));
   const made = { ...tones, rgba, sat };
   if (saturatedCache.size > 4) saturatedCache.delete(saturatedCache.keys().next().value!);
   saturatedCache.set(key, made);
@@ -1113,8 +1122,10 @@ const pathHash = (path: string) => {
  * What an ink's share of the photo is kept under, as though it were a picture of its own - so every
  * cache keyed by a photo's picture tells one ink from another. Ends with what tells them apart.
  */
-const profileKey = (p: Pick<Photo, "src" | "profile" | "profileIntent" | "profileInk" | "saturation">) =>
-  `${p.src}#icc|${pathHash(p.profile!)}|${p.profileIntent ?? 0}|${p.saturation ?? 0}|${p.profileInk ?? 0}`;
+const profileKey = (p: Pick<Photo, "src" | "profile" | "profileIntent" | "profileBpc" | "profileInk" | "saturation">) =>
+  `${p.src}#icc|${pathHash(p.profile!)}|${p.profileIntent ?? 0}${bpcKey(p)}|${p.saturation ?? 0}|${p.profileInk ?? 0}`;
+/** Black point compensation, in a key only where it changes anything: older keys stay as they were. */
+const bpcKey = (p: Pick<Photo, "profileIntent" | "profileBpc">) => (p.profileBpc && usesBpc(p.profileIntent ?? 0) ? "b" : "");
 const splitting = new Set<string>();
 
 /**
@@ -1126,13 +1137,13 @@ export function profiled(p: Photo): Photo | null {
   if (!p.profile) return p;
   const key = profileKey(p);
   if (tonesCache.has(key)) return { ...p, src: key };
-  const whole = `${p.src}#icc|${pathHash(p.profile)}|${p.profileIntent ?? 0}|${p.saturation ?? 0}`;
+  const whole = `${p.src}#icc|${pathHash(p.profile)}|${p.profileIntent ?? 0}${bpcKey(p)}|${p.saturation ?? 0}`;
   if (!splitting.has(whole)) {
     splitting.add(whole);
     Promise.all([loadProfile(p.profile), readTones(p.src)])
       .then(([profile, tones]) => {
         // Split from the colors as saturated: more vivid, more of the colored inks; greyer, more black.
-        const inks = inksOf(profile, saturatedTones(p.src, tones, p.saturation ?? 0).rgba, p.profileIntent ?? 0);
+        const inks = inksOf(profile, saturatedTones(p.src, tones, p.saturation ?? 0).rgba, { intent: p.profileIntent ?? 0, bpc: p.profileBpc });
         inks.forEach((ink, i) => {
           const light = new Float32Array(ink.length);
           const rgba = new Uint8ClampedArray(ink.length * 4);
@@ -4728,7 +4739,8 @@ export function photoFromData(raw: Record<string, unknown>): Photo | null {
     ...(typeof raw.profile === "string" && raw.profile ? {
       profile: raw.profile,
       ...(typeof raw.profile_name === "string" ? { profileName: raw.profile_name } : {}),
-      ...([1, 2].includes(Number(raw.profile_intent)) ? { profileIntent: Number(raw.profile_intent) } : {}),
+      ...([1, 2, 3].includes(Number(raw.profile_intent)) ? { profileIntent: Number(raw.profile_intent) } : {}),
+      ...(raw.profile_bpc === true ? { profileBpc: true } : {}),
       profileInk: Math.max(0, Math.floor(num(raw.profile_ink, 0))),
     } : {}),
     angle: num(raw.angle, PHOTO_DEFAULTS.angle),
@@ -4841,7 +4853,7 @@ export const photoData = (p: Photo) => ({
   ...(p.channelContrast ? { channel_contrast: p.channelContrast } : {}),
   ...(p.channelBlackPoint ? { channel_black_point: p.channelBlackPoint } : {}),
   ...(p.blackPoint ? { black_point: p.blackPoint } : {}),
-  ...(p.profile ? { profile: p.profile, profile_name: p.profileName, profile_intent: p.profileIntent || undefined, profile_ink: p.profileInk ?? 0 } : {}),
+  ...(p.profile ? { profile: p.profile, profile_name: p.profileName, profile_intent: p.profileIntent || undefined, profile_bpc: p.profileBpc || undefined, profile_ink: p.profileInk ?? 0 } : {}),
   angle: p.angle, spacing_mm: p.spacingMm, levels: p.levels,
   ...(p.source ? { source: p.source } : {}),
   ...(p.source && p.sourceChannel !== undefined ? { source_channel: p.sourceChannel } : {}),

@@ -86,6 +86,9 @@ export interface Pick {
 // Where the browser opens, in both apps: the last folder browsed, or the folder of the drawing last
 // saved or opened, so a file just saved in Studio is the first thing Plot's browser shows.
 export const LAST_FOLDER_KEY = "nextdraw-studio-last-folder";
+// How the files are listed, in every app: by name, or newest first.
+const SORT_KEY = "nextdraw-file-browser-sort";
+type Sort = "name" | "date";
 
 const fmtSize = (bytes = 0) =>
   bytes < 1024 ? `${bytes} B` : bytes < 1024 * 1024 ? `${Math.round(bytes / 1024)} KB` : `${(bytes / 1024 / 1024).toFixed(1)} MB`;
@@ -106,6 +109,12 @@ export function FileBrowser({ open, onClose, onOpened, endpoint = "/api/open", c
   const [stackChoice, setStackChoice] = useState<{ add: boolean; svgNames: string[]; files: Entry[] } | null>(null);
   const [adding, setAdding] = useState(false); // the "add a folder" row is open
   const [newFolder, setNewFolder] = useState("");
+  const [sort, setSort] = useState<Sort>(() => (load<Sort>(SORT_KEY) === "date" ? "date" : "name"));
+  useEffect(() => save(SORT_KEY, sort), [sort]);
+  // By date, the newest first - what was just saved or exported at the top. Folders stay by name.
+  const files = sort === "date"
+    ? [...(listing?.files ?? [])].sort((a, b) => (b.modified ?? 0) - (a.modified ?? 0))
+    : listing?.files ?? [];
 
   const browse = async (path?: string) => {
     setError(null);
@@ -319,6 +328,10 @@ export function FileBrowser({ open, onClose, onOpened, endpoint = "/api/open", c
             onClick={() => listing?.parent && browse(listing.parent)}
           />
           <span className={styles.path} title={listing?.path}>{listing?.display ?? "…"}</span>
+          <SegmentedControl size="sm" aria-label="Sort files by" className={styles.sort}>
+            <Segment selected={sort === "name"} onClick={() => setSort("name")} title="Files in name order">Name</Segment>
+            <Segment selected={sort === "date"} onClick={() => setSort("date")} title="Files by date changed, the newest first">Date</Segment>
+          </SegmentedControl>
         </div>
       </div>
 
@@ -359,7 +372,7 @@ export function FileBrowser({ open, onClose, onOpened, endpoint = "/api/open", c
               </button>
             </li>
           ))}
-          {listing?.files.map((file) => {
+          {files.map((file) => {
             const at = ticked.findIndex((f) => f.path === file.path);
             return (
             <li key={file.path} className={combine || pick ? styles.tickable : undefined}>

@@ -93,4 +93,5 @@
   .stage { position: static; margin-left: 0; }
   .stage, .side, .tools { grid-column: auto; grid-row: auto; } /* one column: the preview first, then the controls */
   .tools { position: static; flex-direction: row; margin-right: 0; }
+  .tools .toolsSeparator { width: 1px; height: 2rem; margin: 0 4px; } /* the column is a row: the rule stands on end */
 }

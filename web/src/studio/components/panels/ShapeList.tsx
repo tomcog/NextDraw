@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { Button, ButtonRound, LayerController } from "@tomcoggia/ui";
+import { useTargetPaint } from "../../../shared/lib/useTargetPaint";
 import { EllipsisVertical, Image as ImageIcon, MousePointer2, RotateCcwSquare, RotateCwSquare, Shapes, Trash2 } from "lucide-react";
 import { NumberField } from "../../../shared/components/controls/NumberField";
 import { Section } from "../../../shared/components/controls/Section";
@@ -72,11 +73,39 @@ function rowsOf(shapes: Shape[]): Row[] {
  */
 export function ShapeList({ layers, shapes, picked, busy, renaming, rowMenuId, onPick, onDeleteAll, onSelectAll, hidden, onVisible, onTurn, onRenameType, onRenameCancel, onRenameDone, onRowMenu, onGroupMenu }: Props) {
   const [turnBy, setTurnBy] = useState(15);
+  const rows = rowsOf(shapes);
+  // Press a row's box, or its eye, and drag down the list to do the same to every row passed over:
+  // pick or let go, show or hide. A shape's row stands for all its paths, and is picked through the
+  // first of them, as its box is.
+  const rowById = new Map(rows.map((row) => (row.kind === "shape"
+    ? [row.id, { pick: row.members[0].id, ids: row.members.map((m) => m.id) }]
+    : [row.shape.id, { pick: row.shape.id, ids: [row.shape.id] }])));
+  const paint = useTargetPaint([
+    {
+      control: "label",
+      isOn: (id) => !!rowById.get(id)?.ids.every((one) => picked.has(one)),
+      toggle: (id) => { const row = rowById.get(id); if (row) onPick(row.pick, true); },
+    },
+    {
+      control: "button[aria-pressed]",
+      isOn: (id) => !rowById.get(id)?.ids.every((one) => hidden.has(one)),
+      toggle: (id) => {
+        const row = rowById.get(id);
+        if (row) onVisible(row.ids, row.ids.every((one) => hidden.has(one)));
+      },
+      // Option-click an eye: this one shown, every other path on the list hidden.
+      solo: (id) => {
+        const row = rowById.get(id);
+        if (!row) return;
+        onVisible([...rowById.values()].filter((r) => r !== row).flatMap((r) => r.ids), false);
+        onVisible(row.ids, true);
+      },
+    },
+  ], busy);
   if (!shapes.length) return null;
   // One layer is named; several, worked on as one, are said by their dots alone.
   const one = layers.length === 1 ? layers[0] : null;
   const what = one ? one.name : "the targeted layers";
-  const rows = rowsOf(shapes);
   return (
     <Section
       // The layer's ink in front of its name: the card is the paths on that layer, and says so by
@@ -124,7 +153,7 @@ export function ShapeList({ layers, shapes, picked, busy, renaming, rowMenuId, o
         another layer is picked, as the card is. */}
       <div className={styles.pathsSection}>
       <Section title="Paths" collapsibleKey="paths-on-layer" defaultOpen={false} forget>
-      <ul className={styles.shapeList}>
+      <ul className={styles.shapeList} {...paint.listProps}>
         {rows.slice(0, SHAPE_LIST_LIMIT).map((row) => {
           // A shape stands for its paths: one row, its own name, the box round all of them, and its
           // own menu. Picking it picks every one of its paths.
@@ -138,7 +167,7 @@ export function ShapeList({ layers, shapes, picked, busy, renaming, rowMenuId, o
           return (
             // The same row a layer has: its number, its name, and the same kebab
             // after it - with the size where a layer keeps its eye.
-            <li key={id} className={styles.layerRow}>
+            <li key={id} className={styles.layerRow} {...paint.rowProps(id)}>
               <LayerController
                 // A group of its own per row: several shapes can be picked at once,
                 // and a browser only ever lets one radio of a group be on.
@@ -165,11 +194,13 @@ export function ShapeList({ layers, shapes, picked, busy, renaming, rowMenuId, o
                 // The box is a checkbox in all but looks: each click puts this path (or
                 // shape) into the selection or takes it out, so any number can be picked
                 // from the list without Shift. The click decides, not the radio, which
-                // would otherwise let only one be on. The name, below, picks it alone. No
+                // would otherwise let only one be on. Option-click picks it alone, the others
+                // let go - as the name, below, does, and as a layer's box does. No
                 // preventDefault: undoing the browser's click after React has set the box
                 // would leave it showing the click before.
                 onChange={() => {}}
-                onClick={() => onPick(sh.id, true)}
+                onClick={(e) => onPick(sh.id, !e.altKey)}
+                title={`Click to pick this ${group ? "shape" : "path"} too, or let it go - drag down to do the same to every one you pass; Option-click to pick it alone`}
                 label={
                   <span className={styles.shapeLabel}>
                     {/* The name is text: clicking the row picks the shape, and a field

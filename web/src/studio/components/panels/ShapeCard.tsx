@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
-import { Button, ButtonRound, Card, Checkbox } from "@tomcoggia/ui";
-import { ArrowDownLeft, ArrowDownRight, ArrowDownToLine, ArrowUpLeft, ArrowUpRight, Ellipsis, FlameKindling, Grid2x2, LineStyle, Orbit, PaintBucket, PaintRoller, Pipette, RotateCw, SquareStack } from "lucide-react";
+import { Button, ButtonRound, Card, Checkbox, Segment, SegmentedControl, Toolbar } from "@tomcoggia/ui";
+import { ArrowDownLeft, ArrowDownRight, ArrowDownToLine, ArrowUpLeft, ArrowUpRight, Ellipsis, FlameKindling, Grid2x2, Orbit, PaintBucket, PaintRoller, Pipette, RotateCw, Scaling, Spline, SquareStack } from "lucide-react";
 import { Section } from "../../../shared/components/controls/Section";
 import { NumberField } from "../../../shared/components/controls/NumberField";
 import controls from "../../../shared/components/controls/controls.module.css";
@@ -11,7 +11,7 @@ import { pathRuns, POINT_HANDLE_LIMIT, type Shape } from "../../../shared/lib/dr
 import styles from "../../App.module.css";
 
 /** Which of the shape's settings are on show, if any: one at a time. */
-export type ShapePanel = "simplify" | "fill" | "rotate" | "repeat" | null;
+export type ShapePanel = "simplify" | "fill" | "rotate" | "scale" | "repeat" | null;
 
 // How a shape repeats, as the row of round buttons in the Repeat card: one of them is always on.
 const REPEATS: { kind: RepeatKind; label: string; hint: string; icon: JSX.Element }[] = [
@@ -37,6 +37,8 @@ export interface ShapeActions {
   copyFill: () => void;
   pasteFill: () => void;
   setRotation: (deg: number) => void;
+  /** Set the shape's scale, in percent of the size it was drawn at, about the middle of its box. */
+  setScale: (percent: number) => void;
   setRepeat: (repeat: Repeat | undefined) => void;
   bake: (id: string) => void;
   /** A varnish mask: a point halfway along its longest edge, to drag where it's wanted. */
@@ -92,6 +94,7 @@ export function ShapeCard({ shape, title, busy, hasFill, canPaste, panel, onPane
   const filling = panel === "fill";
   const repeating = panel === "repeat";
   const rotating = panel === "rotate";
+  const scaling = panel === "scale";
   return (
     <Card variant="flat" className={styles.controls}>
       <div className={`${styles.cardBody} ${controls.cardSections}`}>
@@ -186,78 +189,68 @@ export function ShapeCard({ shape, title, busy, hasFill, canPaste, panel, onPane
               {`Split into ${shape.runs?.length} paths`}
             </Button>
           )}
-          <div className={styles.toolRow} role="group" aria-label="What is done to this shape">
-            {/* Simplify keeps its button here rather than in the row's menu: it opens a
-              tolerance to type, and you come back to it until the points are where you
-              want them. */}
-            {shape.kind === "path" && (
-              <ButtonRound
-                size="sm"
-                icon={<LineStyle />}
-                className={simplifying ? controls.roundActive : undefined}
-                aria-label="Simplify"
-                aria-expanded={simplifying}
-                aria-pressed={simplifying}
-                title="Simplify: take out the points the path can do without"
-                onClick={() => onPanel("simplify")}
-              />
+          {/* What is done to the shape, one setting open at a time: a toolbar of its own (the library's,
+            as the left-hand ones are). Its fill's Copy and Paste sit apart at the card's right edge. */}
+          <div className={styles.shapeTools}>
+            <Toolbar aria-label="What is done to this shape">
+              {/* Three groups in the one bar: what fills the shape, what moves and repeats it, and
+                what thins its points. Still one setting open at a time - the panel decides that, not
+                the groups. Simplify comes last, with the Simplifier's own icon, since it is the same
+                work done to this path alone. */}
+              {/* Only a shape with an inside can be hatched. */}
+              {canFill(shape) && (
+                <SegmentedControl size="sm" variant="dark" aria-label="Fill">
+                  <Segment selected={filling} icon={<PaintBucket />} hideLabel title="Hatch: fill this path with lines, and set how they run" onClick={() => onPanel("fill")}>
+                    Hatch
+                  </Segment>
+                </SegmentedControl>
+              )}
+              <SegmentedControl size="sm" variant="dark" aria-label="Place">
+                <Segment selected={rotating} icon={<RotateCw />} hideLabel title="Rotate: turn this path about the middle of its box" onClick={() => onPanel("rotate")}>
+                  Rotate
+                </Segment>
+                <Segment selected={scaling} icon={<Scaling />} hideLabel title="Scale: make this path bigger or smaller, about the middle of its box" onClick={() => onPanel("scale")}>
+                  Scale
+                </Segment>
+                <Segment selected={repeating} icon={<SquareStack />} hideLabel title="Repeat: draw this path more than once, in a row, a grid or a ring" onClick={() => onPanel("repeat")}>
+                  Repeat
+                </Segment>
+              </SegmentedControl>
+              {/* Simplify keeps its place here rather than in a menu: it opens a tolerance to type,
+                and you come back to it until the points are where you want them. */}
+              {shape.kind === "path" && (
+                <SegmentedControl size="sm" variant="dark" aria-label="Points">
+                  <Segment selected={simplifying} icon={<Spline />} hideLabel title="Simplify: take out the points the path can do without" onClick={() => onPanel("simplify")}>
+                    Simplify
+                  </Segment>
+                </SegmentedControl>
+              )}
+            </Toolbar>
+            {(hasFill || (canFill(shape) && canPaste)) && (
+              <div className={styles.shapeToolsEnd}>
+                {/* Copy a shape's fill, then paste it onto another: a fill set up once, used again. */}
+                {hasFill && (
+                  <ButtonRound
+                    size="sm"
+                    icon={<Pipette />}
+                    aria-label="Copy fill"
+                    title="Copy fill: pick up this path's fill, to paste onto another path"
+                    disabled={busy}
+                    onClick={actions.copyFill}
+                  />
+                )}
+                {canFill(shape) && canPaste && (
+                  <ButtonRound
+                    size="sm"
+                    icon={<PaintRoller />}
+                    aria-label="Paste fill"
+                    title="Paste fill: give this path the fill you copied, in place of its own"
+                    disabled={busy}
+                    onClick={actions.pasteFill}
+                  />
+                )}
+              </div>
             )}
-            {/* Only a shape with an inside can be hatched. */}
-            {canFill(shape) && (
-              <ButtonRound
-                size="sm"
-                icon={<PaintBucket />}
-                className={filling ? controls.roundActive : undefined}
-                aria-label="Hatch"
-                aria-expanded={filling}
-                aria-pressed={filling}
-                title="Hatch: fill this path with lines, and set how they run"
-                onClick={() => onPanel("fill")}
-              />
-            )}
-            {/* Copy a shape's fill, then paste it onto another: a fill set up once, used again. */}
-            {hasFill && (
-              <ButtonRound
-                size="sm"
-                icon={<Pipette />}
-                aria-label="Copy fill"
-                title="Copy fill: pick up this path's fill, to paste onto another path"
-                disabled={busy}
-                onClick={actions.copyFill}
-              />
-            )}
-            {canFill(shape) && canPaste && (
-              <ButtonRound
-                size="sm"
-                icon={<PaintRoller />}
-                aria-label="Paste fill"
-                title="Paste fill: give this path the fill you copied, in place of its own"
-                disabled={busy}
-                onClick={actions.pasteFill}
-              />
-            )}
-            {/* One button per thing that can be done to a shape as a whole, each opening its
-              own settings: how far it is turned, and how many of it there are. */}
-            <ButtonRound
-              size="sm"
-              icon={<RotateCw />}
-              className={rotating ? controls.roundActive : undefined}
-              aria-label="Rotate"
-              aria-expanded={rotating}
-              aria-pressed={rotating}
-              title="Rotate: turn this path about the middle of its box"
-              onClick={() => onPanel("rotate")}
-            />
-            <ButtonRound
-              size="sm"
-              icon={<SquareStack />}
-              className={repeating ? controls.roundActive : undefined}
-              aria-label="Repeat"
-              aria-expanded={repeating}
-              aria-pressed={repeating}
-              title="Repeat: draw this path more than once, in a row, a grid or a ring"
-              onClick={() => onPanel("repeat")}
-            />
           </div>
 
           {shape.kind === "path" && simplifying && (() => {
@@ -293,6 +286,18 @@ export function ShapeCard({ shape, title, busy, hasFill, canPaste, panel, onPane
               step={5}
               value={shape.rotation ?? 0}
               onChange={actions.setRotation}
+            />
+          )}
+
+          {scaling && (
+            <NumberField
+              label="Scale"
+              unit="%"
+              min={1}
+              max={1000}
+              step={5}
+              value={shape.scale ?? 100}
+              onChange={actions.setScale}
             />
           )}
 

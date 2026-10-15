@@ -11,7 +11,7 @@ import { boxOf, type Shape } from "../../shared/lib/drawing/shapes";
 import type { PenColor } from "../../shared/lib/types";
 import styles from "../App.module.css";
 import { EFFECTS, effectOf } from "./EffectToolbar";
-import { INTENTS } from "../../shared/lib/drawing/icc";
+import { INTENTS, usesBpc, type Rendering } from "../../shared/lib/drawing/icc";
 
 /** What the card does to the photo. Each acts on the chosen photo, and on all its layers where it should. */
 export interface PhotoActions {
@@ -41,8 +41,11 @@ export interface PhotoActions {
   /** Keep the made edge in the library as a picture. */
   saveEdgeGen: (taken: string[]) => Promise<void>;
   switchMode: (to: "value" | "colour" | "cmyk" | "profile") => void;
-  /** Split the image by a printer's color profile, by its path, at a rendering intent (0 to 2). */
-  setProfile: (path: string, intent: number) => void;
+  /** Split the image by a printer's color profile, by its path, at a rendering intent (0 to 3) and
+   *  with or without black point compensation. */
+  setProfile: (path: string, rendering: Rendering) => void;
+  /** The image as the profile's inks, a Multichannel Photoshop file, downloaded. */
+  exportPsd: () => void;
   /** Change settings of the photo - this layer's, or every layer's when "All layers" is on. */
   set: (patch: Partial<Photo>) => void;
   split: (count: number) => void;
@@ -120,7 +123,7 @@ export function PhotoCard({ shape, title, shapes, busy, targeted, layerCount, sh
   const presetsBlocked = Boolean(photo.separation && !photo.profile);
   // The printer profiles in NextDraw's Color profiles folder: read once Profile is chosen, and again
   // after the folder is opened to add some.
-  const [profiles, setProfiles] = useState<{ name: string; file: string; inks: number }[]>([]);
+  const [profiles, setProfiles] = useState<{ name: string; file: string; inks: number; black?: boolean }[]>([]);
   const readProfiles = () => api<{ profiles: typeof profiles }>("/api/color-profiles").then((r) => setProfiles(r.profiles)).catch(() => {});
   useEffect(() => {
     if (photo.profile && !profiles.length) void readProfiles();
@@ -158,6 +161,7 @@ export function PhotoCard({ shape, title, shapes, busy, targeted, layerCount, sh
   }, [noProfiles]); // eslint-disable-line react-hooks/exhaustive-deps
   // A drawing from before the folder kept the profile's whole path: its file name is what's listed.
   const profileFile = photo.profile ? photo.profile.slice(photo.profile.lastIndexOf("/") + 1) : "";
+  const rendering: Rendering = { intent: photo.profileIntent ?? 0, bpc: photo.profileBpc };
   // A mask this drawing carries that isn't in the library: added before there was one, or taken out since.
   const ownMask = Boolean(photo.edgeMask) && !masks.includes(photo.edgeMaskName ?? "");
   // Mask edges is ticked while the image has a mask, or once ticked to choose one.
@@ -257,7 +261,7 @@ export function PhotoCard({ shape, title, shapes, busy, targeted, layerCount, sh
                 label="Profile"
                 value={profileFile}
                 title={profileFile}
-                onChange={(e) => actions.setProfile(e.target.value, photo.profileIntent ?? 0)}
+                onChange={(e) => actions.setProfile(e.target.value, rendering)}
               >
                 {!profiles.some((p) => p.file === profileFile) && <option value={profileFile}>{photo.profileName ?? profileFile}</option>}
                 {profiles.map((p) => <option key={p.file} value={p.file}>{`${p.name} - ${p.inks} inks`}</option>)}
@@ -267,10 +271,25 @@ export function PhotoCard({ shape, title, shapes, busy, targeted, layerCount, sh
                 label="Intent"
                 value={String(photo.profileIntent ?? 0)}
                 title="How the photo's colors are fitted to the inks: Perceptual keeps how they relate, Relative colorimetric keeps the ones the inks can make exact, Saturation keeps them vivid"
-                onChange={(e) => actions.setProfile(photo.profile!, Number(e.target.value))}
+                onChange={(e) => actions.setProfile(photo.profile!, { ...rendering, intent: Number(e.target.value) })}
               >
                 {INTENTS.map((name, i) => <option key={name} value={i}>{name}</option>)}
               </InputSelect>
+              {/* Only where it changes anything: Perceptual and Saturation bring the black down in
+                their own tables, Absolute keeps the paper's, and a profile that doesn't say where
+                its inks' black is (IA ECG B1C X) gives it nothing to work from. */}
+              {usesBpc(rendering.intent ?? 0) && profiles.find((p) => p.file === profileFile)?.black !== false && (
+                <Checkbox
+                  size="md"
+                  checked={Boolean(rendering.bpc)}
+                  label="Black point compensation"
+                  title="The photo's black brought to the darkest the inks make, and the shadows scaled to meet it, rather than every dark tone clipped to the same black"
+                  onChange={(e) => actions.setProfile(photo.profile!, { ...rendering, bpc: e.target.checked })}
+                />
+              )}
+              <Button size="sm" variant="secondary" disabled={busy} title="Save the image as these inks: a Multichannel Photoshop file, a channel per ink, named and colored from the profile - from the original file, at full size, where Image knows it" onClick={actions.exportPsd}>
+                Export PSD
+              </Button>
             </>
           ) : photoMode(photo) === "cmyk" ? (
             <>

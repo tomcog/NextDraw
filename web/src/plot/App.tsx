@@ -33,6 +33,7 @@ import { Section } from "../shared/components/controls/Section";
 import controls from "../shared/components/controls/controls.module.css";
 import { StatusBanner } from "../shared/components/StatusBanner";
 import { AppSwitch } from "../shared/components/AppSwitch";
+import { ToolbarSeparator } from "../shared/components/ToolbarSeparator";
 import { SettingsHud } from "./components/SettingsHud";
 import { PlotSummary } from "./components/PlotSummary";
 import { PlotProgress } from "./components/PlotProgress";
@@ -1825,6 +1826,7 @@ export default function App() {
       <main className={styles.layout}>
         <div className={styles.tools}>
           <AppSwitch current="plot" orientation="vertical" />
+          <ToolbarSeparator className={styles.toolsSeparator} />
           <PanelToolbar
             cards={[
               { key: "file", on: fileCard, toggle: () => setFileCard((on) => !on) },
@@ -1994,26 +1996,6 @@ export default function App() {
             </div>
           </Card>
           )}
-          {queueCard && (
-          <Card variant="flat" className={styles.controls}>
-            <div className={`${styles.cardBody} ${controls.cardSections}`}>
-              <QueueSection
-                items={queue}
-                current={queueCurrent}
-                next={queueNext}
-                canAddOpen={Boolean(status?.file_path) && !queueCurrent}
-                disabled={busy}
-                onAddOpen={() => status?.file_path && fileName && addToQueue([{ name: fileName, path: status.file_path }])}
-                onAddFiles={() => setQueuePicking(true)}
-                onOpen={openQueued}
-                onDone={(id, done) => changeQueue(queue.map((i) => (i.id === id ? { ...i, done } : i)))}
-                onRemove={(id) => changeQueue(queue.filter((i) => i.id !== id))}
-                onRemoveDone={() => changeQueue(queue.filter((i) => !i.done))}
-                onMove={moveInQueue}
-              />
-            </div>
-          </Card>
-          )}
           {/* The same Paper and Pen cards as Studio's; the units, and the plotting-only rows of the
               pen card, are Plot's alone. */}
           {/* Out with no drawing open too while Setup is, to choose what a sheet is made on and with. */}
@@ -2074,6 +2056,27 @@ export default function App() {
                   onSave={savePreset}
                   onDelete={deletePreset}
                 />
+            </div>
+          </Card>
+          )}
+          {/* After Pen, in the order of the rail's buttons. */}
+          {queueCard && (
+          <Card variant="flat" className={styles.controls}>
+            <div className={`${styles.cardBody} ${controls.cardSections}`}>
+              <QueueSection
+                items={queue}
+                current={queueCurrent}
+                next={queueNext}
+                canAddOpen={Boolean(status?.file_path) && !queueCurrent}
+                disabled={busy}
+                onAddOpen={() => status?.file_path && fileName && addToQueue([{ name: fileName, path: status.file_path }])}
+                onAddFiles={() => setQueuePicking(true)}
+                onOpen={openQueued}
+                onDone={(id, done) => changeQueue(queue.map((i) => (i.id === id ? { ...i, done } : i)))}
+                onRemove={(id) => changeQueue(queue.filter((i) => i.id !== id))}
+                onRemoveDone={() => changeQueue(queue.filter((i) => !i.done))}
+                onMove={moveInQueue}
+              />
             </div>
           </Card>
           )}

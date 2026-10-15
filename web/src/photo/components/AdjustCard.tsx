@@ -30,7 +30,7 @@ interface Props {
 
 /** The black point, as Levels' black slider: tones this dark or darker become full ink, white stays white. */
 const blackPoint = (value: number, onChange: (v: number) => void) => (
-  <NumberField label="Black point" unit="%" min={0} max={MOST_BLACK_POINT} step={5} value={value} onChange={onChange} />
+  <NumberField label="Black" unit="%" min={0} max={MOST_BLACK_POINT} step={5} value={value} onChange={onChange} />
 );
 
 /**
@@ -45,10 +45,10 @@ export function AdjustCard({ photo, channels, set, setChannel }: Props) {
         <Section title="Adjustments" collapsibleKey="photo-adjust">
           <p className={controls.subheading}>Whole image</p>
           <div className={`${styles.fillRow} ${styles.oneRow}`}>
-            <NumberField label="Brightness" min={-100} max={100} step={5} value={photo.brightness} onChange={(brightness) => set({ brightness })} />
+            <NumberField label="Bright" min={-100} max={100} step={5} value={photo.brightness} onChange={(brightness) => set({ brightness })} />
             <NumberField label="Contrast" min={-100} max={100} step={5} value={photo.contrast} onChange={(contrast) => set({ contrast })} />
             {/* A separation is grayscale: there's no color to saturate. A profile split is made from the colors, so it has. */}
-            {(!photo.separation || photo.profile) && <NumberField label="Saturation" min={-100} max={100} step={5} value={photo.saturation ?? 0} onChange={(v) => set({ saturation: v || undefined })} />}
+            {(!photo.separation || photo.profile) && <NumberField label="Saturate" min={-100} max={100} step={5} value={photo.saturation ?? 0} onChange={(v) => set({ saturation: v || undefined })} />}
             {/* Separations: tones this dark or darker are full ink, so the shadows punch. */}
             {photo.separation && blackPoint(photo.blackPoint ?? 0, (v) => set({ blackPoint: v || undefined }))}
           </div>
@@ -70,7 +70,7 @@ export function AdjustCard({ photo, channels, set, setChannel }: Props) {
                   {ch.name}
                 </p>
                 <div className={`${styles.fillRow} ${styles.oneRow}`}>
-                  <NumberField label="Brightness" min={-100} max={100} step={5} value={ch.brightness} onChange={(v) => setChannel(ch.id, { channelBrightness: v })} />
+                  <NumberField label="Bright" min={-100} max={100} step={5} value={ch.brightness} onChange={(v) => setChannel(ch.id, { channelBrightness: v })} />
                   <NumberField label="Contrast" min={-100} max={100} step={5} value={ch.contrast} onChange={(v) => setChannel(ch.id, { channelContrast: v })} />
                   {blackPoint(ch.blackPoint, (v) => setChannel(ch.id, { channelBlackPoint: v }))}
                 </div>

@@ -19,20 +19,25 @@ import { isVarnishLayer, VARNISH_LINE_MM } from "../../shared/lib/ink";
 import type { PreviewToolbarProps, View } from "../../shared/components/PreviewToolbar";
 import { DEFAULT_SETTINGS, UNITS } from "../../shared/lib/constants";
 import type { PlotterModel } from "../../shared/lib/types";
+import { strokeAt, strokesInBox, strokesInLasso, strokesOf } from "../lib/strokePick";
 import styles from "./Canvas.module.css";
 
 /** Select picks shapes up; the rest draw. Without the distinction a shape covering the page would
  *  be a hole you couldn't draw in, and a drag over one would be ambiguous. A parametric curve is
  *  its own tool per generator, since which curve it is can't be told from the drag. A photo is added
  *  from a file, not drawn, so it isn't a tool. */
-export type Tool = Exclude<ShapeKind, "curve" | "path" | "photo"> | "select" | CurveKind;
+export type Tool = Exclude<ShapeKind, "curve" | "path" | "photo"> | "select" | CurveKind | StrokeTool;
+
+/** The cleanup tools: they pick single strokes - one run of a path - for Delete, and draw nothing. */
+export type StrokeTool = "strokes" | "lasso";
+export const isStrokeTool = (tool: Tool): tool is StrokeTool => tool === "strokes" || tool === "lasso";
 
 /** A line of text to start from, so a new one says something rather than being an empty box. */
 const NEW_TEXT = "Text";
 
 /** The shape a tool draws, as a box with nothing in it yet. */
 // A path is never drawn by hand: it is what a curve becomes when it's baked.
-const shapeFor = (tool: Exclude<Tool, "select">, layerId: string, x: number, y: number, font: string): Shape => {
+const shapeFor = (tool: Exclude<Tool, "select" | StrokeTool>, layerId: string, x: number, y: number, font: string): Shape => {
   if (tool === "rect" || tool === "ellipse" || tool === "line") {
     return { id: newShapeId(), layerId, kind: tool, x, y, x2: x, y2: y };
   }
@@ -91,6 +96,9 @@ interface Props {
   /** Picking areas: a click anywhere on the page is a point to pick at, and nothing is drawn, picked
    *  up or moved. */
   onPick?: (p: { x: number; y: number }) => void;
+  /** The strokes picked with Stroke select or the Lasso, by strokeKey, for Delete to take out. */
+  strokePick: string[];
+  onStrokePick: (keys: string[]) => void;
 }
 
 // One drag at a time, and what it means depends on where it started: on the page it draws a new
@@ -107,6 +115,10 @@ type Drag =
   | { mode: "move"; from: { x: number; y: number }; origins: Shape[]; ids: Set<string>; box: ReturnType<typeof boxOf>; by: { x: number; y: number } }
   // Rubber band: drawn on the empty page to gather up everything it touches.
   | { mode: "marquee"; from: { x: number; y: number }; to: { x: number; y: number }; add: string[] }
+  // Stroke select: a press on a stroke, or a band round strokes; the Lasso: a loop drawn round them.
+  // `add` is the pick kept (Shift), `px` an inch in screen pixels, for how near a press must be.
+  | { mode: "strokeBand"; from: { x: number; y: number }; to: { x: number; y: number }; add: string[]; toggle: boolean; px: number }
+  | { mode: "lasso"; loop: { x: number; y: number }[]; add: string[]; toggle: boolean; px: number }
   // A whole selection at once: scaled by a corner of the box round it, or turned about its middle.
   | { mode: "groupScale"; handle: Handle; origins: Shape[]; box: ReturnType<typeof boxOf> }
   | { mode: "groupTurn"; origins: Shape[]; about: { x: number; y: number }; from: number }
@@ -341,7 +353,7 @@ const LayerMarks = memo(function LayerMarks({ shapes, fills, fonts, photos }: { 
 // The page at true proportions, with a one-inch grid. It keeps the page's own proportions and is
 // sized to them (--canvas-aspect), so the drawing gets as large as the space allows - the same way
 // Plot's preview fills its column.
-export function Canvas({ bar, page, paperColor, shapes, fills, layers, activeLayer, targetLayers, model, toolbar, fonts, font, snap, penWidthMm, inkOpacity, inkBuilds, inkOpaque = false, inkBuild, view, tool, selected, onSelect, onAdd, onUpdate, onUpdateMany, onEditStart, onPick }: Props) {
+export function Canvas({ bar, page, paperColor, shapes, fills, layers, activeLayer, targetLayers, model, toolbar, fonts, font, snap, penWidthMm, inkOpacity, inkBuilds, inkOpaque = false, inkBuild, view, tool, selected, onSelect, onAdd, onUpdate, onUpdateMany, onEditStart, onPick, strokePick, onStrokePick }: Props) {
   const bed = useRef<BedCanvasHandle>(null);
   const [drag, setDrag] = useState<Drag | null>(null);
   const pointer = useRef<number | null>(null);
@@ -413,6 +425,19 @@ export function Canvas({ bar, page, paperColor, shapes, fills, layers, activeLay
     return new Set([...count].filter(([, n]) => n > GRIP_LIMIT).map(([id]) => id));
   }, [shapes]);
 
+  // The cleanup tools' strokes: every run of every path on the targeted layers, as the page shows it.
+  // Worked out only while one of them is in hand.
+  const cleaning = isStrokeTool(tool);
+  const strokes = useMemo(() => (cleaning ? strokesOf(shown, (id) => targetLayers.has(id)) : []), [cleaning, shown, targetLayers]);
+  const strokePicked = useMemo(() => new Set(strokePick), [strokePick]);
+  const shapeById = useMemo(() => new Map(shapes.map((sh) => [sh.id, sh])), [shapes]);
+  /** Screen pixels to the page's inch where the pointer is, for how near a press must come to a stroke. */
+  const pxPerInch = (e: ReactPointerEvent) => {
+    const a = bed.current?.at(e.clientX, e.clientY);
+    const b = bed.current?.at(e.clientX + 100, e.clientY);
+    return a && b && b.x !== a.x ? (100 * UNITS) / (b.x - a.x) : 96;
+  };
+
   const pointAt = (e: ReactPointerEvent): { x: number; y: number } | null => {
     const at = bed.current?.at(e.clientX, e.clientY);
     return at ? { x: at.x / UNITS, y: at.y / UNITS } : null; // bed units to the page's inches
@@ -439,6 +464,16 @@ export function Canvas({ bar, page, paperColor, shapes, fills, layers, activeLay
     if (!p) return;
     if (onPick) {
       onPick(p);
+      return;
+    }
+    if (isStrokeTool(tool)) {
+      // A press picks the stroke under it; a drag gathers every stroke it takes in - a band with
+      // Stroke select, a loop with the Lasso. Shift adds to what's picked (a press takes one back out).
+      const add = e.shiftKey ? strokePick : [];
+      const px = pxPerInch(e);
+      begin(e, tool === "lasso"
+        ? { mode: "lasso", loop: [p], add, toggle: e.shiftKey, px }
+        : { mode: "strokeBand", from: p, to: p, add, toggle: e.shiftKey, px });
       return;
     }
     if (tool === "select") {
@@ -549,8 +584,12 @@ export function Canvas({ bar, page, paperColor, shapes, fills, layers, activeLay
         ? keepProportions({ x: drag.shape.x, y: drag.shape.y }, to, 1)
         : to;
       setDrag({ ...drag, shape: clampToPage({ ...drag.shape, x2: end.x, y2: end.y }, page) });
-    } else if (drag.mode === "marquee") {
+    } else if (drag.mode === "marquee" || drag.mode === "strokeBand") {
       setDrag({ ...drag, to: p });
+    } else if (drag.mode === "lasso") {
+      // A point every couple of screen pixels is loop enough.
+      const last = drag.loop[drag.loop.length - 1];
+      if (Math.hypot(p.x - last.x, p.y - last.y) * drag.px >= 2) setDrag({ ...drag, loop: [...drag.loop, p] });
     } else if (drag.mode === "move") {
       // The whole selection moves as one: the limit is the box round all of it, so a group slides
       // along the page's edge instead of collapsing against it.
@@ -618,6 +657,28 @@ export function Canvas({ bar, page, paperColor, shapes, fills, layers, activeLay
     // Put down where it was carried to: the one time the shapes themselves move.
     if (drag?.mode === "move" && (drag.by.x || drag.by.y)) {
       onUpdateMany(drag.origins.map((s) => moveBy(s, drag.by.x, drag.by.y, page)));
+    }
+    if (drag?.mode === "strokeBand" || drag?.mode === "lasso") {
+      const ends = drag.mode === "lasso" ? drag.loop : [drag.from, drag.to];
+      const band = {
+        x0: Math.min(...ends.map((q) => q.x)), y0: Math.min(...ends.map((q) => q.y)),
+        x1: Math.max(...ends.map((q) => q.x)), y1: Math.max(...ends.map((q) => q.y)),
+      };
+      const pressed = Math.max(band.x1 - band.x0, band.y1 - band.y0) * drag.px < 4;
+      if (pressed) {
+        // A press: the stroke within a few pixels of it, or nothing - which clears the pick.
+        const hit = strokeAt(strokes, ends[0], 6 / drag.px);
+        if (!hit) {
+          if (!drag.toggle) onStrokePick([]);
+        } else if (drag.toggle) {
+          onStrokePick(drag.add.includes(hit.key) ? drag.add.filter((k) => k !== hit.key) : [...drag.add, hit.key]);
+        } else {
+          onStrokePick([hit.key]);
+        }
+      } else {
+        const caught = (drag.mode === "lasso" ? strokesInLasso(strokes, drag.loop) : strokesInBox(strokes, band)).map((s) => s.key);
+        onStrokePick([...drag.add, ...caught.filter((k) => !drag.add.includes(k))]);
+      }
     }
     if (drag?.mode === "marquee") {
       const band = {
@@ -816,6 +877,36 @@ export function Canvas({ bar, page, paperColor, shapes, fills, layers, activeLay
                   height={Math.abs(drag.to.y - drag.from.y)}
                 />
               )}
+              {/* The cleanup tools: the band or loop being drawn, and the strokes picked - drawn over
+                  in the action color, with their points marked. */}
+              {drag?.mode === "strokeBand" && (
+                <rect
+                  className={styles.draft}
+                  x={Math.min(drag.from.x, drag.to.x)}
+                  y={Math.min(drag.from.y, drag.to.y)}
+                  width={Math.abs(drag.to.x - drag.from.x)}
+                  height={Math.abs(drag.to.y - drag.from.y)}
+                />
+              )}
+              {drag?.mode === "lasso" && (
+                <polygon className={styles.draft} points={drag.loop.map((q) => `${q.x},${q.y}`).join(" ")} />
+              )}
+              {cleaning && strokePicked.size > 0 && (() => {
+                const picked = strokes.filter((s) => strokePicked.has(s.key));
+                const lines = picked.map((s) => `M${s.points.map((q) => `${q.x} ${q.y}`).join("L")}`).join("");
+                const nodes = picked.map((s) => {
+                  const sh = shapeById.get(s.shapeId);
+                  const run = sh ? pathRuns(sh)[s.run] ?? [] : [];
+                  const about = sh?.rotation ? centerOf(sh) : null;
+                  return run.map((n) => (about ? turnPoint(n, about, sh!.rotation!) : n)).map((q) => `M${q.x} ${q.y}h0`).join("");
+                }).join("");
+                return (
+                  <>
+                    <path className={styles.strokePicked} d={lines} />
+                    <path className={styles.strokeNode} d={nodes} />
+                  </>
+                );
+              })()}
               {/* A group is moved, scaled and turned as one: the box round it, its four corners and
                   a grip on a stalk, the same as one shape has. */}
               {groupBox && drag?.mode !== "marquee" && (() => {

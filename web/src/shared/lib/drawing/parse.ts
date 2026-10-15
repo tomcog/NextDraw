@@ -113,7 +113,7 @@ export function parseDrawing(text: string): Opened {
   const designEl = svg.getElementsByTagName("nds:design")[0] ?? svg.querySelector("design");
   let design: {
     fills?: unknown; on?: Record<string, string>; curves?: unknown; photos?: unknown;
-    turned?: Record<string, unknown>; repeats?: Record<string, unknown>; smoothed?: Record<string, unknown>;
+    turned?: Record<string, unknown>; scaled?: Record<string, unknown>; repeats?: Record<string, unknown>; smoothed?: Record<string, unknown>;
     names?: Record<string, unknown>;
     texts?: Record<string, { text?: unknown; font?: unknown; box?: unknown; tracking?: unknown; leading?: unknown }>;
   } = {};
@@ -533,6 +533,13 @@ export function parseDrawing(text: string): Opened {
   for (const s of shapes) {
     const deg = Number(design.turned?.[s.id]);
     if (Number.isFinite(deg) && deg) s.rotation = (((s.rotation ?? 0) + deg) % 360 + 360) % 360 || undefined;
+  }
+
+  // The percent each scaled shape is at. Its geometry is already that size; this is the number the
+  // Scale field goes on from.
+  for (const s of shapes) {
+    const pct = Number(design.scaled?.[s.id]);
+    if (Number.isFinite(pct) && pct > 0 && pct !== 100) s.scale = pct;
   }
 
   markOutlines();

@@ -55,6 +55,11 @@ export interface Shape {
   /** Degrees clockwise about the middle of the box. The box itself is never turned: keeping it
    *  square is what lets a shape still be resized, hatched and measured after it's been turned. */
   rotation?: number;
+  /** Percent of its size, about the middle of the box, as the Scale field reads. Unlike the turn,
+   *  the box and points are kept at the scaled size - so everything that draws, hatches or picks a
+   *  shape needs nothing from this - and the number is what lets the field stay editable: a new
+   *  value rescales by new / old. Absent means 100. */
+  scale?: number;
   /**
    * Whether the shape's own outline is plotted. Off, it still lives in the file - any fill on it is
    * regenerated from it - but on a `%`-prefixed layer, which NextDraw skips and which Plot leaves

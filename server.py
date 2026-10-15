@@ -860,6 +860,66 @@ def studio_fills(root):
     return {}
 
 
+# Studio's registration blocks (studio/lib/registration.ts): a small solid square per layer, named
+# Registration in the design block. They go down before anything else in the plot, however the
+# NextDraw software orders the rest for speed - it orders paths within a layer, starting from home,
+# and would otherwise reach a block in the bottom corner last. So each plotted layer's blocks are
+# moved, in the copy sent to the plotter, into a layer of their own - the same name and pen - ahead of
+# every layer being plotted, in the layers' order. Then a short wait before the drawing itself starts,
+# with the pen up: long enough to look at the blocks and press Stop if they show a pen skipping or the
+# paper out of line, before any of the drawing is spent on it. The software checks for Stop every
+# tenth of a second while it waits.
+REGISTRATION_NAME = "Registration"
+REGISTRATION_PAUSE_MS = 5_000
+
+
+def registration_ids(root):
+    """The ids of the shapes Studio's design block names Registration; empty for any other drawing."""
+    for node in root.iter(DESIGN_TAG):
+        try:
+            data = json.loads(node.text or "{}")
+        except ValueError:
+            return set()
+        names = data.get("names") if isinstance(data, dict) else None
+        return {k for k, v in (names or {}).items() if v == REGISTRATION_NAME} if isinstance(names, dict) else set()
+    return set()
+
+
+def registration_first(root):
+    """Move each plotted layer's registration blocks into a layer of their own ahead of all the plotted layers."""
+    from lxml import etree
+    ids = registration_ids(root)
+    if not ids:
+        return
+    plotted = [g for g in layer_groups(root) if not layer_hidden(g)]
+    if not plotted:
+        return
+    made = []
+    for layer in plotted:
+        blocks = [el for el in layer if el.get("id") in ids]
+        if not blocks:
+            continue
+        first = etree.Element(layer.tag, {k: v for k, v in layer.attrib.items() if k != "id"})
+        first.set("id", f"{layer.get('id') or 'layer'}-registration")
+        first.set(INKSCAPE_NS + "label", (layer.get(INKSCAPE_NS + "label") or "").lstrip("!"))
+        for el in blocks:
+            layer.remove(el)
+            first.append(el)
+        made.append(first)
+    for first in made:
+        plotted[0].addprevious(first)
+    if made:
+        with_delay(plotted[0], REGISTRATION_PAUSE_MS)
+
+
+def with_delay(layer, ms):
+    """Give a layer a wait at its start, in the NextDraw software's layer-name syntax: "+d" and the
+    milliseconds, after a leading "!" (pause) and layer number if it has them, before the name."""
+    label = layer.get(INKSCAPE_NS + "label") or ""
+    m = re.match(r"^(!?)(\d*)(.*)$", label, re.S)
+    layer.set(INKSCAPE_NS + "label", f"{m.group(1)}{m.group(2)}+d{ms}{m.group(3)}")
+
+
 def fill_spacing_of(group, fills):
     """The spacing (mm) Studio gave the fills on a layer - the first one's - or None if it has none."""
     for g in group.iter(SVG_NS + "g"):
@@ -1478,6 +1538,7 @@ def svg_input(scale, layers=None, rotation=0, hatch=None, shift_mm=(0.0, 0.0)):
     regenerate_hatches(root, hatch or {}, scale)
     if layers:
         only_layers(root, [layers] if isinstance(layers, str) else layers)
+    registration_first(root)
     rotate_document(root, rotation)
     if abs(scale - 100) < 1e-9:
         shift_lines(root, shift_mm)
@@ -4886,7 +4947,7 @@ INK_SPACES = {"CMYK": 4, **{f"{n:X}CLR": n for n in range(2, 16)}}
 
 
 def profile_info(path):
-    """A profile Image can split a photo by, as {name, file, inks}, or None."""
+    """A profile Image can split a photo by, as {name, file, inks, black}, or None."""
     try:
         with open(path, "rb") as f:
             head = f.read(132)
@@ -4904,7 +4965,8 @@ def profile_info(path):
             if b"B2A0" not in tags:
                 return None
             f.seek(tags[b"B2A0"][0])
-            if f.read(4) not in (b"mft2", b"mft1"):
+            # The 16- and 8-bit tables, and version 4's (IA ECG B1C X has only those).
+            if f.read(4) not in (b"mft2", b"mft1", b"mBA "):
                 return None
             name = path.stem
             if b"desc" in tags:
@@ -4914,7 +4976,8 @@ def profile_info(path):
     except (OSError, struct.error, UnicodeDecodeError):
         return None
     # Some name themselves after their file: "Ink set.icc" reads as "Ink set".
-    return {"name": re.sub(r"\.ic[cm]$", "", name, flags=re.I) or path.stem, "file": path.name, "inks": inks}
+    # Whether it says where its inks' black is: black point compensation has nothing to work from without.
+    return {"name": re.sub(r"\.ic[cm]$", "", name, flags=re.I) or path.stem, "file": path.name, "inks": inks, "black": b"bkpt" in tags}
 
 
 def profile_name(desc):

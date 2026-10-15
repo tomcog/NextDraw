@@ -1,0 +1,22 @@
+/* A 1px rule between groups of toolbars (Figma, NextDraw 118:494): 32 long, in the border color. */
+.separator {
+  flex: none;
+  align-self: center;
+  margin: 0;
+  border: none;
+  background: var(--ui-border-default);
+}
+
+/* Kept weak (:where), so an app can stand it on end where its column becomes a row. */
+/* 4px more space either side than the gap between toolbars. */
+.separator:where([data-orientation="horizontal"]) {
+  width: 2rem;
+  height: 1px;
+  margin-block: 4px;
+}
+
+.separator:where([data-orientation="vertical"]) {
+  width: 1px;
+  height: 2rem;
+  margin-inline: 4px;
+}

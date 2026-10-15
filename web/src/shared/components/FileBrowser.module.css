@@ -41,6 +41,12 @@
   min-width: 0;
 }
 
+/* Name or Date, at the end of the location row. */
+.sort {
+  margin-left: auto;
+  flex: none;
+}
+
 .path {
   font-size: 0.8125rem;
   color: var(--ui-text-muted);

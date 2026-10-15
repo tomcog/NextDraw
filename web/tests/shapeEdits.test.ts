@@ -28,11 +28,21 @@ test("flattening a rectangle leaves its corners as a path, under its own id, dra
 });
 
 test("flattening a curve leaves its strokes as smoothed paths, the first under its id", () => {
-  const poly = shape({ kind: "curve", x: 0, y: 0, x2: 2, y2: 2, curve: { kind: "polygon", sides: 6 } });
-  const made = flattened(poly, undefined);
+  const spiral = shape({ kind: "curve", x: 0, y: 0, x2: 2, y2: 2, curve: { kind: "spiral", turns: 4, inner: 5 } });
+  const made = flattened(spiral, undefined);
   assert.ok(made.length >= 1);
   assert.equal(made[0].id, "s");
   assert.ok(made.every((s) => s.kind === "path" && s.smooth && !s.curve));
+});
+
+test("flattening a polygon, a star or curve stitching keeps them straight: a hexagon stays six corners", () => {
+  for (const curve of [{ kind: "polygon", sides: 6 }, { kind: "star", points: 5, inner: 40 }, { kind: "parabolic", strings: 12, corners: ["tl", "br", "tr", "bl"] }] as const) {
+    const made = flattened(shape({ kind: "curve", x: 0, y: 0, x2: 2, y2: 2, curve: curve as never }), undefined);
+    assert.ok(made.length >= 1, curve.kind);
+    assert.ok(made.every((s) => s.kind === "path" && !s.smooth && !s.curve), `${curve.kind} smoothed`);
+  }
+  const hexagon = flattened(shape({ kind: "curve", x: 0, y: 0, x2: 2, y2: 2, curve: { kind: "polygon", sides: 6 } }), undefined)[0];
+  assert.equal(pathRuns(hexagon)[0].length, 7, "six corners and back to the first");
 });
 
 test("baking a row makes each copy a shape where it was drawn, the first keeping the id", () => {
