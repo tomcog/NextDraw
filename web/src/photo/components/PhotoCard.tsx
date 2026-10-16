@@ -707,7 +707,8 @@ export function PhotoCard({ shape, title, shapes, busy, targeted, layerCount, sh
                   <div className={`${styles.fillRow} ${styles.oneRow}`}>
                     <NumberField label="Spacing mm" min={0.1} max={5} step={0.05} value={photo.spacingMm} onChange={(spacingMm) => actions.set({ spacingMm })} />
                     {/* Short nervous marks, or long lines - fewer pen lifts, quicker to plot. */}
-                    <NumberField label="Length mm" min={2} max={1000} step={5} value={photo.scribbleLengthMm ?? SCRIBBLE_DEFAULTS.lengthMm} onChange={(scribbleLengthMm) => actions.set({ scribbleLengthMm })} />
+                    <NumberField label="Min" unit="mm" min={0} max={1000} step={1} value={photo.scribbleMinMm ?? SCRIBBLE_DEFAULTS.minMm} onChange={(scribbleMinMm) => actions.set({ scribbleMinMm })} />
+                    <NumberField label="Max" unit="mm" min={2} max={1000} step={5} value={photo.scribbleLengthMm ?? SCRIBBLE_DEFAULTS.lengthMm} onChange={(scribbleLengthMm) => actions.set({ scribbleLengthMm })} />
                     {/* 0, gentle bends; 100, tight curls. */}
                     <NumberField label="Wiggle" unit="%" min={0} max={100} step={5} value={photo.scribbleWiggle ?? SCRIBBLE_DEFAULTS.wiggle} onChange={(scribbleWiggle) => actions.set({ scribbleWiggle })} />
                   </div>
@@ -715,7 +716,7 @@ export function PhotoCard({ shape, title, shapes, busy, targeted, layerCount, sh
                   <Button size="sm" variant="secondary" title="Scribble again: the same settings, a new random scribble" onClick={() => actions.set({ scribbleSeed: (photo.scribbleSeed ?? SCRIBBLE_DEFAULTS.seed) + 1 })}>
                     New scribble
                   </Button>
-                  {eachLayer("Spacing, length, wiggle and New scribble")}
+                  {eachLayer("Spacing, min, max, wiggle and New scribble")}
                 </>
               ) : photo.style === "oneline" ? (
                 <>
