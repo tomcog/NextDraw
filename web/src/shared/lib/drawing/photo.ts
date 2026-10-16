@@ -90,7 +90,7 @@ export interface Photo {
    * drawn the way SquiggleDraw draws it - smooth curves, unbroken through white, rows joinable into
    * one line. Absent, hatching.
    */
-  style?: "hatch" | "waves" | "squiggle" | "streamlines" | "scribble" | "oneline" | "hilbert" | "outlines" | "centerlines" | "silhouette" | "edges";
+  style?: "hatch" | "waves" | "squiggle" | "streamlines" | "scribble" | "oneline" | "hilbert" | "outlines" | "centerlines" | "silhouette" | "edges" | "paint";
   /**
    * Edges: how sharp a change of tone, 0 to 1 against the picture's sharpest, counts as an edge - the
    * line where a wall meets a ceiling, round a window. Lower finds fainter edges.
@@ -139,6 +139,14 @@ export interface Photo {
   scribbleMinMm?: number;
   scribbleWiggle?: number;
   scribbleSeed?: number;
+  /**
+   * Paint: how far the borders between colors are smoothed, in mm; the smallest region kept, as the
+   * side of a square in mm - a smaller one takes its biggest neighbor's color; and whether each
+   * region has a line round it (absent, it has). Absent, the defaults (PAINT_DEFAULTS).
+   */
+  paintSmoothMm?: number;
+  paintSmallestMm?: number;
+  paintOutline?: boolean;
   streamWidestMm?: number;
   /** Streamlines: 1, or 2 for a second pass across the first in the darker half of the tones. Absent, 1. */
   streamPasses?: number;
@@ -622,7 +630,7 @@ export interface PhotoPart {
 
 /** The settings a layer of a photo keeps as its own, as opposed to the photo's: what a mode remembers. */
 export const LAYER_SETTINGS = [
-  "style", "angle", "spacingMm", "levels", "hatchSmoothMm", "hatchShortestMm", "rowMm", "waveMm", "squiggleAmpMm", "squiggleHeight", "squiggleJoin", "squiggleLift", "squiggleSmooth", "squiggleDraw", "squiggleVersion", "squiggleInkscape", "squiggleAngle", "contours", "smoothMm", "centerFrom", "centerSmoothMm", "centerShortestMm", "centerMode", "centerStraightMm", "centerLongMm", "centerCornerDeg", "edgeFrom", "edgeSmoothMm", "edgeShortestMm", "silhouetteFrom", "silhouetteSmoothMm", "silhouetteSmallestMm", "streamWidestMm", "streamPasses", "streamFlowMm", "scribbleLengthMm", "scribbleMinMm", "scribbleWiggle", "scribbleSeed", "lineDots", "lineLiftMm", "lineCurve", "lineAngle", "lineBias", "lineGrain", "lineContrast", "hilbertCoarsestMm", "hilbertLift", "hilbertCurve", "hilbertRound", "hilbertBlend", "hilbertAngle", "offsetMm",
+  "style", "angle", "spacingMm", "levels", "hatchSmoothMm", "hatchShortestMm", "rowMm", "waveMm", "squiggleAmpMm", "squiggleHeight", "squiggleJoin", "squiggleLift", "squiggleSmooth", "squiggleDraw", "squiggleVersion", "squiggleInkscape", "squiggleAngle", "contours", "smoothMm", "centerFrom", "centerSmoothMm", "centerShortestMm", "centerMode", "centerStraightMm", "centerLongMm", "centerCornerDeg", "edgeFrom", "edgeSmoothMm", "edgeShortestMm", "silhouetteFrom", "silhouetteSmoothMm", "silhouetteSmallestMm", "streamWidestMm", "streamPasses", "streamFlowMm", "scribbleLengthMm", "scribbleMinMm", "scribbleWiggle", "scribbleSeed", "paintSmoothMm", "paintSmallestMm", "paintOutline", "lineDots", "lineLiftMm", "lineCurve", "lineAngle", "lineBias", "lineGrain", "lineContrast", "hilbertCoarsestMm", "hilbertLift", "hilbertCurve", "hilbertRound", "hilbertBlend", "hilbertAngle", "offsetMm",
   "band", "side", "paperTone", "ink", "regions", "region", "key", "regionInks", "keyInk", "plate", "plates", "fitPaper", "penMm", "fitPairs", "fitOpaque",
 ] as const;
 
@@ -1322,6 +1330,7 @@ export function photoMarks(photo: Photo, w: number, h: number): PhotoMarks | nul
     : photo.style === "centerlines" ? centerlines(tones, photo, w, h)
     : photo.style === "silhouette" ? silhouette(tones, photo, w, h)
     : photo.style === "edges" ? edges(tones, photo, w, h)
+    : photo.style === "paint" ? paint(tones, photo, w, h)
     : hatch(hatchTones, photo, w, h);
   if (marksCache.size > 24) marksCache.delete(marksCache.keys().next().value!);
   marksCache.set(key, made);
@@ -1330,7 +1339,7 @@ export function photoMarks(photo: Photo, w: number, h: number): PhotoMarks | nul
 
 /** Everything a photo's lines depend on, as one string: the same key, the same lines. */
 function marksKey(photo: Photo, w: number, h: number) {
-  return [photo.src.length, photo.src.slice(-32), w.toFixed(4), h.toFixed(4), photo.brightness, photo.contrast, photo.saturation ?? 0, photo.angle, photo.spacingMm, photo.levels, photo.hatchSmoothMm ?? "", photo.hatchShortestMm ?? "", photo.band?.join(",") ?? "", photo.side ?? "", photo.paperTone?.join(",") ?? "", photo.crop?.join(",") ?? "", photo.bleed ?? 0, photo.style ?? "hatch", photo.rowMm ?? "", photo.waveMm ?? "", photo.squiggleAmpMm ?? "", photo.squiggleHeight ?? "", photo.squiggleJoin ? "join" : "", photo.squiggleLift ? "lift" : "", photo.squiggleSmooth ?? "", JSON.stringify(photo.squiggleDraw ?? {}), photo.squiggleVersion ?? "", JSON.stringify(photo.squiggleInkscape ?? {}), photo.squiggleAngle ?? "", photo.ink ?? "", photo.regions?.join(",") ?? "", photo.region ?? "", photo.contours ?? "", photo.smoothMm ?? "", photo.key ? "key" : "", photo.keyInk ?? "", photo.regionInks?.join(",") ?? "", photo.keyStrength ?? "", photo.keyFrom ?? "", photo.plate ?? "", photo.plates?.join(",") ?? "", photo.blackShare ?? "", photo.centerFrom ?? "", photo.centerSmoothMm ?? "", photo.centerShortestMm ?? "", photo.centerMode ?? "", photo.centerStraightMm ?? "", photo.centerLongMm ?? "", photo.centerCornerDeg ?? "", photo.edgeFrom ?? "", photo.edgeSmoothMm ?? "", photo.edgeShortestMm ?? "", photo.silhouetteFrom ?? "", photo.silhouetteSmoothMm ?? "", photo.silhouetteSmallestMm ?? "", photo.fitPaper ?? "", photo.penMm ?? "", photo.fitPairs ? "pairs" : "", photo.fitOpaque ? "opaque" : "", photo.streamWidestMm ?? "", photo.streamPasses ?? "", photo.streamFlowMm ?? "", photo.scribbleLengthMm ?? "", photo.scribbleMinMm ?? "", photo.scribbleWiggle ?? "", photo.scribbleSeed ?? "", photo.profileInk ?? "", photo.lineDots ?? "", photo.lineLiftMm ?? "", photo.lineCurve ?? "", photo.lineAngle ?? "", photo.lineBias ?? "", photo.lineGrain ?? "", photo.lineContrast ?? "", photo.hilbertCoarsestMm ?? "", photo.hilbertLift ? "hlift" : "", photo.hilbertCurve ?? "", photo.hilbertRound ?? "", photo.hilbertBlend ?? "", photo.hilbertAngle ?? "", photo.edgeMask ? `${photo.edgeMask.length}|${photo.edgeMask.slice(-32)}` : "", photo.edgeMaskInvert ? "inv" : "", photo.edgeMaskSides?.join(",") ?? "", photo.edgeGen ? edgeGenKey(photo.edgeGen) : "", vignetteKey(photo.vignette)].join("|");
+  return [photo.src.length, photo.src.slice(-32), w.toFixed(4), h.toFixed(4), photo.brightness, photo.contrast, photo.saturation ?? 0, photo.angle, photo.spacingMm, photo.levels, photo.hatchSmoothMm ?? "", photo.hatchShortestMm ?? "", photo.band?.join(",") ?? "", photo.side ?? "", photo.paperTone?.join(",") ?? "", photo.crop?.join(",") ?? "", photo.bleed ?? 0, photo.style ?? "hatch", photo.rowMm ?? "", photo.waveMm ?? "", photo.squiggleAmpMm ?? "", photo.squiggleHeight ?? "", photo.squiggleJoin ? "join" : "", photo.squiggleLift ? "lift" : "", photo.squiggleSmooth ?? "", JSON.stringify(photo.squiggleDraw ?? {}), photo.squiggleVersion ?? "", JSON.stringify(photo.squiggleInkscape ?? {}), photo.squiggleAngle ?? "", photo.ink ?? "", photo.regions?.join(",") ?? "", photo.region ?? "", photo.contours ?? "", photo.smoothMm ?? "", photo.key ? "key" : "", photo.keyInk ?? "", photo.regionInks?.join(",") ?? "", photo.keyStrength ?? "", photo.keyFrom ?? "", photo.plate ?? "", photo.plates?.join(",") ?? "", photo.blackShare ?? "", photo.centerFrom ?? "", photo.centerSmoothMm ?? "", photo.centerShortestMm ?? "", photo.centerMode ?? "", photo.centerStraightMm ?? "", photo.centerLongMm ?? "", photo.centerCornerDeg ?? "", photo.edgeFrom ?? "", photo.edgeSmoothMm ?? "", photo.edgeShortestMm ?? "", photo.silhouetteFrom ?? "", photo.silhouetteSmoothMm ?? "", photo.silhouetteSmallestMm ?? "", photo.fitPaper ?? "", photo.penMm ?? "", photo.fitPairs ? "pairs" : "", photo.fitOpaque ? "opaque" : "", photo.streamWidestMm ?? "", photo.streamPasses ?? "", photo.streamFlowMm ?? "", photo.scribbleLengthMm ?? "", photo.scribbleMinMm ?? "", photo.scribbleWiggle ?? "", photo.scribbleSeed ?? "", photo.paintSmoothMm ?? "", photo.paintSmallestMm ?? "", photo.paintOutline ?? "", photo.profileInk ?? "", photo.lineDots ?? "", photo.lineLiftMm ?? "", photo.lineCurve ?? "", photo.lineAngle ?? "", photo.lineBias ?? "", photo.lineGrain ?? "", photo.lineContrast ?? "", photo.hilbertCoarsestMm ?? "", photo.hilbertLift ? "hlift" : "", photo.hilbertCurve ?? "", photo.hilbertRound ?? "", photo.hilbertBlend ?? "", photo.hilbertAngle ?? "", photo.edgeMask ? `${photo.edgeMask.length}|${photo.edgeMask.slice(-32)}` : "", photo.edgeMaskInvert ? "inv" : "", photo.edgeMaskSides?.join(",") ?? "", photo.edgeGen ? edgeGenKey(photo.edgeGen) : "", vignetteKey(photo.vignette)].join("|");
 }
 
 /**
@@ -1362,6 +1371,9 @@ export function photoMask(photo: Photo, w: number, h: number): PhotoMask | null 
   if (photo.style === "centerlines") {
     const { gw, gh, on } = centerOn(tones, photo, w, h);
     made = { w: gw, h: gh, seen: Uint8ClampedArray.from(on, (v) => v * 255) };
+  } else if (photo.style === "paint") {
+    const { gw, gh, labels, mine } = paintRegions(tones, photo, w, h);
+    made = { w: gw, h: gh, seen: Uint8ClampedArray.from(labels, (v) => (v === mine ? 255 : 0)) };
   } else if (photo.style === "silhouette") {
     const { gw, gh, field } = paintField(tones, photo, w, h);
     const level = 1 - Math.min(0.99, Math.max(0.01, photo.silhouetteFrom ?? SILHOUETTE_DEFAULTS.from));
@@ -3786,6 +3798,200 @@ function hatch(tones: Tones, photo: Photo, w: number, h: number): PhotoMarks {
 }
 
 
+// ---------- Paint ----------
+
+/** What a painting starts from: borders smoothed over a millimetre, nothing smaller than a 3 mm square kept, a line round each region. */
+export const PAINT_DEFAULTS = { smoothMm: 1, smallestMm: 3, outline: true };
+
+interface PaintRegions { gw: number; gh: number; cell: number; cellY: number; labels: Uint8Array; mine: number }
+const paintCache = new Map<string, Omit<PaintRegions, "mine">>();
+
+/**
+ * The picture as a painting by numbers would have it: on a grid over the box, which color each point
+ * is painted - flat, one color to a region. A color layer's points are the nearest of the split's
+ * colors, or the paper; any other layer's are its own pen or not, where it would draw darker than
+ * half-way. The borders are smoothed - each color's area blurred, and every point taking the color
+ * strongest there - and then any region smaller than the smallest asked for takes the color of the
+ * neighbor it shares most border with, until none is left. Worked out once for all of a split's
+ * color layers, so they share every border: `mine` is the label this layer paints.
+ */
+function paintRegions(tones: Tones, photo: Photo, w: number, h: number): PaintRegions {
+  const { gw, gh, cell, cellY } = pictureGrid(tones, photo, w, h);
+  const [c0, c1, c2, c3] = photo.crop ?? [0, 0, 1, 1];
+  const smooth = Math.max(0, photo.paintSmoothMm ?? PAINT_DEFAULTS.smoothMm) / 25.4 / cell;
+  const smallest = Math.max(0, photo.paintSmallestMm ?? PAINT_DEFAULTS.smallestMm) / 25.4;
+  const colour = Boolean(photo.ink && photo.regions && photo.region !== undefined && !photo.key);
+  const key = colour
+    ? ["colour", tones.w, tones.h, tones.blur ?? 0, tones.sat ?? 0, tones.mask ?? "", tones.light[0], tones.light[tones.light.length >> 1], photo.crop?.join(",") ?? "", photo.regions!.join(","), photo.brightness, photo.contrast, gw, gh, smooth, smallest].join("|")
+    : ["layer", marksKey(photo, w, h)].join("|");
+  const mine = colour ? photo.region! : 1;
+  const known = paintCache.get(key);
+  if (known) return { ...known, mine };
+
+  const labels = new Uint8Array(gw * gh);
+  let count: number;
+  if (colour) {
+    // The nearest color of the split, or the paper (the last), at each point - not the mixes Best fit
+    // hatches, since a painting is flat: one color to a region.
+    const areas = areasOf(tones, photo.regions!, photo.brightness, photo.contrast);
+    count = areas.groups;
+    for (let gy = 0; gy < gh; gy++) {
+      for (let gx = 0; gx < gw; gx++) {
+        const u = c0 + (gx / (gw - 1)) * (c2 - c0);
+        const v = c1 + (gy / (gh - 1)) * (c3 - c1);
+        labels[gy * gw + gx] = areas.best[Math.min(areas.h - 1, Math.round(v * (areas.h - 1))) * areas.w + Math.min(areas.w - 1, Math.round(u * (areas.w - 1)))];
+      }
+    }
+  } else {
+    // This layer's pen or not: in its band - the lightest band, and a layer that isn't one, where it
+    // is past half-way to its darkest - or where its plate wants more than half its ink.
+    const { toneAt, fromWhite } = toneSampler(tones, photo, w, h);
+    count = 2;
+    for (let gy = 0; gy < gh; gy++) {
+      for (let gx = 0; gx < gw; gx++) {
+        const t = toneAt(Math.min(w, gx * cell), Math.min(h, gy * cellY));
+        labels[gy * gw + gx] = t >= 0 && (!fromWhite || t > 0.5) ? 1 : 0;
+      }
+    }
+  }
+
+  // Smoothed borders: each color's area blurred, every point taking whichever is strongest there.
+  if (smooth >= 0.5 && count > 1) {
+    const strongest = new Float32Array(gw * gh).fill(-1);
+    const out = new Uint8Array(gw * gh);
+    const area = new Float32Array(gw * gh);
+    for (let k = 0; k < count; k++) {
+      let any = false;
+      for (let i = 0; i < area.length; i++) { area[i] = labels[i] === k ? 1 : 0; if (area[i]) any = true; }
+      if (!any) continue;
+      blurGrid(area, gw, gh, smooth);
+      for (let i = 0; i < area.length; i++) if (area[i] > strongest[i]) { strongest[i] = area[i]; out[i] = k; }
+    }
+    labels.set(out);
+  }
+
+  // Regions too small to paint take their biggest neighbor's color, a few times over: a speck
+  // merged into a sliver can leave the two still too small together.
+  const fewest = (smallest / cell) * (smallest / cellY);
+  if (fewest >= 2) {
+    const region = new Int32Array(gw * gh);
+    const queue = new Int32Array(gw * gh);
+    for (let round = 0; round < 6; round++) {
+      region.fill(-1);
+      let merged = 0;
+      let id = 0;
+      for (let start = 0; start < labels.length; start++) {
+        if (region[start] >= 0) continue;
+        const k = labels[start];
+        // The region: every point of this color joined to this one, side to side.
+        let head = 0;
+        let tail = 0;
+        queue[tail++] = start;
+        region[start] = id;
+        const touching = new Map<number, number>();
+        while (head < tail) {
+          const at = queue[head++];
+          const x = at % gw;
+          const y = (at - x) / gw;
+          for (const next of [x > 0 ? at - 1 : -1, x < gw - 1 ? at + 1 : -1, y > 0 ? at - gw : -1, y < gh - 1 ? at + gw : -1]) {
+            if (next < 0) continue;
+            if (labels[next] !== k) {
+              touching.set(labels[next], (touching.get(labels[next]) ?? 0) + 1);
+            } else if (region[next] < 0) {
+              region[next] = id;
+              queue[tail++] = next;
+            }
+          }
+        }
+        if (tail < fewest && touching.size) {
+          let into = k;
+          let most = 0;
+          for (const [other, n] of touching) if (n > most) { most = n; into = other; }
+          for (let i = 0; i < tail; i++) labels[queue[i]] = into;
+          merged++;
+        }
+        id++;
+      }
+      if (!merged) break;
+    }
+  }
+
+  const made = { gw, gh, cell, cellY, labels };
+  if (paintCache.size > 8) paintCache.delete(paintCache.keys().next().value!);
+  paintCache.set(key, made);
+  return { ...made, mine };
+}
+
+/**
+ * Tone as a painting: the picture as flat regions of color, each filled solid in its pen - one set of
+ * lines at the spacing the pen fills solid at, at the layer's angle - with, unless asked not to, a
+ * line round each region, like the printed lines a painting by numbers is painted up to. Every
+ * color layer paints its own regions and outlines them in its own pen; the paper's are left bare.
+ */
+function paint(tones: Tones, photo: Photo, w: number, h: number): PhotoMarks {
+  const { gw, gh, cell, cellY, labels, mine } = paintRegions(tones, photo, w, h);
+  const isMine = (x: number, y: number) => {
+    const gx = Math.round(x / cell);
+    const gy = Math.round(y / cellY);
+    return gx >= 0 && gx < gw && gy >= 0 && gy < gh && labels[gy * gw + gx] === mine;
+  };
+  const spacing = Math.max(0.05, photo.spacingMm) / 25.4;
+  const step = Math.min(spacing / 2, cell);
+  const cx = w / 2;
+  const cy = h / 2;
+  const reach = Math.hypot(w, h) / 2;
+  const rad = (photo.angle * Math.PI) / 180;
+  const dx = Math.cos(rad);
+  const dy = Math.sin(rad);
+  const n = (v: number) => Number(v.toFixed(4));
+  const fill: string[] = [];
+  let strokes = 0;
+  let line = 0;
+  for (let o = -reach; o <= reach; o += spacing, line++) {
+    // Every other line runs back the way the last one came, so the pen doesn't travel home between them.
+    const back = line % 2 === 1;
+    const runs: [number, number][] = [];
+    let start: number | null = null;
+    let end = 0;
+    for (let t = -reach; t <= reach; t += step) {
+      if (isMine(cx - dy * o + dx * t, cy + dx * o + dy * t)) {
+        if (start === null) start = t;
+        end = t;
+      } else if (start !== null) {
+        runs.push([start, end]);
+        start = null;
+      }
+    }
+    if (start !== null) runs.push([start, end]);
+    if (back) runs.reverse();
+    for (const [a0, b0] of runs) {
+      if (b0 - a0 < spacing) continue; // a dab, not a line
+      const a = back ? b0 : a0;
+      const b = back ? a0 : b0;
+      fill.push(`M${n(cx - dy * o + dx * a)} ${n(cy + dx * o + dy * a)}L${n(cx - dy * o + dx * b)} ${n(cy + dx * o + dy * b)}`);
+      strokes++;
+    }
+  }
+  const passes = [fill.join("")];
+  if (photo.paintOutline ?? PAINT_DEFAULTS.outline) {
+    // Round each of this layer's regions: where its own area meets anything else, the box's edge included.
+    const field = new Float32Array(gw * gh);
+    for (let gy = 1; gy < gh - 1; gy++) for (let gx = 1; gx < gw - 1; gx++) field[gy * gw + gx] = labels[gy * gw + gx] === mine ? 1 : 0;
+    const rings: Node[][] = [];
+    for (const run of contour(field, gw, gh, 0.5)) {
+      const pts = run.map(([gx, gy]) => ({ x: gx * cell, y: gy * cellY }));
+      let length = 0;
+      for (let i = 1; i < pts.length; i++) length += Math.hypot(pts[i].x - pts[i - 1].x, pts[i].y - pts[i - 1].y);
+      if (length < 2 * Math.max(cell, cellY)) continue;
+      rings.push(fitNodes(pts, Math.max(cell, cellY) * FIT_CELLS));
+    }
+    const ordered = shortTravel(rings);
+    passes.push(pathData(ordered));
+    strokes += ordered.length;
+  }
+  return { passes, strokes };
+}
+
 // ---------- Hilbert curve ----------
 
 /**
@@ -4740,7 +4946,7 @@ export function simplified(pts: number[][], tolerance: number): number[][] {
 
 // Every style but hatching, which is what no style means: one list for writing and reading, so
 // none is written that isn't read back, or the other way round.
-const SAVED_STYLES = ["waves", "squiggle", "streamlines", "scribble", "oneline", "hilbert", "outlines", "centerlines", "silhouette", "edges"] as const;
+const SAVED_STYLES = ["waves", "squiggle", "streamlines", "scribble", "oneline", "hilbert", "outlines", "centerlines", "silhouette", "edges", "paint"] as const;
 const isSavedStyle = (v: unknown): v is (typeof SAVED_STYLES)[number] => (SAVED_STYLES as readonly unknown[]).includes(v);
 
 /** A photo read back from a saved drawing: only a picture and numbers are kept, so check them on the way in. */
@@ -4814,6 +5020,9 @@ export function photoFromData(raw: Record<string, unknown>): Photo | null {
     ...(Number.isFinite(Number(raw.stream_widest_mm)) && raw.stream_widest_mm !== undefined ? { streamWidestMm: Number(raw.stream_widest_mm) } : {}),
     ...(Number.isFinite(Number(raw.scribble_length_mm)) && raw.scribble_length_mm !== undefined ? { scribbleLengthMm: Number(raw.scribble_length_mm) } : {}),
     ...(Number.isFinite(Number(raw.scribble_min_mm)) && raw.scribble_min_mm !== undefined ? { scribbleMinMm: Number(raw.scribble_min_mm) } : {}),
+    ...(Number.isFinite(Number(raw.paint_smooth_mm)) && raw.paint_smooth_mm !== undefined ? { paintSmoothMm: Number(raw.paint_smooth_mm) } : {}),
+    ...(Number.isFinite(Number(raw.paint_smallest_mm)) && raw.paint_smallest_mm !== undefined ? { paintSmallestMm: Number(raw.paint_smallest_mm) } : {}),
+    ...(raw.paint_outline === false ? { paintOutline: false } : {}),
     ...(Number.isFinite(Number(raw.scribble_wiggle)) && raw.scribble_wiggle !== undefined ? { scribbleWiggle: Number(raw.scribble_wiggle) } : {}),
     ...(Number.isFinite(Number(raw.scribble_seed)) && raw.scribble_seed !== undefined ? { scribbleSeed: Number(raw.scribble_seed) } : {}),
     ...(Number.isFinite(Number(raw.stream_passes)) && raw.stream_passes !== undefined ? { streamPasses: Number(raw.stream_passes) } : {}),
@@ -4922,6 +5131,9 @@ export const photoData = (p: Photo) => ({
   ...(p.streamWidestMm !== undefined ? { stream_widest_mm: p.streamWidestMm } : {}),
   ...(p.scribbleLengthMm !== undefined ? { scribble_length_mm: p.scribbleLengthMm } : {}),
   ...(p.scribbleMinMm !== undefined ? { scribble_min_mm: p.scribbleMinMm } : {}),
+  ...(p.paintSmoothMm !== undefined ? { paint_smooth_mm: p.paintSmoothMm } : {}),
+  ...(p.paintSmallestMm !== undefined ? { paint_smallest_mm: p.paintSmallestMm } : {}),
+  ...(p.paintOutline === false ? { paint_outline: false } : {}),
   ...(p.scribbleWiggle !== undefined ? { scribble_wiggle: p.scribbleWiggle } : {}),
   ...(p.scribbleSeed !== undefined ? { scribble_seed: p.scribbleSeed } : {}),
   ...(p.streamPasses !== undefined ? { stream_passes: p.streamPasses } : {}),

@@ -6,7 +6,7 @@ import { Section } from "../../shared/components/controls/Section";
 import { panelIcon } from "../../shared/components/PanelToolbar";
 import { NumberField } from "../../shared/components/controls/NumberField";
 import controls from "../../shared/components/controls/controls.module.css";
-import { BLACK_SHARE, CENTER_DEFAULTS, KEY_FROM, MOST_COLORS, MOST_LAYERS, MOST_SIDE_LAYERS, MOST_PASSES, paperToneOf, OUTLINE_DEFAULTS, SILHOUETTE_DEFAULTS, STREAM_DEFAULTS, ONE_LINE_DEFAULTS, ONE_LINE_MOST, SCRIBBLE_DEFAULTS, HILBERT_DEFAULTS, WAVE_DEFAULTS, ANGLE_PRESETS, centerModeOf, EDGE_DEFAULTS, hatchShortestOf, PLATE_SETS, SQUIGGLE_DRAW, SQUIGGLE_INKSCAPE, SQUIGGLE_INKSCAPE_RANGES, SQUIGGLE_RANGES, coverSteps, plateSetOf, squiggleDrawOf, squiggleInkscapeOf, type AnglePreset, type SquiggleDraw, type SquiggleInkscape, type PlateSet, photoMarks, photoMode, type Photo, type Plate } from "../../shared/lib/drawing/photo";
+import { BLACK_SHARE, CENTER_DEFAULTS, KEY_FROM, MOST_COLORS, MOST_LAYERS, MOST_SIDE_LAYERS, MOST_PASSES, paperToneOf, OUTLINE_DEFAULTS, PAINT_DEFAULTS, SILHOUETTE_DEFAULTS, STREAM_DEFAULTS, ONE_LINE_DEFAULTS, ONE_LINE_MOST, SCRIBBLE_DEFAULTS, HILBERT_DEFAULTS, WAVE_DEFAULTS, ANGLE_PRESETS, centerModeOf, EDGE_DEFAULTS, hatchShortestOf, PLATE_SETS, SQUIGGLE_DRAW, SQUIGGLE_INKSCAPE, SQUIGGLE_INKSCAPE_RANGES, SQUIGGLE_RANGES, coverSteps, plateSetOf, squiggleDrawOf, squiggleInkscapeOf, type AnglePreset, type SquiggleDraw, type SquiggleInkscape, type PlateSet, photoMarks, photoMode, type Photo, type Plate } from "../../shared/lib/drawing/photo";
 import type { EdgeGen } from "../../shared/lib/drawing/edgeMask";
 import { MaskCard } from "./MaskCard";
 import { boxOf, type Shape } from "../../shared/lib/drawing/shapes";
@@ -630,6 +630,24 @@ export function PhotoCard({ shape, title, shapes, busy, targeted, layerCount, sh
                   </div>
                   {eachLayer("Angle, spacing, widest, flow and passes")}
                 </>
+              ) : photo.style === "paint" ? (
+                <>
+                  {/* Each color filled at its layer's angle: Uniform for one direction, a preset to set the colors apart. */}
+                  {anglesRow}
+                  <div className={`${styles.fillRow} ${styles.oneRow}`}>
+                    <NumberField label="Spacing" min={0.1} max={5} step={0.05} value={photo.spacingMm} onChange={(spacingMm) => actions.set({ spacingMm })} />
+                    {/* How rounded the borders between colors are, and how small a region may be: detailed to poster-like. Every color alike. */}
+                    <NumberField label="Smoothing" unit="mm" min={0} max={10} step={0.25} value={photo.paintSmoothMm ?? PAINT_DEFAULTS.smoothMm} onChange={(paintSmoothMm) => actions.set({ paintSmoothMm })} />
+                    <NumberField label="Smallest" unit="mm" min={0} max={50} step={0.5} value={photo.paintSmallestMm ?? PAINT_DEFAULTS.smallestMm} onChange={(paintSmallestMm) => actions.set({ paintSmallestMm })} />
+                  </div>
+                  {/* A line round each region, in its own color: crisp edges, like the printed lines showing through. */}
+                  <Checkbox size="md"
+                    checked={photo.paintOutline ?? PAINT_DEFAULTS.outline}
+                    label="Outlines"
+                    onChange={(e) => actions.set({ paintOutline: e.target.checked ? undefined : false })}
+                  />
+                  {eachLayer("Angle, spacing and outlines")}
+                </>
               ) : photo.style === "scribble" ? (
                 <>
                   {/* No angles: the strokes go where they wander. Spacing is how far apart they'd lie
@@ -828,6 +846,8 @@ export function PhotoCard({ shape, title, shapes, busy, targeted, layerCount, sh
                     : photo.style === "streamlines"
                     ? `${marks.strokes.toLocaleString()} lines, flowing along the image's shapes. They run from Spacing apart in the blacks to Widest apart, past which it's paper; Flow sets how broadly the shapes are followed${(photo.streamPasses ?? 1) > 1 ? ", and a second pass crosses the first in the darker half" : ""}.`
                     : photo.style === "scribble"
+                    ? `${marks.strokes.toLocaleString()} ${marks.strokes === 1 ? "stroke" : "strokes"}`
+                    : photo.style === "paint"
                     ? `${marks.strokes.toLocaleString()} ${marks.strokes === 1 ? "stroke" : "strokes"}`
                     : photo.style === "oneline"
                     ? `${marks.strokes === 1 ? "One line" : `${marks.strokes.toLocaleString()} lines`} through ${(marks.dots ?? 0).toLocaleString()} dots, ${((marks.lengthMm ?? 0) / 1000).toFixed(1)} m of drawing. The dots are thicker where the image is darker, so the line winds tighter there.${marks.strokes > 1 ? " The pen lifts over jumps longer than Lift over." : ""}`

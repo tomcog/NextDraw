@@ -1215,6 +1215,10 @@ export function photoActions(ctx: PhotoContext) {
     if (patch.keyStrength !== undefined) whole.keyStrength = patch.keyStrength;
     if (patch.keyFrom !== undefined) whole.keyFrom = patch.keyFrom;
     if (patch.blackShare !== undefined) whole.blackShare = patch.blackShare;
+    // Paint's regions are worked out once for every color: each layer smoothed or simplified on its
+    // own would leave gaps and overlaps where they meet.
+    if ("paintSmoothMm" in patch) whole.paintSmoothMm = patch.paintSmoothMm;
+    if ("paintSmallestMm" in patch) whole.paintSmallestMm = patch.paintSmallestMm;
     // The effect is the whole photo's: chosen in the toolbar, every layer drawn the same way.
     if ("style" in patch) whole.style = patch.style;
     // The edge mask frames the whole picture, so every layer - and every plate - is masked alike.
