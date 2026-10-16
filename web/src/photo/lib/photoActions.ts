@@ -19,7 +19,6 @@ import { searchPensOffPage } from "./penSearch";
 import { folderOf, pictureChannels, pictureSources, type Inks } from "./separationFolder";
 import { load, save as remember } from "../../shared/lib/storage";
 import type { InkProfile, Rendering } from "../../shared/lib/drawing/icc";
-import { exportProfilePsd } from "./profilePsd";
 
 /** The profile a photo was last split by, and its intent: what the next is split by to start with. */
 export const PROFILE_KEY = "photo-profile";
@@ -1343,26 +1342,8 @@ export function photoActions(ctx: PhotoContext) {
     }));
   };
 
-  /**
-   * The chosen photo, split by its profile as Image has it - the same intent and black point
-   * compensation - written as a Multichannel Photoshop file, a channel per ink, and downloaded.
-   */
-  const exportPhotoPsd = async () => {
-    if (!chosen?.photo?.profile) return;
-    setMessage({ text: "Making the Photoshop file…", ok: true, progress: true });
-    try {
-      const made = await exportProfilePsd(chosen.photo, photoStem().name);
-      // Full size goes unsaid, as anything done as asked; smaller than the photo is worth knowing.
-      setMessage(made.full
-        ? { text: "", ok: true }
-        : { text: `Downloaded ${made.name} at Image's working size, ${made.width} × ${made.height}: the original file isn't one Image knows. Open the photo from NextDraw's file browser to export it at full size`, ok: false });
-    } catch (err) {
-      setMessage({ text: `Couldn't make the Photoshop file: ${(err as Error).message}`, ok: false });
-    }
-  };
-
   return {
-    setChannelOf, splitPhotoProfile, exportPhotoPsd,
+    setChannelOf, splitPhotoProfile,
     addPhoto, addSeparations, switchPhotoMode, setKeyLayer, splitPhoto, splitPhotoByColor, splitPhotoBestFit, bestPens,
     placePhoto, replacePhoto, reloadPhoto, savePreset, applyPreset, deletePreset, turnPhoto, setPhotoOf, addEdgeMask, chooseEdgeMask, deleteEdgeMask, setEdgeGen, saveEdgeGen, setAngles, photoStem, splitPhotoCmyk, setPlatePen, setLayerColor,
     splitAroundPaper, setPaperTone, addPass, removePass,

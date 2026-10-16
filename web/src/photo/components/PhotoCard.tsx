@@ -53,8 +53,6 @@ export interface PhotoActions {
   /** Split the image by a printer's color profile, by its path, at a rendering intent (0 to 3) and
    *  with or without black point compensation. */
   setProfile: (path: string, rendering: Rendering) => void;
-  /** The image as the profile's inks, a Multichannel Photoshop file, downloaded. */
-  exportPsd: () => void;
   /** Change settings of the photo - this layer's, or every layer's when "All layers" is on. */
   set: (patch: Partial<Photo>) => void;
   split: (count: number) => void;
@@ -287,9 +285,6 @@ export function PhotoCard({ shape, title, shapes, busy, targeted, layerCount, sh
                   onChange={(e) => actions.setProfile(photo.profile!, { ...rendering, bpc: e.target.checked })}
                 />
               )}
-              <Button size="sm" variant="secondary" disabled={busy} title="Save the image as these inks: a Multichannel Photoshop file, a channel per ink, named and colored from the profile - from the original file, at full size, where Image knows it" onClick={actions.exportPsd}>
-                Export PSD
-              </Button>
             </>
           ) : photoMode(photo) === "cmyk" ? (
             <>
@@ -633,26 +628,21 @@ export function PhotoCard({ shape, title, shapes, busy, targeted, layerCount, sh
       {effectCards && passes.map((p) => p.mine ? (
         <Card key={p.id} variant="flat" className={styles.controls}>
           <div className={`${styles.cardBody} ${controls.cardSections}`}>
-            {/* Color mode first - how the picture is divided into layers and pens - then the effect. */}
-            {splits && (
-              <Section title={photoMode(photo) === "separations" ? "Separation" : "Color mode"} collapsibleKey="photo-layers">
-                {/* How many layers the photo is split into by tone. Each band layer has its own settings
-                  below; the photo's picture, brightness and contrast are what the bands are cut from. */}
-                {/* By value: read as black and white, split into tone bands. By colour: split into groups
-                  of similar colours, each drawn in the tool's nearest pen. Either way, a layer each, with
-                  its own lines. */}
-                {colourMode}
-                {photo.group && bleed}
-              </Section>
-            )}
-            {/* The effect's own numbers, under its name: the toolbar on the left chooses which. */}
+            {/* One card under the effect's name and icon - the toolbar on the left chooses which: first
+              the color mode, how the picture is divided into layers and pens, then the effect's own numbers. */}
             <Section
-              title={<span className={controls.iconTitle}>{effect.icon}{effect.label}</span>}
+              title={effect.label}
+              icon={effect.icon}
               // With more than one pass, this one comes off the image here, with its layers.
               action={passes.length > 1 ? (
                 <ButtonRound size="sm" icon={<Trash2 />} aria-label="Remove this pass" title="Take this pass and its layers off the image. The other passes stay" disabled={busy} onClick={actions.removePass} />
               ) : undefined}
             >
+              {/* How many layers the photo is split into by tone, or by colour, or by inks - a layer each,
+                with its own lines. Each band layer has its own settings; the photo's picture, brightness
+                and contrast are what the bands are cut from. */}
+              {splits && colourMode}
+              {splits && photo.group && bleed}
               {photo.style === "silhouette" ? (
                 <div className={styles.fillRow}>
                   <NumberField label="Paper lighter than" unit="%" min={1} max={99} step={1} value={Math.round((photo.silhouetteFrom ?? SILHOUETTE_DEFAULTS.from) * 100)} onChange={(v) => actions.set({ silhouetteFrom: v / 100 })} />
@@ -900,7 +890,7 @@ export function PhotoCard({ shape, title, shapes, busy, targeted, layerCount, sh
                     : photo.style === "streamlines"
                     ? `${marks.strokes.toLocaleString()} lines, flowing along the image's shapes. They run from Spacing apart in the blacks to Widest apart, past which it's paper; Flow sets how broadly the shapes are followed${(photo.streamPasses ?? 1) > 1 ? ", and a second pass crosses the first in the darker half" : ""}.`
                     : photo.style === "scribble"
-                    ? `${marks.strokes.toLocaleString()} ${marks.strokes === 1 ? "stroke" : "strokes"}, wandering and overlapping, laid down until each part has about as much ink as it's dark. Spacing sets how dense the blacks get; Length, how far a stroke runs before the pen lifts; Wiggle, how tightly it curls.`
+                    ? `${marks.strokes.toLocaleString()} ${marks.strokes === 1 ? "stroke" : "strokes"}, wandering and overlapping, laid down until each part has about as much ink as it's dark. Spacing sets how dense the blacks get; Min and Max, how short a stroke may be and how far it runs before the pen lifts, in mm; Wiggle, how tightly it curls.`
                     : photo.style === "oneline"
                     ? `${marks.strokes === 1 ? "One line" : `${marks.strokes.toLocaleString()} lines`} through ${(marks.dots ?? 0).toLocaleString()} dots, ${((marks.lengthMm ?? 0) / 1000).toFixed(1)} m of drawing. The dots are thicker where the image is darker, so the line winds tighter there.${marks.strokes > 1 ? " The pen lifts over jumps longer than Lift over." : ""}`
                     : photo.style === "hilbert"
