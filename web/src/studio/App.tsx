@@ -1534,16 +1534,18 @@ export default function App() {
   return () => window.removeEventListener("keydown", onKey);
  }, [picking, pickingLayer]);
 
- // Merge with the layer below: its shapes, and the fills on them, move up onto this layer and take on
- // its name, colour and visibility; the layer below goes. This layer stays where it is in the stack.
- const mergeDown = (id: string) => {
-  const at = layers.findIndex((l) => l.id === id);
-  if (at < 1) return; // the bottom layer has nothing below it
-  const below = layers[at - 1];
+ // Merge visible: the shapes on every shown layer, and the fills on them, move onto the topmost shown
+ // layer and take on its name, colour and place in the stack; the other shown layers go. Hidden
+ // layers are left as they are.
+ const visibleLayers = layers.filter((l) => !l.hidden);
+ const mergeVisible = () => {
+  if (visibleLayers.length < 2) return;
+  const top = visibleLayers[visibleLayers.length - 1];
+  const merged = new Set(visibleLayers.slice(0, -1).map((l) => l.id));
   record();
-  setShapes((list) => list.map((sh) => (sh.layerId === below.id ? { ...sh, layerId: id } : sh)));
-  setLayers((list) => list.filter((l) => l.id !== below.id));
-  setActiveLayer((current) => (current === below.id ? id : current));
+  setShapes((list) => list.map((sh) => (merged.has(sh.layerId) ? { ...sh, layerId: top.id } : sh)));
+  setLayers((list) => list.filter((l) => !merged.has(l.id)));
+  setActiveLayer((current) => (merged.has(current) ? top.id : current));
  };
 
  // Renaming in place. One undo step for the whole edit, taken as the field is entered, and the name is
@@ -1948,10 +1950,10 @@ export default function App() {
         onSelect: () => startPicking(rowMenu.id),
        }]),
        {
-        label: "Merge with below",
+        label: "Merge visible",
         icon: <LayersArrowDown />,
-        disabled: layers.findIndex((l) => l.id === rowMenu.id) < 1,
-        onSelect: () => mergeDown(rowMenu.id),
+        disabled: visibleLayers.length < 2,
+        onSelect: mergeVisible,
        },
        // There's always somewhere to draw, so the last layer stays.
        { label: "Delete", icon: <Trash2 />, danger: true, disabled: layers.length < 2, onSelect: () => removeLayer(rowMenu.id) },
