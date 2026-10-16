@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Segment, SegmentedControl, Toolbar, ToolbarExpander } from "@tomcoggia/ui";
-import { AudioWaveform, Circle, LassoSelect, LoaderPinwheel, Minus, MousePointer2, Pentagon, PencilRuler, Rainbow, Shell, Signal, Signature, Spline, Square, SwatchBook, SquareDashedMousePointer, Star, Type, Layers, Vibrate } from "lucide-react";
+import { LassoSelect, MousePointer2, Pentagon, PencilRuler, Rainbow, Signal, Spline, SwatchBook, SquareDashedMousePointer, Star, Type, Layers, Vibrate } from "lucide-react";
+import { EllipseIcon, LineIcon, RectangleIcon, SignatureIcon, SpiralIcon, SpirographIcon, WaveIcon } from "./toolIcons";
 import bar from "../../../shared/components/PreviewToolbar.module.css";
 import { load, save } from "../../../shared/lib/storage";
 import type { Tool } from "../Canvas";
@@ -14,17 +15,17 @@ const TOOLS: { kind: Tool; label: string; hint: string; icon: JSX.Element }[] = 
   // Cleanup: single strokes picked out of a layer's paths, for Delete, leaving the paths whole.
   { kind: "strokes", label: "Stroke select", hint: "Stroke select (D): click a stroke, or drag a box over strokes, on the targeted layers - Shift adds. Delete takes them out; their paths stay whole", icon: <SquareDashedMousePointer /> },
   { kind: "lasso", label: "Lasso", hint: "Lasso (Q): draw round strokes on the targeted layers to pick them - Shift adds. Delete takes them out; their paths stay whole", icon: <LassoSelect /> },
-  { kind: "rect", label: "Rectangle", hint: "Rectangle (R): drag on the page", icon: <Square /> },
-  { kind: "ellipse", label: "Ellipse", hint: "Oval (O): drag on the page", icon: <Circle /> },
-  { kind: "line", label: "Line", hint: "Line (L): drag on the page", icon: <Minus /> },
+  { kind: "rect", label: "Rectangle", hint: "Rectangle (R): drag on the page", icon: <RectangleIcon /> },
+  { kind: "ellipse", label: "Ellipse", hint: "Oval (O): drag on the page", icon: <EllipseIcon /> },
+  { kind: "line", label: "Line", hint: "Line (L): drag on the page", icon: <LineIcon /> },
   // Parametric shapes: drawn as a box like the rest, then tuned by their numbers in the Curve card.
-  { kind: "hypotrochoid", label: "Spirograph", hint: "Draw a spirograph: drag on the page, then set its circles", icon: <LoaderPinwheel /> },
+  { kind: "hypotrochoid", label: "Spirograph", hint: "Draw a spirograph: drag on the page, then set its circles", icon: <SpirographIcon /> },
   { kind: "parabolic", label: "Parabolic curve", hint: "Draw curve stitching: drag on the page, then set its strings", icon: <Signal /> },
   { kind: "polygon", label: "Polygon", hint: "Polygon (P): drag on the page, then set how many sides", icon: <Pentagon /> },
   { kind: "star", label: "Star", hint: "Star (S): drag on the page, then set its points", icon: <Star /> },
-  { kind: "spiral", label: "Spiral", hint: "Draw a spiral: drag on the page, then set its turns", icon: <Shell /> },
+  { kind: "spiral", label: "Spiral", hint: "Draw a spiral: drag on the page, then set its turns", icon: <SpiralIcon /> },
   { kind: "arc", label: "Arc", hint: "Arc (A): drag on the page, then set where it starts and how far it goes", icon: <Rainbow /> },
-  { kind: "wave", label: "Wave", hint: "Draw a wave: drag on the page, then set how many", icon: <AudioWaveform /> },
+  { kind: "wave", label: "Wave", hint: "Draw a wave: drag on the page, then set how many", icon: <WaveIcon /> },
   { kind: "text", label: "Text", hint: "Text (T): drag to say how tall, then type the words", icon: <Type /> },
 ];
 
@@ -115,7 +116,7 @@ export function ToolPicker({ tool, onTool, simplifying, onSimplify, jiggling, on
           </Segment>
         </SegmentedControl>
         <SegmentedControl size="sm" variant="dark" actions aria-label="Add">
-          <Segment icon={<Signature />} title="Signature: TC and this year, in the page's bottom right corner on its own Signature layer - drag it where it goes" onClick={onSignature}>
+          <Segment icon={<SignatureIcon />} title="Signature: TC and this year, in the page's bottom right corner on its own Signature layer - drag it where it goes" onClick={onSignature}>
             Signature
           </Segment>
           <Segment icon={<SwatchBook />} title="Registration: a solid block for each layer in the page's lower left corner, left to right in the order they're plotted - again to make them afresh after the layers change" onClick={onRegistration}>
