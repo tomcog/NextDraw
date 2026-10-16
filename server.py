@@ -299,34 +299,133 @@ def mark_printed(layer_ids):
         pass
 
 
-# The queue: drawings waiting their turn on the plotter, in the order they're to be plotted. Kept on
-# disk beside the jobs, so every open Plot page shows the same one and a restart keeps it. Only the
-# list - each drawing's own choices stay in the drawing. A drawing is marked done when every layer
-# Plot would draw of it has plotted to the end; the page can tick or untick it by hand as well.
-QUEUE_FILE = JOBS / "queue.json"
+# The queue: drawings waiting their turn on the plotter, in the order they're to be plotted. One queue
+# for every Mac and plotter: kept in iCloud Drive beside the presets, so a drawing queued on one Mac is
+# there on the other, and one plotted to the end on either is marked done on both. A Mac without
+# iCloud Drive keeps its own beside the jobs. Only the list - each drawing's own choices stay in the
+# drawing. A drawing is marked done when every layer Plot would draw of it has plotted to the end; the
+# page can tick or untick it by hand as well.
+LOCAL_QUEUE_FILE = JOBS / "queue.json"
+QUEUE_FILE = (ICLOUD_DRIVE / "NextDraw Studio" / "queue.json") if ICLOUD_DRIVE.is_dir() else LOCAL_QUEUE_FILE
 queue_lock = threading.Lock()
 
 
-def read_queue():
+def queue_path_to_file(path):
+    """A queued drawing's path as the file keeps it: from iCloud Drive or the home folder where it's in
+    one, so it finds the same drawing on a Mac whose home folder has another name."""
+    text = str(path)
+    for prefix, root in (("icloud:", ICLOUD_DRIVE), ("~", Path.home())):
+        if text.startswith(str(root) + "/"):
+            return prefix + text[len(str(root)):]
+    return text
+
+
+def queue_path_from_file(text):
+    """The other way: a kept path as it is on this Mac."""
+    text = str(text)
+    if text.startswith("icloud:"):
+        return str(ICLOUD_DRIVE) + text[len("icloud:"):]
+    return os.path.expanduser(text)
+
+
+def queue_file_stamp():
     try:
-        saved = json.loads(QUEUE_FILE.read_text())
-        items = [i for i in saved.get("items", []) if isinstance(i, dict) and i.get("path")]
+        st = QUEUE_FILE.stat()
+        return (st.st_mtime_ns, st.st_size)
+    except OSError:
+        return None
+
+
+def read_queue_file(path):
+    """The drawings a queue file lists, with this Mac's paths, and its version. None if it can't be read
+    (not there, or iCloud hasn't brought it down yet)."""
+    try:
+        saved = json.loads(path.read_text())
+        items = []
+        for i in saved.get("items", []):
+            if isinstance(i, dict) and i.get("path"):
+                where = Path(queue_path_from_file(i["path"]))
+                items.append(queue_entry(where, i.get("id") or f"{time.time_ns():x}{len(items)}", i.get("done")))
         return {"items": items, "version": saved.get("version")}
-    except (OSError, ValueError, AttributeError):
-        return {"items": [], "version": None}
+    except (OSError, ValueError, AttributeError, TypeError):
+        return None
 
 
-queue = read_queue()
+def first_queue():
+    """The queue at start: the shared one, or - the first time it's kept in iCloud Drive - this Mac's own
+    from before, which then becomes the shared one."""
+    shared = read_queue_file(QUEUE_FILE)
+    if shared is not None or QUEUE_FILE == LOCAL_QUEUE_FILE:
+        return shared or {"items": [], "version": None}
+    own = read_queue_file(LOCAL_QUEUE_FILE)
+    if own and own["items"]:
+        return own  # written to iCloud Drive by the first sync_queue, which finds no file there
+    return {"items": [], "version": None}
+
+
+queue = None  # read on first use, by sync_queue: what it's built with comes further down
+queue_stamp = None  # the queue file as last read or written here, to notice when the other Mac changes it
+
+
+def queue_duplicates():
+    """iCloud's copies of the queue file - "queue 2.json" - made when both Macs changed it at once."""
+    try:
+        return sorted(p for p in QUEUE_FILE.parent.glob("queue *.json") if re.fullmatch(r"queue \d+\.json", p.name))
+    except OSError:
+        return []
+
+
+def sync_queue():
+    """Catch up with the queue file, called holding queue_lock. Re-reads it when the other Mac has
+    changed it, and folds in any copies iCloud made of it: a drawing either one lists is kept (in the
+    file's order, the copy's extras after), and done if either says so. Better a drawing back in the
+    queue than one lost."""
+    global queue, queue_stamp
+    if queue is None:
+        queue = first_queue()
+    dupes = queue_duplicates()
+    stamp = queue_file_stamp()
+    if stamp == queue_stamp and not dupes and stamp is not None:
+        return
+    shared = read_queue_file(QUEUE_FILE) if stamp is not None else None
+    if shared is None:
+        shared = queue  # not readable just now: keep what's held, and write it back if there's no file
+    items = [dict(i) for i in shared["items"]]
+    for dupe in dupes:
+        other = read_queue_file(dupe)
+        if other is None:
+            continue
+        by_path = {i["path"]: i for i in items}
+        for i in other["items"]:
+            if i["path"] in by_path:
+                if i.get("done"):
+                    by_path[i["path"]]["done"] = True
+            else:
+                items.append(dict(i))
+                by_path[i["path"]] = items[-1]
+    if dupes or (stamp is None and items):
+        write_queue(items)  # the merge, or a queue the file doesn't have yet
+    else:
+        queue = {"items": items, "version": shared.get("version")}
+        queue_stamp = stamp
+    for dupe in dupes:
+        try:
+            dupe.unlink()  # folded in above
+        except OSError:
+            pass
 
 
 def write_queue(items):
     """Called holding queue_lock."""
-    global queue
+    global queue, queue_stamp
     queue = {"items": items, "version": f"{time.time_ns():x}"}
     try:
-        tmp = QUEUE_FILE.with_suffix(".tmp")
-        tmp.write_text(json.dumps(queue))
+        QUEUE_FILE.parent.mkdir(parents=True, exist_ok=True)
+        kept = [{**i, "path": queue_path_to_file(i["path"])} for i in items]
+        tmp = QUEUE_FILE.with_name(".queue.json.tmp")
+        tmp.write_text(json.dumps({"items": kept, "version": queue["version"]}))
         os.replace(tmp, QUEUE_FILE)
+        queue_stamp = queue_file_stamp()
     except OSError:
         pass  # the queue still holds until the app restarts
 
@@ -348,6 +447,7 @@ def queue_mark_done_if_printed(root, printed):
     if not wanted or not all(i in printed for i in wanted):
         return
     with queue_lock:
+        sync_queue()
         items = queue["items"]
         if any(queue_is_open(i, current) and not i.get("done") for i in items):
             write_queue([{**i, "done": True} if queue_is_open(i, current) else i for i in items])
@@ -2641,6 +2741,7 @@ def status():
     with plot_settings_lock:
         snap["settings_version"] = shared_settings["version"]
     with queue_lock:
+        sync_queue()
         snap["queue_version"] = queue["version"]
     with printed_lock:
         snap["printed_layers"] = sorted(printed_layers)
@@ -3770,6 +3871,7 @@ def put_plot_settings():
 @app.get("/api/queue")
 def get_queue():
     with queue_lock:
+        sync_queue()
         items = [{**i, "missing": not Path(i["path"]).is_file()} for i in queue["items"]]
         return jsonify(items=items, version=queue["version"])
 
@@ -3796,6 +3898,7 @@ def put_queue():
         item_id = entry.get("id") if isinstance(entry.get("id"), str) and entry.get("id") else f"{time.time_ns():x}{len(items)}"
         items.append(queue_entry(path, item_id, entry.get("done")))
     with queue_lock:
+        sync_queue()  # the other Mac's copies folded in and deleted first, so they don't come back over this
         write_queue(items)
     return get_queue()
 

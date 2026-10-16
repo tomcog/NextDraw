@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Button, ButtonRound, InputSelect, Segment, SegmentedControl } from "@tomcoggia/ui";
-import { AlignHorizontalJustifyCenter, AlignHorizontalJustifyEnd, AlignHorizontalJustifyStart, AlignVerticalJustifyCenter, AlignVerticalJustifyEnd, AlignVerticalJustifyStart, MoveHorizontal, MoveVertical, Pipette, RotateCcwSquare, RotateCwSquare } from "lucide-react";
+import { Pipette, RotateCcwSquare, RotateCwSquare } from "lucide-react";
 import styles from "./controls.module.css";
 import { LengthField } from "./LengthField";
 import { UnitSwitch } from "./UnitSwitch";
@@ -10,6 +10,39 @@ import { PAPER_SIZES } from "../../lib/constants";
 import { fmtLen } from "../../lib/format";
 import type { Units } from "../../lib/types";
 import { FIT_CENTERED, type FitAlign } from "../../lib/geometry";
+
+/** The fit-alignment icons from the NextDraw Figma file (Frame 3): a 7 × 12 drawing
+ *  beside or on a full-height line, turned for each direction. */
+function FitIcon({ centered = false, turn = 0 }: { centered?: boolean; turn?: number }) {
+  return (
+    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+      <g transform={turn ? `rotate(${turn} 8 8)` : undefined}>
+        <rect x={centered ? 5 : 0.5} y="2.51" width="6" height="11" rx="0.5" stroke="currentColor" strokeWidth="1" />
+        <rect x={centered ? 7.5 : 8.5} y="0.01" width="1" height="16" rx="0.5" fill="currentColor" />
+      </g>
+    </svg>
+  );
+}
+
+/** The paper-orientation icons from the NextDraw Figma file (Frame 5): a page with its
+ *  corner folded at the top right, standing up or lying on its side. */
+function SheetIcon({ wide = false }: { wide?: boolean }) {
+  return (
+    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1" aria-hidden="true">
+      {wide ? (
+        <>
+          <path d="M1 12.7V3C1 2.7239 1.2239 2.5 1.5 2.5H10.6535C10.919 2.5 11.1735 2.6056 11.3611 2.7934L14.7076 6.1449C14.8948 6.3324 15 6.5865 15 6.8515V12.7C15 12.9762 14.7761 13.2 14.4999 13.2H1.5001C1.2239 13.2 1 12.9762 1 12.7Z" />
+          <path d="M10.7633 2.7253V6.25C10.7633 6.5261 10.8839 6.6536 11.16 6.6536H14.7392" />
+        </>
+      ) : (
+        <>
+          <path d="M3.3 15H13C13.2761 15 13.5 14.7761 13.5 14.5V5.3465C13.5 5.081 13.3944 4.8265 13.2066 4.6389L9.8551 1.2924C9.6676 1.1052 9.4135 1 9.1485 1H3.3C3.0239 1 2.8 1.2239 2.8 1.5001V14.4999C2.8 14.7761 3.0239 15 3.3 15Z" />
+          <path d="M13.2747 5.2367H9.75C9.4738 5.2367 9.3464 5.1162 9.3464 4.84V1.2608" />
+        </>
+      )}
+    </svg>
+  );
+}
 
 interface Props {
   /** The paper in mm, as it lies: its width across, its height down. */
@@ -159,8 +192,8 @@ export function PaperSection({ w, h, sizeId, units, color, collapsibleKey, disab
             A square sheet lies neither way, so neither is chosen. */}
         <SegmentedControl size="sm" variant="dark" aria-label="Which way the paper lies">
           {[
-            { wide: true, icon: <MoveHorizontal />, label: "Landscape", hint: "Landscape: the paper lies on its side" },
-            { wide: false, icon: <MoveVertical />, label: "Portrait", hint: "Portrait: the paper stands up" },
+            { wide: true, icon: <SheetIcon wide />, label: "Landscape", hint: "Landscape: the paper lies on its side" },
+            { wide: false, icon: <SheetIcon />, label: "Portrait", hint: "Portrait: the paper stands up" },
           ].map(({ wide, icon, label, hint }) => {
             const on = landscape === wide && w !== h;
             return (
@@ -234,18 +267,18 @@ export function PaperSection({ w, h, sizeId, units, color, collapsibleKey, disab
           <div className={styles.fitAlign}>
             <SegmentedControl size="sm" variant="dark" aria-label="Fit across: left, center or right">
               {[
-                { x: 0 as const, icon: <AlignHorizontalJustifyStart />, label: "Left", hint: "Fit against the left margin" },
-                { x: 0.5 as const, icon: <AlignHorizontalJustifyCenter />, label: "Center", hint: "Fit centered across the paper" },
-                { x: 1 as const, icon: <AlignHorizontalJustifyEnd />, label: "Right", hint: "Fit against the right margin" },
+                { x: 0 as const, icon: <FitIcon />, label: "Left", hint: "Fit against the left margin" },
+                { x: 0.5 as const, icon: <FitIcon centered />, label: "Center", hint: "Fit centered across the paper" },
+                { x: 1 as const, icon: <FitIcon turn={180} />, label: "Right", hint: "Fit against the right margin" },
               ].map(({ x, icon, label, hint }) => (
                 <Segment key={label} selected={align.x === x} icon={icon} aria-label={label} title={hint} disabled={disabled} onClick={() => keepAlign({ ...align, x })} />
               ))}
             </SegmentedControl>
             <SegmentedControl size="sm" variant="dark" aria-label="Fit down: top, middle or bottom">
               {[
-                { y: 0 as const, icon: <AlignVerticalJustifyStart />, label: "Top", hint: "Fit against the top margin" },
-                { y: 0.5 as const, icon: <AlignVerticalJustifyCenter />, label: "Middle", hint: "Fit centered down the paper" },
-                { y: 1 as const, icon: <AlignVerticalJustifyEnd />, label: "Bottom", hint: "Fit against the bottom margin" },
+                { y: 0 as const, icon: <FitIcon turn={90} />, label: "Top", hint: "Fit against the top margin" },
+                { y: 0.5 as const, icon: <FitIcon centered turn={-90} />, label: "Middle", hint: "Fit centered down the paper" },
+                { y: 1 as const, icon: <FitIcon turn={-90} />, label: "Bottom", hint: "Fit against the bottom margin" },
               ].map(({ y, icon, label, hint }) => (
                 <Segment key={label} selected={align.y === y} icon={icon} aria-label={label} title={hint} disabled={disabled} onClick={() => keepAlign({ ...align, y })} />
               ))}
