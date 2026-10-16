@@ -1,4 +1,3 @@
-import type { ReactNode } from "react";
 import { ButtonRound, InputText } from "@tomcoggia/ui";
 import { FilePlus, FolderOpen, Save } from "lucide-react";
 import { FileCard } from "./FileCard";
@@ -13,8 +12,6 @@ interface Props {
   dirty: boolean;
   hasShapes: boolean;
   busy: boolean;
-  /** The question asked before a new drawing replaces one with unsaved work, when it's being asked. */
-  confirm: ReactNode;
   onSave: () => void;
   /** Open another drawing in this one's place: the file browser, which asks about unsaved work. */
   onOpen: () => void;
@@ -28,7 +25,7 @@ interface Props {
  * Shared: the File card's inside in all three apps - the drawing's name, where it's saved, and New,
  * Open and Save - in the File card every app has (FileCard).
  */
-export function FileSection({ name, onName, saved, dirty, hasShapes, busy, confirm, onSave, onOpen, onNew, collapsibleKey }: Props) {
+export function FileSection({ name, onName, saved, dirty, hasShapes, busy, onSave, onOpen, onNew, collapsibleKey }: Props) {
   // A safety-toned round button: the half of "are you sure?" that keeps the work, and the one button
   // here that writes a file. Folded, the card keeps it beside the drawing's name.
   const save = (
@@ -46,8 +43,6 @@ export function FileSection({ name, onName, saved, dirty, hasShapes, busy, confi
     <FileCard
       fileName={name || null}
       collapsibleKey={collapsibleKey}
-      // The question about unsaved work is asked in here: never folded away while it's waiting.
-      forceOpen={Boolean(confirm)}
       action={
         <span className={controls.headerTools}>
           <ButtonRound size="sm" icon={<FilePlus />} aria-label="New drawing" title="Close this drawing and start a new one" disabled={busy} onClick={onNew} />
@@ -70,8 +65,6 @@ export function FileSection({ name, onName, saved, dirty, hasShapes, busy, confi
       <p className={controls.fileWhere} title={saved?.path ?? undefined}>
         {saved ? saved.folder : "Not saved yet"}
       </p>
-
-      {confirm}
     </FileCard>
   );
 }

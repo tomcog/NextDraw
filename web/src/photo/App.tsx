@@ -13,6 +13,7 @@ import { FileBrowser } from "../shared/components/FileBrowser";
 import { HistoryToolbar, type View } from "../shared/components/PreviewToolbar";
 import { AppSwitch } from "../shared/components/AppSwitch";
 import { ToolbarSeparator } from "../shared/components/ToolbarSeparator";
+import { UnsavedChangesModal } from "../shared/components/UnsavedChangesModal";
 import { StatusBanner } from "../shared/components/StatusBanner";
 import { api, postJSON } from "../shared/lib/api";
 import { PAPER_SIZES } from "../shared/lib/constants";
@@ -479,27 +480,19 @@ export default function App() {
       void openPicked(pictures);
     },
   };
-  const confirmBlock = confirmNext && (
-    <div className={styles.confirm} role="alertdialog" aria-label="Replace this drawing">
-      <p>{file.saved ? `“${file.name}” has` : "This drawing has"} changes that aren’t saved.</p>
-      <div className={styles.actions}>
-        <Button
-          size="sm"
-          disabled={busy}
-          onClick={async () => {
-            if (await file.save()) goOn(confirmNext);
-          }}
-        >
-          Save, then carry on
-        </Button>
-        <Button size="sm" tone="danger" variant="secondary" onClick={() => goOn(confirmNext)}>
-          Discard and carry on
-        </Button>
-        <Button size="sm" variant="tertiary" onClick={() => setConfirmNext(null)}>
-          Keep editing
-        </Button>
-      </div>
-    </div>
+  // Asked in the library's Modal, over everything, as Studio and Plot ask it.
+  const confirmModal = (
+    <UnsavedChangesModal
+      open={Boolean(confirmNext)}
+      name={file.saved ? file.name : null}
+      onSave={async () => {
+        if (!confirmNext || !(await file.save())) return false;
+        goOn(confirmNext);
+        return true;
+      }}
+      onDiscard={() => confirmNext && goOn(confirmNext)}
+      onCancel={() => setConfirmNext(null)}
+    />
   );
 
   // ---- The rail ----
@@ -742,8 +735,7 @@ export default function App() {
   const photoInput = useRef<HTMLInputElement>(null);
   const mainRail = (
     <>
-      {/* Out while it's asking about unsaved work too, even put away: the question is asked in it. */}
-      {(fileCard || confirmNext) && (
+      {fileCard && (
         <Card variant="flat" className={styles.controls}>
           <div className={`${styles.cardBody} ${controls.cardSections}`}>
             <FileSection
@@ -754,7 +746,6 @@ export default function App() {
               dirty={file.dirty}
               hasShapes={shapes.length > 0}
               busy={busy}
-              confirm={confirmBlock}
               onSave={() => file.save()}
               onOpen={() => setBrowsing("drawing")}
               onNew={() => ask({ kind: "new" })}
@@ -793,7 +784,7 @@ export default function App() {
   // The toolbar's effect is the whole photo's. Silhouette has no tones or colours to split by, so a
   // split photo comes back together as one layer drawn that way; separations keep a plate each.
   // Whether the rail has any card to show; with none, the stage takes its width.
-  const railOut = Boolean(fileCard || paperCard || penCard || confirmNext || infoCard || (chosen?.photo && (effectCards || layersCard || adjustCard || vignetteCard || maskCard)));
+  const railOut = Boolean(fileCard || paperCard || penCard || infoCard || (chosen?.photo && (effectCards || layersCard || adjustCard || vignetteCard || maskCard)));
 
   const setEffect = (effect: Effect) => {
     setEffectCards(true);
@@ -809,6 +800,7 @@ export default function App() {
       {/* Problems, and what's under way, across the top of the page - never on the preview's rulers. */}
       <StatusBanner message={file.lock && !(message.text && !message.ok) ? lockBanner(file.lock, () => void file.goTo("plot")) : banner} />
       <Hints />
+      {confirmModal}
       <FileBrowser
         open={browsing !== null}
         endpoint="/api/studio/read"

@@ -33,6 +33,7 @@ import { Settings as SettingsIcon } from "lucide-react";
 import { Section } from "../shared/components/controls/Section";
 import controls from "../shared/components/controls/controls.module.css";
 import { StatusBanner } from "../shared/components/StatusBanner";
+import { UnsavedChangesModal } from "../shared/components/UnsavedChangesModal";
 import { AppSwitch } from "../shared/components/AppSwitch";
 import { ToolbarSeparator } from "../shared/components/ToolbarSeparator";
 import { SettingsHud } from "./components/SettingsHud";
@@ -1045,20 +1046,14 @@ export default function App() {
 
   // Another drawing in this one's place - opened, dropped, a sheet made - when this one has changes
   // not saved: asked first, as the editors ask. Save, on the File card, keeps them.
+  // What would replace the drawing, waiting on the question about changes not saved.
+  const [replaceAsk, setReplaceAsk] = useState<{ go: () => void } | null>(null);
   const replacing = (go: () => void) => {
     if (!refs.current.status?.file_dirty) {
       go();
       return;
     }
-    setConfirmation({
-      message: `${refs.current.fileName ?? "This drawing"} has changes that aren’t saved. Save it first to keep them.`,
-      confirmLabel: "Discard them",
-      danger: true,
-      onConfirm: () => {
-        setConfirmation(null);
-        go();
-      },
-    });
+    setReplaceAsk({ go });
   };
 
   const openBrowser = () => {
@@ -1078,18 +1073,18 @@ export default function App() {
   useEffect(() => setDraftName(fileStem), [fileStem]);
   const renamed = cleanFileName(draftName) !== cleanFileName(fileStem);
   const [saving, setSaving] = useState(false);
-  const saveDrawing = async () => {
-    if (!fileName || busy || saving) return;
+  const saveDrawing = async (): Promise<boolean> => {
+    if (!fileName || busy || saving) return false;
     setSaving(true);
     try {
       const current = await api<Current>("/api/current");
-      if (current.empty) return;
+      if (current.empty) return false;
       const name = cleanFileName(draftName);
       const own = Boolean(current.path) && name === cleanFileName(current.name);
       // Written from what the editors could redraw: over its own file, that would drop the rest.
       if (own && current.dirty && current.foreign > 0) {
         setLocalMessage({ text: `${current.name} has ${current.foreign} ${current.foreign === 1 ? "mark" : "marks"} that can’t be redrawn. Give it another name to save a copy.`, tone: "error" });
-        return;
+        return false;
       }
       const folder = current.path ? current.path.slice(0, current.path.lastIndexOf("/")) : current.save_to;
       const res = await postJSON<{ name: string; folder: string }>("/api/studio/save", {
@@ -1101,8 +1096,10 @@ export default function App() {
         text: savedAs.toLowerCase() === asked.toLowerCase() ? `Saved to ${res.folder}` : `Saved as ${savedAs} in ${res.folder}: there was already a drawing called ${asked}`,
         tone: "ok",
       });
+      return true;
     } catch (err) {
       setLocalMessage({ text: (err as Error).message, tone: "error" });
+      return false;
     } finally {
       setSaving(false);
     }
@@ -1795,6 +1792,22 @@ export default function App() {
       <StatusBanner message={heldBanner} />
       <StatusBanner message={notesBanner} />
       <Hints />
+      <UnsavedChangesModal
+        open={Boolean(replaceAsk)}
+        name={status?.file_path ? fileStem : null}
+        onSave={async () => {
+          if (!replaceAsk || !(await saveDrawing())) return false;
+          setReplaceAsk(null);
+          replaceAsk.go();
+          return true;
+        }}
+        onDiscard={() => {
+          if (!replaceAsk) return;
+          setReplaceAsk(null);
+          replaceAsk.go();
+        }}
+        onCancel={() => setReplaceAsk(null)}
+      />
       <FileBrowser
         open={browserOpen}
         onClose={() => setBrowserOpen(false)}
@@ -1979,7 +1992,6 @@ export default function App() {
                 dirty={Boolean(status?.file_dirty) || !status?.file_path || renamed}
                 hasShapes={Boolean(fileName)}
                 busy={busy || saving}
-                confirm={null}
                 onSave={() => void saveDrawing()}
                 onOpen={openBrowser}
                 onNew={newDrawing}

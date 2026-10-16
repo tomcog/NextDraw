@@ -95,26 +95,6 @@
   padding: 0.375rem 1.25rem;
 }
 
-/* Asked in the rail before a new sheet replaces one with unsaved changes, as Studio asks. */
-.confirm {
-  margin-top: 0.5rem;
-  padding: 0.5rem;
-  border-radius: 6px;
-  background: var(--ui-surface-muted);
-}
-
-.confirm p {
-  margin: 0 0 0.5rem;
-  font-size: 0.8125rem;
-  color: var(--ui-text-muted);
-}
-
-.actions {
-  display: flex;
-  flex-direction: column;
-  gap: 0.375rem;
-}
-
 /* Fields side by side while they stay readable, then onto the next line - as in Studio's cards. */
 .fillRow {
   display: flex;

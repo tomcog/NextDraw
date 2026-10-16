@@ -20,6 +20,7 @@ import { isVarnishLayer, joinLayerName, labelAfter, splitLayerName, VARNISH, VAR
 import { HistoryToolbar, type View } from "../shared/components/PreviewToolbar";
 import { StatusBanner } from "../shared/components/StatusBanner";
 import { AppSwitch } from "../shared/components/AppSwitch";
+import { UnsavedChangesModal } from "../shared/components/UnsavedChangesModal";
 import { ToolbarSeparator } from "../shared/components/ToolbarSeparator";
 import type { Zoom } from "../shared/components/BedCanvas";
 import { Canvas, isStrokeTool, type Tool } from "./components/Canvas";
@@ -1676,38 +1677,24 @@ export default function App() {
   setPage(landscape ? { w: Math.max(size.w, size.h), h: Math.min(size.w, size.h) } : { w: Math.min(size.w, size.h), h: Math.max(size.w, size.h) });
  };
 
- // Asked in the rail rather than in a dialog: the question is about this drawing, and the answer is
- // one of three buttons. Saving first is offered because wanting a new drawing is rarely the same as
- // wanting to lose this one. Shown in whichever rail is up, since Setup starts new drawings too.
- const confirmNewBlock = confirmNext && (
-         <div className={styles.confirm} role="alertdialog" aria-label="Replace this drawing">
-          <p>
-           {saved ? `“${name}” has` : "This drawing has"} changes that aren’t saved.
-          </p>
-          <div className={styles.actions}>
-           <Button
-            size="sm"
-            disabled={busy}
-            onClick={async () => {
-             if (await save()) {
-              setConfirmNext(null);
-              confirmNext.go();
-             }
-            }}
-           >
-            Save, then {confirmNext.what}
-           </Button>
-           <Button size="sm" tone="danger" variant="secondary" onClick={() => {
-            setConfirmNext(null);
-            confirmNext.go();
-           }}>
-            Discard and {confirmNext.what}
-           </Button>
-           <Button size="sm" variant="tertiary" onClick={() => setConfirmNext(null)}>
-            Keep editing
-           </Button>
-          </div>
-         </div>
+ // Asked in the library's Modal, over everything: Setup starts new drawings too.
+ const confirmModal = (
+  <UnsavedChangesModal
+   open={Boolean(confirmNext)}
+   name={saved ? name : null}
+   onSave={async () => {
+    if (!confirmNext || !(await save())) return false;
+    setConfirmNext(null);
+    confirmNext.go();
+    return true;
+   }}
+   onDiscard={() => {
+    if (!confirmNext) return;
+    setConfirmNext(null);
+    confirmNext.go();
+   }}
+   onCancel={() => setConfirmNext(null)}
+  />
  );
 
  // The Paper card, in the drawing's rail and image conversion's.
@@ -1829,6 +1816,7 @@ export default function App() {
    {/* Problems, and what's under way, across the top of the page - never on the preview's rulers. */}
    <StatusBanner message={banner} />
    <Hints />
+   {confirmModal}
    <FileBrowser
     open={browserOpen}
     endpoint="/api/studio/read"
@@ -2113,8 +2101,7 @@ export default function App() {
 
     <div className={styles.side}>
      <>
-     {/* Out while it's asking about unsaved work too, even put away: the question is asked in it. */}
-     {(fileCard || confirmNewBlock) && (
+     {fileCard && (
      <Card variant="flat" className={styles.controls}>
       <div className={`${styles.cardBody} ${controls.cardSections}`}>
        <FileSection
@@ -2125,7 +2112,6 @@ export default function App() {
         dirty={dirty}
         hasShapes={shapes.length > 0}
         busy={busy}
-        confirm={confirmNewBlock}
         onSave={save}
         onOpen={() => setBrowserOpen(true)}
         onNew={() => ask("start new", () => newDrawing())}
