@@ -6,7 +6,7 @@ import { Section } from "../../shared/components/controls/Section";
 import { panelIcon } from "../../shared/components/PanelToolbar";
 import { NumberField } from "../../shared/components/controls/NumberField";
 import controls from "../../shared/components/controls/controls.module.css";
-import { BLACK_SHARE, CENTER_DEFAULTS, KEY_FROM, MOST_COLORS, MOST_LAYERS, MOST_SIDE_LAYERS, MOST_PASSES, paperToneOf, OUTLINE_DEFAULTS, PAINT_DEFAULTS, SILHOUETTE_DEFAULTS, STREAM_DEFAULTS, ONE_LINE_DEFAULTS, ONE_LINE_MOST, SCRIBBLE_DEFAULTS, HILBERT_DEFAULTS, WAVE_DEFAULTS, ANGLE_PRESETS, centerModeOf, EDGE_DEFAULTS, hatchShortestOf, PLATE_SETS, SQUIGGLE_DRAW, SQUIGGLE_INKSCAPE, SQUIGGLE_INKSCAPE_RANGES, SQUIGGLE_RANGES, coverSteps, plateSetOf, squiggleDrawOf, squiggleInkscapeOf, type AnglePreset, type SquiggleDraw, type SquiggleInkscape, type PlateSet, photoMarks, photoMode, type Photo, type Plate } from "../../shared/lib/drawing/photo";
+import { BLACK_SHARE, CENTER_DEFAULTS, KEY_FROM, mostColorsOf, MOST_LAYERS, MOST_SIDE_LAYERS, MOST_PASSES, paperToneOf, OUTLINE_DEFAULTS, PAINT_DEFAULTS, SILHOUETTE_DEFAULTS, STREAM_DEFAULTS, ONE_LINE_DEFAULTS, ONE_LINE_MOST, SCRIBBLE_DEFAULTS, HILBERT_DEFAULTS, WAVE_DEFAULTS, ANGLE_PRESETS, centerModeOf, EDGE_DEFAULTS, hatchShortestOf, PLATE_SETS, SQUIGGLE_DRAW, SQUIGGLE_INKSCAPE, SQUIGGLE_INKSCAPE_RANGES, SQUIGGLE_RANGES, coverSteps, plateSetOf, squiggleDrawOf, squiggleInkscapeOf, type AnglePreset, type SquiggleDraw, type SquiggleInkscape, type PlateSet, photoMarks, photoMode, type Photo, type Plate } from "../../shared/lib/drawing/photo";
 import type { EdgeGen } from "../../shared/lib/drawing/edgeMask";
 import { MaskCard } from "./MaskCard";
 import { boxOf, type Shape } from "../../shared/lib/drawing/shapes";
@@ -301,7 +301,7 @@ export function PhotoCard({ shape, title, shapes, busy, targeted, layerCount, sh
                 <NumberField
                   label="Colors"
                   min={1}
-                  max={MOST_COLORS}
+                  max={mostColorsOf(photo)}
                   step={1}
                   value={inks}
                   onChange={actions.splitBestFit}

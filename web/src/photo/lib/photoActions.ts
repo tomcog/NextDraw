@@ -10,7 +10,7 @@ import { lightness } from "../../shared/lib/color";
 import type { FitAlign } from "../../shared/lib/geometry";
 import type { PenColor, Preset } from "../../shared/lib/types";
 import {
-  BAND_NAMES, LAYER_SETTINGS, MOST_SIDE_LAYERS, paperToneOf, MOST_COLORS, MOST_LAYERS, PHOTO_DEFAULTS, PLATES, PLATE_AIMS, colourGroups, isColourful, matchPens, photoMode,
+  BAND_NAMES, LAYER_SETTINGS, MOST_SIDE_LAYERS, paperToneOf, mostColorsOf, MOST_LAYERS, PHOTO_DEFAULTS, PLATES, PLATE_AIMS, colourGroups, isColourful, matchPens, photoMode,
   placeOnPage, photoData, photoFromData, inkNamed, loadProfile, plateOfPhoto, platePens, presetAngle, readTones, hexLinear, linearHex, coverSteps, stemWithoutPlate, turnedCopy, turnedCrop, workingCopy, MASK_EDGE_PX, MASK_SIDES, type AnglePreset, type Photo, type PhotoPart, type Plate, type PlateSet, PLATE_SETS, plateSetOf, platesOf,
 } from "../../shared/lib/drawing/photo";
 import { boxOf, newLayerId, newShapeId, type Layer, type Page, type Shape } from "../../shared/lib/drawing/shapes";
@@ -666,7 +666,7 @@ export function photoActions(ctx: PhotoContext) {
       setMessage({ text: `${tool2?.name ?? "This pen"} has no palette of colors to split an image into`, ok: false });
       return;
     }
-    const n = Math.min(MOST_COLORS, Math.max(1, Math.round(count)));
+    const n = Math.min(mostColorsOf(chosen.photo), Math.max(1, Math.round(count)));
     setBusy(true);
     setMessage({ text: "Choosing colors…", ok: true, progress: true });
     let best: Awaited<ReturnType<typeof bestPens>> = null;

@@ -656,6 +656,10 @@ export const MOST_SIDE_LAYERS = 3;
 
 /** The most colors a photo is split into, by best fit or by the photo's own colors. */
 export const MOST_COLORS = 8;
+/** Paint's flat regions take more colors than hatching mixes: its own, higher limit. */
+export const MOST_PAINT_COLORS = 10;
+/** The most colors an image split by color may have, drawn this way. */
+export const mostColorsOf = (photo: Pick<Photo, "style">) => (photo.style === "paint" ? MOST_PAINT_COLORS : MOST_COLORS);
 
 /** Hatching's shortest stroke unless set: one and a half line spacings, in mm. */
 export const hatchShortestOf = (photo: Pick<Photo, "hatchShortestMm" | "spacingMm">) =>
