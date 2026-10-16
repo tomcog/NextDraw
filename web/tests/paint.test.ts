@@ -58,3 +58,31 @@ test("paint: each layer's fill stays in its own regions, with an outline unless 
   const plain = photoMarks(layer("data:paint2", 0, { paintOutline: false }), 3, 3)!;
   assert.equal(plain.passes.length, 1, "no outline");
 });
+
+test("paint: with no outlines, lines run on past a border with another color, not onto the paper", async () => {
+  await picture("data:paint3", scene);
+  const ends = (region: number, outline: boolean) => {
+    const marks = photoMarks(layer("data:paint3", region, { paintOutline: outline ? undefined : false }), 3, 3)!;
+    const xs: number[] = [];
+    let top = Infinity;
+    for (const run of marks.passes[0].split("M").filter(Boolean)) {
+      for (const p of run.split("L")) {
+        const [x, y] = p.trim().split(" ").map(Number);
+        xs.push(x);
+        top = Math.min(top, y);
+      }
+    }
+    return { right: Math.max(...xs), left: Math.min(...xs), top };
+  };
+  // The border is at x = 1.5: red's lines reach over it, blue's reach back over it, and they overlap.
+  const red = ends(0, false);
+  const blue = ends(1, false);
+  assert.ok(red.right > 1.5, `red reaches ${red.right.toFixed(3)}, past the border`);
+  assert.ok(blue.left < 1.5, `blue reaches ${blue.left.toFixed(3)}, past the border`);
+  assert.ok(red.right > blue.left, "the two colors overlap");
+  assert.ok(red.right - 1.5 < 0.03, "only slightly");
+  // Against the white strip (y < 0.45) they stop as they would with outlines.
+  assert.ok(Math.abs(red.top - ends(0, true).top) < 1e-6, "no run onto the paper");
+  // With outlines on, nothing changes: the outline covers the seam.
+  assert.ok(ends(0, true).right <= 1.5, "outlined fill stays inside");
+});

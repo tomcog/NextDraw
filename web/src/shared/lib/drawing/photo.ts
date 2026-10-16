@@ -3934,13 +3934,22 @@ function paintRegions(tones: Tones, photo: Photo, w: number, h: number): PaintRe
  */
 function paint(tones: Tones, photo: Photo, w: number, h: number): PhotoMarks {
   const { gw, gh, cell, cellY, labels, mine } = paintRegions(tones, photo, w, h);
-  const isMine = (x: number, y: number) => {
+  const labelAt = (x: number, y: number) => {
     const gx = Math.round(x / cell);
     const gy = Math.round(y / cellY);
-    return gx >= 0 && gx < gw && gy >= 0 && gy < gh && labels[gy * gw + gx] === mine;
+    return gx >= 0 && gx < gw && gy >= 0 && gy < gh ? labels[gy * gw + gx] : -1;
   };
+  const isMine = (x: number, y: number) => labelAt(x, y) === mine;
+  const outline = photo.paintOutline ?? PAINT_DEFAULTS.outline;
+  // The paper's label: the last of a split's colors; a single layer's is 0, and it has no other pen.
+  const colour = Boolean(photo.ink && photo.regions && photo.region !== undefined && !photo.key);
+  const paper = colour ? photo.regions!.length : 0;
   const spacing = Math.max(0.05, photo.spacingMm) / 25.4;
   const step = Math.min(spacing / 2, cell);
+  // With no outline to cover the seam, a line that ends at another color's region runs on past the
+  // border - half a step to reach it, half a line's width beyond - so the two colors meet with no
+  // paper showing between them. Against the paper, or the box's edge, it stops where it is.
+  const overrun = step / 2 + spacing / 2;
   const cx = w / 2;
   const cy = h / 2;
   const reach = Math.hypot(w, h) / 2;
@@ -3968,8 +3977,16 @@ function paint(tones: Tones, photo: Photo, w: number, h: number): PhotoMarks {
     }
     if (start !== null) runs.push([start, end]);
     if (back) runs.reverse();
-    for (const [a0, b0] of runs) {
+    for (let [a0, b0] of runs) {
       if (b0 - a0 < spacing) continue; // a dab, not a line
+      if (!outline) {
+        const meets = (t: number) => {
+          const k = labelAt(cx - dy * o + dx * t, cy + dx * o + dy * t);
+          return k >= 0 && k !== mine && k !== paper;
+        };
+        if (meets(a0 - step)) a0 -= overrun;
+        if (meets(b0 + step)) b0 += overrun;
+      }
       const a = back ? b0 : a0;
       const b = back ? a0 : b0;
       fill.push(`M${n(cx - dy * o + dx * a)} ${n(cy + dx * o + dy * a)}L${n(cx - dy * o + dx * b)} ${n(cy + dx * o + dy * b)}`);
@@ -3977,7 +3994,7 @@ function paint(tones: Tones, photo: Photo, w: number, h: number): PhotoMarks {
     }
   }
   const passes = [fill.join("")];
-  if (photo.paintOutline ?? PAINT_DEFAULTS.outline) {
+  if (outline) {
     // Round each of this layer's regions: where its own area meets anything else, the box's edge included.
     const field = new Float32Array(gw * gh);
     for (let gy = 1; gy < gh - 1; gy++) for (let gx = 1; gx < gw - 1; gx++) field[gy * gw + gx] = labels[gy * gw + gx] === mine ? 1 : 0;
