@@ -149,12 +149,11 @@ export function PaperSection({ w, h, sizeId, units, color, collapsibleKey, disab
       icon={panelIcon("paper")}
       collapsibleKey={collapsibleKey}
       actionWhenOpen
-      // Folded, the row says what paper the drawing is on - its size, and a dot in its color - as the
-      // Drawing tool row names the tool.
+      // Folded, the row says what size paper the drawing is on, as the Drawing tool row names the
+      // tool. Its color only shows open.
       closedAction={
         <span className={styles.paperClosed}>
           <span className={styles.toolInTitle}>{`${fmtLen(w, units, false)} × ${fmtLen(h, units)}`}</span>
-          <span className={styles.paperSwatch} style={{ background: color }} role="img" aria-label={`${colorName} paper`} title={`${colorName} paper`} />
         </span>
       }
       // Open, the dot is the paper's color, and opens the colors to choose another.
