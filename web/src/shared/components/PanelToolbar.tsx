@@ -1,6 +1,7 @@
 import { Segment, SegmentedControl, Toolbar } from "@tomcoggia/ui";
 import { Grid3x3, Image, Layers2, ListOrdered, Move, Pen, Save, SlidersHorizontal, StickyNote, Wrench } from "lucide-react";
 import bar from "./PreviewToolbar.module.css";
+import { ToolbarIcons } from "./ToolbarIcons";
 
 /** The rail's cards the toolbar shows and hides, in the order they stack. Grid is Studio's; Image and Layers Image's; Queue, and Drawing position, Plot options and Utilities (a toolbar of their own), Plot's (Studio's Layers switch is with its tools). */
 const PANELS = {
@@ -28,7 +29,7 @@ export const panelIcon = (key: Panel) => PANELS[key].icon;
 export function PanelToolbar({ cards, label = "Panels" }: { cards: { key: Panel; on: boolean; toggle: () => void; disabled?: boolean; why?: string }[]; label?: string }) {
   return (
     <span className={bar.row}>
-      <Toolbar tone="white" orientation="vertical" aria-label={label}>
+      <ToolbarIcons><Toolbar tone="white" orientation="vertical" aria-label={label}>
         <SegmentedControl size="sm" variant="dark" actions aria-label={label}>
           {cards.map(({ key, on, toggle, disabled, why }) => (
             <Segment
@@ -43,7 +44,7 @@ export function PanelToolbar({ cards, label = "Panels" }: { cards: { key: Panel;
             />
           ))}
         </SegmentedControl>
-      </Toolbar>
+      </Toolbar></ToolbarIcons>
     </span>
   );
 }

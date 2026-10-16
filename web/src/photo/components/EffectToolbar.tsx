@@ -2,6 +2,7 @@ import { Segment, SegmentedControl, Toolbar } from "@tomcoggia/ui";
 import { AudioWaveform, FingerprintPattern, Frame, Hash, Lasso, Route, Grid2x2, Signature, Squircle, Wind, ZodiacAquarius } from "lucide-react";
 import type { ReactNode } from "react";
 import type { Photo } from "../../shared/lib/drawing/photo";
+import { ToolbarIcons } from "../../shared/components/ToolbarIcons";
 
 export type Effect = NonNullable<Photo["style"]>;
 
@@ -35,7 +36,7 @@ export const effectOf = (photo: Photo): Effect => photo.style ?? "hatch";
  */
 export function EffectToolbar({ effect, onEffect, onAgain, disabled }: { effect?: Effect; onEffect: (effect: Effect) => void; onAgain: () => void; disabled?: boolean }) {
   return (
-    <Toolbar tone="white" orientation="vertical" aria-label="Effects">
+    <ToolbarIcons><Toolbar tone="white" orientation="vertical" aria-label="Effects">
       <SegmentedControl size="sm" aria-label="Effect">
         {EFFECTS.filter((e) => !e.retired || e.key === effect).map((e) => (
           <Segment
@@ -50,6 +51,6 @@ export function EffectToolbar({ effect, onEffect, onAgain, disabled }: { effect?
           </Segment>
         ))}
       </SegmentedControl>
-    </Toolbar>
+    </Toolbar></ToolbarIcons>
   );
 }

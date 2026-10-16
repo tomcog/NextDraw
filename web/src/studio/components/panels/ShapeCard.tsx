@@ -9,6 +9,7 @@ import { closingTurns, CURVE_FIELDS, type Corner, type Curve } from "../../../sh
 import { defaultRepeat, placements, REPEAT_FIELDS, type Repeat, type RepeatKind } from "../../../shared/lib/drawing/repeat";
 import { pathRuns, POINT_HANDLE_LIMIT, type Shape } from "../../../shared/lib/drawing/shapes";
 import styles from "../../App.module.css";
+import { ToolbarIcons } from "../../../shared/components/ToolbarIcons";
 
 /** Which of the shape's settings are on show, if any: one at a time. */
 export type ShapePanel = "simplify" | "fill" | "rotate" | "scale" | "repeat" | null;
@@ -195,7 +196,7 @@ export function ShapeCard({ shape, title, icon, busy, hasFill, canPaste, panel, 
           {/* What is done to the shape, one setting open at a time: a toolbar of its own (the library's,
             as the left-hand ones are). Its fill's Copy and Paste sit apart at the card's right edge. */}
           <div className={styles.shapeTools}>
-            <Toolbar aria-label="What is done to this shape">
+            <ToolbarIcons><Toolbar aria-label="What is done to this shape">
               {/* Three groups in the one bar: what fills the shape, what moves and repeats it, and
                 what thins its points. Still one setting open at a time - the panel decides that, not
                 the groups. Simplify comes last, with the Simplifier's own icon, since it is the same
@@ -228,7 +229,7 @@ export function ShapeCard({ shape, title, icon, busy, hasFill, canPaste, panel, 
                   </Segment>
                 </SegmentedControl>
               )}
-            </Toolbar>
+            </Toolbar></ToolbarIcons>
             {(hasFill || (canFill(shape) && canPaste)) && (
               <div className={styles.shapeToolsEnd}>
                 {/* Copy a shape's fill, then paste it onto another: a fill set up once, used again. */}

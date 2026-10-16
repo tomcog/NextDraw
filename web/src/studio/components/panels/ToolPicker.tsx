@@ -6,6 +6,7 @@ import bar from "../../../shared/components/PreviewToolbar.module.css";
 import { load, save } from "../../../shared/lib/storage";
 import type { Tool } from "../Canvas";
 import type { Shape } from "../../../shared/lib/drawing/shapes";
+import { ToolbarIcons } from "../../../shared/components/ToolbarIcons";
 
 /** The tools that pick rather than draw: a group of their own at the head of the Tools bar. */
 const PICKERS: Tool[] = ["select", "strokes", "lasso"];
@@ -76,7 +77,7 @@ export function ToolPicker({ tool, onTool, simplifying, onSimplify, jiggling, on
     <>
       {/* Not a tool but a switch, like the card switches: the Layers cards out or away. */}
       <span className={bar.row}>
-        <Toolbar tone="white" orientation="vertical" aria-label="Layers">
+        <ToolbarIcons><Toolbar tone="white" orientation="vertical" aria-label="Layers">
           <SegmentedControl size="sm" variant="dark" actions aria-label="Layers cards">
             <Segment
               aria-pressed={layersOut}
@@ -87,26 +88,26 @@ export function ToolPicker({ tool, onTool, simplifying, onSimplify, jiggling, on
               aria-label="Layers card"
             />
           </SegmentedControl>
-        </Toolbar>
+        </Toolbar></ToolbarIcons>
       </span>
       {/* The tools that pick - Select, Stroke select, the Lasso. One tool in hand across these and
           the drawer below. */}
-      <Toolbar tone="white" orientation="vertical" aria-label="Tools">
+      <ToolbarIcons><Toolbar tone="white" orientation="vertical" aria-label="Tools">
         <SegmentedControl size="sm" variant="dark" aria-label="Picking tool">
           {TOOLS.filter((t) => PICKERS.includes(t.kind)).map(segment)}
         </SegmentedControl>
-      </Toolbar>
+      </Toolbar></ToolbarIcons>
       {/* The tools that draw, in a toolbar of their own that opens and shuts from the Tool button at its head. */}
-      <Toolbar tone="white" orientation="vertical" aria-label="Drawing tools">
+      <ToolbarIcons><Toolbar tone="white" orientation="vertical" aria-label="Drawing tools">
         <ToolbarExpander size="sm" icon={<PencilRuler />} label="Tool" open={drawerOpen} onOpenChange={toggleDrawer} aria-label="Drawing tool"
           // On the drawer, which the Tool button takes it from; each tool in it has its own.
           title={drawerOpen ? "Tool: put the drawing tools away" : "Tool: the drawing tools - rectangle, oval, line, the curves and text"}>
           {TOOLS.filter((t) => !PICKERS.includes(t.kind)).map(segment)}
         </ToolbarExpander>
-      </Toolbar>
+      </Toolbar></ToolbarIcons>
       {/* What works on what's drawn: the Simplifier and Jiggle, from their cards; then what's added at
           once, so actions - the signature and the registration blocks, placed to be moved from there. */}
-      <Toolbar tone="white" orientation="vertical" aria-label="Work on the drawing">
+      <ToolbarIcons><Toolbar tone="white" orientation="vertical" aria-label="Work on the drawing">
         <SegmentedControl size="sm" aria-label="Work on what's drawn">
           <Segment selected={simplifying} icon={<Spline />} title="Simplifier: fewer points in the drawing's paths, set from its card" onClick={onSimplify}>
             Simplifier
@@ -123,7 +124,7 @@ export function ToolPicker({ tool, onTool, simplifying, onSimplify, jiggling, on
             Registration
           </Segment>
         </SegmentedControl>
-      </Toolbar>
+      </Toolbar></ToolbarIcons>
     </>
   );
 }

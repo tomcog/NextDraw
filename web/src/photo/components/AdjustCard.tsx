@@ -6,6 +6,7 @@ import controls from "../../shared/components/controls/controls.module.css";
 import bar from "../../shared/components/PreviewToolbar.module.css";
 import { MOST_BLACK_POINT, type Photo } from "../../shared/lib/drawing/photo";
 import styles from "../App.module.css";
+import { ToolbarIcons } from "../../shared/components/ToolbarIcons";
 
 /** One separation's plate, as the card lists it: its shape, and its layer's name and ink. */
 export interface Channel {
@@ -90,7 +91,7 @@ export function AdjustCard({ photo, channels, set, setChannel }: Props) {
 export function AdjustToolbar({ on, toggle, vignette, mask, disabled }: { on: boolean; toggle: () => void; vignette: { on: boolean; toggle: () => void }; mask: { on: boolean; toggle: () => void }; disabled?: boolean }) {
   return (
     <span className={bar.row}>
-      <Toolbar tone="white" orientation="vertical" aria-label="Adjustments">
+      <ToolbarIcons><Toolbar tone="white" orientation="vertical" aria-label="Adjustments">
         <SegmentedControl size="sm" variant="dark" actions aria-label="Adjustments">
           <Segment
             aria-pressed={on}
@@ -120,7 +121,7 @@ export function AdjustToolbar({ on, toggle, vignette, mask, disabled }: { on: bo
             aria-label="Mask card"
           />
         </SegmentedControl>
-      </Toolbar>
+      </Toolbar></ToolbarIcons>
     </span>
   );
 }

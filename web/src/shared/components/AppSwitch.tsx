@@ -1,6 +1,7 @@
 import { Segment, SegmentedControl, Toolbar } from "@tomcoggia/ui";
 import { Image, SplinePointer, Waypoints } from "lucide-react";
 import { goToApp, type AppName } from "../lib/apps";
+import { ToolbarIcons } from "./ToolbarIcons";
 
 /**
  * Shared: the way between the apps, in the same place in every app. The app you are in is the one
@@ -17,7 +18,7 @@ export function AppSwitch({ current, orientation, onRefused }: { current: AppNam
     if (refused) onRefused?.(refused);
   };
   return (
-    <Toolbar tone="white" orientation={orientation} aria-label="Apps">
+    <ToolbarIcons><Toolbar tone="white" orientation={orientation} aria-label="Apps">
       <SegmentedControl size="sm" variant="dark" aria-label="App">
         <Segment
           selected={current === "studio"}
@@ -47,6 +48,6 @@ export function AppSwitch({ current, orientation, onRefused }: { current: AppNam
           Plot
         </Segment>
       </SegmentedControl>
-    </Toolbar>
+    </Toolbar></ToolbarIcons>
   );
 }

@@ -3,6 +3,7 @@ import { Camera, Eye, EyeDashed, Grid3x3, ImageIcon, Redo2, Route, Search, Setti
 import type { ReactNode } from "react";
 import type { Zoom } from "./Bed";
 import styles from "./PreviewToolbar.module.css";
+import { ToolbarIcons } from "./ToolbarIcons";
 
 /**
  * How the drawing is drawn: its paths as thin lines, the ink they will make, or - in Plot, while
@@ -49,11 +50,11 @@ export function PreviewToolbar({ view, onView, canProgress, canPhoto, zoom, onZo
       {/* What an app shows beyond the shared views, in a bar of its own ahead of the shared one -
           Photo's picture, its lines, both, side by side - so the shared bar is the same in every app. */}
       {extras && (
-        <Toolbar tone="white" aria-label="App view">
+        <ToolbarIcons><Toolbar tone="white" aria-label="App view">
           {extras}
-        </Toolbar>
+        </Toolbar></ToolbarIcons>
       )}
-      <Toolbar tone="white" aria-label="Drawing view">
+      <ToolbarIcons><Toolbar tone="white" aria-label="Drawing view">
         <SegmentedControl size="sm" variant="dark" aria-label="How the drawing is drawn">
           <Segment
             selected={view === "outline"}
@@ -92,7 +93,7 @@ export function PreviewToolbar({ view, onView, canProgress, canPhoto, zoom, onZo
 
 
         <ZoomControls zoom={zoom} onZoom={onZoom} canPaper={canPaper} canDrawing={canDrawing} loupe={loupe} onLoupe={onLoupe} />
-      </Toolbar>
+      </Toolbar></ToolbarIcons>
       {working ? (
         <span className={styles.status} role="status">
           <Spinner size={14} label={working} />
@@ -112,7 +113,7 @@ export function PreviewToolbar({ view, onView, canProgress, canPhoto, zoom, onZo
 export function SetupToolbar({ open, onToggle, orientation }: { open: boolean; onToggle: () => void; orientation?: "horizontal" | "vertical" }) {
   return (
     <span className={styles.row}>
-      <Toolbar tone="white" orientation={orientation} aria-label="Setup">
+      <ToolbarIcons><Toolbar tone="white" orientation={orientation} aria-label="Setup">
         <SegmentedControl size="sm" variant="dark" actions aria-label="Setup">
           <Segment
             aria-pressed={open}
@@ -123,7 +124,7 @@ export function SetupToolbar({ open, onToggle, orientation }: { open: boolean; o
             aria-label="Setup"
           />
         </SegmentedControl>
-      </Toolbar>
+      </Toolbar></ToolbarIcons>
     </span>
   );
 }
@@ -200,11 +201,11 @@ export const ZOOM_ROW = styles.row;
  */
 export function HistoryToolbar({ canUndo, canRedo, onUndo, onRedo, disabled }: { canUndo: boolean; canRedo: boolean; onUndo: () => void; onRedo: () => void; disabled?: boolean }) {
   return (
-    <Toolbar tone="white" orientation="vertical" aria-label="History">
+    <ToolbarIcons><Toolbar tone="white" orientation="vertical" aria-label="History">
       <SegmentedControl size="sm" variant="dark" actions aria-label="History">
         <Segment icon={<Undo2 />} title="Undo the last change" disabled={disabled || !canUndo} onClick={onUndo} aria-label="Undo" />
         <Segment icon={<Redo2 />} title="Redo the change just undone" disabled={disabled || !canRedo} onClick={onRedo} aria-label="Redo" />
       </SegmentedControl>
-    </Toolbar>
+    </Toolbar></ToolbarIcons>
   );
 }
