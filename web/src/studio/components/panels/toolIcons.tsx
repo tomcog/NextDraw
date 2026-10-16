@@ -1,39 +1,29 @@
-/** Drawing-tool icons from the NextDraw Figma file (Frame 6), drawn on a 16 × 16 grid with 1px lines
+/** Drawing-tool icons from the NextDraw Figma file (Frames 6 and 7), drawn on a 16 × 16 grid with 1px lines
  *  and shown at 24 like the lucide icons beside them. */
 
-/** A line between two end points. */
+/** A plain line, corner to corner (Frame 7). */
 export function LineIcon() {
   return (
     <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1" aria-hidden="true">
-      <path d="M12.8343 2.93624L2.88613 12.8844" />
-      <circle cx="2" cy="14" r="1.5" />
-      <circle cx="14" cy="2" r="1.5" />
+      <path d="M13.6223 2.14823L2.16385 13.6067" />
     </svg>
   );
 }
 
-/** A square with a point at each corner. */
+/** A plain 10 × 10 square (Frame 7). */
 export function RectangleIcon() {
   return (
     <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1" aria-hidden="true">
-      <path d="M12.3737 14L3.62626 14M12.3737 2L3.62626 2M1.98862 12.2989L1.98863 3.49815M14 12.2989L14 3.49815" />
-      <circle cx="2" cy="14" r="1.5" />
-      <circle cx="2" cy="2" r="1.5" />
-      <circle cx="14" cy="2" r="1.5" />
-      <circle cx="14" cy="14" r="1.5" />
+      <rect x="3" y="3" width="10" height="10" />
     </svg>
   );
 }
 
-/** A circle with a point at each quarter. */
+/** A plain circle (Frame 7). */
 export function EllipseIcon() {
   return (
     <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1" aria-hidden="true">
-      <circle cx="2" cy="8" r="1.5" />
-      <circle cx="8" cy="2" r="1.5" />
-      <circle cx="14" cy="8" r="1.5" />
-      <circle cx="8" cy="14" r="1.5" />
-      <path d="M9.47556 2.18279C11.6014 2.72037 13.2754 4.39266 13.8155 6.51756M13.8155 9.48244C13.2789 11.5936 11.623 13.258 9.51674 13.8066M6.52444 13.8172C4.40149 13.2804 2.72916 11.6119 2.18677 9.49121M2.18677 6.50879C2.72916 4.38806 4.40149 2.71963 6.52444 2.18279" />
+      <circle cx="8" cy="8" r="6" />
     </svg>
   );
 }

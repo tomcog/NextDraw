@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Segment, SegmentedControl, Toolbar, ToolbarExpander } from "@tomcoggia/ui";
-import { LassoSelect, MousePointer2, Pentagon, PencilRuler, Rainbow, Signal, Spline, SwatchBook, SquareDashedMousePointer, Star, Type, Layers, Vibrate } from "lucide-react";
+import { LassoSelect, MousePointer2, PenTool, Pentagon, Rainbow, Signal, Spline, SwatchBook, SquareDashedMousePointer, Star, Type, Layers, Vibrate } from "lucide-react";
 import { EllipseIcon, LineIcon, RectangleIcon, SignatureIcon, SpiralIcon, SpirographIcon, WaveIcon } from "./toolIcons";
 import bar from "../../../shared/components/PreviewToolbar.module.css";
 import { load, save } from "../../../shared/lib/storage";
@@ -99,7 +99,7 @@ export function ToolPicker({ tool, onTool, simplifying, onSimplify, jiggling, on
       </Toolbar></ToolbarIcons>
       {/* The tools that draw, in a toolbar of their own that opens and shuts from the Tool button at its head. */}
       <ToolbarIcons><Toolbar tone="white" orientation="vertical" aria-label="Drawing tools">
-        <ToolbarExpander size="sm" icon={<PencilRuler />} label="Tool" open={drawerOpen} onOpenChange={toggleDrawer} aria-label="Drawing tool"
+        <ToolbarExpander size="sm" icon={<PenTool />} label="Tool" open={drawerOpen} onOpenChange={toggleDrawer} aria-label="Drawing tool"
           // On the drawer, which the Tool button takes it from; each tool in it has its own.
           title={drawerOpen ? "Tool: put the drawing tools away" : "Tool: the drawing tools - rectangle, oval, line, the curves and text"}>
           {TOOLS.filter((t) => !PICKERS.includes(t.kind)).map(segment)}
