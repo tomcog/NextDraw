@@ -4335,9 +4335,10 @@ function scribble(tones: Tones, photo: Photo, w: number, h: number): PhotoMarks 
   const step = Math.max(spacing, 0.4 / 25.4);
   const inkPerStep = (step * spacing) / (cell * cell);
 
-  // How tightly it curls: about 30 mm across at 0, 1 mm at 100. The turn wanders at random about
+  // How tightly it curls: about 30 mm across just above 0, 1 mm at 100 - and at 0, not at all: straight
+  // lines, which don't lean toward the ink either. The turn wanders at random about
   // nothing, steadied each step, so it bends one way for a while and then the other.
-  const curl = 1 / (30 / 25.4 * (1 / 30) ** wiggle);
+  const curl = wiggle > 0 ? 1 / (30 / 25.4 * (1 / 30) ** wiggle) : 0;
   const steady = 0.85;
   const jolt = curl * Math.sqrt(1 - steady * steady);
   const look = Math.max(spacing * 3, 1.5 / 25.4);
@@ -4396,7 +4397,8 @@ function scribble(tones: Tones, photo: Photo, w: number, h: number): PhotoMarks 
       misses = missed + 1;
       continue;
     }
-    if (length >= spacing * 2 && pts.length > 2) drawn.push(pts);
+    // A straight stroke needs only its ends.
+    if (length >= spacing * 2 && pts.length > 2) drawn.push(curl ? pts : [pts[0], pts[pts.length - 1]]);
   }
 
   // Drawn nearest first, each from whichever end is nearer the pen, so it doesn't cross the page between them.

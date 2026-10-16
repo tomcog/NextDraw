@@ -39,3 +39,15 @@ test("scribble: a minimum length leaves out every shorter stroke, and the tone i
   const total = (ls: number[]) => ls.reduce((a, b) => a + b, 0);
   assert.ok(total(kept) > total(all) * 0.75, "the tone is still built up");
 });
+
+test("scribble: at Wiggle 0 every stroke is a straight line", async () => {
+  await picture("data:blobs", (x, y) => 0.3 + 0.7 * Math.abs(Math.sin(x / 13) * Math.cos(y / 17)));
+  const strokes = runs(photoMarks(photo("data:blobs", { scribbleWiggle: 0 }), 2, 2)!.passes.join(""));
+  assert.ok(strokes.length > 5);
+  for (const pts of strokes) {
+    // Every point on the line from the first to the last.
+    const [a, b] = [pts[0], pts[pts.length - 1]];
+    const len = Math.hypot(b[0] - a[0], b[1] - a[1]);
+    for (const p of pts) assert.ok(Math.abs((b[0] - a[0]) * (a[1] - p[1]) - (a[0] - p[0]) * (b[1] - a[1])) / len < 0.001, "straight");
+  }
+});
