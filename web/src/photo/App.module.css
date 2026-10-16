@@ -131,6 +131,12 @@
 .plateCell > label:first-child { flex: none; margin-top: 0.5rem; }
 .plateCell > :last-child { flex: 1; min-width: 0; }
 
+/* A menu and the number that goes with it on one line: the menu two thirds, level with two of a
+   three-field row's columns below, the number the last third. */
+.menuRow { display: flex; align-items: flex-end; gap: 0.5rem; }
+.menuRow > :first-child { flex: 2 1 0.5rem; min-width: 0; }
+.menuRow > :last-child { flex: 1 1 0; min-width: 0; }
+
 /* A row kept to one line however narrow the card: its fields share the width. */
 .oneRow { flex-wrap: nowrap; }
 .oneRow > * { min-width: 0; }

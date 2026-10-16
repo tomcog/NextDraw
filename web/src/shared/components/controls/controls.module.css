@@ -625,7 +625,7 @@
 
 .cardSections > fieldset > legend { font-size: 15px; }
 
-.cardSections fieldset fieldset legend { font-size: 12px; font-weight: 500; }
+.cardSections fieldset fieldset legend { font-size: 14px; font-weight: 500; }
 
 /* The tool's name at the right of a Settings row: the brand colour, and the weight and size of the
    Drawing tool heading inside it rather than the heavier one the row carries. It is on the row

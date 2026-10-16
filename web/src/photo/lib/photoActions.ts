@@ -10,7 +10,7 @@ import { lightness } from "../../shared/lib/color";
 import type { FitAlign } from "../../shared/lib/geometry";
 import type { PenColor, Preset } from "../../shared/lib/types";
 import {
-  BAND_NAMES, LAYER_SETTINGS, MOST_SIDE_LAYERS, paperToneOf, MOST_COLORS, MOST_LAYERS, PHOTO_DEFAULTS, PLATES, PLATE_AIMS, PLATE_OFF, colourGroups, isColourful, matchPens, photoMode,
+  BAND_NAMES, LAYER_SETTINGS, MOST_SIDE_LAYERS, paperToneOf, MOST_COLORS, MOST_LAYERS, PHOTO_DEFAULTS, PLATES, PLATE_AIMS, colourGroups, isColourful, matchPens, photoMode,
   placeOnPage, photoData, photoFromData, inkNamed, loadProfile, plateOfPhoto, platePens, presetAngle, readTones, hexLinear, linearHex, coverSteps, stemWithoutPlate, turnedCopy, turnedCrop, workingCopy, MASK_EDGE_PX, MASK_SIDES, type AnglePreset, type Photo, type PhotoPart, type Plate, type PlateSet, PLATE_SETS, plateSetOf, platesOf,
 } from "../../shared/lib/drawing/photo";
 import { boxOf, newLayerId, newShapeId, type Layer, type Page, type Shape } from "../../shared/lib/drawing/shapes";
@@ -609,58 +609,6 @@ export function photoActions(ctx: PhotoContext) {
     setShapes((list) => list.map((sh) => ((group ? sh.photo?.group === group : sh.id === chosen.id) && sh.photo?.side ? { ...sh, photo: { ...sh.photo, paperTone: [a, b], paperToneSet: true } } : sh)));
   };
 
-  /**
-    * Split the chosen photo by colour: its colours gathered into this many groups of similar colours,
-    * each group matched to the nearest pen of the tool's palette, one layer each - named and coloured
-    * after its pen, lightest at the bottom. Each layer draws its group's area, in its pen; give the
-    * layer another pen and it draws the same area in that one. A group so pale it's the paper gets no
-    * layer, so a photo can come back with fewer than asked.
-    */
-  const splitPhotoByColor = (count: number, extra: Partial<Photo> = {}) => {
-    if (!chosen?.photo) return;
-    const pens = tool2?.palette ?? [];
-    if (!pens.length) {
-      setMessage({ text: `${tool2?.name ?? "This pen"} has no palette of colors to split an image into`, ok: false });
-      return;
-    }
-    const n = Math.min(MOST_COLORS, Math.max(1, Math.round(count)));
-    const groups = colourGroups(chosen.photo.src, n, chosen.photo.brightness, chosen.photo.contrast, chosen.photo.saturation);
-    const matched = matchPens(groups, pens);
-    const parts = groups
-      .map((hex, region) => ({ hex, region, pen: matched[region] }))
-      .filter((g): g is { hex: string; region: number; pen: PenColor } => Boolean(g.pen))
-      // Stacked by the pens' own lightness, lightest at the bottom: a group's pen can be a good deal
-      // lighter or darker than the group's colour, and the layers go down in the pens.
-      .sort((a, b) => (lightness(b.pen.color) ?? 0) - (lightness(a.pen.color) ?? 0));
-    if (!parts.length) {
-      setMessage({ text: "There's no color in this image to split, only paper", ok: false });
-      return;
-    }
-    const { name } = photoStem();
-    // The key on top, in the palette's darkest pen - or the pen the photo's key already has.
-    const oldKey = chosen.photo.group ? shapes.find((sh) => sh.photo?.group === chosen.photo!.group && sh.photo?.key) : undefined;
-    const keyPen = oldKey ? { name: layers.find((l) => l.id === oldKey.layerId)?.name.replace(/\s+key$/i, "") ?? "Key", color: oldKey.photo!.ink! } : darkestPen(pens);
-    const regionInks = groups.map((_, r) => matched[r]?.color ?? null);
-    const withKey = keyPen && (oldKey || photoMode(chosen.photo) !== "colour" || chosen.photo.keyInk !== undefined);
-    rebuildPhoto(
-      [
-        ...parts.map(({ region, pen }) => ({
-          layerName: pen.name,
-          layerColor: pen.color,
-          shapeName: `${name} ${pen.name}`,
-          photo: { band: undefined, side: undefined, paperTone: undefined, key: undefined, plate: undefined, plates: undefined, fitPaper: undefined, penMm: undefined, fitPairs: undefined, ink: pen.color, regions: groups, region, regionInks, keyInk: withKey ? keyPen!.color : undefined, ...extra },
-        })),
-        ...(withKey ? [{
-          layerName: `${keyPen!.name} key`,
-          layerColor: keyPen!.color,
-          shapeName: `${name} ${keyPen!.name} key`,
-          photo: { band: undefined, side: undefined, paperTone: undefined, key: true, plate: undefined, plates: undefined, fitPaper: undefined, penMm: undefined, fitPairs: undefined, ink: keyPen!.color, regions: groups, region: undefined, regionInks, keyInk: keyPen!.color, ...extra },
-        }] : []),
-      ],
-      parts.length + (withKey ? 1 : 0) > 1 ? chosen.photo.group ?? newShapeId() : undefined,
-      `Split into ${parts.map((p) => p.pen.name).join(", ")}${withKey ? `, with ${keyPen!.name} as the key` : ""}${parts.length < n ? ` - the rest was paper, or near enough another` : ""}`,
-    );
-  };
 
   /**
    * The tool's pens as candidates for a photo on this paper: each pen's colour as it comes out solid -
@@ -954,43 +902,6 @@ export function photoActions(ctx: PhotoContext) {
       if (at < 0) return sh;
       return { ...sh, photo: { ...sh.photo!, anglePreset: use, angleTurn: turn || undefined, angle: turnedBy(presetAngle(use, at, plateOfPhoto(sh.photo!)), turn) } };
     }));
-  };
-
-  /**
-   * Draw one plate in another of the pen's colors: its layer is named and colored after it, and the
-   * photo is separated again - every plate's amounts depend on every pen in the set.
-   */
-  const setPlatePen = (plate: Plate, penName: string) => {
-    if (!chosen?.photo?.plates) return;
-    const at = platesOf(chosen.photo.plates).indexOf(plate);
-    if (at < 0) return;
-    // None: the channel is left out. The others are separated again without it, and its layer, kept
-    // as it is, has nothing to draw until a pen is chosen for it again.
-    if (penName === PLATE_OFF) {
-      record();
-      const plates = [...chosen.photo.plates];
-      plates[at] = PLATE_OFF;
-      const group = chosen.photo.group;
-      setShapes((list) => list.map((sh) => ((group ? sh.photo?.group === group : sh.id === chosen.id) ? { ...sh, photo: { ...sh.photo!, plates } } : sh)));
-      setMessage({ text: `${PLATE_AIMS[plate].name} left out: the other plates make up the image without it`, ok: true });
-      return;
-    }
-    const pen = tool2?.palette?.find((p) => p.name === penName);
-    if (!pen) return;
-    record();
-    const plates = [...chosen.photo.plates];
-    plates[at] = pen.color;
-    const group = chosen.photo.group;
-    const members = group ? shapes.filter((sh) => sh.photo?.group === group) : [chosen];
-    const onPlate = members.find((m) => m.photo?.plate === plate);
-    const { name } = photoStem();
-    setShapes((list) => list.map((sh) => {
-      if (!members.some((m) => m.id === sh.id)) return sh;
-      const own = sh.photo!.plate === plate;
-      return { ...sh, ...(own ? { name: `${name} ${pen.name}` } : {}), photo: { ...sh.photo!, plates, ...(own ? { ink: pen.color } : {}) } };
-    }));
-    if (onPlate) setLayers((list) => list.map((l) => (l.id === onPlate.layerId ? { ...l, name: pen.name, color: pen.color } : l)));
-    setMessage({ text: `${PLATE_AIMS[plate].name} in ${pen.name}`, ok: true });
   };
 
   /**
@@ -1344,8 +1255,8 @@ export function photoActions(ctx: PhotoContext) {
 
   return {
     setChannelOf, splitPhotoProfile,
-    addPhoto, addSeparations, switchPhotoMode, setKeyLayer, splitPhoto, splitPhotoByColor, splitPhotoBestFit, bestPens,
-    placePhoto, replacePhoto, reloadPhoto, savePreset, applyPreset, deletePreset, turnPhoto, setPhotoOf, addEdgeMask, chooseEdgeMask, deleteEdgeMask, setEdgeGen, saveEdgeGen, setAngles, photoStem, splitPhotoCmyk, setPlatePen, setLayerColor,
+    addPhoto, addSeparations, switchPhotoMode, setKeyLayer, splitPhoto, splitPhotoBestFit,
+    placePhoto, replacePhoto, reloadPhoto, savePreset, applyPreset, deletePreset, turnPhoto, setPhotoOf, addEdgeMask, chooseEdgeMask, deleteEdgeMask, setEdgeGen, saveEdgeGen, setAngles, photoStem, splitPhotoCmyk, setLayerColor,
     splitAroundPaper, setPaperTone, addPass, removePass,
   };
 }

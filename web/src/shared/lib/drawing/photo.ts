@@ -675,14 +675,15 @@ export type AnglePreset = "classic" | "complementary" | "cardinal" | "golden" | 
 export const ANGLE_PRESETS: { key: AnglePreset; label: string; about: string }[] = [
   { key: "classic", label: "Classic", about: "Print's screen angles: cyan 15°, magenta 75°, yellow 0°, black 45°; layers by tone or color 45°, 15°, 75°, 0°, 30°, 60°" },
   { key: "complementary", label: "Complementary", about: "Print's way with extra inks: CMYK as Classic, orange on cyan's 15°, green on magenta's 75°, violet on yellow's 0°, red at 7.5°; layers by tone or color as Classic" },
-  { key: "cardinal", label: "Cardinal", about: "The square and its diagonals: 0°, 90°, 45°, 135°, then 22.5°, 112.5°" },
+  { key: "cardinal", label: "Cardinal", about: "Only horizontal, vertical and the diagonals: 0°, 90°, 45°, 135°, then round again for more layers" },
   { key: "golden", label: "Golden spread", about: "Each layer turned 137.5° - the golden angle - from the last: 0°, 137.5°, 95°, 52.5°, 10°, 147.5°" },
   { key: "uniform", label: "Uniform", about: "Every layer's lines at the same angle: the Angle setting, which then turns them all together" },
 ];
 const CLASSIC = [45, 15, 75, 0, 30, 60];
 /** The plate whose angle an extra ink shares in Complementary: the one opposite it on the color wheel. */
 const COMPLEMENT: Partial<Record<Plate, Plate>> = { o: "c", g: "m", v: "y" };
-const CARDINAL = [0, 90, 45, 135, 22.5, 112.5];
+// Never between: a fifth layer goes back to 0°, sharing a direction rather than taking an odd one.
+const CARDINAL = [0, 90, 45, 135];
 const GOLDEN = 180 * (3 - Math.sqrt(5)); // 137.5077...°, the golden angle
 
 /** The angle a preset gives the layer at `index` (bottom first), or the plate it is. */

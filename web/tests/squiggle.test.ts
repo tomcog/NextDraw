@@ -157,7 +157,7 @@ test("squiggle: lifting leaves white as paper, and still draws the darks", async
 test("angle presets: classic is print's, cardinal the square, golden spread 137.5° apart", () => {
   const six = (p: "classic" | "cardinal" | "golden" | "uniform") => [0, 1, 2, 3, 4, 5].map((i) => presetAngle(p, i));
   assert.deepEqual(six("classic"), [45, 15, 75, 0, 30, 60]);
-  assert.deepEqual(six("cardinal"), [0, 90, 45, 135, 22.5, 112.5]);
+  assert.deepEqual(six("cardinal"), [0, 90, 45, 135, 0, 90]);
   assert.deepEqual(six("golden"), [0, 137.5, 95, 52.5, 10, 147.5]);
   assert.deepEqual((["c", "m", "y", "k"] as const).map((p) => presetAngle("classic", 0, p)), [15, 75, 0, 45]);
   // Uniform: every layer and every plate alike - the shared angle is the turn on top.

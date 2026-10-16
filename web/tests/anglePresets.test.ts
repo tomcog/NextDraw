@@ -22,3 +22,9 @@ test("a separation's plate is read from its name, so presets put it at its plate
   assert.equal(plateOfPhoto({ separation: "Peach" }), undefined);
   assert.equal(plateOfPhoto({ plate: "m" }), "m");
 });
+
+test("cardinal: every layer horizontal, vertical or diagonal, however many there are", () => {
+  const angles = Array.from({ length: 9 }, (_, i) => presetAngle("cardinal", i));
+  assert.deepEqual(angles.slice(0, 4), [0, 90, 45, 135]);
+  for (const a of angles) assert.ok([0, 45, 90, 135].includes(a), `${a}°`);
+});

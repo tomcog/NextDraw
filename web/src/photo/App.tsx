@@ -25,7 +25,7 @@ import { loadFont, type StrokeFont } from "../shared/lib/drawing/font";
 import type { Fill } from "../shared/lib/drawing/hatch";
 import { parseDrawing } from "../shared/lib/drawing/parse";
 import { buildSvg, cleanFileName } from "../shared/lib/drawing/svg";
-import { photoMarks, placeOnPage, plateSetOf, stemWithoutPlate, type Photo } from "../shared/lib/drawing/photo";
+import { placeOnPage, plateSetOf, stemWithoutPlate, type Photo } from "../shared/lib/drawing/photo";
 import { boxOf, newLayerId, type Layer, type Page, type Shape } from "../shared/lib/drawing/shapes";
 import { useDrawingFile, type Current } from "../shared/lib/drawing/useDrawingFile";
 import { lockBanner, useEditLock } from "../shared/lib/useEditLock";
@@ -290,8 +290,6 @@ export default function App() {
   usePhotoRead(chosen?.photo?.src);
   // And every other layer's picture: separations are a picture each.
   usePhotosRead(convertParts.map((part) => part.photo.src));
-  const convertMarks = convertBox ? convertParts.map((part) => photoMarks(part.photo, convertBox.x1 - convertBox.x0, convertBox.y1 - convertBox.y0)) : [];
-  const convertRead = convertMarks.length > 0 && convertMarks.every(Boolean);
   const [convertView, setConvertView] = useState<ConvertView>("picture");
   // The bed the photo is shown on, and how close the view sits on it - Studio's and Plot's zooms and loupe.
   const [model, setModel] = useState<PlotterModel | undefined>();
@@ -322,8 +320,8 @@ export default function App() {
   }, [record, pick]);
 
   const {
-    addPhoto, addSeparations, switchPhotoMode, setKeyLayer, splitPhoto, splitPhotoByColor, splitPhotoBestFit, bestPens,
-    placePhoto, replacePhoto, reloadPhoto, savePreset, applyPreset, deletePreset, turnPhoto, setPhotoOf, addEdgeMask, chooseEdgeMask, deleteEdgeMask, setEdgeGen, saveEdgeGen, setAngles, photoStem, splitPhotoCmyk, setPlatePen, setLayerColor,
+    addPhoto, addSeparations, switchPhotoMode, setKeyLayer, splitPhoto, splitPhotoBestFit,
+    placePhoto, replacePhoto, reloadPhoto, savePreset, applyPreset, deletePreset, turnPhoto, setPhotoOf, addEdgeMask, chooseEdgeMask, deleteEdgeMask, setEdgeGen, saveEdgeGen, setAngles, photoStem, splitPhotoCmyk, setLayerColor,
     splitAroundPaper, setPaperTone, addPass, removePass, setChannelOf, splitPhotoProfile,
   } = photoActions({
     chosen, shapes, setShapes, layers, setLayers, active, setActiveLayer, page, tool,
@@ -548,8 +546,7 @@ export default function App() {
     if (!photo || photo.separation) return;
     if (photo.plate && photo.plates) splitPhotoCmyk({}, plateSetOf(photo.plates));
     else if (photo.ink && photo.regions) {
-      if (photo.fitPaper) splitPhotoBestFit(inks);
-      else splitPhotoByColor(inks);
+      splitPhotoBestFit(inks);
     } else if (photo.side) {
       // Split around the paper: each band's pen chosen again, from the new pen's darker and lighter colors.
       const members = photo.group ? shapes.filter((sh) => sh.photo?.group === photo.group) : [chosen!];
@@ -569,28 +566,8 @@ export default function App() {
   }, [paperColor]); // eslint-disable-line react-hooks/exhaustive-deps
   const toolSection = <DrawingToolSection tools={presets} value={toolName} onPick={pickPen} collapsibleKey="photo-pen" disabled={busy} />;
 
-  // Split by best fit: how near the best pens come to the photo, with one fewer and one more than it
-  // has, so what another pen buys can be seen. An estimate from a sample of the photo's pixels, each
-  // at the share of paper that suits it best - the predicted print says what the hatching really makes.
-  // Worked out off the page; a newer question's answer replaces an older one's, whichever comes first.
+  // How many colors the image is split into: its layers, less the key.
   const inks = chosen?.photo?.group ? shapes.filter((sh) => sh.photo?.group === chosen.photo!.group && !sh.photo?.key).length : 1;
-  const [estimates, setEstimates] = useState<{ pens: number; err: number }[] | undefined>(undefined);
-  const asked = useRef(0);
-  useEffect(() => {
-    const mine = ++asked.current;
-    if (!chosen?.photo?.fitPaper || !convertRead) {
-      setEstimates(undefined);
-      return;
-    }
-    const counts = [inks - 1, inks, inks + 1].filter((n) => n >= 1 && n <= (tool?.palette?.length ?? 0));
-    Promise.all(counts.map((n) => bestPens(n, Boolean(chosen.photo!.fitPairs))))
-      .then((found) => {
-        if (mine !== asked.current) return;
-        const out = found.flatMap((best, i) => (best?.errors.length ? [{ pens: counts[i], err: best.errors[best.errors.length - 1] }] : []));
-        setEstimates(out.length ? out : undefined);
-      })
-      .catch(() => mine === asked.current && setEstimates(undefined));
-  }, [chosen?.photo?.src, chosen?.photo?.brightness, chosen?.photo?.contrast, chosen?.photo?.fitPaper, chosen?.photo?.fitPairs, chosen?.photo?.spacingMm, chosen?.photo?.levels, convertRead, inks, tool, paperColor]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // The Layers card: the image's layers top first, the one being set ringed. Clicking one sets it;
   // its swatch opens the pen's colors (any color, with no preset); the eye hides it from the lines;
@@ -720,9 +697,6 @@ export default function App() {
       targeted={photoLayerIds.filter((id) => targets.has(id)).length}
       layerCount={photoLayerIds.length}
       shownName={active?.name ?? ""}
-      estimates={estimates}
-      palette={tool?.palette ?? []}
-      anyColor={!preset}
       penWidthMm={penWidthMm}
       infoCard={infoCard}
       effectCards={effectCards}
@@ -748,13 +722,11 @@ export default function App() {
         setProfile: (path, rendering) => void splitPhotoProfile(path, rendering),
         set: setPhotoOf,
         split: splitPhoto,
-        splitByColor: splitPhotoByColor,
         splitBestFit: (count) => splitPhotoBestFit(count),
         setPairs: (on) => splitPhotoBestFit(inks, {}, on),
         setKeyLayer,
         setAngles,
         splitCmyk: (set) => splitPhotoCmyk({}, set),
-        setPlatePen,
         setColor: setLayerColor,
         splitAround: (dark, light) => splitAroundPaper({ dark, light, paperTone: chosen.photo?.side && chosen.photo.paperToneSet ? chosen.photo.paperTone : undefined }),
         setPaperTone,
@@ -939,11 +911,18 @@ export default function App() {
               { key: "paper", on: paperCard, toggle: () => setPaperCard((on) => !on) },
               { key: "pen", on: penCard, toggle: () => setPenCard((on) => !on) },
               { key: "image", on: infoCard, toggle: () => setInfoCard((on) => !on) },
+            ]}
+          />
+          {/* The image's layers and its adjustments, a toolbar of their own. */}
+          <PanelToolbar
+            label="Layers and adjustments"
+            cards={[
               { key: "layers", on: layersCard, toggle: () => setLayersCard((on) => !on) },
+              ...(chosen?.photo ? [{ key: "adjustments" as const, on: adjustCard, toggle: () => setAdjustCard((on) => !on) }] : []),
             ]}
           />
           <EffectToolbar effect={chosen?.photo ? effectOf(chosen.photo) : undefined} onEffect={setEffect} onAgain={() => setEffectCards((on) => !on)} disabled={!chosen?.photo || busy} />
-          {chosen?.photo && <AdjustToolbar on={adjustCard} toggle={() => setAdjustCard((on) => !on)} vignette={{ on: vignetteCard, toggle: () => setVignetteCard((on) => !on) }} mask={{ on: maskCard, toggle: () => setMaskCard((on) => !on) }} />}
+          {chosen?.photo && <AdjustToolbar vignette={{ on: vignetteCard, toggle: () => setVignetteCard((on) => !on) }} mask={{ on: maskCard, toggle: () => setMaskCard((on) => !on) }} />}
           {chosen?.photo && <HistoryToolbar canUndo={canUndo} canRedo={canRedo} onUndo={undo} onRedo={redo} disabled={busy} />}
         </div>
         <section className={styles.stage} aria-label="Image conversion" data-dragging-file={draggingFile || undefined} {...stageDrop}>

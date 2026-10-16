@@ -43,7 +43,14 @@ export function AdjustCard({ photo, channels, set, setChannel }: Props) {
   return (
     <Card variant="flat" className={styles.controls}>
       <div className={`${styles.cardBody} ${controls.cardSections}`}>
-        <Section title="Adjustments" icon={<SlidersHorizontal />} collapsibleKey="photo-adjust">
+        <Section
+          title="Adjustments"
+          icon={<SlidersHorizontal />}
+          collapsibleKey="photo-adjust"
+          actionWhenOpen
+          // Folded, the heading says how many channels a separation has: the plates set inside.
+          closedAction={channels.length > 0 ? <span className={controls.toolInTitle}>{`${channels.length} ${channels.length === 1 ? "channel" : "channels"}`}</span> : undefined}
+        >
           <p className={controls.subheading}>Whole image</p>
           <div className={`${styles.fillRow} ${styles.oneRow}`}>
             <NumberField label="Bright" min={-100} max={100} step={5} value={photo.brightness} onChange={(brightness) => set({ brightness })} />
@@ -61,9 +68,9 @@ export function AdjustCard({ photo, channels, set, setChannel }: Props) {
               onChange={(e) => set({ saturation: e.target.checked ? -100 : undefined })}
             />
           )}
-        </Section>
-        {channels.length > 0 && (
-          <Section title="Channels" collapsibleKey="photo-adjust-channels">
+          {/* Each plate's own, inside Adjustments: folding the card puts these away with it. */}
+          {channels.length > 0 && (
+          <Section title="Channels" collapsibleKey="photo-adjust-channels" defaultOpen={false}>
             {channels.map((ch) => (
               <div key={ch.id}>
                 <p className={controls.subheading}>
@@ -78,30 +85,22 @@ export function AdjustCard({ photo, channels, set, setChannel }: Props) {
               </div>
             ))}
           </Section>
-        )}
+          )}
+        </Section>
       </div>
     </Card>
   );
 }
 
 /**
- * The Adjustments, Vignette and Mask cards' switches, in a toolbar of their own down the left: each
- * pressed while its card shows.
+ * The Vignette and Mask cards' switches, in a toolbar of their own down the left: each pressed while
+ * its card shows. Adjustments' own switch is with Layers'.
  */
-export function AdjustToolbar({ on, toggle, vignette, mask, disabled }: { on: boolean; toggle: () => void; vignette: { on: boolean; toggle: () => void }; mask: { on: boolean; toggle: () => void }; disabled?: boolean }) {
+export function AdjustToolbar({ vignette, mask, disabled }: { vignette: { on: boolean; toggle: () => void }; mask: { on: boolean; toggle: () => void }; disabled?: boolean }) {
   return (
     <span className={bar.row}>
-      <ToolbarIcons><Toolbar tone="white" orientation="vertical" aria-label="Adjustments">
-        <SegmentedControl size="sm" variant="dark" actions aria-label="Adjustments">
-          <Segment
-            aria-pressed={on}
-            className={on ? bar.on : undefined}
-            onClick={toggle}
-            disabled={disabled}
-            icon={<SlidersHorizontal />}
-            title={`${on ? "Hide" : "Show"} the Adjustments card: the image's brightness and contrast, and each channel's`}
-            aria-label="Adjustments card"
-          />
+      <ToolbarIcons><Toolbar tone="white" orientation="vertical" aria-label="Vignette and mask">
+        <SegmentedControl size="sm" variant="dark" actions aria-label="Vignette and mask">
           <Segment
             aria-pressed={vignette.on}
             className={vignette.on ? bar.on : undefined}

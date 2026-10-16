@@ -6,11 +6,10 @@ import { Section } from "../../shared/components/controls/Section";
 import { panelIcon } from "../../shared/components/PanelToolbar";
 import { NumberField } from "../../shared/components/controls/NumberField";
 import controls from "../../shared/components/controls/controls.module.css";
-import { BLACK_SHARE, CENTER_DEFAULTS, KEY_FROM, MOST_COLORS, MOST_LAYERS, MOST_SIDE_LAYERS, MOST_PASSES, paperToneOf, OUTLINE_DEFAULTS, PLATE_AIMS, PLATE_OFF, SILHOUETTE_DEFAULTS, STREAM_DEFAULTS, ONE_LINE_DEFAULTS, ONE_LINE_MOST, SCRIBBLE_DEFAULTS, HILBERT_DEFAULTS, WAVE_DEFAULTS, ANGLE_PRESETS, centerModeOf, EDGE_DEFAULTS, hatchShortestOf, PLATE_SETS, SQUIGGLE_DRAW, SQUIGGLE_INKSCAPE, SQUIGGLE_INKSCAPE_RANGES, SQUIGGLE_RANGES, coverSteps, plateSetOf, platesOf, squiggleDrawOf, squiggleInkscapeOf, type AnglePreset, type SquiggleDraw, type SquiggleInkscape, type PlateSet, photoMarks, photoMode, type Photo, type Plate } from "../../shared/lib/drawing/photo";
+import { BLACK_SHARE, CENTER_DEFAULTS, KEY_FROM, MOST_COLORS, MOST_LAYERS, MOST_SIDE_LAYERS, MOST_PASSES, paperToneOf, OUTLINE_DEFAULTS, SILHOUETTE_DEFAULTS, STREAM_DEFAULTS, ONE_LINE_DEFAULTS, ONE_LINE_MOST, SCRIBBLE_DEFAULTS, HILBERT_DEFAULTS, WAVE_DEFAULTS, ANGLE_PRESETS, centerModeOf, EDGE_DEFAULTS, hatchShortestOf, PLATE_SETS, SQUIGGLE_DRAW, SQUIGGLE_INKSCAPE, SQUIGGLE_INKSCAPE_RANGES, SQUIGGLE_RANGES, coverSteps, plateSetOf, squiggleDrawOf, squiggleInkscapeOf, type AnglePreset, type SquiggleDraw, type SquiggleInkscape, type PlateSet, photoMarks, photoMode, type Photo, type Plate } from "../../shared/lib/drawing/photo";
 import type { EdgeGen } from "../../shared/lib/drawing/edgeMask";
 import { MaskCard } from "./MaskCard";
 import { boxOf, type Shape } from "../../shared/lib/drawing/shapes";
-import type { PenColor } from "../../shared/lib/types";
 import styles from "../App.module.css";
 import { EFFECTS, effectOf } from "./EffectToolbar";
 import { INTENTS, usesBpc, type Rendering } from "../../shared/lib/drawing/icc";
@@ -56,14 +55,11 @@ export interface PhotoActions {
   /** Change settings of the photo - this layer's, or every layer's when "All layers" is on. */
   set: (patch: Partial<Photo>) => void;
   split: (count: number) => void;
-  splitByColor: (count: number) => void;
   /** Split by colour into the `count` pens that come nearest the photo as they really come out on paper. */
   splitBestFit: (count: number) => void;
   /** Split by best fit again, with or without two pens hatched across each other. */
   setPairs: (on: boolean) => void;
   setKeyLayer: (on: boolean) => void;
-  /** Draw a plate in another of the pen's colors, by its name in the palette. */
-  setPlatePen: (plate: Plate, penName: string) => void;
   /** B&W split around the paper: so many layers darker than it and lighter, the tones between left bare. */
   splitAround: (dark: number, light: number) => void;
   /** Which of the picture's tones a photo split around the paper leaves bare, as darkness from and to. */
@@ -90,17 +86,11 @@ interface Props {
   layerCount: number;
   /** The layer whose settings the card shows. */
   shownName: string;
-  /** Split by best fit: how near the photo the best pens come, one fewer, as many and one more (ΔE). */
-  estimates?: { pens: number; err: number }[];
   actions: PhotoActions;
   /** Whether the photo's own card - turning, brightness and contrast, its size on the page - is out. */
   infoCard?: boolean;
   /** The pen's line width, in mm: with the spacing, how much paper the lines can cover. */
   penWidthMm?: number;
-  /** The pen's palette: the colors a plate can be drawn in. */
-  palette?: PenColor[];
-  /** No pen preset is chosen: the palette is general colors, and a layer can take any color at all. */
-  anyColor?: boolean;
   /** Whether the effect's cards - its own and Split - are out. */
   effectCards?: boolean;
   /** The Layers card, the app's: under the Image card, above the effect's. */
@@ -117,7 +107,7 @@ interface Props {
  * The chosen photo's card - in the drawing's rail, and in image conversion's under its own: how it is
  * split into layers, sized to the page, and what each layer's lines are drawn as.
  */
-export function PhotoCard({ shape, title, shapes, busy, targeted, layerCount, shownName, estimates, actions, penWidthMm = 0.5, palette = [], anyColor = false, infoCard = true, effectCards = true, layersCard, adjustCard, vignetteCard, maskCard = false }: Props) {
+export function PhotoCard({ shape, title, shapes, busy, targeted, layerCount, shownName, actions, penWidthMm = 0.5, infoCard = true, effectCards = true, layersCard, adjustCard, vignetteCard, maskCard = false }: Props) {
   // The presets, shared between Macs; and the one last picked here, for Delete.
   const [presets, setPresets] = useState<string[]>([]);
   const readPresets = () => api<{ presets: string[] }>("/api/image-presets").then((r) => setPresets(r.presets)).catch(() => {});
@@ -241,8 +231,8 @@ export function PhotoCard({ shape, title, shapes, busy, targeted, layerCount, sh
           <SegmentedControl size="sm" variant="dark" aria-label="Color mode">
             <Segment selected={noProfiles === null && photoMode(photo) === "value"} title="B&W: the image as black and white, in one color or split into tone bands" onClick={() => { setNoProfiles(null); actions.switchMode("value"); }}>B&amp;W</Segment>
             <Segment selected={noProfiles === null && photoMode(photo) === "cmyk"} title="CMYK: print's four plates - cyan, magenta, yellow and black - in the pen's nearest colors, blended on paper" onClick={() => { setNoProfiles(null); actions.switchMode("cmyk"); }}>CMYK</Segment>
-            <Segment selected={noProfiles === null && photoMode(photo) === "colour"} title="Color: as many colors as you choose from the pen's palette, the ones that best match the image" onClick={() => { setNoProfiles(null); actions.switchMode("colour"); }}>Color</Segment>
-            <Segment selected={noProfiles !== null || photoMode(photo) === "profile"} title="Profile: split by a printer's color profile in NextDraw's Color profiles folder - CMYK, a Riso set, extended gamut - a layer for each of its inks" onClick={chooseProfile}>Profile</Segment>
+            <Segment selected={noProfiles === null && photoMode(photo) === "colour"} title="Image: as many colors as you choose from the pen's palette, the ones that best match the image" onClick={() => { setNoProfiles(null); actions.switchMode("colour"); }}>Image</Segment>
+            <Segment selected={noProfiles !== null || photoMode(photo) === "profile"} title="Multi: split by a printer's color profile in NextDraw's Color profiles folder - CMYK, a Riso set, extended gamut - a layer for each of its inks" onClick={chooseProfile}>Multi</Segment>
           </SegmentedControl>
           {noProfiles !== null ? (
             <>
@@ -288,7 +278,10 @@ export function PhotoCard({ shape, title, shapes, busy, targeted, layerCount, sh
             </>
           ) : photoMode(photo) === "cmyk" ? (
             <>
-              {/* Which plates: print's four, or CMYK with more inks for truer, brighter color. */}
+              {/* Which plates: print's four, or CMYK with more inks for truer, brighter color - and, beside
+                it, how much of the colors' shared gray the black plate takes over: more, and the darks
+                are black; less, and they're the other inks laid over each other. */}
+              <div className={styles.menuRow}>
               <InputSelect
                 size="md"
                 label="Plates"
@@ -298,88 +291,41 @@ export function PhotoCard({ shape, title, shapes, busy, targeted, layerCount, sh
               >
                 {PLATE_SETS.map((s) => <option key={s.key} value={s.key}>{s.label}</option>)}
               </InputSelect>
-              {/* Each plate's color, from the pen's palette: chosen for it at the split, changed here.
-                The photo is separated again for the colors as they now are. */}
-              {photo.plates && palette.length > 0 && (
-                <div className={styles.fillRow}>
-                  {platesOf(photo.plates).map((plate, i) => {
-                    const select = (
-                    <InputSelect
-                      key={plate}
-                      size="md"
-                      label={PLATE_AIMS[plate].name}
-                      // The plate's color before its name; with any color allowed, the swatch in front says it.
-                      icon={!anyColor && photo.plates![i] !== PLATE_OFF ? <span className={controls.selectDot} style={{ background: photo.plates![i] }} /> : undefined}
-                      value={photo.plates![i] === PLATE_OFF ? PLATE_OFF : palette.find((p) => p.color.toLowerCase() === photo.plates![i]?.toLowerCase())?.name ?? ""}
-                      onChange={(e) => actions.setPlatePen(plate, e.target.value)}
-                    >
-                      {photo.plates![i] !== PLATE_OFF && !palette.some((p) => p.color.toLowerCase() === photo.plates![i]?.toLowerCase()) && <option value="">{anyColor ? "Custom" : "N/A"}</option>}
-                      {/* None leaves the channel out: the other plates make up the photo without it. */}
-                      <option value={PLATE_OFF}>None</option>
-                      {palette.map((p) => <option key={p.name} value={p.name}>{p.name}</option>)}
-                    </InputSelect>
-                    );
-                    // No pen preset: any color for the plate, from the swatch in front of its menu - the
-                    // paper card's own picker swatch. Not for a plate left out.
-                    if (!anyColor || photo.plates![i] === PLATE_OFF) return select;
-                    const color = photo.plates![i];
-                    return (
-                      <div key={plate} className={styles.plateCell}>
-                        <label className={controls.paperSwatch} title={`Pick any color for the ${PLATE_AIMS[plate].name.toLowerCase()} plate`} style={{ background: color }}>
-                          <input type="color" aria-label={`${PLATE_AIMS[plate].name} plate color`} value={color} disabled={busy} onChange={(e) => actions.setColor(e.target.value, plate)} />
-                        </label>
-                        {select}
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-              {/* How much of the colors' shared gray the black plate takes over: more, and the darks are
-                black; less, and they're the other inks laid over each other. */}
               <NumberField label="Black" unit="%" min={0} max={100} step={5} value={Math.round((photo.blackShare ?? BLACK_SHARE) * 100)} onChange={(v) => actions.set({ blackShare: v / 100 })} />
+              </div>
             </>
           ) : photo.ink ? (
             <>
-              {/* How the pens are chosen: the ones that come nearest the photo as they really come
-                out on paper, or the nearest pen to each of the photo's own colour groups. */}
-              <SegmentedControl size="sm" variant="dark" aria-label="Choose colors">
-                <Segment selected={Boolean(photo.fitPaper)} title="Best fit: the colors that, as they really come out on this paper, come nearest the image between them" onClick={() => !photo.fitPaper && actions.splitBestFit(inks)}>Best fit</Segment>
-                <Segment selected={!photo.fitPaper} title="Image's colors: the image's own main colors, each drawn in the palette color nearest it" onClick={() => photo.fitPaper && actions.splitByColor(inks)}>Image's colors</Segment>
-              </SegmentedControl>
-              <p className={styles.empty}>
-                {photo.fitPaper
-                  ? "Tries combinations of your pens and keeps the set that, as they really come out on this paper, looks most like the image."
-                  : "Finds the image's main colors, as many as you ask for, and draws each area in the pen nearest its color. Quick, but it doesn't check how the pens look on paper."}
-              </p>
-              <NumberField
-                label="Colors"
-                min={1}
-                max={MOST_COLORS}
-                step={1}
-                value={inks}
-                onChange={photo.fitPaper ? actions.splitBestFit : actions.splitByColor}
-              />
-              {photo.fitPaper && (
-                // Two pens hatched across each other, for colours neither makes alone - an olive
-                // from a yellow under a dark green. Each pen's layer gets its own angle so the lines cross.
+              {/* The pens are chosen by best fit: the ones that come nearest the photo as they really come out on paper. */}
+              <div className={styles.fillRow}>
+                <NumberField
+                  label="Colors"
+                  min={1}
+                  max={MOST_COLORS}
+                  step={1}
+                  value={inks}
+                  onChange={actions.splitBestFit}
+                />
+                {/* Colour layers overlap where colours blend: a part of the photo is drawn by every
+                  layer whose colour is nearly as close as the nearest, within this. */}
+                {photo.group && <NumberField label="Bleed" unit="%" min={0} max={25} step={1} value={Math.round((photo.bleed ?? 0) * 100)} onChange={(v) => actions.set({ bleed: v / 100 })} />}
+              </div>
+              <div className={styles.fillRow}>
+                {/* Two pens hatched across each other, for colours neither makes alone - an olive
+                  from a yellow under a dark green. Each pen's layer gets its own angle so the lines cross. */}
                 <Checkbox size="md"
                   checked={Boolean(photo.fitPairs)}
-                  label="Overlaid pairs, for colors no single color makes"
+                  label="Overlay"
                   onChange={(e) => actions.setPairs(e.target.checked)}
                 />
-              )}
-              {photo.fitPaper && estimates && estimates.length > 0 && (
-                <p className={styles.empty}>
-                  Best fit, as near as the colors come to the image: {estimates.map((e) => `${e.pens} ${e.pens === 1 ? "color" : "colors"} ${e.err.toFixed(1)} ΔE`).join(", ")}. Lower is closer.
-                </p>
-              )}
-              {/* A key ink over the colours, darkening shadows the colour layers can't reach alone.
-                Its pen is the layer's: change it with the layer's dot. */}
-              <Checkbox size="md"
-                checked={Boolean(photo.keyInk)}
-                label="Key layer, to darken shadows"
-                onChange={(e) => actions.setKeyLayer(e.target.checked)}
-              />
+                {/* A key ink over the colours, darkening shadows the colour layers can't reach alone.
+                  Its pen is the layer's: change it with the layer's dot. */}
+                <Checkbox size="md"
+                  checked={Boolean(photo.keyInk)}
+                  label="Key layer"
+                  onChange={(e) => actions.setKeyLayer(e.target.checked)}
+                />
+              </div>
               {photo.keyInk && (
                 // The key's shading over the colours: how dark a part must be before it's shaded, and
                 // how heavy the shading gets at black. The colours under it draw as they would without it.
@@ -436,18 +382,6 @@ export function PhotoCard({ shape, title, shapes, busy, targeted, layerCount, sh
   // How far the layers reach into each other where they meet: the whole photo's.
   const bleed = (
     <>
-      {photoMode(photo) === "colour" && photo.group && (
-        // Colour layers overlap where colours blend: a part of the photo is drawn by every
-        // layer whose colour is nearly as close as the nearest, within this.
-        <>
-          <NumberField label="Bleed" unit="%" min={0} max={25} step={1} value={Math.round((photo.bleed ?? 0) * 100)} onChange={(v) => actions.set({ bleed: v / 100 })} />
-          <p className={styles.empty}>
-            {(photo.bleed ?? 0) > 0
-              ? "Where the image's colors blend, the layers either side both draw, and their lines overlap."
-              : "Each part of the image is drawn by the one layer nearest its color."}
-          </p>
-        </>
-      )}
       {photo.band && (() => {
         const [lo, hi] = photo.band;
         const bleed = photo.bleed ?? 0;
@@ -485,6 +419,13 @@ export function PhotoCard({ shape, title, shapes, busy, targeted, layerCount, sh
   // changing it turns every layer with it.
   const angleField = (
     <NumberField label="Angle" unit="°" min={-180} max={180} step={5} value={photo.angle} onChange={(angle) => ((targeted === layerCount || photo.anglePreset === "uniform") && photo.group ? actions.setAngles({ by: angle - photo.angle }) : actions.set({ angle }))} />
+  );
+  // The preset and this layer's angle on one line.
+  const anglesRow = (
+    <div className={styles.menuRow}>
+      {anglePresets}
+      {angleField}
+    </div>
   );
   // Squiggle's own angle: every layer level, left to right, unless turned - not hatching's angles by color.
   const squiggleAngleField = (
@@ -677,9 +618,8 @@ export function PhotoCard({ shape, title, shapes, busy, targeted, layerCount, sh
               ) : photo.style === "streamlines" ? (
                 <>
                   {/* The layers' angles - which the lines settle to wherever the image has no shape to follow. */}
-                  {anglePresets}
+                  {anglesRow}
                   <div className={`${styles.fillRow} ${styles.oneRow}`}>
-                    {angleField}
                     <NumberField label="Spacing mm" min={0.1} max={5} step={0.05} value={photo.spacingMm} onChange={(spacingMm) => actions.set({ spacingMm })} />
                     <NumberField label="Widest mm" min={0.5} max={20} step={0.25} value={photo.streamWidestMm ?? STREAM_DEFAULTS.widestMm} onChange={(streamWidestMm) => actions.set({ streamWidestMm })} />
                   </div>
@@ -704,9 +644,9 @@ export function PhotoCard({ shape, title, shapes, busy, targeted, layerCount, sh
                   </div>
                   {/* The same settings, scribbled another way. */}
                   <Button size="sm" variant="secondary" title="Scribble again: the same settings, a new random scribble" onClick={() => actions.set({ scribbleSeed: (photo.scribbleSeed ?? SCRIBBLE_DEFAULTS.seed) + 1 })}>
-                    New scribble
+                    Randomize
                   </Button>
-                  {eachLayer("Spacing, min, max, wiggle and New scribble")}
+                  {eachLayer("Spacing, min, max, wiggle and Randomize")}
                 </>
               ) : photo.style === "oneline" ? (
                 <>
@@ -831,9 +771,8 @@ export function PhotoCard({ shape, title, shapes, busy, targeted, layerCount, sh
               ) : photo.style === "waves" ? (
                 <>
                   {/* The layers' angles first, as Hatching's. */}
-                  {anglePresets}
+                  {anglesRow}
                   <div className={`${styles.fillRow} ${styles.oneRow}`}>
-                    {angleField}
                     <NumberField label="Spacing mm" min={0.2} max={20} step={0.25} value={photo.rowMm ?? WAVE_DEFAULTS.rowMm} onChange={(rowMm) => actions.set({ rowMm })} />
                     <NumberField label="Wavelength mm" min={0.2} max={20} step={0.1} value={photo.waveMm ?? WAVE_DEFAULTS.waveMm} onChange={(waveMm) => actions.set({ waveMm })} />
                   </div>
@@ -841,9 +780,8 @@ export function PhotoCard({ shape, title, shapes, busy, targeted, layerCount, sh
                 </>
               ) : (
                 <>
-                  {anglePresets}
+                  {anglesRow}
                   <div className={`${styles.fillRow} ${styles.oneRow}`}>
-                    {angleField}
                     <NumberField label="Spacing mm" min={0.1} max={5} step={0.05} value={photo.spacingMm} onChange={(spacingMm) => actions.set({ spacingMm })} />
                     <NumberField label="Passes" min={1} max={MOST_PASSES} step={1} value={photo.levels} onChange={(levels) => actions.set({ levels })} />
                   </div>
@@ -890,7 +828,7 @@ export function PhotoCard({ shape, title, shapes, busy, targeted, layerCount, sh
                     : photo.style === "streamlines"
                     ? `${marks.strokes.toLocaleString()} lines, flowing along the image's shapes. They run from Spacing apart in the blacks to Widest apart, past which it's paper; Flow sets how broadly the shapes are followed${(photo.streamPasses ?? 1) > 1 ? ", and a second pass crosses the first in the darker half" : ""}.`
                     : photo.style === "scribble"
-                    ? `${marks.strokes.toLocaleString()} ${marks.strokes === 1 ? "stroke" : "strokes"}, wandering and overlapping, laid down until each part has about as much ink as it's dark. Spacing sets how dense the blacks get; Min and Max, how short a stroke may be and how far it runs before the pen lifts, in mm; Wiggle, how tightly it curls.`
+                    ? `${marks.strokes.toLocaleString()} ${marks.strokes === 1 ? "stroke" : "strokes"}`
                     : photo.style === "oneline"
                     ? `${marks.strokes === 1 ? "One line" : `${marks.strokes.toLocaleString()} lines`} through ${(marks.dots ?? 0).toLocaleString()} dots, ${((marks.lengthMm ?? 0) / 1000).toFixed(1)} m of drawing. The dots are thicker where the image is darker, so the line winds tighter there.${marks.strokes > 1 ? " The pen lifts over jumps longer than Lift over." : ""}`
                     : photo.style === "hilbert"

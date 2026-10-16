@@ -3,7 +3,7 @@ import { Grid3x3, Image, Layers2, ListOrdered, Move, Pen, Save, SlidersHorizonta
 import bar from "./PreviewToolbar.module.css";
 import { ToolbarIcons } from "./ToolbarIcons";
 
-/** The rail's cards the toolbar shows and hides, in the order they stack. Grid is Studio's; Image and Layers Image's; Queue, and Drawing position, Plot options and Utilities (a toolbar of their own), Plot's (Studio's Layers switch is with its tools). */
+/** The rail's cards the toolbar shows and hides, in the order they stack. Grid is Studio's; Image, and Layers and Adjustments (a toolbar of their own), Image's; Queue, and Drawing position, Plot options and Utilities (a toolbar of their own), Plot's (Studio's Layers switch is with its tools). */
 const PANELS = {
   file: { label: "File", icon: <Save />, what: "the File card" },
   paper: { label: "Paper", icon: <StickyNote />, what: "the Paper card: what the drawing is plotted on" },
@@ -11,6 +11,7 @@ const PANELS = {
   grid: { label: "Grid", icon: <Grid3x3 />, what: "the Grid card: what shapes snap to" },
   image: { label: "Image", icon: <Image />, what: "the image's card" },
   layers: { label: "Layers", icon: <Layers2 />, what: "the Layers card: the image's layers, their colors and order" },
+  adjustments: { label: "Adjustments", icon: <SlidersHorizontal />, what: "the Adjustments card: the image's brightness and contrast, and each channel's" },
   queue: { label: "Queue", icon: <ListOrdered />, what: "the Queue card: the drawings waiting to be plotted" },
   position: { label: "Drawing position", icon: <Move />, what: "the Drawing position card: where the drawing sits on the plotter" },
   options: { label: "Plot options", icon: <SlidersHorizontal />, what: "the Plot options card: how the drawing is plotted" },
