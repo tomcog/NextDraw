@@ -27,6 +27,10 @@ export interface PhotoActions {
   replace: () => void;
   /** Read the photo's file again, where it was opened from NextDraw's file browser and so is known. */
   reload: () => void;
+  /** Start cropping the image on the page, or, while cropping, keep the crop or leave it. */
+  crop: () => void;
+  cropDone: () => void;
+  cropCancel: () => void;
   /** Keep how the image is drawn - layers, passes, settings, pens, edge - as a preset; `taken` are the names in use. */
   savePreset: (taken: string[]) => Promise<void>;
   /** Draw the image as a saved preset says, keeping its picture and place. */
@@ -87,6 +91,8 @@ interface Props {
   /** The layer whose settings the card shows. */
   shownName: string;
   actions: PhotoActions;
+  /** Being cropped on the page: Done and Cancel show under the card's buttons. */
+  cropping?: boolean;
   /** Whether the photo's own card - turning, brightness and contrast, its size on the page - is out. */
   infoCard?: boolean;
   /** The pen's line width, in mm: with the spacing, how much paper the lines can cover. */
@@ -107,7 +113,7 @@ interface Props {
  * The chosen photo's card - in the drawing's rail, and in image conversion's under its own: how it is
  * split into layers, sized to the page, and what each layer's lines are drawn as.
  */
-export function PhotoCard({ shape, title, shapes, busy, targeted, layerCount, shownName, actions, penWidthMm = 0.5, infoCard = true, effectCards = true, layersCard, adjustCard, vignetteCard, maskCard = false }: Props) {
+export function PhotoCard({ shape, title, shapes, busy, targeted, layerCount, shownName, actions, cropping = false, penWidthMm = 0.5, infoCard = true, effectCards = true, layersCard, adjustCard, vignetteCard, maskCard = false }: Props) {
   // The presets, shared between Macs; and the one last picked here, for Delete.
   const [presets, setPresets] = useState<string[]>([]);
   const readPresets = () => api<{ presets: string[] }>("/api/image-presets").then((r) => setPresets(r.presets)).catch(() => {});
@@ -500,11 +506,30 @@ export function PhotoCard({ shape, title, shapes, busy, targeted, layerCount, sh
                   >
                     Replace…
                   </Button>
+                  {/* Cut the picture down to part of it, by its edges dragged on the page. */}
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    title="Crop: drag the picture's edges on the page to choose what's kept - Fit and Fill then size that"
+                    disabled={busy || cropping}
+                    onClick={actions.crop}
+                  >
+                    Crop
+                  </Button>
                 </span>
               }
             >
               {/* The photo's name under the card's, small, as the File card says where a drawing is. */}
               <p className={controls.fileWhere} title={title}>{title}</p>
+              {cropping && (
+                <>
+                  <p className={controls.hint}>Drag the edges or corners on the page to choose what's kept, or drag inside to move it. Return keeps it, Esc leaves the picture as it was.</p>
+                  <div className={controls.headerTools}>
+                    <Button size="sm" disabled={busy} title="Crop the picture to what's kept (Return)" onClick={actions.cropDone}>Done</Button>
+                    <Button size="sm" variant="secondary" disabled={busy} title="Leave the picture as it was (Esc)" onClick={actions.cropCancel}>Cancel</Button>
+                  </div>
+                </>
+              )}
               {/* Brightness, contrast and saturation are in the Adjustments card, from its own toolbar. */}
               {SHOW_PASSES_AND_PRESETS && (
               <>

@@ -28,3 +28,25 @@
   margin: 0;
   color: var(--ui-text-muted);
 }
+
+/* Cropping: what's cut away dimmed, what's kept outlined, and Studio's grips on its corners and sides -
+   white like the paper, ringed in the action color. */
+.cropShade {
+  fill: #000000;
+  opacity: 0.55;
+  pointer-events: none;
+}
+
+.cropKept {
+  fill: transparent;
+  stroke: var(--ui-action);
+  stroke-width: 1.5;
+  vector-effect: non-scaling-stroke;
+}
+
+.cropGrips circle {
+  fill: #ffffff;
+  stroke: var(--ui-action);
+  stroke-width: 1.5;
+  vector-effect: non-scaling-stroke;
+}

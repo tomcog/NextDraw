@@ -270,6 +270,29 @@ export default function App() {
   const firstPhoto = shapes.find((s) => s.kind === "photo" && s.photo) ?? null;
   const picked = selected ? shapes.find((s) => s.id === selected && s.kind === "photo" && s.photo) ?? null : null;
   const chosen = picked ?? firstPhoto;
+  // The picture being cropped: the part of it kept, as fractions of the whole, while its edges are
+  // dragged on the page. Left when another photo is picked.
+  const [cropDraft, setCropDraft] = useState<[number, number, number, number] | null>(null);
+  useEffect(() => setCropDraft(null), [chosen?.id]);
+  const keepCrop = () => {
+    const part = cropDraft;
+    setCropDraft(null);
+    // All of it kept is no crop at all.
+    if (part && (part[0] > 1e-4 || part[1] > 1e-4 || part[2] < 1 - 1e-4 || part[3] < 1 - 1e-4)) void cropPhoto(part);
+  };
+  const keepCropRef = useRef(keepCrop);
+  keepCropRef.current = keepCrop;
+  // Return keeps the crop and Esc leaves it, unless a field has the keys.
+  useEffect(() => {
+    if (!cropDraft) return;
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.target as HTMLElement | null)?.closest("input, textarea, select, [contenteditable]")) return;
+      if (e.key === "Enter") { e.preventDefault(); keepCropRef.current(); }
+      if (e.key === "Escape") { e.preventDefault(); setCropDraft(null); }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [Boolean(cropDraft)]); // eslint-disable-line react-hooks/exhaustive-deps
   const active = (chosen ? layers.find((l) => l.id === chosen.layerId) : undefined) ?? layers.find((l) => l.id === activeLayer) ?? layers[0];
 
   // All of the photo's layers, bottom first, each in its pen: the lines it comes out as, together.
@@ -324,7 +347,7 @@ export default function App() {
 
   const {
     addPhoto, addSeparations, switchPhotoMode, setKeyLayer, splitPhoto, splitPhotoBestFit,
-    placePhoto, replacePhoto, reloadPhoto, savePreset, applyPreset, deletePreset, turnPhoto, setPhotoOf, addEdgeMask, chooseEdgeMask, deleteEdgeMask, setEdgeGen, saveEdgeGen, setAngles, photoStem, splitPhotoCmyk, setLayerColor,
+    placePhoto, replacePhoto, reloadPhoto, cropPhoto, savePreset, applyPreset, deletePreset, turnPhoto, setPhotoOf, addEdgeMask, chooseEdgeMask, deleteEdgeMask, setEdgeGen, saveEdgeGen, setAngles, photoStem, splitPhotoCmyk, setLayerColor,
     splitAroundPaper, setPaperTone, addPass, removePass, setChannelOf, splitPhotoProfile,
   } = photoActions({
     chosen, shapes, setShapes, layers, setLayers, active, setActiveLayer, page, tool,
@@ -688,6 +711,7 @@ export default function App() {
       // The photo's own name, without the band or color a layer of it adds.
       title={photoStem().name}
       shapes={shapes}
+      cropping={Boolean(cropDraft)}
       busy={busy}
       targeted={photoLayerIds.filter((id) => targets.has(id)).length}
       layerCount={photoLayerIds.length}
@@ -705,6 +729,9 @@ export default function App() {
         applyPreset,
         deletePreset,
         reload: reloadPhoto,
+        crop: () => setCropDraft(chosen?.photo?.crop ?? [0, 0, 1, 1]),
+        cropDone: keepCrop,
+        cropCancel: () => setCropDraft(null),
         addPass,
         removePass,
         pickPass: (id: string) => pick(id),
@@ -944,6 +971,7 @@ export default function App() {
               onView={setView}
               show={convertView}
               onShow={setConvertView}
+              cropping={cropDraft ? { part: cropDraft, onPart: setCropDraft } : undefined}
             />
           ) : (
             <>

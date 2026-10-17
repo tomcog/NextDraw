@@ -11,7 +11,7 @@ import type { FitAlign } from "../../shared/lib/geometry";
 import type { PenColor, Preset } from "../../shared/lib/types";
 import {
   BAND_NAMES, LAYER_SETTINGS, MOST_SIDE_LAYERS, paperToneOf, mostColorsOf, MOST_LAYERS, PHOTO_DEFAULTS, PLATES, PLATE_AIMS, colourGroups, isColourful, matchPens, photoMode,
-  placeOnPage, photoData, photoFromData, inkNamed, loadProfile, plateOfPhoto, platePens, presetAngle, readTones, hexLinear, linearHex, coverSteps, stemWithoutPlate, turnedCopy, turnedCrop, workingCopy, MASK_EDGE_PX, MASK_SIDES, type AnglePreset, type Photo, type PhotoPart, type Plate, type PlateSet, PLATE_SETS, plateSetOf, platesOf,
+  placeOnPage, croppedCopy, partOfPart, photoData, photoFromData, inkNamed, loadProfile, plateOfPhoto, platePens, presetAngle, readTones, hexLinear, linearHex, coverSteps, stemWithoutPlate, turnedCopy, turnedCrop, workingCopy, MASK_EDGE_PX, MASK_SIDES, type AnglePreset, type Photo, type PhotoPart, type Plate, type PlateSet, PLATE_SETS, plateSetOf, platesOf,
 } from "../../shared/lib/drawing/photo";
 import { boxOf, newLayerId, newShapeId, type Layer, type Page, type Shape } from "../../shared/lib/drawing/shapes";
 import { samplePhoto, type Candidate } from "./choosePens";
@@ -791,7 +791,12 @@ export function photoActions(ctx: PhotoContext) {
         const got = await read(p);
         const blob = Array.isArray(got) ? got[p.sourceChannel!] : got;
         if (!blob) throw new Error(`it has no channel ${p.sourceChannel! + 1} any more`);
-        return turn(await workingCopy(new File([blob], name, { type: blob.type })), p.quarterTurns ?? 0);
+        const turned = await turn(await workingCopy(new File([blob], name, { type: blob.type })), p.quarterTurns ?? 0);
+        if (!p.cut) return turned;
+        // Cropped here: the file cut again the same way.
+        const cut = await croppedCopy(turned.src, p.cut);
+        await readTones(cut.src);
+        return cut;
       };
       const copies = new Map<string, { src: string; width: number; height: number }>();
       for (const sh of plates ?? [chosen!]) copies.set(sh.id, await fresh(sh.photo!));
@@ -826,7 +831,7 @@ export function photoActions(ctx: PhotoContext) {
       if (was.separation && !was.profile) {
         // A separation is one plate of the photo: only its own picture changes, in the same place, so it
         // stays in register with the rest.
-        setShapes((list) => list.map((sh) => (sh.id === chosen.id ? { ...sh, photo: { ...sh.photo!, src: copy.src, width: copy.width, height: copy.height, source: pictureSources.get(file), quarterTurns: undefined } } : sh)));
+        setShapes((list) => list.map((sh) => (sh.id === chosen.id ? { ...sh, photo: { ...sh.photo!, src: copy.src, width: copy.width, height: copy.height, source: pictureSources.get(file), quarterTurns: undefined, cut: undefined } } : sh)));
         const aspect0 = was.width / was.height;
         setMessage(Math.abs(aspect / aspect0 - 1) > 0.01
           ? { text: `${file.name} isn't the same shape as the other plates, so it's stretched to them and won't line up`, ok: false }
@@ -834,7 +839,7 @@ export function photoActions(ctx: PhotoContext) {
         return;
       }
       setShapes((list) => list.map((sh) => (sameImage(sh)
-        ? { ...sh, ...box, photo: { ...sh.photo!, src: copy.src, width: copy.width, height: copy.height, crop, source: pictureSources.get(file), quarterTurns: undefined } }
+        ? { ...sh, ...box, photo: { ...sh.photo!, src: copy.src, width: copy.width, height: copy.height, crop, source: pictureSources.get(file), quarterTurns: undefined, cut: undefined } }
         : sh)));
       setMessage({ text: `Replaced the image with ${file.name}, keeping its settings`, ok: true });
     } catch (err) {
@@ -878,9 +883,55 @@ export function photoActions(ctx: PhotoContext) {
       }
       record();
       const ids = new Set(members.map((sh) => sh.id));
-      setShapes((list) => list.map((sh) => (ids.has(sh.id) ? { ...sh, ...box, photo: { ...sh.photo!, ...turned.get(sh.photo!.src)!, crop, quarterTurns: (((sh.photo!.quarterTurns ?? 0) + quarter) % 4 + 4) % 4 || undefined } } : sh)));
+      setShapes((list) => list.map((sh) => (ids.has(sh.id) ? { ...sh, ...box, photo: { ...sh.photo!, ...turned.get(sh.photo!.src)!, crop, quarterTurns: (((sh.photo!.quarterTurns ?? 0) + quarter) % 4 + 4) % 4 || undefined, cut: turnedCrop(sh.photo!.cut, quarter) } } : sh)));
     } catch (err) {
       setMessage({ text: `Couldn’t turn the image: ${(err as Error).message}`, ok: false });
+    }
+  };
+
+  /**
+    * Crop the chosen photo - every layer of it - to a part of its picture: left, top, right, bottom, as
+    * fractions of the whole picture. The picture itself is cut, so Fit, Fill and the lines all see only
+    * what's kept; a separation's plates are each cut alike, so they stay in register. Kept with the
+    * photo too, so Reload cuts its file again the same way. Sized to the page, it's sized again; placed
+    * by hand, what's kept stays where it was on the page.
+    */
+  const cropPhoto = async (part: [number, number, number, number]) => {
+    if (!chosen?.photo) return;
+    const members = shapes.filter(sameImage);
+    setBusy(true);
+    try {
+      const cut = new Map<string, Pick<Photo, "src" | "width" | "height">>();
+      for (const sh of members) {
+        if (!cut.has(sh.photo!.src)) cut.set(sh.photo!.src, await croppedCopy(sh.photo!.src, part));
+      }
+      await Promise.all([...cut.values()].map((c) => readTones(c.src)));
+      const was = chosen.photo;
+      const kept = cut.get(was.src)!;
+      let box: { x: number; y: number; x2: number; y2: number };
+      let crop: Photo["crop"];
+      if (was.fit) {
+        const placed = placeOnPage(kept.width / kept.height, page, was.fit, was.margin ?? 0.5, was.align);
+        crop = placed.crop;
+        box = { x: placed.x, y: placed.y, x2: placed.x2, y2: placed.y2 };
+      } else {
+        // Where the whole picture would lie, from the part of it that shows in the box; then the part kept.
+        const [vl, vt, vr, vb] = was.crop ?? [0, 0, 1, 1];
+        const b = boxOf(chosen);
+        const fw = (b.x1 - b.x0) / (vr - vl), fh = (b.y1 - b.y0) / (vb - vt);
+        const x0 = b.x0 - vl * fw, y0 = b.y0 - vt * fh;
+        box = { x: x0 + part[0] * fw, y: y0 + part[1] * fh, x2: x0 + part[2] * fw, y2: y0 + part[3] * fh };
+        crop = undefined;
+      }
+      record();
+      const ids = new Set(members.map((sh) => sh.id));
+      setShapes((list) => list.map((sh) => (ids.has(sh.id)
+        ? { ...sh, ...box, photo: { ...sh.photo!, ...cut.get(sh.photo!.src)!, crop, cut: partOfPart(sh.photo!.cut, part) } }
+        : sh)));
+    } catch (err) {
+      setMessage({ text: `Couldn’t crop the image: ${(err as Error).message}`, ok: false });
+    } finally {
+      setBusy(false);
     }
   };
 
@@ -1111,7 +1162,7 @@ export function photoActions(ctx: PhotoContext) {
             photo: {
               ...settings,
               group, link,
-              source: was.source, sourceChannel: was.sourceChannel, quarterTurns: was.quarterTurns,
+              source: was.source, sourceChannel: was.sourceChannel, quarterTurns: was.quarterTurns, cut: was.cut,
               crop: was.crop, fit: was.fit, margin: was.margin, align: was.align,
             },
           });
@@ -1168,7 +1219,7 @@ export function photoActions(ctx: PhotoContext) {
       photo: {
         // The picture and its place, from the image; everything else fresh.
         src: was.src, width: was.width, height: was.height, crop: was.crop, fit: was.fit, margin: was.margin, align: was.align,
-        source: was.source, quarterTurns: was.quarterTurns,
+        source: was.source, quarterTurns: was.quarterTurns, cut: was.cut,
         edgeMask: was.edgeMask, edgeMaskName: was.edgeMaskName, edgeMaskInvert: was.edgeMaskInvert, edgeMaskSides: was.edgeMaskSides, edgeGen: was.edgeGen, vignette: was.vignette,
         ...PHOTO_DEFAULTS, spacingMm: was.spacingMm,
         style: "edges", centerMode: "mixed", link,
@@ -1260,7 +1311,7 @@ export function photoActions(ctx: PhotoContext) {
   return {
     setChannelOf, splitPhotoProfile,
     addPhoto, addSeparations, switchPhotoMode, setKeyLayer, splitPhoto, splitPhotoBestFit,
-    placePhoto, replacePhoto, reloadPhoto, savePreset, applyPreset, deletePreset, turnPhoto, setPhotoOf, addEdgeMask, chooseEdgeMask, deleteEdgeMask, setEdgeGen, saveEdgeGen, setAngles, photoStem, splitPhotoCmyk, setLayerColor,
+    placePhoto, replacePhoto, reloadPhoto, cropPhoto, savePreset, applyPreset, deletePreset, turnPhoto, setPhotoOf, addEdgeMask, chooseEdgeMask, deleteEdgeMask, setEdgeGen, saveEdgeGen, setAngles, photoStem, splitPhotoCmyk, setLayerColor,
     splitAroundPaper, setPaperTone, addPass, removePass,
   };
 }

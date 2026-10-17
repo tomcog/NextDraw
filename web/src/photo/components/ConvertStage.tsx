@@ -1,6 +1,6 @@
 import { Segment, SegmentedControl } from "@tomcoggia/ui";
 import { Columns2, Image, Layers, Spline } from "lucide-react";
-import { useId, type ReactNode } from "react";
+import { useId, useRef, type ReactNode } from "react";
 import type { Box, Zoom } from "../../shared/components/BedCanvas";
 import { InkGroup, InkLayer } from "../../shared/components/Ink";
 import { NextDrawCanvas } from "../../shared/components/NextDrawCanvas";
@@ -90,14 +90,18 @@ interface Props {
   onZoom: (zoom: Zoom) => void;
   loupe: boolean;
   onLoupe: (on: boolean) => void;
+  /** Cropping: the part of the whole picture kept - left, top, right, bottom, as fractions - set by dragging. */
+  cropping?: { part: Part; onPart: (part: Part) => void };
 }
+
+type Part = [number, number, number, number];
 
 /**
  * Image conversion: one photo on the paper, on the shared NextDraw canvas - the bed, the bar, the
  * zooms and the loupe that Studio and Plot show a drawing on. Photo's own views go first in the bar, before
  * the shared ones; side by side, a second canvas follows the first's zoom.
  */
-export function ConvertStage({ photo, parts, box, page, paperColor, model, ink, view, onView, show, onShow, zoom, onZoom, loupe, onLoupe }: Props) {
+export function ConvertStage({ photo, parts, box, page, paperColor, model, ink, view, onView, show, onShow, zoom, onZoom, loupe, onLoupe, cropping }: Props) {
   const read = usePhotoRead(photo.src);
   const w = box.x1 - box.x0;
   const h = box.y1 - box.y0;
@@ -109,10 +113,16 @@ export function ConvertStage({ photo, parts, box, page, paperColor, model, ink, 
   // The picture as the lines see it: brightness and contrast applied as the photo is read for them
   // (each channel stretched about middle grey by the contrast, then lifted by the brightness).
   const adjustId = `adjust-${useId().replace(/[^\w-]/g, "")}`;
-  const plate = (shown: Photo, id: string, tint?: string) => {
+  // Where the whole picture lies on the page: the part of it that shows fills the box.
+  const [v0, v1, v2, v3] = photo.crop ?? [0, 0, 1, 1];
+  const fullW = w / (v2 - v0), fullH = h / (v3 - v1);
+  const full = { x0: box.x0 - v0 * fullW, y0: box.y0 - v1 * fullH, x1: box.x0 - v0 * fullW + fullW, y1: box.y0 - v1 * fullH + fullH };
+  // `whole`: all of the picture, where it lies - what's cropped from, shown while cropping.
+  const plate = (shown: Photo, id: string, tint?: string, whole = false) => {
     // A separation's own brightness and contrast, then the whole image's, as its lines see them.
     const p = channelAdjusted(shown);
-    const [c0, c1, c2, c3] = p.crop ?? [0, 0, 1, 1];
+    const [c0, c1, c2, c3] = whole ? [0, 0, 1, 1] : p.crop ?? [0, 0, 1, 1];
+    const at = whole ? full : box;
     const c = Math.max(-99, Math.min(99, p.contrast)) / 100;
     const gain = c >= 0 ? 1 / (1 - c) : 1 + c;
     const shift = 0.5 - 0.5 * gain + p.brightness / 200;
@@ -125,7 +135,7 @@ export function ConvertStage({ photo, parts, box, page, paperColor, model, ink, 
     const href = pictureOf(shown);
     if (!href) return null;
     return (
-      <svg x={box.x0} y={box.y0} width={w} height={h} viewBox={`${c0 * p.width} ${c1 * p.height} ${(c2 - c0) * p.width} ${(c3 - c1) * p.height}`} preserveAspectRatio="none">
+      <svg x={at.x0} y={at.y0} width={at.x1 - at.x0} height={at.y1 - at.y0} viewBox={`${c0 * p.width} ${c1 * p.height} ${(c2 - c0) * p.width} ${(c3 - c1) * p.height}`} preserveAspectRatio="none">
         {(adjusted || ink) && (
           <filter id={id} colorInterpolationFilters="sRGB">
             {/* Saturation first, about each pixel's own grey, as the photo is read for the lines. */}
@@ -162,13 +172,13 @@ export function ConvertStage({ photo, parts, box, page, paperColor, model, ink, 
   const plates = photo.separation
     ? parts.filter((part, i) => part.photo.separation && parts.findIndex((o) => plateOf(o.photo) === plateOf(part.photo)) === i)
     : [];
-  const picture = (faded?: boolean) => (
+  const picture = (faded?: boolean, whole = false) => (
     <g opacity={faded ? 0.3 : 1}>
       {photo.separation
         ? plates.map((part, i) => (
-            <g key={i} style={{ mixBlendMode: "multiply" }}>{plate(part.photo, `${adjustId}-${i}`, part.color)}</g>
+            <g key={i} style={{ mixBlendMode: "multiply" }}>{plate(part.photo, `${adjustId}-${i}`, part.color, whole)}</g>
           ))
-        : plate(photo, adjustId)}
+        : plate(photo, adjustId, undefined, whole)}
     </g>
   );
   const at = photoOrigin(photo, box.x0, box.y0);
@@ -200,14 +210,29 @@ export function ConvertStage({ photo, parts, box, page, paperColor, model, ink, 
   );
   const bar = { view, onView, zoom, onZoom, canDrawing: true, loupe, onLoupe, extras };
 
-  const pane = (body: ReactNode, first: boolean) => (
+  const pane = (body: ReactNode | ((mark: number) => ReactNode), first: boolean) => (
     <figure className={styles.pane}>
       <NextDrawCanvas bar={first ? bar : undefined} zoom={zoom} loupe={loupe} model={model} settings={settings} drawingBox={drawingBox}>
         {/* Everything here is in the page's inches; the bed counts in UNITS per inch. */}
-        <g transform={`scale(${UNITS})`}>{body}</g>
+        {({ mark }) => <g transform={`scale(${UNITS})`}>{typeof body === "function" ? body(mark) : body}</g>}
       </NextDrawCanvas>
     </figure>
   );
+
+  // Cropping: the whole picture, in one pane, with the part kept to drag.
+  if (cropping) {
+    return (
+      <div className={styles.panes} data-view="picture">
+        {pane((mark) => (
+          <>
+            {picture(false, true)}
+            <CropFrame full={full} part={cropping.part} onPart={cropping.onPart} r={(mark * 0.28) / UNITS} />
+          </>
+        ), true)}
+        {!read && <p className={styles.reading}>Reading the image…</p>}
+      </div>
+    );
+  }
 
   return (
     <div className={styles.panes} data-view={show}>
@@ -222,5 +247,75 @@ export function ConvertStage({ photo, parts, box, page, paperColor, model, ink, 
       )}
       {!read && <p className={styles.reading}>Reading the image…</p>}
     </div>
+  );
+}
+
+type Grip = "nw" | "n" | "ne" | "e" | "se" | "s" | "sw" | "w" | "move";
+const GRIP_CURSOR: Record<Grip, string> = {
+  nw: "nwse-resize", se: "nwse-resize", ne: "nesw-resize", sw: "nesw-resize", n: "ns-resize", s: "ns-resize", e: "ew-resize", w: "ew-resize", move: "move",
+};
+/** The least a crop keeps, as a share of the picture each way. */
+const LEAST = 0.02;
+
+/**
+ * The part of a picture kept by a crop, on the page: what's cut away dimmed, what's kept outlined, and
+ * a grip on each corner and side to drag - Studio's grips - and the part itself to drag about.
+ */
+function CropFrame({ full, part, onPart, r }: { full: { x0: number; y0: number; x1: number; y1: number }; part: Part; onPart: (part: Part) => void; r: number }) {
+  const ref = useRef<SVGGElement>(null);
+  const drag = useRef<{ grip: Grip; from: { x: number; y: number }; was: Part } | null>(null);
+  const fw = full.x1 - full.x0, fh = full.y1 - full.y0;
+  // Where the pointer is, as fractions of the whole picture.
+  const at = (e: React.PointerEvent) => {
+    const ctm = ref.current?.getScreenCTM();
+    if (!ctm) return null;
+    const p = new DOMPoint(e.clientX, e.clientY).matrixTransform(ctm.inverse());
+    return { x: (p.x - full.x0) / fw, y: (p.y - full.y0) / fh };
+  };
+  const down = (grip: Grip) => (e: React.PointerEvent) => {
+    const from = at(e);
+    if (!from) return;
+    e.stopPropagation();
+    (e.currentTarget as Element).setPointerCapture(e.pointerId);
+    drag.current = { grip, from, was: part };
+  };
+  const move = (e: React.PointerEvent) => {
+    const d = drag.current;
+    const p = d && at(e);
+    if (!d || !p) return;
+    const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
+    let [l, t, rr, b] = d.was;
+    if (d.grip === "move") {
+      const dx = clamp(p.x - d.from.x, -l, 1 - rr), dy = clamp(p.y - d.from.y, -t, 1 - b);
+      onPart([l + dx, t + dy, rr + dx, b + dy]);
+      return;
+    }
+    if (d.grip.includes("w")) l = clamp(p.x, 0, rr - LEAST);
+    if (d.grip.includes("e")) rr = clamp(p.x, l + LEAST, 1);
+    if (d.grip.includes("n")) t = clamp(p.y, 0, b - LEAST);
+    if (d.grip.includes("s")) b = clamp(p.y, t + LEAST, 1);
+    onPart([l, t, rr, b]);
+  };
+  const up = () => { drag.current = null; };
+  const [x0, y0, x1, y1] = [full.x0 + part[0] * fw, full.y0 + part[1] * fh, full.x0 + part[2] * fw, full.y0 + part[3] * fh];
+  const mx = (x0 + x1) / 2, my = (y0 + y1) / 2;
+  const grips: { id: Grip; x: number; y: number }[] = [
+    { id: "nw", x: x0, y: y0 }, { id: "n", x: mx, y: y0 }, { id: "ne", x: x1, y: y0 }, { id: "e", x: x1, y: my },
+    { id: "se", x: x1, y: y1 }, { id: "s", x: mx, y: y1 }, { id: "sw", x: x0, y: y1 }, { id: "w", x: x0, y: my },
+  ];
+  return (
+    <g ref={ref} onPointerMove={move} onPointerUp={up} onPointerCancel={up}>
+      <path
+        className={styles.cropShade}
+        fillRule="evenodd"
+        d={`M${full.x0} ${full.y0}H${full.x1}V${full.y1}H${full.x0}Z M${x0} ${y0}H${x1}V${y1}H${x0}Z`}
+      />
+      <rect className={styles.cropKept} x={x0} y={y0} width={x1 - x0} height={y1 - y0} style={{ cursor: GRIP_CURSOR.move }} onPointerDown={down("move")} />
+      <g className={styles.cropGrips}>
+        {grips.map((g) => (
+          <circle key={g.id} cx={g.x} cy={g.y} r={r} style={{ cursor: GRIP_CURSOR[g.id] }} onPointerDown={down(g.id)} />
+        ))}
+      </g>
+    </g>
   );
 }

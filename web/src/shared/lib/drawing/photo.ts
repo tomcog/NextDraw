@@ -24,6 +24,12 @@ export interface Photo {
   sourceChannel?: number;
   /** Quarter turns given it since it came from its file, clockwise, 0 to 3: what Reload turns the file again by. */
   quarterTurns?: number;
+  /**
+   * The part of its file it was cropped to - left, top, right, bottom, as fractions of the file turned
+   * by `quarterTurns` - so Reload cuts the file again the same way. Absent, all of it. The picture held
+   * (`src`) is already cut.
+   */
+  cut?: [number, number, number, number];
   /** -100 to 100: lighter or darker overall. */
   brightness: number;
   /** -100 to 100: flatter or more contrasty. */
@@ -1269,6 +1275,32 @@ export async function turnedCopy(src: string, quarter: 1 | -1): Promise<Pick<Pho
     ctx.translate(canvas.width / 2, canvas.height / 2);
     ctx.rotate((quarter * Math.PI) / 2);
     ctx.drawImage(img, -img.width / 2, -img.height / 2);
+    return { src: canvas.toDataURL("image/jpeg", 0.85), width: canvas.width, height: canvas.height };
+  } finally {
+    img.close();
+  }
+}
+
+/** Whether this is a part of a picture - left, top, right, bottom, as fractions, each in order. */
+export const isPart = (v: unknown): v is [number, number, number, number] =>
+  Array.isArray(v) && v.length === 4 && v.every((n) => typeof n === "number" && n >= 0 && n <= 1) && v[0] < v[2] && v[1] < v[3];
+
+/** A part of a part, as a part of the whole: `inner` in fractions of `outer`, made fractions of what `outer` is cut from. */
+export function partOfPart(outer: [number, number, number, number] | undefined, inner: [number, number, number, number]): [number, number, number, number] {
+  const [l, t, r, b] = outer ?? [0, 0, 1, 1];
+  return [l + inner[0] * (r - l), t + inner[1] * (b - t), l + inner[2] * (r - l), t + inner[3] * (b - t)];
+}
+
+/** A copy of a picture cut to a part of it - left, top, right, bottom, as fractions. */
+export async function croppedCopy(src: string, part: [number, number, number, number]): Promise<Pick<Photo, "src" | "width" | "height">> {
+  const img = await createImageBitmap(await (await fetch(src)).blob());
+  try {
+    const [l, t, r, b] = part;
+    const x = Math.round(l * img.width), y = Math.round(t * img.height);
+    const canvas = document.createElement("canvas");
+    canvas.width = Math.max(1, Math.round(r * img.width) - x);
+    canvas.height = Math.max(1, Math.round(b * img.height) - y);
+    canvas.getContext("2d")!.drawImage(img, x, y, canvas.width, canvas.height, 0, 0, canvas.width, canvas.height);
     return { src: canvas.toDataURL("image/jpeg", 0.85), width: canvas.width, height: canvas.height };
   } finally {
     img.close();
@@ -4997,6 +5029,7 @@ export function photoFromData(raw: Record<string, unknown>): Photo | null {
     ...(typeof raw.source === "string" && raw.source ? { source: raw.source } : {}),
     ...(Number.isInteger(raw.source_channel) && Number(raw.source_channel) >= 0 ? { sourceChannel: Number(raw.source_channel) } : {}),
     ...([1, 2, 3].includes(Number(raw.quarter_turns)) ? { quarterTurns: Number(raw.quarter_turns) } : {}),
+    ...(isPart(raw.cut) ? { cut: raw.cut } : {}),
     levels: num(raw.levels, PHOTO_DEFAULTS.levels),
     ...(typeof raw.group === "string" ? { group: raw.group } : {}),
     ...(typeof raw.link === "string" ? { link: raw.link } : {}),
@@ -5111,6 +5144,7 @@ export const photoData = (p: Photo) => ({
   ...(p.source ? { source: p.source } : {}),
   ...(p.source && p.sourceChannel !== undefined ? { source_channel: p.sourceChannel } : {}),
   ...(p.quarterTurns ? { quarter_turns: p.quarterTurns } : {}),
+  ...(p.cut ? { cut: p.cut } : {}),
   ...(p.group ? { group: p.group } : {}),
   ...(p.link ? { link: p.link } : {}),
   ...(p.edgeFrom !== undefined ? { edge_from: p.edgeFrom } : {}),
