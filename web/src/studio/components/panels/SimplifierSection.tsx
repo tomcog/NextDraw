@@ -16,6 +16,8 @@ export interface SimplifierState {
   prune: { on: boolean; every: number; mode: PruneMode; seed: number };
   /** Straight lines lying along one another joined into the strokes they look like. */
   merge: boolean;
+  /** Only the points each path is drawn exactly the same without: on top of another, or partway along a straight line. */
+  redundant: boolean;
 }
 
 /** Every box clear, every distance back to where it starts: how the card opens, and is left after Simplify. */
@@ -24,6 +26,7 @@ export const SIMPLIFIER_START: SimplifierState = {
   mm: { mergeShort: 0.1, straighten: 0.05, joinEnds: 0.2, dropTiny: 0.3 },
   prune: { on: false, every: 2, mode: "even", seed: 0 },
   merge: false,
+  redundant: false,
 };
 
 const STEPS: { key: SimplifyKey; label: string; hint: string; max: number; step: number }[] = [
@@ -64,7 +67,7 @@ interface Props {
 const newSeed = () => Math.floor(Math.random() * 2 ** 31);
 
 export function SimplifierSection({ value, onChange, scope, onScope, layerName, before, after, removed, busy, onApply, images, hasPaths, onSnapshot }: Props) {
-  const anyOn = Object.values(value.on).some(Boolean) || value.prune.on || value.merge;
+  const anyOn = Object.values(value.on).some(Boolean) || value.prune.on || value.merge || value.redundant;
   const prune = (patch: Partial<SimplifierState["prune"]>) => onChange({ ...value, prune: { ...value.prune, ...patch } });
   const fewer = before - after;
   const title = <span className={controls.iconTitle}><Spline />Simplifier</span>;
@@ -95,6 +98,13 @@ export function SimplifierSection({ value, onChange, scope, onScope, layerName, 
         <Segment selected={scope === "drawing"} title="Every path in the drawing, on the layers that are showing" onClick={() => onScope("drawing")}>Whole drawing</Segment>
         <Segment selected={scope === "layer"} title={`Only the paths on ${layerName}`} onClick={() => onScope("layer")}>This layer</Segment>
       </SegmentedControl>
+      {/* No distance either: a point the path is drawn the same without is redundant, or it isn't. */}
+      <Checkbox size="md"
+        checked={value.redundant}
+        label="Redundant points only"
+        title="Take out only the points each path is drawn exactly the same without - one on top of another, or a corner partway along a straight line - curves and all. Smooth paths are drawn through every point, so they're left as they are"
+        onChange={(e) => onChange({ ...value, redundant: e.target.checked })}
+      />
       {/* Merge has no distance: lines are on the same line or they aren't. */}
       <Checkbox size="md"
         checked={value.merge}

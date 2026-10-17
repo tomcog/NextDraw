@@ -211,3 +211,12 @@ test("points: a double-click adds a point on the nearest segment; Delete takes o
   // Never too short to draw.
   assert.equal(removePoint(shut, 1), shut);
 });
+
+test("the Simplifier's redundant points only: curved runs too, smooth paths left as they are", () => {
+  const none = { mergeShort: 0, straighten: 0, joinEnds: 0, dropTiny: 0, redundant: true };
+  const curved = shape({ id: "c", kind: "path", points: [{ x: 0, y: 0, out: { x: 0, y: 1 } }, { x: 1, y: 1, in: { x: 1, y: 2 } }, { x: 2, y: 1 }, { x: 3, y: 1 }] });
+  const smooth = shape({ id: "m", kind: "path", smooth: true, points: [{ x: 0, y: 0 }, { x: 1, y: 0 }, { x: 2, y: 0 }] });
+  const [c, m] = simplifyDrawing([curved, smooth], () => true, none).shapes;
+  assert.deepEqual(pathRuns(c), [[curved.points![0], curved.points![1], curved.points![3]]]);
+  assert.deepEqual(pathRuns(m), pathRuns(smooth));
+});

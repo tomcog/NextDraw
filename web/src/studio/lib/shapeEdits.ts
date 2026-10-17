@@ -242,6 +242,8 @@ export interface Simplify {
   joinEnds: number;
   /** A run whose longest side is under this is taken out. */
   dropTiny: number;
+  /** Only the nodes each path is drawn exactly the same without taken out (see withoutRedundant). */
+  redundant?: boolean;
   /** One stroke out of every this many is taken out, on each layer; 0 leaves them all. */
   pruneEvery?: number;
   /** How they're picked: across the page in step, one at random from each block of N, or freely. */
@@ -428,7 +430,10 @@ export function simplifyDrawing(shapes: Shape[], onLayer: (s: Shape) => boolean,
   const out = shapes.flatMap((s) => {
     if (s.kind !== "path" || !onLayer(s)) return [s];
     const straight = (r: Node[]) => r.every((n) => !n.in && !n.out);
-    let runs = pathRuns(s).filter((_, i) => !pruned.has(`${s.id}:${i}`)).map((r) => (straight(r) ? simplifyRun(mergeShort(r, opts.mergeShort), opts.straighten) as Node[] : r));
+    // Redundant nodes first, curved runs too: nothing moves, so the steps after see the same path.
+    // A smoothed path is drawn through every point it has, so it has none to spare.
+    const exact = opts.redundant && !s.smooth ? withoutRedundant : (r: Node[]) => r;
+    let runs = pathRuns(s).filter((_, i) => !pruned.has(`${s.id}:${i}`)).map(exact).map((r) => (straight(r) ? simplifyRun(mergeShort(r, opts.mergeShort), opts.straighten) as Node[] : r));
     if (opts.joinEnds > 0 && runs.length > 1) {
       const joined: Node[][] = [runs[0]];
       for (const r of runs.slice(1)) {

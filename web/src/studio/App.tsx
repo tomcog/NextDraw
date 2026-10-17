@@ -1219,6 +1219,7 @@ export default function App() {
   const inches = (k: keyof SimplifierState["on"]) => (simplifier.on[k] ? simplifier.mm[k] / 25.4 : 0);
   const opts = {
    mergeShort: inches("mergeShort"), straighten: inches("straighten"), joinEnds: inches("joinEnds"), dropTiny: inches("dropTiny"),
+   redundant: simplifier.redundant,
    pruneEvery: simplifier.prune.on ? simplifier.prune.every : 0, pruneMode: simplifier.prune.mode, pruneSeed: simplifier.prune.seed,
   };
   const onLayer = simplifierOn;
@@ -1248,7 +1249,7 @@ export default function App() {
  };
  // While anything is ticked, the page shows the drawing simplified, and takes no edits: a shape dragged
  // there would be written back simplified, and kept without Simplify being pressed.
- const simplifierShowing = Boolean(simplifierCard && simplifierPreview && (Object.values(simplifier.on).some(Boolean) || simplifier.prune.on || simplifier.merge));
+ const simplifierShowing = Boolean(simplifierCard && simplifierPreview && (Object.values(simplifier.on).some(Boolean) || simplifier.prune.on || simplifier.merge || simplifier.redundant));
  const keepAsIs = () => {};
 
  /**
