@@ -549,21 +549,23 @@ export default function App() {
   const reshape = async (change: Record<string, unknown>) => {
     if (busy) return null;
     try {
-      const res = await postJSON<{ edited?: string }>("/api/current/reshape", { ...change, settings: refs.current.settings });
+      const res = await postJSON<{ edited?: string; turned_paper?: boolean }>("/api/current/reshape", { ...change, settings: refs.current.settings });
       if (res.edited) {
         refs.current.edited = res.edited; // our own change: nothing for the poll to catch up on
         setDrawingVersion((v) => v + 1);
       }
       return res;
     } catch (err) {
-      setLocalMessage({ text: (err as Error).message, tone: "error" });
+      // A server from before a change was asked for refuses it: it needs starting again.
+      const old = "turn_paper" in change && /can.t be done to this drawing/.test((err as Error).message);
+      setLocalMessage({ text: old ? "The server is older than this page and can't turn the paper. Restart it (close its window, then start.command), then reload." : (err as Error).message, tone: "error" });
       return null;
     }
   };
   // The paper and everything on it a quarter turn, as in every app: the server turns the drawing and
   // its page, and the paper here lies the other way to match - on the bed where it was.
-  const turnDrawing = (dir: 1 | -1) => void reshape({ turn: dir, paper: true }).then((res) => {
-    if (!res) return;
+  const turnDrawing = (dir: 1 | -1) => void reshape({ turn_paper: dir }).then((res) => {
+    if (!res?.turned_paper) return; // only the paper the server turned is turned here
     const was = refs.current.settings;
     updateSettings({ paper_w: was.paper_h, paper_h: was.paper_w });
   });
@@ -990,8 +992,9 @@ export default function App() {
   const layerCount = drawingLayers ? drawingLayers.length : null;
   const simulate = showPenUp && layerCount !== null && (layerCount <= 1 || Boolean(plotLayerId));
   const [artWarnings, setArtWarnings] = useState<string[]>([]);
-  // Which drawing opened the artwork on show was read from, so it's never taken for the next one's.
-  const [artOpened, setArtOpened] = useState<string | null>(null);
+  // Which drawing, and which change to it, the artwork on show was read from - the key it was asked
+  // for by - so it's never taken for another's.
+  const [artKey, setArtKey] = useState("");
   // A drawing reaching Plot lying the other way from the paper on the bed - its page on its side on
   // paper standing up, or the other way about - is turned with its page to lie the way the paper does,
   // as the sheet would be turned to go on the bed. Once for each drawing opened, when its page is first
@@ -999,16 +1002,17 @@ export default function App() {
   const autoTurned = useRef<string | null>(null);
   useEffect(() => {
     const opened = status?.file_opened;
-    if (!fileName || !artPreview || !opened || artOpened !== opened || busy || autoTurned.current === opened) return;
+    const current = artKey === [fileName, drawingVersion, refs.current.scale, refs.current.rotation, JSON.stringify(refs.current.hatchSpacing)].join("|");
+    if (!fileName || !artPreview || !opened || !current || !sharedReady || busy || autoTurned.current === opened) return;
     const { paper_w: pw, paper_h: ph } = settings;
     const { widthIn: dw, heightIn: dh } = artPreview;
     if (!(pw > 0 && ph > 0) || Math.abs(pw - ph) < 0.5 || Math.abs(dw - dh) < 0.02) return; // a square lies neither way
     autoTurned.current = opened;
     if (pw > ph === dw > dh) return;
-    void reshape({ turn: 1, paper: "page" }).then((res) => {
-      if (res) setLocalMessage({ text: `Turned the drawing to lie the way the paper does: ${pw > ph ? "landscape" : "portrait"}`, tone: "ok" });
+    void reshape({ turn_paper: 1, page_only: true }).then((res) => {
+      if (res?.turned_paper) setLocalMessage({ text: `Turned the drawing to lie the way the paper does: ${pw > ph ? "landscape" : "portrait"}`, tone: "ok" });
     });
-  }, [fileName, artPreview, artOpened, status?.file_opened, busy, settings.paper_w, settings.paper_h]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [fileName, artPreview, artKey, drawingVersion, status?.file_opened, sharedReady, busy, settings.paper_w, settings.paper_h]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {
     if (!fileName) return;
     const seq = ++estimateSeq.current;
@@ -1019,13 +1023,12 @@ export default function App() {
     const key = [fileName, drawingVersion, sentScale, sentRotation, JSON.stringify(sentHatch)].join("|");
     if (key !== artworkKey.current) {
       artworkKey.current = key;
-      const openedAt = refs.current.opened ?? null;
       setSimPreview(null); // its pen paths are for the old size or turn
       postJSON<{ svg: string; layers: Layer[]; warnings: string[] }>("/api/artwork", { scale: sentScale, rotation: sentRotation, hatch_spacing: sentHatch })
         .then((art) => {
           if (key !== artworkKey.current) return; // a newer size or turn was asked for
           setArtPreview(parsePreview(art.svg));
-          setArtOpened(openedAt);
+          setArtKey(key);
           setDrawingLayers(art.layers);
           setArtWarnings(art.warnings);
         })

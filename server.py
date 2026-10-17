@@ -4400,8 +4400,9 @@ def reshape_matrix(body, bounds):
     """
     The change asked for, in inches on the page, as (a, b, c, d, e, f) - x' = a x + c y + e,
     y' = b x + d y + f - or None. scale: a percent of the drawing's size now, about its middle. turn:
-    a quarter turn, 1 to the right or -1 to the left, about its middle; the paper stays as it lies -
-    or, with paper, the page and everything on it turned together, landscape to portrait.
+    a quarter turn, 1 to the right or -1 to the left, about its middle; the paper stays as it lies.
+    turn_paper: the page and everything on it a quarter turn together, landscape to portrait - its own
+    name, so a server from before it refuses it rather than turning the drawing alone.
     fit: as big as the paper allows inside margin_mm, placed in the room left over as align says - the
     paper being box (x, y, width, height in inches on the page), or the page.
     bake: Plot's own scale and turn from before, put into the drawing - scaled about the page's
@@ -4419,10 +4420,10 @@ def reshape_matrix(body, bounds):
     if "scale" in body:
         k = float(body["scale"]) / 100
         return about(k, 0) if 0.001 < k < 100 else None
+    if "turn_paper" in body:
+        # About the page: a right turn puts its top-left corner top right, the page now page_h wide.
+        return (0, 1, -1, 0, page_h, 0) if int(body["turn_paper"]) > 0 else (0, -1, 1, 0, 0, page_w)
     if "turn" in body:
-        if body.get("paper"):
-            # About the page: a right turn puts its top-left corner top right, the page now page_h wide.
-            return (0, 1, -1, 0, page_h, 0) if int(body["turn"]) > 0 else (0, -1, 1, 0, 0, page_w)
         return about(1, 1 if int(body["turn"]) > 0 else 3)
     if "fit" in body:
         margin = max(0.0, float(body["fit"])) / 25.4
@@ -4487,7 +4488,7 @@ def reshape_current():
         vb = sized.get("viewBox")
         vx, vy, vw, vh = [float(v) for v in re.split(r"[\s,]+", vb.strip())] if vb else (0, 0, page_w * 96, page_h * 96)
         ux, uy = vw / page_w, vh / page_h  # user units per inch
-        turns_paper = "turn" in body and bool(body.get("paper"))
+        turns_paper = "turn_paper" in body
         if turns_paper and abs(ux - uy) > 1e-6 * max(ux, uy):
             return jsonify(error="This drawing's page is stretched one way, so it can't be turned with its paper."), 400
         # The same change in the file's own units: into inches, changed, and back.
@@ -4506,8 +4507,8 @@ def reshape_current():
             root.set("width", f"{page_h:g}in")
             root.set("height", f"{page_w:g}in")
             root.set("viewBox", f"{vx:g} {vy:g} {vh:g} {vw:g}")
-            # "page": only the page, turned to lie the way the paper already does - that paper stays.
-            plot = read_plot(root) if body.get("paper") != "page" else None
+            # page_only: the page turned to lie the way the paper already does - that paper stays.
+            plot = None if body.get("page_only") else read_plot(root)
             paper = plot.get("paper") if isinstance(plot, dict) else None
             if isinstance(paper, dict) and "paper_w" in paper and "paper_h" in paper:
                 paper["paper_w"], paper["paper_h"] = paper["paper_h"], paper["paper_w"]
@@ -4518,7 +4519,7 @@ def reshape_current():
         return jsonify(error=f"Couldn't change the drawing: {exc}"), 400
     state = current_state()
     state = write_current_state({"dirty": True, "save_to": state["save_to"], "foreign": state["foreign"]})
-    return jsonify(edited=state["edited"], scaled=abs(a * d - b * c) ** 0.5, baked="bake" in body)
+    return jsonify(edited=state["edited"], scaled=abs(a * d - b * c) ** 0.5, baked="bake" in body, turned_paper=turns_paper)
 
 
 def set_stroke(node, color, by_class):

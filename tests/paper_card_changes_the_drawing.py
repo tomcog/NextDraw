@@ -102,13 +102,13 @@ def main():
     file3 = folder / "sheet.svg"
     file3.write_text(drawing('<metadata id="nextdraw-plot"><nds:plot>{"paper": {"paper_w": 279.4, "paper_h": 215.9}}</nds:plot></metadata>'))
     client.post("/api/open?svg=1", json={"path": str(file3)})
-    res = client.post("/api/current/reshape", json={"turn": 1, "paper": True})
-    check("it's done", res.status_code, 200)
+    res = client.post("/api/current/reshape", json={"turn_paper": 1})
+    check("it's done, and said so", (res.status_code, res.get_json().get("turned_paper")), (200, True))
     root = etree.fromstring(server.CURRENT_SVG.read_bytes())
     check("the page stands up", (root.get("width"), root.get("height"), root.get("viewBox")), ("8.5in", "11in", "0 0 8.5 11"))
     check("the paper in Plot's block too", ((server.read_plot(root) or {}).get("paper") or {}).get("paper_w"), 215.9)
     check("the lines where the sheet took them: top-left goes top right", near(box(), (5.5, 1, 7.5, 5)), True)
-    client.post("/api/current/reshape", json={"turn": -1, "paper": True})
+    client.post("/api/current/reshape", json={"turn_paper": -1})
     root = etree.fromstring(server.CURRENT_SVG.read_bytes())
     check("and back left, as it was", (root.get("width"), root.get("height"), near(box(), (1, 1, 5, 3))), ("11in", "8.5in", True))
 
