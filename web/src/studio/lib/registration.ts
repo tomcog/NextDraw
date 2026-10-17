@@ -43,5 +43,10 @@ export function registrationShapes(layers: Layer[], at: Point): Shape[] {
   return layers.filter((l) => !l.hidden).map((l, i) => block(l.id, { x: at.x + i * BLOCK_W, y: at.y - BLOCK_H }));
 }
 
+/** How much room the row takes, in inches: a block for each shown layer. */
+export function registrationSize(layers: Layer[]): { w: number; h: number } {
+  return { w: layers.filter((l) => !l.hidden).length * BLOCK_W, h: BLOCK_H };
+}
+
 /** Whether a shape is one of the blocks: what pressing Registration again takes away first. */
 export const isRegistrationBlock = (s: Shape) => s.kind === "path" && s.name === REGISTRATION_NAME && !s.group;

@@ -27,7 +27,8 @@ import { Canvas, isStrokeTool, type Tool } from "./components/Canvas";
 import { strokeKey, withoutStrokes } from "./lib/strokePick";
 import { mergeLines } from "./lib/mergeLines";
 import { SIGNATURE_FONT, SIGNATURE_LABEL, signatureShapes, signatureSize } from "./lib/signature";
-import { isRegistrationBlock, registrationShapes } from "./lib/registration";
+import { isRegistrationBlock, registrationShapes, registrationSize } from "./lib/registration";
+import { clearSpot, inkMap } from "./lib/clearSpot";
 import { SizePopover } from "./components/SizePopover";
 import { StudioHeader } from "./components/StudioHeader";
 import { canFill, newFillId, shapeAsOne, type Fill } from "../shared/lib/drawing/hatch";
@@ -1102,7 +1103,7 @@ export default function App() {
 
  /**
   * The signature (signature.ts): TC and this year, in the page's bottom right corner inside the Paper
-  * card's margin, picked so it can be dragged where it goes. On its own layer - the one labelled Signature if there
+  * card's margin - or the clear spot nearest it, off the drawing (clearSpot.ts) - picked so it can be dragged where it goes. On its own layer - the one labelled Signature if there
   * is one, else a new one in Black (or the darkest pen) - kept under Varnish, so it's plotted last
   * and can be any pen.
   */
@@ -1133,7 +1134,9 @@ export default function App() {
   const year = new Date().getFullYear();
   const size = signatureSize(year, font);
   const inset = paperMarginMm() / 25.4;
-  const at = { x: Math.max(0, page.w - inset - size.w), y: Math.max(0, page.h - inset - size.h) };
+  const map = await inkMap(buildSvg(shapes, fills, layers, page, { paperSizeId: sizeId, toolName, paperColor, fonts }), page);
+  const { at, clear } = clearSpot(map, page, inset, size, "br");
+  if (!clear) setMessage({ text: "Nowhere clear round the margin - the signature is on the drawing", ok: false });
   const made = signatureShapes(year, font, layer.id, at);
   const on = layer.id;
   setShapes((list) => [...list, ...made]);
@@ -1144,16 +1147,21 @@ export default function App() {
 
  /**
   * Registration blocks (registration.ts): one for each shown layer, butted with no gap for a hidden
-  * one, in the page's lower left corner inside the Paper card's margin, left to right in plotting
-  * order. Any already there go first, so pressing it again after the layers change makes them afresh
+  * one, in the page's lower left corner inside the Paper card's margin - or the clear spot nearest
+  * it, off the drawing (clearSpot.ts) - left to right in plotting order. Any already there go first, so pressing it again after the layers change makes them afresh
   * rather than piling up.
   */
- const addRegistration = () => {
+ const addRegistration = async () => {
   if (!layers.length) return;
-  record();
-  const inset = paperMarginMm() / 25.4;
-  const made = registrationShapes(layers, { x: inset, y: page.h - inset });
   const gone = new Set(shapes.filter(isRegistrationBlock).map((s) => s.id));
+  const inset = paperMarginMm() / 25.4;
+  const size = registrationSize(layers);
+  const rest = shapes.filter((s) => !gone.has(s.id));
+  const map = await inkMap(buildSvg(rest, fills, layers, page, { paperSizeId: sizeId, toolName, paperColor, fonts }), page);
+  const { at, clear } = clearSpot(map, page, inset, size, "bl");
+  if (!clear) setMessage({ text: "Nowhere clear round the margin - the registration blocks are on the drawing", ok: false });
+  record();
+  const made = registrationShapes(layers, { x: at.x, y: at.y + size.h });
   setShapes((list) => [...list.filter((s) => !gone.has(s.id)), ...made]);
   setFills((list) => list.filter((f) => !gone.has(f.shapeId)));
   setSelected((ids) => ids.filter((id) => !gone.has(id)));
@@ -2040,7 +2048,7 @@ export default function App() {
       simplifying={simplifierCard}
       jiggling={jiggleCard}
       onSignature={() => void addSignature()}
-      onRegistration={addRegistration}
+      onRegistration={() => void addRegistration()}
       // Picked, the page picks shapes as Select does; picked again, it's put down for Select.
       onSimplify={() => {
        setTool("select");
