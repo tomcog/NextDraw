@@ -47,6 +47,7 @@ import { PhotoCard } from "./components/PhotoCard";
 import { PhotoHeader } from "./components/PhotoHeader";
 import { GENERAL_PEN } from "./lib/generalPen";
 import { channelsOf, folderOf, isPhotoshop, type Inks } from "./lib/separationFolder";
+import { useSharedPen } from "../shared/lib/useSharedPen";
 import styles from "./App.module.css";
 
 // NextDraw Photo: a photo turned into lines for the tool's pens, saved as an ordinary layered drawing
@@ -136,8 +137,6 @@ export default function App() {
   // The drawing tools, read as Studio reads them: the plugged-in plotter's, or all of them, again
   // every few seconds and taken only when the shared presets file has changed.
   const [presets, setPresets] = useState<Preset[]>([]);
-  const presetsRef = useRef(presets);
-  presetsRef.current = presets;
   // Whether the rail's top card - File, the conversion summary and Settings - is out. Out unless hidden.
   const [fileCard, setFileCard] = useState(() => load<boolean>("photo-file-card") ?? true);
   useEffect(() => remember("photo-file-card", fileCard), [fileCard]);
@@ -189,6 +188,9 @@ export default function App() {
       window.clearInterval(timer);
     };
   }, [plotterOnUsb]);
+  // The pen every app is using: taken when it's picked in Plot or Studio - without splitting the
+  // photo again, as a pen picked here does - and sent there when it's picked here.
+  const sharePen = useSharedPen(presets, setToolName);
   // None is no preset for its colors - the general pen's, any of which a layer can swap for any color -
   // but its line and hatch are None's own: EnerGel's until they're changed in Plot's HUD.
   const preset = toolName === NONE_PEN ? null : presets.find((t) => t.name === toolName) ?? null;
@@ -376,8 +378,7 @@ export default function App() {
     setSelected(null);
     clearHistory();
     file.loaded(current, drawing);
-    const saved = drawing.tool;
-    if (saved) setToolName((current) => (presetsRef.current.length && !presetsRef.current.some((t) => t.name === saved) ? current : saved));
+    // The pen stays the one every app is using (useSharedPen): a drawing opened doesn't swap it.
     if (drawing.paperColor) setPaperColor(drawing.paperColor);
     const kept = keptNote.current;
     keptNote.current = null;
@@ -531,6 +532,7 @@ export default function App() {
   const pickPen = (name: string) => {
     if (name !== toolName) penPicked.current = true;
     setToolName(name);
+    sharePen(name);
   };
   useEffect(() => {
     if (!penPicked.current) return;

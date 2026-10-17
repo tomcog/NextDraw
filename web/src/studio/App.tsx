@@ -63,6 +63,7 @@ import { addPointOnLongest, boxAround, boxOf, clampToPage, groupLabel, groupsOf,
 import { areaPicker, silhouetteOf } from "../shared/lib/drawing/silhouette";
 import { buildSvg, svgForMarks } from "../shared/lib/drawing/svg";
 import { fitToPage, reshapeDrawing, runsOffPage, turnWhole } from "../shared/lib/drawing/whole";
+import { useSharedPen } from "../shared/lib/useSharedPen";
 import styles from "./App.module.css";
 
 // Page sizes, in inches, from the list Plot already offers. Stored width-first the way they're drawn
@@ -182,8 +183,6 @@ export default function App() {
  // Plot's presets rather than being invented here.
  const [defaults, setDefaults] = useState({ angle: 45, spacingMm: 1.5 });
  const [presets, setPresets] = useState<Preset[]>([]);
- const presetsRef = useRef(presets); // for showCurrent, which is made once
- presetsRef.current = presets;
  // The single-stroke fonts: the names the app offers, the ones that have been read, and the one new
  // text is set in. A font is only fetched when something wants to be drawn in it.
  const [fontList, setFontList] = useState<string[]>([]);
@@ -328,7 +327,8 @@ export default function App() {
  const pickTool = useCallback((pen: string) => {
   setToolName(pen);
   touch();
- }, [touch]);
+  sharePen(pen);
+ }, [touch]); // eslint-disable-line react-hooks/exhaustive-deps
  // The paper's color too, picked here: a change to the drawing, which the other apps follow.
  const pickPaperColor = (color: string) => {
   if (color === paperColor) return;
@@ -732,11 +732,8 @@ export default function App() {
   setSelected([]);
   clearHistory();
   loaded(current, drawing);
-  // The drawing comes up in the tool it was saved for, in either app - unless that tool is gone
-  // from the presets, when the one already chosen stays. Not a change to the drawing: it's the
-  // file's own. (Presets not loaded yet, at startup: taken as it is, and checked when they come.)
-  const saved = drawing.tool;
-  if (saved) setToolName((current) => (presetsRef.current.length && !presetsRef.current.some((t) => t.name === saved) ? current : saved));
+  // The pen stays the one every app is using (useSharedPen): a drawing opened doesn't swap it for
+  // the one it was saved with.
   if (drawing.paperColor) setPaperColor(drawing.paperColor);
   // Saving would write only what Studio can draw, so anything else in the file has to be said out
   // loud before it's overwritten rather than discovered missing afterwards.
@@ -830,6 +827,9 @@ export default function App() {
    window.clearInterval(timer);
   };
  }, [plotterOnUsb]);
+ // The pen every app is using: taken when it's picked in Plot or Image, sent there when it's picked here.
+ // Not a change to the drawing when it comes from elsewhere.
+ const sharePen = useSharedPen(presets, setToolName);
 
  // How the drawing is drawn: its paths as thin lines, or the ink they will make. Only how it's
  // painted - the drawing is the same either way. Not remembered: a drawing always opens in
