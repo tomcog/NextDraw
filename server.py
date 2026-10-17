@@ -3948,6 +3948,16 @@ def commit_drawing(tree, disk_path):
     return None
 
 
+# drawing_bounds, kept for each version of the drawing it measured - by the file's bytes and the
+# plotter model - since the NextDraw software's flattening takes seconds on a big drawing. A change
+# made here (reshape) moves the box it knows with the drawing, rather than measuring again.
+_bounds_known = {}
+
+
+def _bounds_key(data, settings):
+    return hashlib.sha1(data).hexdigest(), settings.get("model")
+
+
 def drawing_bounds(settings):
     """
     The box around every line in the drawing, in inches from the page's top-left, as the NextDraw
@@ -3956,6 +3966,10 @@ def drawing_bounds(settings):
     shows. Returns (x0, y0, x1, y1, page_w, page_h) or None when there are no lines.
     """
     from lxml import etree
+    data = CURRENT_SVG.read_bytes()
+    key = _bounds_key(data, settings)
+    if key in _bounds_known:
+        return _bounds_known[key]
     root = parse_svg(CURRENT_SVG).getroot()
     normalize_size(root)
     for group in layer_groups(root):
@@ -3976,7 +3990,10 @@ def drawing_bounds(settings):
     if not xs:
         return None
     vb = [float(v) for v in re.split(r"[\s,]+", doc.get("viewBox").strip())]
-    return min(xs), min(ys), max(xs), max(ys), vb[2], vb[3]
+    if len(_bounds_known) > 16:
+        _bounds_known.clear()
+    _bounds_known[key] = (min(xs), min(ys), max(xs), max(ys), vb[2], vb[3])
+    return _bounds_known[key]
 
 
 def turned_offset(box, page_w, page_h, rotation):
@@ -4466,7 +4483,17 @@ def reshape_current():
     if not CURRENT_SVG.exists():
         return jsonify(error="Open a drawing first."), 400
     try:
-        bounds = drawing_bounds(clean_settings(body.get("settings") or {}))
+        settings = clean_settings(body.get("settings") or {})
+        if "turn_paper" in body:
+            # The page turned with all on it needs only the page's size - not the seconds it takes to
+            # find where the lines are. What's known of them is carried along, below.
+            frame = page_frame(parse_svg(CURRENT_SVG).getroot())
+            if not frame:
+                return jsonify(error="This drawing has no page size to turn."), 400
+            known = _bounds_known.get(_bounds_key(CURRENT_SVG.read_bytes(), settings))
+            bounds = known or (0.0, 0.0, frame["w"], frame["h"], frame["w"], frame["h"])
+        else:
+            known = bounds = drawing_bounds(settings)
         if not bounds:
             return jsonify(error="There are no lines in this drawing."), 400
         tree = parse_svg(CURRENT_SVG)
@@ -4515,6 +4542,17 @@ def reshape_current():
                 write_plot(root, plot)
         from lxml import etree
         write_current_svg(etree.tostring(root, encoding="unicode"))
+        # The box the lines make, moved as they were: exact for scaling and quarter turns, which keep a
+        # box square to the page. Only a box clear of the page's edges, though: the NextDraw software
+        # cuts lines off at the page, so one touching an edge may be less than what's drawn.
+        inside = known and known[0] > 1e-3 and known[1] > 1e-3 and known[2] < known[4] - 1e-3 and known[3] < known[5] - 1e-3
+        if inside:
+            x0, y0, x1, y1 = known[:4]
+            corners = [(a * x + c * y + e, b * x + d * y + f) for x, y in ((x0, y0), (x1, y0), (x0, y1), (x1, y1))]
+            new_w, new_h = (page_h, page_w) if turns_paper else (page_w, page_h)
+            _bounds_known[_bounds_key(CURRENT_SVG.read_bytes(), settings)] = (
+                min(p[0] for p in corners), min(p[1] for p in corners),
+                max(p[0] for p in corners), max(p[1] for p in corners), new_w, new_h)
     except Exception as exc:  # noqa: BLE001
         return jsonify(error=f"Couldn't change the drawing: {exc}"), 400
     state = current_state()

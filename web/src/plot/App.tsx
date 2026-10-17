@@ -546,8 +546,14 @@ export default function App() {
 
   // The Paper card's drawing controls, as in Studio and Image: they change the drawing itself, here
   // by the server, which sends it to the other apps as a change not saved.
+  // What the Paper card is doing to the drawing, while it's at it: the canvas bar says so, with its
+  // spinner, since measuring a big drawing for Fit can take seconds. One change at a time.
+  const [reshaping, setReshaping] = useState<string | null>(null);
+  const reshapingRef = useRef(false);
   const reshape = async (change: Record<string, unknown>) => {
-    if (busy) return null;
+    if (busy || reshapingRef.current) return null;
+    reshapingRef.current = true;
+    setReshaping("fit" in change ? "Fitting the drawing…" : "scale" in change ? "Scaling the drawing…" : "turn_paper" in change ? "Turning the paper and drawing…" : "Changing the drawing…");
     try {
       const res = await postJSON<{ edited?: string; turned_paper?: boolean }>("/api/current/reshape", { ...change, settings: refs.current.settings });
       if (res.edited) {
@@ -560,6 +566,9 @@ export default function App() {
       const old = "turn_paper" in change && /can.t be done to this drawing/.test((err as Error).message);
       setLocalMessage({ text: old ? "The server is older than this page and can't turn the paper. Restart it (close its window, then start.command), then reload." : (err as Error).message, tone: "error" });
       return null;
+    } finally {
+      reshapingRef.current = false;
+      setReshaping(null);
     }
   };
   // The paper and everything on it a quarter turn, as in every app: the server turns the drawing and
@@ -1986,7 +1995,7 @@ export default function App() {
                 onZoom: setZoomChoice,
                 canPaper: settings.paper_w > 0 && settings.paper_h > 0,
                 canDrawing: Boolean(fp),
-                working: updating && fp ? "Updating plot time…" : undefined,
+                working: reshaping ?? (updating && fp ? "Updating plot time…" : undefined),
                 loupe,
                 onLoupe: setLoupe,
               }}
