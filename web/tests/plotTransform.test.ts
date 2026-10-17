@@ -36,3 +36,14 @@ test("and turned a quarter right about its layer's turn, its box the same size a
   close(t.x2 - t.x, 2, "width");
   assert.equal(t.rotation, 90);
 });
+
+test("a picture sized to the page, then fitted from Plot, is placed where Plot put it - no longer sized to the page", () => {
+  const pic: Shape = { id: "pic", kind: "photo", x: 0.5, y: 0.5, x2: 10.5, y2: 8, layerId: "a",
+    photo: { src: "data:image/png;base64,", width: 4, height: 3, brightness: 0, contrast: 0, angle: 45, spacingMm: 1, levels: 4, fit: "fill", margin: 0.5 } as Shape["photo"] };
+  const plain = parseDrawing(buildSvg([pic], [], layers, page, { paperSizeId: "letter", toolName: "" })).shapes.find((s) => s.kind === "photo");
+  assert.equal(plain?.photo?.fit, "fill", "untouched, it stays sized to the page");
+  const svg = withLayerTransform(buildSvg([pic], [], layers, page, { paperSizeId: "letter", toolName: "" }), "matrix(0.9,0,0,0.9,0.55,0.425)");
+  const fitted = parseDrawing(svg).shapes.find((s) => s.kind === "photo");
+  assert.equal(fitted?.photo?.fit, undefined);
+  close(fitted!.x, 1, "x");
+});

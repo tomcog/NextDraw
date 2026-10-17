@@ -486,7 +486,10 @@ export function parseDrawing(text: string): Opened {
     const el = svg.querySelector(`[id="${CSS.escape(PHOTO_GROUP_PREFIX + id)}"]`);
     const layer = el ? layerFor(el) : null;
     if (layer) layerOf.set(id, layer);
-    shapes.push({ id, layerId: "", kind: "photo", photo, ...placedBox(el, box) });
+    // Scaled, turned or fitted from Plot, it's placed where Plot put it: no longer sized to the page,
+    // or the editor holding it would size it to the page again - by its own margin - and undo Plot's.
+    const moved = !layerMatrix(el).every((v, i) => v === IDENTITY[i]);
+    shapes.push({ id, layerId: "", kind: "photo", photo: moved && photo.fit ? { ...photo, fit: undefined } : photo, ...placedBox(el, box) });
   }
 
   // How each repeated shape repeats, put back on the one shape its copies were drawn from.
