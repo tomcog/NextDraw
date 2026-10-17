@@ -6,6 +6,7 @@ import { insertPoint, removePoint } from "../src/shared/lib/drawing/shapes";
 import type { Fill } from "../src/shared/lib/drawing/hatch";
 import { bakedCopies, flattened, handOutFills, joined, markRuns, pointCount, simplified, simplifyDrawing, splitApart } from "../src/studio/lib/shapeEdits";
 import { pathRuns, type Shape } from "../src/shared/lib/drawing/shapes";
+import { flattenRun } from "../src/shared/lib/drawing/path";
 import { mergeLines } from "../src/studio/lib/mergeLines";
 
 const shape = (over: Partial<Shape>): Shape => ({ id: "s", kind: "rect", x: 1, y: 1, x2: 3, y2: 2, layerId: "l", ...over });
@@ -212,11 +213,13 @@ test("points: a double-click adds a point on the nearest segment; Delete takes o
   assert.equal(removePoint(shut, 1), shut);
 });
 
-test("the Simplifier's redundant points only: curved runs too, smooth paths left as they are", () => {
-  const none = { mergeShort: 0, straighten: 0, joinEnds: 0, dropTiny: 0, redundant: true };
-  const curved = shape({ id: "c", kind: "path", points: [{ x: 0, y: 0, out: { x: 0, y: 1 } }, { x: 1, y: 1, in: { x: 1, y: 2 } }, { x: 2, y: 1 }, { x: 3, y: 1 }] });
-  const smooth = shape({ id: "m", kind: "path", smooth: true, points: [{ x: 0, y: 0 }, { x: 1, y: 0 }, { x: 2, y: 0 }] });
-  const [c, m] = simplifyDrawing([curved, smooth], () => true, none).shapes;
-  assert.deepEqual(pathRuns(c), [[curved.points![0], curved.points![1], curved.points![3]]]);
-  assert.deepEqual(pathRuns(m), pathRuns(smooth));
+test("the Simplifier's Remove redundant points: a curve walked in short steps comes back as a few curve nodes, staying on the line", () => {
+  const arc = Array.from({ length: 200 }, (_, i) => ({ x: 2 + Math.cos(i / 199 * Math.PI), y: 2 + Math.sin(i / 199 * Math.PI) }));
+  const path = shape({ id: "a", kind: "path", points: arc });
+  const [out] = simplifyDrawing([path], () => true, { mergeShort: 0, straighten: 0, joinEnds: 0, dropTiny: 0, refit: 0.001 }).shapes;
+  const [run] = pathRuns(out);
+  assert.ok(run.length <= 10, `${run.length} nodes`);
+  assert.ok(run.slice(1, -1).every((n) => n.in && n.out), "the nodes in between carry handles");
+  const worst = Math.max(...flattenRun(run, 0.001).map((p) => Math.abs(Math.hypot(p.x - 2, p.y - 2) - 1)));
+  assert.ok(worst < 0.0012, `off the circle by ${worst}`);
 });

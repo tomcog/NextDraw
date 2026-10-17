@@ -6,7 +6,7 @@ import controls from "../../../shared/components/controls/controls.module.css";
 import type { PruneMode } from "../../lib/shapeEdits";
 import styles from "../../App.module.css";
 
-export type SimplifyKey = "mergeShort" | "straighten" | "joinEnds" | "dropTiny";
+export type SimplifyKey = "refit" | "mergeShort" | "straighten" | "joinEnds" | "dropTiny";
 
 /** Which simplifications are ticked, and each one's distance in millimetres on the paper. */
 export interface SimplifierState {
@@ -16,20 +16,18 @@ export interface SimplifierState {
   prune: { on: boolean; every: number; mode: PruneMode; seed: number };
   /** Straight lines lying along one another joined into the strokes they look like. */
   merge: boolean;
-  /** Only the points each path is drawn exactly the same without: on top of another, or partway along a straight line. */
-  redundant: boolean;
 }
 
 /** Every box clear, every distance back to where it starts: how the card opens, and is left after Simplify. */
 export const SIMPLIFIER_START: SimplifierState = {
-  on: { mergeShort: false, straighten: false, joinEnds: false, dropTiny: false },
-  mm: { mergeShort: 0.1, straighten: 0.05, joinEnds: 0.2, dropTiny: 0.3 },
+  on: { refit: false, mergeShort: false, straighten: false, joinEnds: false, dropTiny: false },
+  mm: { refit: 0.02, mergeShort: 0.1, straighten: 0.05, joinEnds: 0.2, dropTiny: 0.3 },
   prune: { on: false, every: 2, mode: "even", seed: 0 },
   merge: false,
-  redundant: false,
 };
 
 const STEPS: { key: SimplifyKey; label: string; hint: string; max: number; step: number }[] = [
+  { key: "refit", label: "Remove redundant points", hint: "Take out the points a curve can do without and reshape the handles of the rest to keep its shape, the line staying within this of where it was. Corners stay sharp", max: 1, step: 0.01 },
   { key: "mergeShort", label: "Merge short segments", hint: "Drop points closer than this to the last one kept", max: 5, step: 0.05 },
   { key: "straighten", label: "Straighten within", hint: "Drop points that lie within this of the line between their neighbors", max: 5, step: 0.05 },
   { key: "joinEnds", label: "Join close ends", hint: "Carry on, pen down, where one stroke of a path starts within this of where the last one ended", max: 10, step: 0.1 },
@@ -67,7 +65,7 @@ interface Props {
 const newSeed = () => Math.floor(Math.random() * 2 ** 31);
 
 export function SimplifierSection({ value, onChange, scope, onScope, layerName, before, after, removed, busy, onApply, images, hasPaths, onSnapshot }: Props) {
-  const anyOn = Object.values(value.on).some(Boolean) || value.prune.on || value.merge || value.redundant;
+  const anyOn = Object.values(value.on).some(Boolean) || value.prune.on || value.merge;
   const prune = (patch: Partial<SimplifierState["prune"]>) => onChange({ ...value, prune: { ...value.prune, ...patch } });
   const fewer = before - after;
   const title = <span className={controls.iconTitle}><Spline />Simplifier</span>;
@@ -98,13 +96,6 @@ export function SimplifierSection({ value, onChange, scope, onScope, layerName, 
         <Segment selected={scope === "drawing"} title="Every path in the drawing, on the layers that are showing" onClick={() => onScope("drawing")}>Whole drawing</Segment>
         <Segment selected={scope === "layer"} title={`Only the paths on ${layerName}`} onClick={() => onScope("layer")}>This layer</Segment>
       </SegmentedControl>
-      {/* No distance either: a point the path is drawn the same without is redundant, or it isn't. */}
-      <Checkbox size="md"
-        checked={value.redundant}
-        label="Redundant points only"
-        title="Take out only the points each path is drawn exactly the same without - one on top of another, or a corner partway along a straight line - curves and all. Smooth paths are drawn through every point, so they're left as they are"
-        onChange={(e) => onChange({ ...value, redundant: e.target.checked })}
-      />
       {/* Merge has no distance: lines are on the same line or they aren't. */}
       <Checkbox size="md"
         checked={value.merge}

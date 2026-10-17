@@ -6,7 +6,7 @@
 import { fillRuns, newFillId, type Fill } from "../../shared/lib/drawing/hatch";
 import type { StrokeFont } from "../../shared/lib/drawing/font";
 import { curveStrokes, type Point } from "../../shared/lib/drawing/parametric";
-import { flattenPath, flattenRun, mapNode, parsePath, simplifyRun, withoutRedundant, type Node } from "../../shared/lib/drawing/path";
+import { flattenPath, flattenRun, mapNode, parsePath, refitRun, simplifyRun, type Node } from "../../shared/lib/drawing/path";
 import { placements } from "../../shared/lib/drawing/repeat";
 import { centerOf, drawnNodes, drawnRuns, newShapeId, outlinePoints, pathRuns, pointsBox, turnPoint, type Shape } from "../../shared/lib/drawing/shapes";
 import { textRuns } from "../../shared/lib/drawing/text";
@@ -207,16 +207,16 @@ export function simplified(shape: Shape, tolerance: number): Shape | null {
 }
 
 /**
- * A path with only its redundant nodes taken out (see withoutRedundant): drawn exactly as before,
- * handles and all, smooth or not as it was. A smoothed path is drawn as a curve through every one of
- * its points, so none of them is redundant. Nothing when there is nothing to take out.
+ * A path in fewer nodes, drawn as it was to within `tolerance` inches: the nodes it can do without
+ * taken out and the handles of the rest reshaped to carry the curves (see refitRun). A smoothed path
+ * is refitted from the curve it draws, and comes out as handles of its own. Nothing when there is
+ * nothing to take out.
  */
-export function withoutRedundantPoints(shape: Shape): Shape | null {
-  if (shape.smooth) return null;
-  const runs = pathRuns(shape);
-  const fewer = runs.map(withoutRedundant);
-  if (fewer.reduce((n, r) => n + r.length, 0) >= runs.reduce((n, r) => n + r.length, 0)) return null;
-  return { ...shape, ...(shape.runs ? { runs: fewer } : { points: fewer[0] }) };
+export function refitted(shape: Shape, tolerance: number): Shape | null {
+  const runs = drawnNodes(shape);
+  const fewer = runs.map((run) => refitRun(run, tolerance));
+  if (fewer.reduce((n, r) => n + r.length, 0) >= pathRuns(shape).reduce((n, r) => n + r.length, 0)) return null;
+  return { ...shape, smooth: undefined, ...(shape.runs ? { runs: fewer } : { points: fewer[0] }) };
 }
 
 /** A joined shape taken apart again: each run a shape of its own, the first keeping its id. */
@@ -242,8 +242,8 @@ export interface Simplify {
   joinEnds: number;
   /** A run whose longest side is under this is taken out. */
   dropTiny: number;
-  /** Only the nodes each path is drawn exactly the same without taken out (see withoutRedundant). */
-  redundant?: boolean;
+  /** Nodes taken out and the rest's handles reshaped, the line kept within this (see refitRun); 0 leaves them. */
+  refit?: number;
   /** One stroke out of every this many is taken out, on each layer; 0 leaves them all. */
   pruneEvery?: number;
   /** How they're picked: across the page in step, one at random from each block of N, or freely. */
@@ -430,10 +430,10 @@ export function simplifyDrawing(shapes: Shape[], onLayer: (s: Shape) => boolean,
   const out = shapes.flatMap((s) => {
     if (s.kind !== "path" || !onLayer(s)) return [s];
     const straight = (r: Node[]) => r.every((n) => !n.in && !n.out);
-    // Redundant nodes first, curved runs too: nothing moves, so the steps after see the same path.
-    // A smoothed path is drawn through every point it has, so it has none to spare.
-    const exact = opts.redundant && !s.smooth ? withoutRedundant : (r: Node[]) => r;
-    let runs = pathRuns(s).filter((_, i) => !pruned.has(`${s.id}:${i}`)).map(exact).map((r) => (straight(r) ? simplifyRun(mergeShort(r, opts.mergeShort), opts.straighten) as Node[] : r));
+    // Refitted first, curved runs too, so the steps after - which thin only straight runs - see what
+    // it left. A smoothed path is refitted from the curve it draws, and is smooth no longer.
+    const refit = Boolean(opts.refit && opts.refit > 0);
+    let runs = (refit ? drawnNodes(s) : pathRuns(s)).filter((_, i) => !pruned.has(`${s.id}:${i}`)).map((r) => (refit ? refitRun(r, opts.refit!) : r)).map((r) => (straight(r) ? simplifyRun(mergeShort(r, opts.mergeShort), opts.straighten) as Node[] : r));
     if (opts.joinEnds > 0 && runs.length > 1) {
       const joined: Node[][] = [runs[0]];
       for (const r of runs.slice(1)) {
@@ -453,7 +453,7 @@ export function simplifyDrawing(shapes: Shape[], onLayer: (s: Shape) => boolean,
     // middle, and a box that moved would move the drawing.
     const b = pointsBox(runs.flat());
     const box = s.rotation ? {} : { x: b.x0, y: b.y0, x2: b.x1, y2: b.y1 };
-    return [{ ...s, ...(s.runs ? { runs } : { points: runs[0] }), ...box }];
+    return [{ ...s, ...(refit ? { smooth: undefined } : {}), ...(s.runs ? { runs } : { points: runs[0] }), ...box }];
   });
   return { shapes: out, gone };
 }

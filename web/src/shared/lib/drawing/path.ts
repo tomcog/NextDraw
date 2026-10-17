@@ -396,6 +396,83 @@ export function withoutRedundant(run: Node[]): Node[] {
   return out;
 }
 
+/** A turn sharper than this, in degrees, at a node is a corner, and a refit keeps it sharp. */
+const CORNER_DEG = 35;
+
+/**
+ * A run in fewer nodes, the same line on the page: Illustrator's Simplify. The nodes it can do without
+ * are taken out and the handles of the ones left reshaped to carry the curve, so that nothing strays
+ * more than `tolerance` from where the line was. A corner - a node the line turns sharply at - stays a
+ * corner. A run of short straight steps that walks round a curve comes out as the curve it walks.
+ * Unchanged when it can't be done in fewer.
+ */
+export function refitRun(run: Node[], tolerance: number): Node[] {
+  const nodes = withoutRedundant(run);
+  if (nodes.length < 3 || tolerance <= 0) return nodes;
+  // Which way the line arrives at a node and leaves it: along a handle where there is one, else
+  // toward the neighbour.
+  const way = (from: Point, to?: Point) => {
+    if (!to) return null;
+    const dx = to.x - from.x, dy = to.y - from.y;
+    const len = Math.hypot(dx, dy);
+    return len < SAME ? null : { x: dx / len, y: dy / len };
+  };
+  const turn = (a: { x: number; y: number } | null, b: { x: number; y: number } | null) =>
+    !a || !b ? 0 : (Math.acos(Math.max(-1, Math.min(1, a.x * b.x + a.y * b.y))) * 180) / Math.PI;
+  const last = nodes.length - 1;
+  const arriving = (i: number) => way(nodes[i].in ?? nodes[i - 1].out ?? nodes[i - 1], nodes[i]);
+  const leaving = (i: number) => way(nodes[i], nodes[i].out ?? nodes[i + 1].in ?? nodes[i + 1]);
+  // Walked out, straight stretches as well as curves, so the fit is held to the whole line and not
+  // only to its nodes; with where each node falls among the points, so its corners can be named there.
+  const step = Math.min(0.01, tolerance * 4);
+  const points: Point[] = [{ x: nodes[0].x, y: nodes[0].y }];
+  const at: number[] = [0];
+  for (let i = 1; i <= last; i++) {
+    const from = nodes[i - 1];
+    const to = nodes[i];
+    if (from.out || to.in) points.push(...flattenRun([from, to], step).slice(1));
+    else {
+      const pieces = Math.max(1, Math.ceil(Math.hypot(to.x - from.x, to.y - from.y) / step));
+      for (let k = 1; k <= pieces; k++) points.push({ x: from.x + ((to.x - from.x) * k) / pieces, y: from.y + ((to.y - from.y) * k) / pieces });
+    }
+    at.push(points.length - 1);
+  }
+  const corners: number[] = [];
+  for (let i = 1; i < last; i++) if (turn(arriving(i), leaving(i)) > CORNER_DEG) corners.push(at[i]);
+  // A closed loop whose join is a corner: the fitter would smooth round a join it finds no other
+  // corner on, so a node is kept halfway round to keep the join sharp.
+  const closed = Math.hypot(nodes[0].x - nodes[last].x, nodes[0].y - nodes[last].y) < SAME;
+  if (closed && !corners.length && turn(arriving(last), leaving(0)) > CORNER_DEG) corners.push(at[Math.floor(last / 2)]);
+  const fitted = fitNodes(points, tolerance, corners);
+  if (fitted.length >= nodes.length) return nodes;
+  // Held to its word: walked out, the new line stays within the tolerance of the old one everywhere,
+  // or the run keeps the nodes it had.
+  return strayFrom(flattenRun(fitted, step / 2), points) <= tolerance * 1.5 ? fitted : nodes;
+}
+
+/** How far the furthest of `drawn` lies from the line through `line`'s points, each looked for near the last. */
+function strayFrom(drawn: Point[], line: Point[]): number {
+  let worst = 0;
+  let j = 0;
+  for (const p of drawn) {
+    // The nearest segment, looked for from the last one found onward: both walk the same way.
+    let best = Infinity;
+    let bestJ = j;
+    for (let k = j; k < line.length - 1; k++) {
+      const a = line[k], b = line[k + 1];
+      const dx = b.x - a.x, dy = b.y - a.y, len = dx * dx + dy * dy;
+      const t = len ? Math.max(0, Math.min(1, ((p.x - a.x) * dx + (p.y - a.y) * dy) / len)) : 0;
+      const d = Math.hypot(p.x - a.x - t * dx, p.y - a.y - t * dy);
+      if (d < best) { best = d; bestJ = k; }
+      else if (d > best + 0.05) break; // walked well past it
+    }
+    if (line.length === 1) best = Math.hypot(p.x - line[0].x, p.y - line[0].y);
+    j = bestJ;
+    worst = Math.max(worst, best);
+  }
+  return worst;
+}
+
 /**
  * A run of points drawn as the fewest curves that pass within `tolerance` of every one of them:
  * Schneider's fit, from Graphics Gems. Each stretch is one cubic, its handles found by least

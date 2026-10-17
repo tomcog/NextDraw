@@ -8,7 +8,6 @@ import { canFill } from "../../../shared/lib/drawing/hatch";
 import { closingTurns, CURVE_FIELDS, type Corner, type Curve } from "../../../shared/lib/drawing/parametric";
 import { defaultRepeat, placements, REPEAT_FIELDS, type Repeat, type RepeatKind } from "../../../shared/lib/drawing/repeat";
 import { pathRuns, POINT_HANDLE_LIMIT, type Shape } from "../../../shared/lib/drawing/shapes";
-import { withoutRedundantPoints } from "../../lib/shapeEdits";
 import styles from "../../App.module.css";
 import { ToolbarIcons } from "../../../shared/components/ToolbarIcons";
 
@@ -62,9 +61,9 @@ interface Props {
   fillPanel: ReactNode;
   simplifyMm: number;
   onSimplifyMm: (mm: number) => void;
-  /** Simplify takes out only the points the path is drawn the same without, and changes nothing else. */
-  simplifyExact: boolean;
-  onSimplifyExact: (exact: boolean) => void;
+  /** Simplify takes out the points the curves can do without and reshapes the rest's handles (see refitted). */
+  simplifyRefit: boolean;
+  onSimplifyRefit: (refit: boolean) => void;
   actions: ShapeActions;
   /** A shape on the Varnish layer: only ever filled, so the card is its fill and nothing else. */
   varnish?: boolean;
@@ -74,7 +73,7 @@ interface Props {
  * What the shape itself is made of: the numbers that draw it, and what can be done to it - simplified,
  * hatched, turned, repeated. Named after the shape it is about.
  */
-export function ShapeCard({ shape, title, icon, busy, hasFill, canPaste, panel, onPanel, fillPanel, simplifyMm, onSimplifyMm, simplifyExact, onSimplifyExact, actions, varnish }: Props) {
+export function ShapeCard({ shape, title, icon, busy, hasFill, canPaste, panel, onPanel, fillPanel, simplifyMm, onSimplifyMm, simplifyRefit, onSimplifyRefit, actions, varnish }: Props) {
   // On the Varnish layer a shape is a mask the glitter gel fills, or lines it goes over again: its
   // fill is all there is to set. Turning, repeating, simplifying and the rest don't apply - its
   // points are shaped by dragging them on the page.
@@ -263,40 +262,31 @@ export function ShapeCard({ shape, title, icon, busy, hasFill, canPaste, panel, 
 
           {shape.kind === "path" && simplifying && (() => {
             const points = pathRuns(shape).reduce((n, r) => n + r.length, 0);
-            // Exact: what it comes to is shown before it's pressed, since there is nothing to set.
-            const exact = simplifyExact ? withoutRedundantPoints(shape) : null;
-            const left = exact ? pathRuns(exact).reduce((n, r) => n + r.length, 0) : points;
             const plural = (n: number) => `${n} point${n === 1 ? "" : "s"}`;
             return (
               <>
                 <Checkbox size="md"
-                  checked={simplifyExact}
-                  label="Redundant points only"
-                  title="Take out only the points the path is drawn the same without - one on top of another, or a corner partway along a straight line - and keep the path exactly as it is"
-                  onChange={(e) => onSimplifyExact(e.target.checked)}
+                  checked={simplifyRefit}
+                  label="Remove redundant points"
+                  title="Take out the points the curves can do without and reshape the handles of the rest to keep their shape, within the distance set. Corners stay sharp. Unticked, Simplify thins the points and draws a smooth curve through what's left"
+                  onChange={(e) => onSimplifyRefit(e.target.checked)}
                 />
                 <div className={styles.fillRow}>
-                  <Button size="md" variant="secondary" disabled={simplifyExact && !exact} onClick={() => actions.simplify(shape.id)}>
+                  <Button size="md" variant="secondary" onClick={() => actions.simplify(shape.id)}>
                     Simplify
                   </Button>
-                  {!simplifyExact && (
-                    <NumberField
-                      label="Within"
-                      unit="mm"
-                      min={0.01}
-                      max={10}
-                      step={0.05}
-                      value={simplifyMm}
-                      onChange={onSimplifyMm}
-                    />
-                  )}
+                  <NumberField
+                    label="Within"
+                    unit="mm"
+                    min={0.01}
+                    max={10}
+                    step={0.05}
+                    value={simplifyMm}
+                    onChange={onSimplifyMm}
+                  />
                 </div>
                 <p className={styles.empty}>
-                  {simplifyExact
-                    ? shape.smooth
-                      ? `${plural(points)} - a smooth path is drawn through every one, so none is redundant`
-                      : exact ? `${points} → ${plural(left)}` : `${plural(points)}, none redundant`
-                    : `${plural(points)}${points > POINT_HANDLE_LIMIT ? " - too many to drag one by one" : ""}`}
+                  {`${plural(points)}${points > POINT_HANDLE_LIMIT ? " - too many to drag one by one" : ""}`}
                 </p>
               </>
             );

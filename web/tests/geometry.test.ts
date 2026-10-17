@@ -2,7 +2,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { hatchLines, stepInches, type Fill } from "../src/shared/lib/drawing/hatch";
-import { parsePath, pathData, simplifyRun, withoutRedundant } from "../src/shared/lib/drawing/path";
+import { parsePath, pathData, refitRun, simplifyRun, withoutRedundant } from "../src/shared/lib/drawing/path";
 import type { Point } from "../src/shared/lib/drawing/parametric";
 import type { Shape } from "../src/shared/lib/drawing/shapes";
 
@@ -100,4 +100,11 @@ test("withoutRedundant leaves curves alone, and keeps the handles of points it m
 test("withoutRedundant treats a handle on its own node as no bend", () => {
   const run = [{ x: 0, y: 0, out: { x: 0, y: 0 } }, { x: 1, y: 1, in: { x: 1, y: 1 }, out: { x: 1, y: 1 } }, { x: 2, y: 2, in: { x: 2, y: 2 } }];
   assert.deepEqual(withoutRedundant(run), [run[0], run[2]]);
+});
+
+test("refitRun keeps a corner sharp: an L walked in short steps comes back as its three corners", () => {
+  const run = [...Array.from({ length: 50 }, (_, i) => ({ x: i / 49, y: 0 })), ...Array.from({ length: 49 }, (_, i) => ({ x: 1, y: (i + 1) / 49 }))];
+  const out = refitRun(run, 0.001);
+  assert.equal(out.length, 3);
+  assert.ok(Math.hypot(out[1].x - 1, out[1].y) < 1e-9, "the corner stays where it was");
 });

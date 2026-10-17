@@ -41,7 +41,7 @@ import { PLATE_OFF, platesOf, placeOnPage, readTones, turnedCopy, turnedCrop, ty
 import { useHistory } from "../shared/lib/useHistory";
 import { useDrawingFile, type Current } from "../shared/lib/drawing/useDrawingFile";
 import { lockBanner, useEditLock } from "../shared/lib/useEditLock";
-import { bakedCopies, flattened, handOutFills, joined, markRuns, pointCount, simplified, simplifyDrawing, splitApart, withoutRedundantPoints } from "./lib/shapeEdits";
+import { bakedCopies, flattened, handOutFills, joined, markRuns, pointCount, simplified, simplifyDrawing, splitApart, refitted } from "./lib/shapeEdits";
 import { PaletteMenu } from "../shared/components/controls/PaletteMenu";
 import { Hints } from "../shared/components/controls/Hints";
 import { RowMenu } from "../shared/components/controls/RowMenu";
@@ -82,7 +82,7 @@ const TOOL_KEY = "studio-tool";
 const FONT_KEY = "studio-font";
 const SNAP_KEY = "studio-snap";
 const SIMPLIFY_KEY = "studio-simplify";
-const SIMPLIFY_EXACT_KEY = "studio-simplify-exact";
+const SIMPLIFY_REFIT_KEY = "studio-simplify-refit";
 
 /** The letter that picks each tool. Lower case: the key is read that way, so Shift makes no odds. */
 const TOOL_KEYS: Record<string, Tool> = {
@@ -198,8 +198,8 @@ export default function App() {
  const [snapStep, setSnapStep] = useState<number>(() => load<number>(SNAP_KEY) ?? 0.25);
  // How far a simplified path may stray from the one it was, in millimetres on the paper.
  const [simplifyMm, setSimplifyMm] = useState<number>(() => load<number>(SIMPLIFY_KEY) ?? 0.2);
- // Simplify taking out only the points the path is drawn the same without, in place of the tolerance.
- const [simplifyExact, setSimplifyExact] = useState<boolean>(() => load<boolean>(SIMPLIFY_EXACT_KEY) ?? false);
+ // Simplify reshaping the curves' handles round fewer points, in place of thinning and smoothing.
+ const [simplifyRefit, setSimplifyRefit] = useState<boolean>(() => load<boolean>(SIMPLIFY_REFIT_KEY) ?? false);
  // Which of the shape's settings are on show, if any. One at a time, the way a row of tabs works:
  // each of these is settled once and then left alone - a shape is turned, or filled, or thinned
  // out - and all four sets of numbers at once buries the shape they are about. Pressing the one
@@ -896,7 +896,7 @@ export default function App() {
  useEffect(() => remember(`${SNAP_KEY}-on`, snapping), [snapping]);
  useEffect(() => remember(SNAP_KEY, snapStep), [snapStep]);
  useEffect(() => remember(SIMPLIFY_KEY, simplifyMm), [simplifyMm]);
- useEffect(() => remember(SIMPLIFY_EXACT_KEY, simplifyExact), [simplifyExact]);
+ useEffect(() => remember(SIMPLIFY_REFIT_KEY, simplifyRefit), [simplifyRefit]);
 
  /** Change a text shape: its words, its font, or the room between letters and lines. Its box
   * follows whatever that comes to. */
@@ -1197,10 +1197,10 @@ export default function App() {
   setSelected([one.id]);
  };
 
- /** Drop the points a path doesn't need: to within the Simplify tolerance (see simplified), or only the redundant ones. */
+ /** Drop the points a path doesn't need, to within the Simplify tolerance: thinned and smoothed (see simplified), or refitted (see refitted). */
  const simplifyShape = (id: string) => {
   const shape = shapes.find((s) => s.id === id);
-  const simpler = shape && (simplifyExact ? withoutRedundantPoints(shape) : simplified(shape, simplifyMm / 25.4));
+  const simpler = shape && (simplifyRefit ? refitted(shape, simplifyMm / 25.4) : simplified(shape, simplifyMm / 25.4));
   if (!simpler) return;
   record();
   setShapes((list) => list.map((s) => (s.id === id ? simpler : s)));
@@ -1218,8 +1218,7 @@ export default function App() {
  const simplifierRun = (list: Shape[]) => {
   const inches = (k: keyof SimplifierState["on"]) => (simplifier.on[k] ? simplifier.mm[k] / 25.4 : 0);
   const opts = {
-   mergeShort: inches("mergeShort"), straighten: inches("straighten"), joinEnds: inches("joinEnds"), dropTiny: inches("dropTiny"),
-   redundant: simplifier.redundant,
+   refit: inches("refit"), mergeShort: inches("mergeShort"), straighten: inches("straighten"), joinEnds: inches("joinEnds"), dropTiny: inches("dropTiny"),
    pruneEvery: simplifier.prune.on ? simplifier.prune.every : 0, pruneMode: simplifier.prune.mode, pruneSeed: simplifier.prune.seed,
   };
   const onLayer = simplifierOn;
@@ -1249,7 +1248,7 @@ export default function App() {
  };
  // While anything is ticked, the page shows the drawing simplified, and takes no edits: a shape dragged
  // there would be written back simplified, and kept without Simplify being pressed.
- const simplifierShowing = Boolean(simplifierCard && simplifierPreview && (Object.values(simplifier.on).some(Boolean) || simplifier.prune.on || simplifier.merge || simplifier.redundant));
+ const simplifierShowing = Boolean(simplifierCard && simplifierPreview && (Object.values(simplifier.on).some(Boolean) || simplifier.prune.on || simplifier.merge));
  const keepAsIs = () => {};
 
  /**
@@ -2309,8 +2308,8 @@ export default function App() {
        varnish={isVarnishLayer(layers.find((l) => l.id === chosen.layerId)?.name ?? "")}
        simplifyMm={simplifyMm}
        onSimplifyMm={setSimplifyMm}
-       simplifyExact={simplifyExact}
-       onSimplifyExact={setSimplifyExact}
+       simplifyRefit={simplifyRefit}
+       onSimplifyRefit={setSimplifyRefit}
        actions={{
         flatten: flattenShape,
         setCurve,
