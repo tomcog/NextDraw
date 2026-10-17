@@ -41,7 +41,7 @@ import { PLATE_OFF, platesOf, placeOnPage, readTones, turnedCopy, turnedCrop, ty
 import { useHistory } from "../shared/lib/useHistory";
 import { useDrawingFile, type Current } from "../shared/lib/drawing/useDrawingFile";
 import { lockBanner, useEditLock } from "../shared/lib/useEditLock";
-import { bakedCopies, flattened, handOutFills, joined, markRuns, pointCount, simplified, simplifyDrawing, splitApart } from "./lib/shapeEdits";
+import { bakedCopies, flattened, handOutFills, joined, markRuns, pointCount, simplified, simplifyDrawing, splitApart, withoutRedundantPoints } from "./lib/shapeEdits";
 import { PaletteMenu } from "../shared/components/controls/PaletteMenu";
 import { Hints } from "../shared/components/controls/Hints";
 import { RowMenu } from "../shared/components/controls/RowMenu";
@@ -82,6 +82,7 @@ const TOOL_KEY = "studio-tool";
 const FONT_KEY = "studio-font";
 const SNAP_KEY = "studio-snap";
 const SIMPLIFY_KEY = "studio-simplify";
+const SIMPLIFY_EXACT_KEY = "studio-simplify-exact";
 
 /** The letter that picks each tool. Lower case: the key is read that way, so Shift makes no odds. */
 const TOOL_KEYS: Record<string, Tool> = {
@@ -197,6 +198,8 @@ export default function App() {
  const [snapStep, setSnapStep] = useState<number>(() => load<number>(SNAP_KEY) ?? 0.25);
  // How far a simplified path may stray from the one it was, in millimetres on the paper.
  const [simplifyMm, setSimplifyMm] = useState<number>(() => load<number>(SIMPLIFY_KEY) ?? 0.2);
+ // Simplify taking out only the points the path is drawn the same without, in place of the tolerance.
+ const [simplifyExact, setSimplifyExact] = useState<boolean>(() => load<boolean>(SIMPLIFY_EXACT_KEY) ?? false);
  // Which of the shape's settings are on show, if any. One at a time, the way a row of tabs works:
  // each of these is settled once and then left alone - a shape is turned, or filled, or thinned
  // out - and all four sets of numbers at once buries the shape they are about. Pressing the one
@@ -893,6 +896,7 @@ export default function App() {
  useEffect(() => remember(`${SNAP_KEY}-on`, snapping), [snapping]);
  useEffect(() => remember(SNAP_KEY, snapStep), [snapStep]);
  useEffect(() => remember(SIMPLIFY_KEY, simplifyMm), [simplifyMm]);
+ useEffect(() => remember(SIMPLIFY_EXACT_KEY, simplifyExact), [simplifyExact]);
 
  /** Change a text shape: its words, its font, or the room between letters and lines. Its box
   * follows whatever that comes to. */
@@ -1193,10 +1197,10 @@ export default function App() {
   setSelected([one.id]);
  };
 
- /** Drop the points a path doesn't need, to within the Simplify tolerance (see simplified). */
+ /** Drop the points a path doesn't need: to within the Simplify tolerance (see simplified), or only the redundant ones. */
  const simplifyShape = (id: string) => {
   const shape = shapes.find((s) => s.id === id);
-  const simpler = shape && simplified(shape, simplifyMm / 25.4);
+  const simpler = shape && (simplifyExact ? withoutRedundantPoints(shape) : simplified(shape, simplifyMm / 25.4));
   if (!simpler) return;
   record();
   setShapes((list) => list.map((s) => (s.id === id ? simpler : s)));
@@ -2304,6 +2308,8 @@ export default function App() {
        varnish={isVarnishLayer(layers.find((l) => l.id === chosen.layerId)?.name ?? "")}
        simplifyMm={simplifyMm}
        onSimplifyMm={setSimplifyMm}
+       simplifyExact={simplifyExact}
+       onSimplifyExact={setSimplifyExact}
        actions={{
         flatten: flattenShape,
         setCurve,

@@ -6,7 +6,7 @@
 import { fillRuns, newFillId, type Fill } from "../../shared/lib/drawing/hatch";
 import type { StrokeFont } from "../../shared/lib/drawing/font";
 import { curveStrokes, type Point } from "../../shared/lib/drawing/parametric";
-import { flattenPath, flattenRun, mapNode, parsePath, simplifyRun, type Node } from "../../shared/lib/drawing/path";
+import { flattenPath, flattenRun, mapNode, parsePath, simplifyRun, withoutRedundant, type Node } from "../../shared/lib/drawing/path";
 import { placements } from "../../shared/lib/drawing/repeat";
 import { centerOf, drawnNodes, drawnRuns, newShapeId, outlinePoints, pathRuns, pointsBox, turnPoint, type Shape } from "../../shared/lib/drawing/shapes";
 import { textRuns } from "../../shared/lib/drawing/text";
@@ -204,6 +204,19 @@ export function simplified(shape: Shape, tolerance: number): Shape | null {
   // a curve through them: straight lines between a tenth as many points would be a different
   // drawing. The Smooth button turns that off again for a path that really is straight.
   return { ...shape, smooth: true, ...(shape.runs ? { runs: simpler } : { points: simpler[0] }) };
+}
+
+/**
+ * A path with only its redundant nodes taken out (see withoutRedundant): drawn exactly as before,
+ * handles and all, smooth or not as it was. A smoothed path is drawn as a curve through every one of
+ * its points, so none of them is redundant. Nothing when there is nothing to take out.
+ */
+export function withoutRedundantPoints(shape: Shape): Shape | null {
+  if (shape.smooth) return null;
+  const runs = pathRuns(shape);
+  const fewer = runs.map(withoutRedundant);
+  if (fewer.reduce((n, r) => n + r.length, 0) >= runs.reduce((n, r) => n + r.length, 0)) return null;
+  return { ...shape, ...(shape.runs ? { runs: fewer } : { points: fewer[0] }) };
 }
 
 /** A joined shape taken apart again: each run a shape of its own, the first keeping its id. */

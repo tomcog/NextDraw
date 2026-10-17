@@ -348,6 +348,54 @@ export function simplifyRun(points: Point[], tolerance: number): Point[] {
   return points.filter((_, i) => keep[i]);
 }
 
+/** Closer than this, in inches, is the same place: far finer than any pen, coarser than a file's rounding. */
+const SAME = 1e-5;
+
+/**
+ * A run with only the nodes it draws the same without: one on top of the node before it, and a
+ * corner lying on the straight line between its neighbours, part way along. Nothing else moves - no
+ * handle is touched and no curve refitted - so the path is the path it was, in fewer nodes. A handle
+ * sitting on its own node is no bend, as files that write every line as a curve have it. The ends
+ * always stay, so a closed run stays closed.
+ */
+export function withoutRedundant(run: Node[]): Node[] {
+  if (run.length < 2) return run;
+  const flat = (n: Node, h?: Point) => !h || Math.hypot(h.x - n.x, h.y - n.y) < SAME;
+  // On top of the node before, with nothing bending between: one node, its way in kept from the
+  // first and its way out from the second. The last keeps its own place, which is the same.
+  const merged: Node[] = [{ ...run[0] }];
+  for (let i = 1; i < run.length; i++) {
+    const n = run[i];
+    const prev = merged[merged.length - 1];
+    if (Math.hypot(n.x - prev.x, n.y - prev.y) < SAME && flat(prev, prev.out) && flat(n, n.in)) {
+      const last = i === run.length - 1;
+      const one: Node = { x: last ? n.x : prev.x, y: last ? n.y : prev.y };
+      if (prev.in) one.in = prev.in;
+      if (n.out) one.out = n.out;
+      merged[merged.length - 1] = one;
+    } else merged.push({ ...n });
+  }
+  // A corner partway along the straight line from the node before to the next: the line is drawn
+  // the same without it.
+  const out: Node[] = [merged[0]];
+  for (let i = 1; i < merged.length - 1; i++) {
+    const n = merged[i];
+    const prev = out[out.length - 1];
+    const next = merged[i + 1];
+    if (flat(prev, prev.out) && flat(n, n.in) && flat(n, n.out) && flat(next, next.in)) {
+      const dx = next.x - prev.x;
+      const dy = next.y - prev.y;
+      const len = Math.hypot(dx, dy);
+      const along = ((n.x - prev.x) * dx + (n.y - prev.y) * dy) / len;
+      const off = Math.abs(dy * (n.x - prev.x) - dx * (n.y - prev.y)) / len;
+      if (len > SAME && off < SAME && along > 0 && along < len) continue;
+    }
+    out.push(n);
+  }
+  if (merged.length > 1) out.push(merged[merged.length - 1]);
+  return out;
+}
+
 /**
  * A run of points drawn as the fewest curves that pass within `tolerance` of every one of them:
  * Schneider's fit, from Graphics Gems. Each stretch is one cubic, its handles found by least

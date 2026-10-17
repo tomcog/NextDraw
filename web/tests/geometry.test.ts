@@ -2,7 +2,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { hatchLines, stepInches, type Fill } from "../src/shared/lib/drawing/hatch";
-import { parsePath, pathData, simplifyRun } from "../src/shared/lib/drawing/path";
+import { parsePath, pathData, simplifyRun, withoutRedundant } from "../src/shared/lib/drawing/path";
 import type { Point } from "../src/shared/lib/drawing/parametric";
 import type { Shape } from "../src/shared/lib/drawing/shapes";
 
@@ -80,4 +80,24 @@ test("path data read in and written out again is the same path", () => {
   const runs = parsePath(d);
   assert.equal(runs.length, 2);
   assert.deepEqual(parsePath(pathData(runs)), runs);
+});
+
+test("withoutRedundant drops corners on a straight line and points on top of one another, and nothing else", () => {
+  const run = [{ x: 0, y: 0 }, { x: 1, y: 0 }, { x: 1, y: 0 }, { x: 2, y: 0 }, { x: 2, y: 1 }, { x: 2, y: 3 }, { x: 0, y: 0 }];
+  assert.deepEqual(withoutRedundant(run), [{ x: 0, y: 0 }, { x: 2, y: 0 }, { x: 2, y: 3 }, { x: 0, y: 0 }]);
+});
+
+test("withoutRedundant keeps a point where the line doubles back", () => {
+  const run = [{ x: 0, y: 0 }, { x: 2, y: 0 }, { x: 1, y: 0 }];
+  assert.deepEqual(withoutRedundant(run), run);
+});
+
+test("withoutRedundant leaves curves alone, and keeps the handles of points it merges", () => {
+  const run = [{ x: 0, y: 0, out: { x: 0, y: 1 } }, { x: 1, y: 0, in: { x: 1, y: 1 } }, { x: 1, y: 0, out: { x: 1, y: -1 } }, { x: 2, y: 0, in: { x: 2, y: -1 } }];
+  assert.deepEqual(withoutRedundant(run), [run[0], { x: 1, y: 0, in: { x: 1, y: 1 }, out: { x: 1, y: -1 } }, run[3]]);
+});
+
+test("withoutRedundant treats a handle on its own node as no bend", () => {
+  const run = [{ x: 0, y: 0, out: { x: 0, y: 0 } }, { x: 1, y: 1, in: { x: 1, y: 1 }, out: { x: 1, y: 1 } }, { x: 2, y: 2, in: { x: 2, y: 2 } }];
+  assert.deepEqual(withoutRedundant(run), [run[0], run[2]]);
 });
