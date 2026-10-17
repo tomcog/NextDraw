@@ -130,21 +130,6 @@ export function turnWhole(shapes: Shape[], fills: Fill[], page: Page, dir: 1 | -
 }
 
 /**
- * The drawing turned a quarter turn, 1 to the right or -1 to the left, about the middle of what it
- * draws - the paper staying as it lies, which the Landscape and Portrait switch turns on its own.
- */
-export function turnDrawing(shapes: Shape[], fills: Fill[], page: Page, dir: 1 | -1): { shapes: Shape[]; fills: Fill[] } {
-  if (!shapes.length) return { shapes, fills };
-  const before = drawnMiddle(shapes);
-  // A left turn, once or three times; each swaps the page it turns on, which only says where the
-  // drawing lands - put back about its middle below.
-  let turned = { shapes, fills, page };
-  for (let i = 0; i < (dir < 0 ? 1 : 3); i++) turned = turnDrawingLeft(turned.shapes, turned.fills, turned.page);
-  const after = drawnMiddle(turned.shapes);
-  return { shapes: reshapeDrawing(turned.shapes, 1, after, { x: before.x - after.x, y: before.y - after.y }), fills: turned.fills };
-}
-
-/**
  * The whole drawing scaled by `k` about one point and then moved by `by`. Every point and box corner
  * is carried, so a turned shape stays turned and a word grows with its box; copies spread with it.
  * What belongs to the pen rather than the drawing - a fill's spacing, a photo's line spacing - stays

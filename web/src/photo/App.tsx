@@ -47,6 +47,7 @@ import { PhotoCard } from "./components/PhotoCard";
 import { PhotoHeader } from "./components/PhotoHeader";
 import { GENERAL_PEN } from "./lib/generalPen";
 import { channelsOf, folderOf, isPhotoshop, type Inks } from "./lib/separationFolder";
+import { turnPaperAndDrawing } from "../shared/lib/drawing/turnPaper";
 import { useSharedPen } from "../shared/lib/useSharedPen";
 import styles from "./App.module.css";
 
@@ -280,6 +281,20 @@ export default function App() {
     // All of it kept is no crop at all.
     if (part && (part[0] > 1e-4 || part[1] > 1e-4 || part[2] < 1 - 1e-4 || part[3] < 1 - 1e-4)) void cropPhoto(part);
   };
+  /** The paper and everything on it a quarter turn, right or left: landscape to portrait, as a sheet is turned. */
+  const turnAll = async (dir: 1 | -1) => {
+    let turned;
+    try {
+      turned = await turnPaperAndDrawing(shapes, fills, page, dir);
+    } catch (err) {
+      setMessage({ text: `Couldn’t turn the image: ${(err as Error).message}`, ok: false });
+      return;
+    }
+    record();
+    setPage(turned.page);
+    setFills(turned.fills);
+    setShapes(turned.shapes);
+  };
   const keepCropRef = useRef(keepCrop);
   keepCropRef.current = keepCrop;
   // Return keeps the crop and Esc leaves it, unless a field has the keys.
@@ -347,7 +362,7 @@ export default function App() {
 
   const {
     addPhoto, addSeparations, switchPhotoMode, setKeyLayer, splitPhoto, splitPhotoBestFit,
-    placePhoto, replacePhoto, reloadPhoto, cropPhoto, savePreset, applyPreset, deletePreset, turnPhoto, setPhotoOf, addEdgeMask, chooseEdgeMask, deleteEdgeMask, setEdgeGen, saveEdgeGen, setAngles, photoStem, splitPhotoCmyk, setLayerColor,
+    placePhoto, replacePhoto, reloadPhoto, cropPhoto, savePreset, applyPreset, deletePreset, setPhotoOf, addEdgeMask, chooseEdgeMask, deleteEdgeMask, setEdgeGen, saveEdgeGen, setAngles, photoStem, splitPhotoCmyk, setLayerColor,
     splitAroundPaper, setPaperTone, addPass, removePass, setChannelOf, splitPhotoProfile,
   } = photoActions({
     chosen, shapes, setShapes, layers, setLayers, active, setActiveLayer, page, tool,
@@ -541,9 +556,9 @@ export default function App() {
         setPage({ w: w / 25.4, h: h / 25.4 });
       }}
       onColor={pickPaperColor}
-      // The image on the paper - its turn, and Fit with the Paper card's margin and alignment, which
-      // the image keeps, so it follows the paper when that changes.
-      onTurnDrawing={chosen?.photo ? (dir) => void turnPhoto(dir) : undefined}
+      // The paper turned with everything on it, as in every app; and Fit with the Paper card's margin
+      // and alignment, which the image keeps, so it follows the paper when that changes.
+      onTurnDrawing={shapes.length ? (dir) => void turnAll(dir) : undefined}
       onFit={chosen?.photo ? (marginMm, align) => placePhoto("fit", marginMm / 25.4, align) : undefined}
       onFill={chosen?.photo ? (marginMm, align) => placePhoto("fill", marginMm / 25.4, align) : undefined}
     />

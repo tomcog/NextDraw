@@ -11,7 +11,7 @@ import type { FitAlign } from "../../shared/lib/geometry";
 import type { PenColor, Preset } from "../../shared/lib/types";
 import {
   BAND_NAMES, LAYER_SETTINGS, MOST_SIDE_LAYERS, paperToneOf, mostColorsOf, MOST_LAYERS, PHOTO_DEFAULTS, PLATES, PLATE_AIMS, colourGroups, isColourful, matchPens, photoMode,
-  placeOnPage, croppedCopy, partOfPart, photoData, photoFromData, inkNamed, loadProfile, plateOfPhoto, platePens, presetAngle, readTones, hexLinear, linearHex, coverSteps, stemWithoutPlate, turnedCopy, turnedCrop, workingCopy, MASK_EDGE_PX, MASK_SIDES, type AnglePreset, type Photo, type PhotoPart, type Plate, type PlateSet, PLATE_SETS, plateSetOf, platesOf,
+  placeOnPage, croppedCopy, partOfPart, photoData, photoFromData, inkNamed, loadProfile, plateOfPhoto, platePens, presetAngle, readTones, hexLinear, linearHex, coverSteps, stemWithoutPlate, turnedCopy, workingCopy, MASK_EDGE_PX, MASK_SIDES, type AnglePreset, type Photo, type PhotoPart, type Plate, type PlateSet, PLATE_SETS, plateSetOf, platesOf,
 } from "../../shared/lib/drawing/photo";
 import { boxOf, newLayerId, newShapeId, type Layer, type Page, type Shape } from "../../shared/lib/drawing/shapes";
 import { samplePhoto, type Candidate } from "./choosePens";
@@ -850,46 +850,6 @@ export function photoActions(ctx: PhotoContext) {
   };
 
   /**
-    * Turn the chosen photo - every layer of it - a quarter, so it stands the way the paper does. The
-    * picture itself turns, and with it any crop. Sized to the page, it's sized again; placed by hand,
-    * it turns about its middle.
-    */
-  const turnPhoto = async (quarter: 1 | -1) => {
-    if (!chosen?.photo) return;
-    const members = shapes.filter(sameImage);
-    try {
-      // Each picture once: a split's layers share one, a separation's each have their own.
-      const turned = new Map<string, Pick<Photo, "src" | "width" | "height">>();
-      for (const sh of members) {
-        if (!turned.has(sh.photo!.src)) turned.set(sh.photo!.src, await turnedCopy(sh.photo!.src, quarter));
-      }
-      await Promise.all([...turned.values()].map((t) => readTones(t.src)));
-      const was = chosen.photo;
-      const aspect = was.height / was.width;
-      let box: { x: number; y: number; x2: number; y2: number };
-      let crop: Photo["crop"];
-      if (was.fit) {
-        const placed = placeOnPage(aspect, page, was.fit, was.margin ?? 0.5, was.align);
-        crop = placed.crop;
-        box = { x: placed.x, y: placed.y, x2: placed.x2, y2: placed.y2 };
-      } else {
-        const b = boxOf(chosen);
-        const cx = (b.x0 + b.x1) / 2;
-        const cy = (b.y0 + b.y1) / 2;
-        const w = b.y1 - b.y0;
-        const h = b.x1 - b.x0;
-        box = { x: cx - w / 2, y: cy - h / 2, x2: cx + w / 2, y2: cy + h / 2 };
-        crop = turnedCrop(was.crop, quarter);
-      }
-      record();
-      const ids = new Set(members.map((sh) => sh.id));
-      setShapes((list) => list.map((sh) => (ids.has(sh.id) ? { ...sh, ...box, photo: { ...sh.photo!, ...turned.get(sh.photo!.src)!, crop, quarterTurns: (((sh.photo!.quarterTurns ?? 0) + quarter) % 4 + 4) % 4 || undefined, cut: turnedCrop(sh.photo!.cut, quarter) } } : sh)));
-    } catch (err) {
-      setMessage({ text: `Couldn’t turn the image: ${(err as Error).message}`, ok: false });
-    }
-  };
-
-  /**
     * Crop the chosen photo - every layer of it - to a part of its picture: left, top, right, bottom, as
     * fractions of the whole picture. The picture itself is cut, so Fit, Fill and the lines all see only
     * what's kept; a separation's plates are each cut alike, so they stay in register. Kept with the
@@ -1311,7 +1271,7 @@ export function photoActions(ctx: PhotoContext) {
   return {
     setChannelOf, splitPhotoProfile,
     addPhoto, addSeparations, switchPhotoMode, setKeyLayer, splitPhoto, splitPhotoBestFit,
-    placePhoto, replacePhoto, reloadPhoto, cropPhoto, savePreset, applyPreset, deletePreset, turnPhoto, setPhotoOf, addEdgeMask, chooseEdgeMask, deleteEdgeMask, setEdgeGen, saveEdgeGen, setAngles, photoStem, splitPhotoCmyk, setLayerColor,
+    placePhoto, replacePhoto, reloadPhoto, cropPhoto, savePreset, applyPreset, deletePreset, setPhotoOf, addEdgeMask, chooseEdgeMask, deleteEdgeMask, setEdgeGen, saveEdgeGen, setAngles, photoStem, splitPhotoCmyk, setLayerColor,
     splitAroundPaper, setPaperTone, addPass, removePass,
   };
 }
