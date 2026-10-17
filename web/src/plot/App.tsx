@@ -238,9 +238,28 @@ export default function App() {
       // No tool to name the pen against (presets never loaded): the colour still stands on its own.
       return { ...all, [id]: tool ? { tool, pen: pick.pen.name, hex: pick.pen.color } : pick.pen.color };
     });
-  // Choosing an ink changes the colour and nothing else: the layer's name is the drawing's.
+  // Choosing an ink changes the drawing itself, so Studio and Image show it too: the layer takes the
+  // pen's name - its label kept after it, numbered on when another layer has that name already, as the
+  // card shows it - and its color. A color from the system picker belongs to no pen, and changes only
+  // the color. "The drawing's own" hands back a layer given an ink in Plot's block, from before inks
+  // went into the drawing; the drawing's own colors are the drawing now.
   const colorAndNameLayer = (id: string, pick: { pen: PenColor } | { hex: string } | null) => {
-    colorLayer(id, pick);
+    const layer = fileLayers?.find((l) => l.id === id);
+    if (!pick || !layer) colorLayer(id, pick);
+    else {
+      let name: string | undefined;
+      if ("pen" in pick) {
+        const own = splitLayerName(layer.name, paletteOfTool(toolOfLayer(id)));
+        const wanted = joinLayerName(pick.pen.name, own.pen ? own.label.trim() : "");
+        const taken = new Set(layerViews.filter((l) => l.id !== id).map((l) => l.name));
+        name = wanted;
+        for (let n = 2; taken.has(name); n++) name = `${wanted} ${n}`;
+      }
+      const color = "pen" in pick ? pick.pen.color : pick.hex;
+      void inkLayer({ id, ...(name && name !== layer.name ? { name } : {}), color }).then((res) => {
+        if (res) colorLayer(id, null); // the drawing has it now: nothing left for Plot's block to say
+      });
+    }
     // A new ink is a different pen, so the layer leaves whatever it was linked with. Left in place, the
     // link would come back to life if the ink were ever swapped back, which nobody would expect.
     setLayerLinks((groups) => groups.map((g) => g.filter((i) => i !== id)).filter((g) => g.length > 1));
@@ -542,6 +561,21 @@ export default function App() {
     }
   };
   const turnDrawing = (dir: 1 | -1) => void reshape({ turn: dir });
+  // A layer given another ink, written into the drawing (see colorAndNameLayer).
+  const inkLayer = async (change: { id: string; name?: string; color: string }) => {
+    if (busy) return null;
+    try {
+      const res = await postJSON<{ edited?: string }>("/api/current/layer", change);
+      if (res.edited) {
+        refs.current.edited = res.edited; // our own change: nothing for the poll to catch up on
+        setDrawingVersion((v) => v + 1);
+      }
+      return res;
+    } catch (err) {
+      setLocalMessage({ text: (err as Error).message, tone: "error" });
+      return null;
+    }
+  };
   // Fit to the paper where it lies under the page: its corner and size, in inches on the page.
   const fitToPaper = fileName && settings.paper_w > 0 && settings.paper_h > 0
     ? async (marginMm: number, align: FitAlign) => {

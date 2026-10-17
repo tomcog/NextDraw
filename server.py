@@ -4502,6 +4502,75 @@ def reshape_current():
     return jsonify(edited=state["edited"], scaled=abs(a * d - b * c) ** 0.5, baked="bake" in body)
 
 
+def set_stroke(node, color, by_class):
+    """Give a node this stroke wherever it said its own: its style, its stroke attribute, or - for a
+    class rule, which outranks the attribute - its style."""
+    style = node.get("style") or ""
+    if STROKE_RULE.search(style):
+        node.set("style", STROKE_RULE.sub(lambda m: (";" if m.group(0).startswith(";") else "") + f"stroke:{color}", style, count=1))
+    elif node.get("stroke") is not None:
+        node.set("stroke", color)
+    elif any(cls in by_class for cls in (node.get("class") or "").split()):
+        node.set("style", f"{style.rstrip(';')};stroke:{color}".lstrip(";"))
+
+
+@app.post("/api/current/layer")
+def ink_current_layer():
+    """
+    A layer given another ink in Plot, written into the drawing itself so every app shows it: the
+    layer's name (the pen to load, with its label after it) and its color, on the layer and on every
+    mark in it that names a stroke of its own. <nds:design> maps Studio's shapes to their layer by
+    name, so its mentions of the old name move to the new one. The layer keeps its id, which is what
+    Plot's own choices for it - order, links, what's been printed - are kept by. A change not saved.
+    """
+    body = request.json or {}
+    layer_id, name, color = body.get("id"), body.get("name"), body.get("color")
+    if not isinstance(layer_id, str) or not layer_id:
+        return jsonify(error="Which layer?"), 400
+    if name is not None and (not isinstance(name, str) or not name.strip() or len(name) > 200):
+        return jsonify(error="A layer needs a name."), 400
+    if not isinstance(color, str) or not HEX_COLOR.match(color):
+        return jsonify(error="The ink must be a color like #1d1d1f."), 400
+    if job.busy() or load_resume():
+        return jsonify(error="Wait for the plotter to finish, then change the drawing.", busy=True), 409
+    if not CURRENT_SVG.exists():
+        return jsonify(error="Open a drawing first."), 400
+    try:
+        root = parse_svg(CURRENT_SVG).getroot()
+        group = next((g for g in layer_groups(root) if g.get("id") == layer_id), None)
+        if group is None:
+            return jsonify(error="That layer isn't in the drawing any more."), 404
+        color = color.lower()
+        by_class = class_strokes(root)
+        for node in group.iter():
+            if isinstance(node.tag, str) and node is not group:
+                own = stroke_of(node, by_class)
+                if own and own.lower() != "none":
+                    set_stroke(node, color, by_class)
+        set_stroke(group, color, by_class)
+        if stroke_of(group, by_class) != color:
+            group.set("stroke", color)
+        if name is not None:
+            name = name.strip()
+            old = layer_name(group, is_illustrator_svg(root))
+            group.set(INKSCAPE_NS + "label", name)
+            if group.get("data-name") is not None:
+                group.set("data-name", name)
+            design = root.find(".//" + DESIGN_TAG)
+            if design is not None and design.text and old and old != name:
+                data = json.loads(design.text)
+                if isinstance(data.get("on"), dict):
+                    data["on"] = {k: (name if v == old else v) for k, v in data["on"].items()}
+                    design.text = json.dumps(data, separators=(",", ":"))
+        from lxml import etree
+        write_current_svg(etree.tostring(root, encoding="unicode"))
+    except Exception as exc:  # noqa: BLE001
+        return jsonify(error=f"Couldn't change the layer: {exc}"), 400
+    state = current_state()
+    state = write_current_state({"dirty": True, "save_to": state["save_to"], "foreign": state["foreign"]})
+    return jsonify(edited=state["edited"])
+
+
 @app.delete("/api/current")
 def drop_current():
     """New in an editor: no current drawing until something is drawn."""
