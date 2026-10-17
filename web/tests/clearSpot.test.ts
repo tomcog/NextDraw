@@ -1,5 +1,5 @@
 // The signature and the registration blocks keep off the drawing: they go in their corner when it's
-// clear, else the clear spot round the margin nearest it, else the corner with a warning.
+// clear, else straight down into the margin until they are, else as low as they go with a warning.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { clearSpot, inkMapOf } from "../src/studio/lib/clearSpot";
@@ -26,18 +26,19 @@ test("an empty page leaves each in its own corner", () => {
   assert.deepEqual(clearSpot(map, PAGE, 0.5, SIZE, "br"), { at: { x: 6.5, y: 9.25 }, clear: true });
 });
 
-test("a drawing over the corner moves it along to the nearest clear spot, with room to spare", () => {
-  const map = mapWith([0, 8, 3, 10]);
+test("a drawing reaching the corner moves it straight down into the margin until it's clear", () => {
+  const map = mapWith([0.5, 1, 7.5, 9.5]); // art right to the margin's edge
   const { at, clear } = clearSpot(map, PAGE, 0.5, SIZE, "bl");
   assert.ok(clear);
-  const off = (a: number, b: number) => a >= b;
-  assert.ok(off(at.x, 3 + 2 / 25.4) || at.y + SIZE.h <= 8 - 2 / 25.4, `clear of the drawing, at ${JSON.stringify(at)}`);
-  assert.ok(Math.hypot(at.x - 0.5, at.y - 9.25) < 3, "and near the corner it was meant for");
+  assert.equal(at.x, 0.5, "same column");
+  assert.ok(at.y >= 9.5 + 2 / 25.4 - 1e-9, `below the art with room, at ${at.y}`);
+  assert.ok(at.y + SIZE.h <= PAGE.h + 1e-9, "still on the page");
+  assert.ok(at.y < 9.5 + 2 / 25.4 + 0.06, "no further down than it needs");
 });
 
-test("a drawing over every margin leaves it in the corner, said not to be clear", () => {
+test("a drawing to the page edge leaves it as low as it goes, said not to be clear", () => {
   const map = mapWith([0, 0, 8, 10]);
-  assert.deepEqual(clearSpot(map, PAGE, 0.5, SIZE, "br"), { at: { x: 6.5, y: 9.25 }, clear: false });
+  assert.deepEqual(clearSpot(map, PAGE, 0.5, SIZE, "br"), { at: { x: 6.5, y: 9.75 }, clear: false });
 });
 
 test("ink in the middle of the page doesn't move it", () => {

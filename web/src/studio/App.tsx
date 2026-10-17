@@ -1103,7 +1103,7 @@ export default function App() {
 
  /**
   * The signature (signature.ts): TC and this year, in the page's bottom right corner inside the Paper
-  * card's margin - or the clear spot nearest it, off the drawing (clearSpot.ts) - picked so it can be dragged where it goes. On its own layer - the one labelled Signature if there
+  * card's margin - moved down into the margin if the drawing is there (clearSpot.ts) - picked so it can be dragged where it goes. On its own layer - the one labelled Signature if there
   * is one, else a new one in Black (or the darkest pen) - kept under Varnish, so it's plotted last
   * and can be any pen.
   */
@@ -1136,7 +1136,7 @@ export default function App() {
   const inset = paperMarginMm() / 25.4;
   const map = await inkMap(buildSvg(shapes, fills, layers, page, { paperSizeId: sizeId, toolName, paperColor, fonts }), page);
   const { at, clear } = clearSpot(map, page, inset, size, "br");
-  if (!clear) setMessage({ text: "Nowhere clear round the margin - the signature is on the drawing", ok: false });
+  if (!clear) setMessage({ text: "The drawing reaches the page edge here - the signature is on it", ok: false });
   const made = signatureShapes(year, font, layer.id, at);
   const on = layer.id;
   setShapes((list) => [...list, ...made]);
@@ -1147,8 +1147,8 @@ export default function App() {
 
  /**
   * Registration blocks (registration.ts): one for each shown layer, butted with no gap for a hidden
-  * one, in the page's lower left corner inside the Paper card's margin - or the clear spot nearest
-  * it, off the drawing (clearSpot.ts) - left to right in plotting order. Any already there go first, so pressing it again after the layers change makes them afresh
+  * one, in the page's lower left corner inside the Paper card's margin - moved down into the margin
+  * if the drawing is there (clearSpot.ts) - left to right in plotting order. Any already there go first, so pressing it again after the layers change makes them afresh
   * rather than piling up.
   */
  const addRegistration = async () => {
@@ -1159,7 +1159,7 @@ export default function App() {
   const rest = shapes.filter((s) => !gone.has(s.id));
   const map = await inkMap(buildSvg(rest, fills, layers, page, { paperSizeId: sizeId, toolName, paperColor, fonts }), page);
   const { at, clear } = clearSpot(map, page, inset, size, "bl");
-  if (!clear) setMessage({ text: "Nowhere clear round the margin - the registration blocks are on the drawing", ok: false });
+  if (!clear) setMessage({ text: "The drawing reaches the page edge here - the registration blocks are on it", ok: false });
   record();
   const made = registrationShapes(layers, { x: at.x, y: at.y + size.h });
   setShapes((list) => [...list.filter((s) => !gone.has(s.id)), ...made]);
