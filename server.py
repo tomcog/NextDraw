@@ -4420,8 +4420,9 @@ def reshape_matrix(body, bounds):
     a quarter turn, 1 to the right or -1 to the left, about its middle; the paper stays as it lies.
     turn_paper: the page and everything on it a quarter turn together, landscape to portrait - its own
     name, so a server from before it refuses it rather than turning the drawing alone.
-    fit: as big as the paper allows inside margin_mm, placed in the room left over as align says - the
-    paper being box (x, y, width, height in inches on the page), or the page.
+    fit: as big as the paper allows inside margin_mm - bottom mm at the foot, if given - placed in the
+    room left over as align says - the paper being box (x, y, width, height in inches on the page), or
+    the page.
     bake: Plot's own scale and turn from before, put into the drawing - scaled about the page's
     corner, where Plot scaled it from, and turned about its middle.
     """
@@ -4444,12 +4445,13 @@ def reshape_matrix(body, bounds):
         return about(1, 1 if int(body["turn"]) > 0 else 3)
     if "fit" in body:
         margin = max(0.0, float(body["fit"])) / 25.4
+        bottom = max(0.0, float(body["bottom"])) / 25.4 if body.get("bottom") is not None else margin
         align = body.get("align") or {}
         ax = min(1.0, max(0.0, float(align.get("x", 0.5))))
         ay = min(1.0, max(0.0, float(align.get("y", 0.5))))
         # The paper, in inches on the page: where Plot has the page placed on it. The page itself if not said.
         bx, by, bw, bh = [float(v) for v in body["box"]] if isinstance(body.get("box"), list) and len(body["box"]) == 4 else (0.0, 0.0, page_w, page_h)
-        room_w, room_h = bw - 2 * margin, bh - 2 * margin
+        room_w, room_h = bw - 2 * margin, bh - margin - bottom
         dw, dh = x1 - x0, y1 - y0
         if room_w <= 0 or room_h <= 0:
             return None

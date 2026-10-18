@@ -14,6 +14,8 @@ import {
   placeOnPage, croppedCopy, partOfPart, photoData, photoFromData, inkNamed, loadProfile, plateOfPhoto, platePens, presetAngle, readTones, hexLinear, linearHex, coverSteps, stemWithoutPlate, turnedCopy, workingCopy, MASK_EDGE_PX, MASK_SIDES, type AnglePreset, type Photo, type PhotoPart, type Plate, type PlateSet, PLATE_SETS, plateSetOf, platesOf,
 } from "../../shared/lib/drawing/photo";
 import { boxOf, newLayerId, newShapeId, type Layer, type Page, type Shape } from "../../shared/lib/drawing/shapes";
+import { snapshotShapes } from "../../shared/lib/drawing/snapshot";
+import { joinLayerName, splitLayerName } from "../../shared/lib/ink";
 import { samplePhoto, type Candidate } from "./choosePens";
 import { searchPensOffPage } from "./penSearch";
 import { folderOf, pictureChannels, pictureSources, type Inks } from "./separationFolder";
@@ -709,14 +711,16 @@ export function photoActions(ctx: PhotoContext) {
     * Size the chosen photo - all its bands - to the page: all of it as large as it fits, or filling the
     * page and cropped, inside a margin. Square to the page again, whatever it was turned to.
     */
-  const placePhoto = (how: "fit" | "fill", margin: number, align?: FitAlign) => {
+  const placePhoto = (how: "fit" | "fill", margin: number, align?: FitAlign, bottom = margin) => {
     if (!chosen?.photo) return;
     record();
     // Fitted against an edge stays against it - as Fit to paper chose, or as it was last fitted.
     const at = align ?? chosen.photo.align;
-    const { crop, ...box } = placeOnPage(chosen.photo.width / chosen.photo.height, page, how, margin, at);
+    const { crop, ...box } = placeOnPage(chosen.photo.width / chosen.photo.height, page, how, margin, at, bottom);
+    // The bottom margin is kept only where it's deeper than the rest, so it's sized the same again.
+    const marginBottom = Math.abs(bottom - margin) > 1e-6 ? bottom : undefined;
     setShapes((list) => list.map((sh) => (sameImage(sh)
-      ? { ...sh, ...box, rotation: undefined, photo: { ...sh.photo!, crop, fit: how, margin, align: at } }
+      ? { ...sh, ...box, rotation: undefined, photo: { ...sh.photo!, crop, fit: how, margin, marginBottom, align: at } }
       : sh)));
   };
 
@@ -735,7 +739,7 @@ export function photoActions(ctx: PhotoContext) {
   const placedInstead = (sh: Shape, aspect: number) => {
     const was = sh.photo!;
     if (was.fit) {
-      const placed = placeOnPage(aspect, page, was.fit, was.margin ?? 0.5, was.align);
+      const placed = placeOnPage(aspect, page, was.fit, was.margin ?? 0.5, was.align, was.marginBottom ?? was.margin ?? 0.5);
       return { box: { x: placed.x, y: placed.y, x2: placed.x2, y2: placed.y2 }, crop: placed.crop };
     }
     const b = boxOf(sh);
@@ -850,6 +854,61 @@ export function photoActions(ctx: PhotoContext) {
   };
 
   /**
+    * Bake the chosen image's effect: each of its layers' lines, as they're drawn now, made into a path on
+    * a layer of its own - named after its pen and the effect, "Black - Hatching" - just under the
+    * image's layers, in the same order. Then the image waits for the next effect (idle): it draws
+    * nothing until one is picked, which starts from its own settings, so the same picture can be drawn
+    * another way on top. The picture, its place and how it's split into layers stay.
+    */
+  const bakeEffect = (effectLabel: string) => {
+    const c = chosen?.photo;
+    if (!chosen || !c) return;
+    // This conversion's layers: the image's group, not another pass linked to the same picture.
+    const members = shapes.filter((sh) => sh.photo && (sh.id === chosen.id || Boolean(c.group && sh.photo.group === c.group)));
+    const palette = tool2?.palette ?? [];
+    const taken = new Set(layers.map((l) => l.name));
+    const named = (pen: string) => {
+      let name = joinLayerName(pen, effectLabel);
+      for (let n = 2; taken.has(name); n++) name = joinLayerName(pen, `${effectLabel} ${n}`);
+      taken.add(name);
+      return name;
+    };
+    // In the image's layer order, bottom first, each made into a path of what it draws now.
+    const order = (sh: Shape) => layers.findIndex((l) => l.id === sh.layerId);
+    const made: { layer: Layer; path: Shape }[] = [];
+    for (const sh of [...members].sort((a, b) => order(a) - order(b))) {
+      const [path] = snapshotShapes([sh]);
+      const from = layers.find((l) => l.id === sh.layerId);
+      if (!path || !from) continue;
+      const own = splitLayerName(from.name, palette);
+      const layer: Layer = { id: newLayerId(), name: named(own.pen ?? from.name), color: from.color };
+      made.push({ layer, path: { ...path, id: newShapeId(), layerId: layer.id, name: undefined } });
+    }
+    if (!made.length) {
+      setMessage({ text: "There are no lines to bake yet", ok: false });
+      return;
+    }
+    record();
+    // Just under the image's lowest layer.
+    const lowest = Math.min(...members.map(order).filter((i) => i >= 0));
+    setLayers((list) => [...list.slice(0, lowest), ...made.map((m) => m.layer), ...list.slice(lowest)]);
+    // The effect's own numbers back to where they start; what splits the picture into layers stays.
+    const effectKeys = LAYER_SETTINGS.slice(0, LAYER_SETTINGS.indexOf("offsetMm"))
+      .filter((k) => k !== "style" && k !== "angle" && k !== "spacingMm" && k !== "levels");
+    const ids = new Set(members.map((sh) => sh.id));
+    setShapes((list) => [
+      ...list.map((sh) => {
+        if (!ids.has(sh.id)) return sh;
+        const photo: Photo = { ...sh.photo!, idle: true, style: undefined, spacingMm: 0.5 };
+        for (const k of effectKeys) delete (photo as unknown as Record<string, unknown>)[k];
+        return { ...sh, photo };
+      }),
+      ...made.map((m) => m.path),
+    ]);
+    setMessage({ text: `Baked ${effectLabel} into ${made.length === 1 ? "a layer" : `${made.length} layers`}. Pick an effect to draw the image again`, ok: true });
+  };
+
+  /**
     * Crop the chosen photo - every layer of it - to a part of its picture: left, top, right, bottom, as
     * fractions of the whole picture. The picture itself is cut, so Fit, Fill and the lines all see only
     * what's kept; a separation's plates are each cut alike, so they stay in register. Kept with the
@@ -871,7 +930,7 @@ export function photoActions(ctx: PhotoContext) {
       let box: { x: number; y: number; x2: number; y2: number };
       let crop: Photo["crop"];
       if (was.fit) {
-        const placed = placeOnPage(kept.width / kept.height, page, was.fit, was.margin ?? 0.5, was.align);
+        const placed = placeOnPage(kept.width / kept.height, page, was.fit, was.margin ?? 0.5, was.align, was.marginBottom ?? was.margin ?? 0.5);
         crop = placed.crop;
         box = { x: placed.x, y: placed.y, x2: placed.x2, y2: placed.y2 };
       } else {
@@ -1169,27 +1228,32 @@ export function photoActions(ctx: PhotoContext) {
     record();
     const link = was.link ?? newShapeId();
     const pen = darkestPen(tool2?.palette ?? []) ?? { name: "Black", color: "#1a1a1a" };
-    const layer: Layer = { id: newLayerId(), name: pen.name, color: pen.color };
+    // A name no other layer has: the drawing finds a layer's shapes by its name.
+    const taken = new Set(layers.map((l) => l.name));
+    let layerName = pen.name;
+    for (let n = 2; taken.has(layerName); n++) layerName = joinLayerName(pen.name, `New ${n}`);
+    const layer: Layer = { id: newLayerId(), name: layerName, color: pen.color };
     const { name } = photoStem();
     const pass: Shape = {
       ...chosen,
       id: newShapeId(),
       layerId: layer.id,
-      name: `${name} edges`,
+      name: `${name} new`,
       photo: {
         // The picture and its place, from the image; everything else fresh.
         src: was.src, width: was.width, height: was.height, crop: was.crop, fit: was.fit, margin: was.margin, align: was.align,
         source: was.source, quarterTurns: was.quarterTurns, cut: was.cut,
         edgeMask: was.edgeMask, edgeMaskName: was.edgeMaskName, edgeMaskInvert: was.edgeMaskInvert, edgeMaskSides: was.edgeMaskSides, edgeGen: was.edgeGen, vignette: was.vignette,
-        ...PHOTO_DEFAULTS, spacingMm: was.spacingMm,
-        style: "edges", centerMode: "mixed", link,
+        ...PHOTO_DEFAULTS, spacingMm: 0.5,
+        // Waiting for its effect: the card asks for one, and the toolbar's choice draws it.
+        idle: true, link,
       },
     };
     setLayers((list) => [...list, layer]); // on top: drawn last, over the shading
     setShapes((list) => [...list.map((sh) => (sameImage(sh) && !sh.photo?.link ? { ...sh, photo: { ...sh.photo!, link } } : sh)), pass]);
     pick(pass.id);
     setActiveLayer(layer.id);
-    setMessage({ text: `A second pass over the image, drawn as Edges in ${pen.name}: choose its effect in the toolbar`, ok: true });
+    setMessage({ text: "A new effect over the image, on top: pick it in the toolbar", ok: true });
   };
 
   /** The chosen pass taken off the image - its layers too, where nothing else is on them. The image keeps its other passes. */
@@ -1271,7 +1335,7 @@ export function photoActions(ctx: PhotoContext) {
   return {
     setChannelOf, splitPhotoProfile,
     addPhoto, addSeparations, switchPhotoMode, setKeyLayer, splitPhoto, splitPhotoBestFit,
-    placePhoto, replacePhoto, reloadPhoto, cropPhoto, savePreset, applyPreset, deletePreset, setPhotoOf, addEdgeMask, chooseEdgeMask, deleteEdgeMask, setEdgeGen, saveEdgeGen, setAngles, photoStem, splitPhotoCmyk, setLayerColor,
+    placePhoto, replacePhoto, reloadPhoto, cropPhoto, bakeEffect, savePreset, applyPreset, deletePreset, setPhotoOf, addEdgeMask, chooseEdgeMask, deleteEdgeMask, setEdgeGen, saveEdgeGen, setAngles, photoStem, splitPhotoCmyk, setLayerColor,
     splitAroundPaper, setPaperTone, addPass, removePass,
   };
 }

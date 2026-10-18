@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Button, ButtonRound, InputSelect, Segment, SegmentedControl } from "@tomcoggia/ui";
+import { Button, ButtonRound, Checkbox, InputSelect, Segment, SegmentedControl } from "@tomcoggia/ui";
 import { Pipette, RotateCcwSquare, RotateCwSquare } from "lucide-react";
 import styles from "./controls.module.css";
 import { LengthField } from "./LengthField";
@@ -69,16 +69,19 @@ interface Props {
   onTurnDrawing?: (dir: 1 | -1) => void;
   /** Scale the drawing to fill the paper less a margin all round (in mm), placed in the room left
    *  over as `align` says - centred, or against an edge. Left out while there is no drawing to fit. */
-  onFit?: (marginMm: number, align: FitAlign) => void;
+  onFit?: (marginMm: number, align: FitAlign, bottomMm: number) => void;
   /** Image only: scale the picture to cover the paper less the margin, cropping what's over - the
    *  alignment says which part stays. Left out, there's no Fill: a drawing of paths can't be cropped. */
-  onFill?: (marginMm: number, align: FitAlign) => void;
+  onFill?: (marginMm: number, align: FitAlign, bottomMm: number) => void;
 }
 
 // Common paper colours, plus any colour from the picker. The paper is drawn in this colour whatever
 // the app's theme, so light or dark mode never changes how a print looks.
 const MARGIN_KEY = "nextdraw.fitMargin";
 const ALIGN_KEY = "nextdraw.fitAlign";
+const DEEP_BOTTOM_KEY = "nextdraw.fitDeepBottom";
+/** How much deeper the bottom margin is, when it's asked for: a quarter of the margin more. */
+const DEEP_BOTTOM = 1.25;
 const ALIGN_STEPS = [0, 0.5, 1] as const;
 
 /** The margin set in the Paper card, in mm: half an inch until one is chosen. */
@@ -134,8 +137,19 @@ export function PaperSection({ w, h, sizeId, units, color, collapsibleKey, disab
     setAlign(next);
     try { localStorage.setItem(ALIGN_KEY, JSON.stringify(next)); } catch { /* kept for this visit only */ }
   };
+  // A deeper margin at the foot of the page - a quarter of the margin more - for Fit and Fill, kept
+  // between visits like the margin.
+  const [deepBottom, setDeepBottom] = useState(() => {
+    try { return localStorage.getItem(DEEP_BOTTOM_KEY) === "true"; } catch { return false; }
+  });
+  const keepDeepBottom = (on: boolean) => {
+    setDeepBottom(on);
+    try { localStorage.setItem(DEEP_BOTTOM_KEY, String(on)); } catch { /* kept for this visit only */ }
+  };
+  const bottom = deepBottom ? margin * DEEP_BOTTOM : margin;
+  const margins = deepBottom ? `${fmtLen(margin, units)} margin, ${fmtLen(bottom, units)} at the bottom` : `${fmtLen(margin, units)} margin`;
   // A margin that leaves no paper between them has nothing to fit into.
-  const roomLeft = w - 2 * margin > 0 && h - 2 * margin > 0;
+  const roomLeft = w - 2 * margin > 0 && h - margin - bottom > 0;
 
   // Each size is named in the chosen unit and the way the paper lies (width × height), so the list
   // follows a turn and a change of unit.
@@ -243,10 +257,10 @@ export function PaperSection({ w, h, sizeId, units, color, collapsibleKey, disab
             size="sm"
             variant="secondary"
             title={roomLeft
-              ? `Fit: scale the drawing to fill the paper inside a ${fmtLen(margin, units)} margin, placed as the alignment below says`
+              ? `Fit: scale the drawing to fill the paper inside a ${margins}, placed as the alignment below says`
               : "The margin leaves no paper to fit the drawing into"}
             disabled={disabled || !onFit || !roomLeft}
-            onClick={() => onFit?.(margin, align)}
+            onClick={() => onFit?.(margin, align, bottom)}
           >
             Fit
           </Button>
@@ -255,15 +269,24 @@ export function PaperSection({ w, h, sizeId, units, color, collapsibleKey, disab
               size="sm"
               variant="secondary"
               title={roomLeft
-                ? `Fill: scale the image to cover the paper inside a ${fmtLen(margin, units)} margin, cropping what's over - the alignment below says which part stays`
+                ? `Fill: scale the image to cover the paper inside a ${margins}, cropping what's over - the alignment below says which part stays`
                 : "The margin leaves no paper to fill"}
               disabled={disabled || !roomLeft}
-              onClick={() => onFill(margin, align)}
+              onClick={() => onFill(margin, align, bottom)}
             >
               Fill
             </Button>
           )}
         </div>
+        {onFit && (
+          <Checkbox size="md"
+            checked={deepBottom}
+            label="Bottom margin +25%"
+            title={`Fit and Fill leave a quarter more margin at the bottom: ${fmtLen(margin * DEEP_BOTTOM, units)} under a ${fmtLen(margin, units)} margin`}
+            disabled={disabled}
+            onChange={(e) => keepDeepBottom(e.target.checked)}
+          />
+        )}
         {onFit && (
           <div className={styles.fitAlign}>
             <SegmentedControl size="sm" variant="dark" aria-label="Fit across: left, center or right">

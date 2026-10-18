@@ -1,7 +1,7 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { api, postJSON } from "../../shared/lib/api";
 import { Button, ButtonRound, Card, Checkbox, InputSelect, Segment, SegmentedControl } from "@tomcoggia/ui";
-import { ChevronRight, Trash2 } from "lucide-react";
+import { ChevronRight, Plus, Stamp, Trash2 } from "lucide-react";
 import { Section } from "../../shared/components/controls/Section";
 import { panelIcon } from "../../shared/components/PanelToolbar";
 import { NumberField } from "../../shared/components/controls/NumberField";
@@ -27,6 +27,8 @@ export interface PhotoActions {
   replace: () => void;
   /** Read the photo's file again, where it was opened from NextDraw's file browser and so is known. */
   reload: () => void;
+  /** Make the effect's lines into layers of their own, and leave the image waiting for the next effect. */
+  bake: (effectLabel: string) => void;
   /** Start cropping the image on the page, or, while cropping, keep the crop or leave it. */
   crop: () => void;
   cropDone: () => void;
@@ -36,7 +38,7 @@ export interface PhotoActions {
   /** Draw the image as a saved preset says, keeping its picture and place. */
   applyPreset: (name: string) => Promise<void>;
   deletePreset: (name: string) => Promise<void>;
-  /** Another pass over the image - drawn as Edges to start with, on a layer of its own on top. */
+  /** Another effect over the image, on a layer of its own on top: its card asks for the effect, and the toolbar's choice draws it. */
   addPass: () => void;
   /** The chosen pass taken off the image (never the last). */
   removePass: () => void;
@@ -180,6 +182,7 @@ export function PhotoCard({ shape, title, shapes, busy, targeted, layerCount, sh
     return [...byPass.values()].map((list) => ({
       id: list[0].id,
       effect: EFFECTS.find((e) => e.key === effectOf(list[0].photo!))!,
+      idle: Boolean(list[0].photo!.idle),
       layers: list.length,
       mine: list.some((sh) => sh.id === shape.id || (photo.group && sh.photo?.group === photo.group)),
     }));
@@ -597,11 +600,21 @@ export function PhotoCard({ shape, title, shapes, busy, targeted, layerCount, sh
             {/* One card under the effect's name and icon - the toolbar on the left chooses which: first
               the color mode, how the picture is divided into layers and pens, then the effect's own numbers. */}
             <Section
-              title={effect.label}
-              icon={effect.icon}
-              // With more than one pass, this one comes off the image here, with its layers.
-              action={passes.length > 1 ? (
-                <ButtonRound size="sm" icon={<Trash2 />} aria-label="Remove this pass" title="Take this pass and its layers off the image. The other passes stay" disabled={busy} onClick={actions.removePass} />
+              title={photo.idle ? "Pick an effect" : effect.label}
+              icon={photo.idle ? undefined : effect.icon}
+              // Bake, and with more than one pass, this one coming off the image with its layers.
+              action={(!photo.idle || passes.length > 1) ? (
+                <span className={controls.headerTools}>
+                  {!photo.idle && (
+                    <>
+                      <ButtonRound size="sm" icon={<Stamp />} aria-label="Bake" title={`Bake: make ${effect.label}'s lines into layers of their own, then pick another effect to draw the same image again on top`} disabled={busy} onClick={() => actions.bake(effect.label)} />
+                      <ButtonRound size="sm" icon={<Plus />} aria-label="New effect" title={`New: another effect over the image, layered on top of ${effect.label}. Both stay live`} disabled={busy} onClick={actions.addPass} />
+                    </>
+                  )}
+                  {passes.length > 1 && (
+                    <ButtonRound size="sm" icon={<Trash2 />} aria-label="Remove this pass" title="Take this pass and its layers off the image. The other passes stay" disabled={busy} onClick={actions.removePass} />
+                  )}
+                </span>
               ) : undefined}
             >
               {/* How many layers the photo is split into by tone, or by colour, or by inks - a layer each,
@@ -609,7 +622,9 @@ export function PhotoCard({ shape, title, shapes, busy, targeted, layerCount, sh
                 and contrast are what the bands are cut from. */}
               {splits && colourMode}
               {splits && photo.group && bleed}
-              {photo.style === "silhouette" ? (
+              {photo.idle ? (
+                <p className={controls.hint}>No effect yet. Pick one from the toolbar to draw the image this way too: its lines go on top of what's there, split into layers as Color mode says.</p>
+              ) : photo.style === "silhouette" ? (
                 <div className={styles.fillRow}>
                   <NumberField label="Paper lighter than" unit="%" min={1} max={99} step={1} value={Math.round((photo.silhouetteFrom ?? SILHOUETTE_DEFAULTS.from) * 100)} onChange={(v) => actions.set({ silhouetteFrom: v / 100 })} />
                   <NumberField label="Smoothing" unit="mm" min={0} max={5} step={0.05} value={photo.silhouetteSmoothMm ?? SILHOUETTE_DEFAULTS.smoothMm} onChange={(silhouetteSmoothMm) => actions.set({ silhouetteSmoothMm })} />
@@ -862,7 +877,7 @@ export function PhotoCard({ shape, title, shapes, busy, targeted, layerCount, sh
                   {eachLayer("Angle, spacing, passes, smoothing and shortest stroke")}
                 </>
               )}
-              <p className={styles.empty}>
+              {!photo.idle && <p className={styles.empty}>
                 {marks
                   ? photo.style === "silhouette"
                     ? `${marks.strokes.toLocaleString()} ${marks.strokes === 1 ? "loop" : "loops"}: the shape's outline${marks.strokes > 1 ? " and the holes in it" : ""}, where the picture meets white paper. Paper lighter than sets what counts as paper; Smallest drops specks and flecks.`
@@ -886,7 +901,7 @@ export function PhotoCard({ shape, title, shapes, busy, targeted, layerCount, sh
                     ? `${marks.strokes.toLocaleString()} strokes. Each row waves harder and tighter where the image is darker; white is left as paper.`
                     : `${marks.strokes.toLocaleString()} strokes. The spacing starts at the pen’s solid-fill spacing; each pass adds lines where the image is darker.`
                   : "Reading the image…"}
-              </p>
+              </p>}
             </Section>
           </div>
         </Card>
@@ -899,7 +914,7 @@ export function PhotoCard({ shape, title, shapes, busy, targeted, layerCount, sh
                 <span className={controls.legendRow}>
                   <button type="button" className={controls.sectionToggle} aria-expanded={false} disabled={busy}>
                     <ChevronRight className={controls.sectionChevron} aria-hidden="true" data-open={false} />
-                    <span className={controls.iconTitle}>{p.effect.icon}{p.effect.label}</span>
+                    <span className={controls.iconTitle}>{p.idle ? "Pick an effect" : <>{p.effect.icon}{p.effect.label}</>}</span>
                   </button>
                   <span className={controls.toolInTitle}>{p.layers === 1 ? "1 layer" : `${p.layers} layers`}</span>
                 </span>

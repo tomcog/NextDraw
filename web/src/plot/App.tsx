@@ -595,9 +595,9 @@ export default function App() {
   };
   // Fit to the paper where it lies under the page: its corner and size, in inches on the page.
   const fitToPaper = fileName && settings.paper_w > 0 && settings.paper_h > 0
-    ? async (marginMm: number, align: FitAlign) => {
+    ? async (marginMm: number, align: FitAlign, bottomMm = marginMm) => {
       const box = [(settings.paper_x - placement.x) / 25.4, (settings.paper_y - placement.y) / 25.4, settings.paper_w / 25.4, settings.paper_h / 25.4];
-      await reshape({ fit: marginMm, align, box });
+      await reshape({ fit: marginMm, align, box, ...(bottomMm !== marginMm ? { bottom: bottomMm } : {}) });
     }
     : undefined;
 
@@ -2102,7 +2102,7 @@ export default function App() {
                   onColor={(paper_color) => updateSettings({ paper_color })}
                   onUnits={(units) => updateSettings({ units })}
                   onTurnDrawing={fileName ? turnDrawing : undefined}
-                  onFit={fitToPaper ? (margin, align) => void fitToPaper(margin, align) : undefined}
+                  onFit={fitToPaper ? (margin, align, bottom) => void fitToPaper(margin, align, bottom) : undefined}
                 />
             </div>
           </Card>

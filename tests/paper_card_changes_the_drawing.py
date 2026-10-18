@@ -84,6 +84,11 @@ def main():
     check("as big as fits: 10 across, 5 down", near(box(), (0.5, 1.75, 10.5, 6.75)), True)
     check("and Plot is told the scale", round(res.get_json()["scaled"], 3), 2.5)
 
+    print("\nfitted with a deeper bottom margin")
+    client.post("/api/current/reshape", json={"fit": 25.4, "bottom": 31.75, "align": {"x": 0.5, "y": 1}, "box": [0, 0, 11, 8.5]})
+    # Drawn 2 wide by 1 high, it fills the 9 inches across; set against the foot, it stops 1.25 short of it.
+    check("across inside an inch each side, an inch and a quarter clear of the foot", near((box()[0], box()[2], box()[3]), (1.0, 10.0, 7.25)), True)
+
     print("\nPlot's own scale and turn, from before")
     file2 = folder / "old.svg"
     file2.write_text(drawing('<metadata id="nextdraw-plot"><nds:plot>{"scale": 50, "rotation": 0}</nds:plot></metadata>'))

@@ -96,6 +96,11 @@ export interface Photo {
    * drawn the way SquiggleDraw draws it - smooth curves, unbroken through white, rows joinable into
    * one line. Absent, hatching.
    */
+  /**
+   * Baked, and waiting for the next effect: its lines were made into layers of their own (Bake), and it
+   * draws nothing until an effect is picked again. Its picture, place and split stay.
+   */
+  idle?: boolean;
   style?: "hatch" | "waves" | "squiggle" | "streamlines" | "scribble" | "oneline" | "hilbert" | "outlines" | "centerlines" | "silhouette" | "edges" | "paint";
   /**
    * Edges: how sharp a change of tone, 0 to 1 against the picture's sharpest, counts as an edge - the
@@ -366,6 +371,8 @@ export interface Photo {
   fit?: "fit" | "fill";
   /** The margin, in inches, it is fitted or filled inside. */
   margin?: number;
+  /** The margin at the foot of the page, in inches, where it's deeper than the rest. Absent, the margin. */
+  marginBottom?: number;
   /** Where a fitted photo sits in the room the margin leaves: against an edge, or centred. Absent, centred. */
   align?: FitAlign;
 }
@@ -374,13 +381,14 @@ export interface Photo {
 export const photoMode = (p: Photo) => (p.profile ? "profile" : p.separation ? "separations" : p.plate ? "cmyk" : p.ink ? "colour" : "value");
 
 /**
- * Where a photo goes to fit or fill a page, inside a margin: its box, and the part of it that shows.
- * `aspect` is the picture's width over its height.
+ * Where a photo goes to fit or fill a page, inside a margin - `bottom` at the foot, the margin unless
+ * said: its box, and the part of it that shows. `aspect` is the picture's width over its height.
  */
-export function placeOnPage(aspect: number, page: { w: number; h: number }, how: "fit" | "fill", margin: number, align: FitAlign = FIT_CENTERED) {
+export function placeOnPage(aspect: number, page: { w: number; h: number }, how: "fit" | "fill", margin: number, align: FitAlign = FIT_CENTERED, bottom = margin) {
   const m = Math.max(0, Math.min(margin, page.w / 2 - 0.1, page.h / 2 - 0.1));
+  const mb = Math.max(0, Math.min(bottom, page.h - m - 0.2));
   const aw = page.w - m * 2;
-  const ah = page.h - m * 2;
+  const ah = page.h - m - mb;
   if (how === "fit") {
     const k = Math.min(aw / aspect, ah);
     const w = aspect * k;
@@ -397,7 +405,7 @@ export function placeOnPage(aspect: number, page: { w: number; h: number }, how:
   const crop: [number, number, number, number] = aspect > area
     ? [cut * align.x, 0, cut * align.x + (1 - cut), 1]
     : [0, cut * align.y, 1, cut * align.y + (1 - cut)];
-  return { x: m, y: m, x2: page.w - m, y2: page.h - m, crop };
+  return { x: m, y: m, x2: page.w - m, y2: page.h - mb, crop };
 }
 
 /** The four plates of a CMYK split, in the order they're worked out. */
@@ -1337,6 +1345,8 @@ const marksCache = new Map<string, PhotoMarks>();
  * size or new numbers draws them again.
  */
 export function photoMarks(photo: Photo, w: number, h: number): PhotoMarks | null {
+  // Baked, with no effect picked since: nothing to draw.
+  if (photo.idle) return { passes: [], strokes: 0 };
   // A profile's ink: drawn from its own share of the photo, once the profile and the photo are read.
   const inked = profiled(photo);
   if (!inked) return null;
@@ -5030,6 +5040,7 @@ export function photoFromData(raw: Record<string, unknown>): Photo | null {
     ...(Number.isInteger(raw.source_channel) && Number(raw.source_channel) >= 0 ? { sourceChannel: Number(raw.source_channel) } : {}),
     ...([1, 2, 3].includes(Number(raw.quarter_turns)) ? { quarterTurns: Number(raw.quarter_turns) } : {}),
     ...(isPart(raw.cut) ? { cut: raw.cut } : {}),
+    ...(raw.idle === true ? { idle: true } : {}),
     levels: num(raw.levels, PHOTO_DEFAULTS.levels),
     ...(typeof raw.group === "string" ? { group: raw.group } : {}),
     ...(typeof raw.link === "string" ? { link: raw.link } : {}),
@@ -5121,6 +5132,7 @@ export function photoFromData(raw: Record<string, unknown>): Photo | null {
     ...(raw.squiggle_inkscape && typeof raw.squiggle_inkscape === "object" ? { squiggleInkscape: Object.fromEntries(Object.entries(raw.squiggle_inkscape as Record<string, unknown>).filter(([k, v]) => k in SQUIGGLE_INKSCAPE && (k === "invert" ? typeof v === "boolean" : k === "path" ? v === "uni" || v === "bidi" || v === "join" : Number.isFinite(Number(v)))).map(([k, v]) => [k, k === "invert" || k === "path" ? v : Number(v)])) as Partial<SquiggleInkscape> } : {}),
     ...(Number.isFinite(Number(raw.bleed)) && raw.bleed !== undefined ? { bleed: Number(raw.bleed) } : {}),
     ...(Number.isFinite(Number(raw.margin)) && raw.margin !== undefined ? { margin: Number(raw.margin) } : {}),
+    ...(Number.isFinite(Number(raw.margin_bottom)) && raw.margin_bottom !== undefined ? { marginBottom: Number(raw.margin_bottom) } : {}),
     ...(raw.side === "dark" || raw.side === "light" ? { side: raw.side } : {}),
     ...(Array.isArray(raw.paper_tone) && raw.paper_tone.length === 2 && raw.paper_tone.every((v) => Number.isFinite(Number(v)))
       ? { paperTone: [Number(raw.paper_tone[0]), Number(raw.paper_tone[1])] as [number, number] }
@@ -5145,6 +5157,7 @@ export const photoData = (p: Photo) => ({
   ...(p.source && p.sourceChannel !== undefined ? { source_channel: p.sourceChannel } : {}),
   ...(p.quarterTurns ? { quarter_turns: p.quarterTurns } : {}),
   ...(p.cut ? { cut: p.cut } : {}),
+  ...(p.idle ? { idle: true } : {}),
   ...(p.group ? { group: p.group } : {}),
   ...(p.link ? { link: p.link } : {}),
   ...(p.edgeFrom !== undefined ? { edge_from: p.edgeFrom } : {}),
@@ -5227,6 +5240,7 @@ export const photoData = (p: Photo) => ({
   ...(p.squiggleInkscape && Object.keys(p.squiggleInkscape).length ? { squiggle_inkscape: p.squiggleInkscape } : {}),
   ...(p.bleed ? { bleed: p.bleed } : {}),
   ...(p.margin !== undefined ? { margin: p.margin } : {}),
+  ...(p.marginBottom !== undefined ? { margin_bottom: p.marginBottom } : {}),
 });
 
 /** Where a photo layer's lines start on the page, in inches: its box's corner, moved by its offset. */

@@ -113,6 +113,15 @@ test("fitting fills the page inside the margin on the tighter side, centred both
   assert.equal(runsOffPage(after, page), false);
 });
 
+test("a deeper bottom margin: fitted above it, against it at the bottom", () => {
+  // A square 1 inch drawing on the 11 × 8.5 page, a 1 inch margin, 1.25 at the foot: 6.25 high to fill.
+  const shapes = [shape({ x: 1, y: 1, x2: 2, y2: 2 })];
+  const fit = fitToPage(shapes, page, 1, { x: 0.5, y: 1 }, 1.25)!;
+  const d = drawnBox(reshapeDrawing(shapes, fit.k, fit.about, fit.by));
+  close(d.y0, 1); close(d.y1, 8.5 - 1.25);
+  close(d.x1 - d.x0, 6.25);
+});
+
 test("nothing to fit: no drawing, no room, or a single point", () => {
   assert.equal(fitToPage([], page, 0.5), null);
   assert.equal(fitToPage([shape({})], page, 5), null);

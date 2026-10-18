@@ -27,7 +27,8 @@ import type { Fill } from "../shared/lib/drawing/hatch";
 import { parseDrawing } from "../shared/lib/drawing/parse";
 import { buildSvg, cleanFileName } from "../shared/lib/drawing/svg";
 import { placeOnPage, plateSetOf, stemWithoutPlate, type Photo } from "../shared/lib/drawing/photo";
-import { boxOf, newLayerId, type Layer, type Page, type Shape } from "../shared/lib/drawing/shapes";
+import { boxOf, drawnNodes, newLayerId, type Layer, type Page, type Shape } from "../shared/lib/drawing/shapes";
+import { pathData } from "../shared/lib/drawing/path";
 import { useDrawingFile, type Current } from "../shared/lib/drawing/useDrawingFile";
 import { lockBanner, useEditLock } from "../shared/lib/useEditLock";
 import { usePhotoRead, usePhotosRead } from "../shared/lib/drawing/usePhotoRead";
@@ -35,7 +36,7 @@ import { photoActions, pictureSources } from "./lib/photoActions";
 import { ConvertStage, type ConvertView } from "./components/ConvertStage";
 import { AdjustCard, AdjustToolbar } from "./components/AdjustCard";
 import { VignetteCard } from "./components/VignetteCard";
-import { EffectToolbar, effectOf, type Effect } from "./components/EffectToolbar";
+import { EFFECTS, EffectToolbar, effectOf, type Effect } from "./components/EffectToolbar";
 import { PanelToolbar, panelIcon } from "../shared/components/PanelToolbar";
 import { LayersSection } from "../shared/components/controls/LayersSection";
 import { PaletteMenu } from "../shared/components/controls/PaletteMenu";
@@ -249,7 +250,7 @@ export default function App() {
       const next = list.map((sh) => {
         const p = sh.photo;
         if (!p?.fit) return sh;
-        const { crop, ...box } = placeOnPage(p.width / p.height, page, p.fit, p.margin ?? 0.5, p.align);
+        const { crop, ...box } = placeOnPage(p.width / p.height, page, p.fit, p.margin ?? 0.5, p.align, p.marginBottom ?? p.margin ?? 0.5);
         if (Math.abs(box.x - sh.x) < 1e-6 && Math.abs(box.y - sh.y) < 1e-6 && Math.abs(box.x2 - sh.x2) < 1e-6 && Math.abs(box.y2 - sh.y2) < 1e-6) return sh;
         changed = true;
         return { ...sh, ...box, rotation: undefined, photo: { ...p, crop } };
@@ -328,6 +329,18 @@ export default function App() {
         : [],
     [shapes, layers, chosen],
   );
+  // The drawing's other layers, bottom first: its paths - an effect baked before, lines drawn in
+  // Studio - drawn under the image's lines on the stage.
+  const otherLayers = useMemo(
+    () => layers
+      .filter((l) => !l.hidden)
+      .map((l) => ({
+        color: l.color,
+        d: shapes.filter((sh) => sh.layerId === l.id && sh.kind === "path" && !sh.photo).map((sh) => pathData(drawnNodes(sh))),
+      }))
+      .filter((o) => o.d.length),
+    [shapes, layers],
+  );
   usePhotoRead(chosen?.photo?.src);
   // And every other layer's picture: separations are a picture each.
   usePhotosRead(convertParts.map((part) => part.photo.src));
@@ -362,11 +375,13 @@ export default function App() {
 
   const {
     addPhoto, addSeparations, switchPhotoMode, setKeyLayer, splitPhoto, splitPhotoBestFit,
-    placePhoto, replacePhoto, reloadPhoto, cropPhoto, savePreset, applyPreset, deletePreset, setPhotoOf, addEdgeMask, chooseEdgeMask, deleteEdgeMask, setEdgeGen, saveEdgeGen, setAngles, photoStem, splitPhotoCmyk, setLayerColor,
+    placePhoto, replacePhoto, reloadPhoto, cropPhoto, bakeEffect, savePreset, applyPreset, deletePreset, setPhotoOf, addEdgeMask, chooseEdgeMask, deleteEdgeMask, setEdgeGen, saveEdgeGen, setAngles, photoStem, splitPhotoCmyk, setLayerColor,
     splitAroundPaper, setPaperTone, addPass, removePass, setChannelOf, splitPhotoProfile,
   } = photoActions({
     chosen, shapes, setShapes, layers, setLayers, active, setActiveLayer, page, tool,
-    spacingMm: tool?.hatch?.spacing_mm ?? 1.5, targets, paper: paperColor, record, addShape, pick, setMessage, setBusy,
+    // Hatching starts at half a millimetre between lines, whatever the pen: a pen preset's hatch
+    // spacing is for Studio's solid fills, not a picture's tones.
+    spacingMm: 0.5, targets, paper: paperColor, record, addShape, pick, setMessage, setBusy,
   });
 
   // A new, empty drawing on the paper as it is.
@@ -559,8 +574,8 @@ export default function App() {
       // The paper turned with everything on it, as in every app; and Fit with the Paper card's margin
       // and alignment, which the image keeps, so it follows the paper when that changes.
       onTurnDrawing={shapes.length ? (dir) => void turnAll(dir) : undefined}
-      onFit={chosen?.photo ? (marginMm, align) => placePhoto("fit", marginMm / 25.4, align) : undefined}
-      onFill={chosen?.photo ? (marginMm, align) => placePhoto("fill", marginMm / 25.4, align) : undefined}
+      onFit={chosen?.photo ? (marginMm, align, bottomMm) => placePhoto("fit", marginMm / 25.4, align, bottomMm / 25.4) : undefined}
+      onFill={chosen?.photo ? (marginMm, align, bottomMm) => placePhoto("fill", marginMm / 25.4, align, bottomMm / 25.4) : undefined}
     />
   );
   // A pen chosen by hand: the photo's colors are chosen again from its palette - each plate, or each
@@ -744,6 +759,7 @@ export default function App() {
         applyPreset,
         deletePreset,
         reload: reloadPhoto,
+        bake: bakeEffect,
         crop: () => setCropDraft(chosen?.photo?.crop ?? [0, 0, 1, 1]),
         cropDone: keepCrop,
         cropCancel: () => setCropDraft(null),
@@ -834,8 +850,24 @@ export default function App() {
     setEffectCards(true);
     const style = effect === "hatch" ? undefined : effect;
     // One line round a shape, or the edges: one layer, not tone bands or colors.
-    if ((effect === "silhouette" || effect === "edges") && chosen?.photo?.group && !chosen.photo.separation) splitPhoto(1, { style });
-    else setPhotoOf({ style });
+    if ((effect === "silhouette" || effect === "edges") && chosen?.photo?.group && !chosen.photo.separation) splitPhoto(1, { style, idle: undefined });
+    else setPhotoOf({ style, idle: undefined });
+    // A new effect's layer is named for what it's waiting for ("Black - New 2"): now it's this effect.
+    const label = EFFECTS.find((e) => e.key === effect)?.label;
+    const mine = new Set(shapes.filter((sh) => chosen && (sh.id === chosen.id || (chosen.photo?.group && sh.photo?.group === chosen.photo.group))).map((sh) => sh.layerId));
+    if (label) {
+      setLayers((list) => {
+        const taken = new Set(list.map((l) => l.name));
+        return list.map((l) => {
+          const waiting = mine.has(l.id) ? /^(.*) - New(?: \d+)?$/.exec(l.name) : null;
+          if (!waiting) return l;
+          let name = `${waiting[1]} - ${label}`;
+          for (let n = 2; taken.has(name); n++) name = `${waiting[1]} - ${label} ${n}`;
+          taken.add(name);
+          return { ...l, name };
+        });
+      });
+    }
   };
 
 
@@ -957,7 +989,7 @@ export default function App() {
               ...(chosen?.photo ? [{ key: "adjustments" as const, on: adjustCard, toggle: () => setAdjustCard((on) => !on) }] : []),
             ]}
           />
-          <EffectToolbar effect={chosen?.photo ? effectOf(chosen.photo) : undefined} onEffect={setEffect} onAgain={() => setEffectCards((on) => !on)} disabled={!chosen?.photo || busy} />
+          <EffectToolbar effect={chosen?.photo && !chosen.photo.idle ? effectOf(chosen.photo) : undefined} onEffect={setEffect} onAgain={() => setEffectCards((on) => !on)} disabled={!chosen?.photo || busy} />
           {chosen?.photo && <AdjustToolbar vignette={{ on: vignetteCard, toggle: () => setVignetteCard((on) => !on) }} mask={{ on: maskCard, toggle: () => setMaskCard((on) => !on) }} />}
           {chosen?.photo && <HistoryToolbar canUndo={canUndo} canRedo={canRedo} onUndo={undo} onRedo={redo} disabled={busy} />}
         </div>
@@ -987,6 +1019,7 @@ export default function App() {
               show={convertView}
               onShow={setConvertView}
               cropping={cropDraft ? { part: cropDraft, onPart: setCropDraft } : undefined}
+              others={otherLayers}
             />
           ) : (
             <>

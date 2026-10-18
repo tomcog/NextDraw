@@ -161,16 +161,16 @@ export function drawnMiddle(shapes: Shape[]): Point {
 }
 
 /**
- * How to fit the drawing to the page inside a margin all round (inches), placed in the room left over
- * as `align` says (centred unless told otherwise): the scale, and the point it is scaled about and the
- * move after it, for reshapeDrawing. Nothing when it can't be done - no drawing, a margin that leaves
- * no page, or a drawing that is a single point.
+ * How to fit the drawing to the page inside a margin all round (inches) - `bottom` at the foot, the
+ * margin unless said - placed in the room left over as `align` says (centred unless told otherwise):
+ * the scale, and the point it is scaled about and the move after it, for reshapeDrawing. Nothing when
+ * it can't be done - no drawing, a margin that leaves no page, or a drawing that is a single point.
  */
-export function fitToPage(shapes: Shape[], page: Page, margin: number, align: FitAlign = FIT_CENTERED): { k: number; about: Point; by: Point } | null {
+export function fitToPage(shapes: Shape[], page: Page, margin: number, align: FitAlign = FIT_CENTERED, bottom = margin): { k: number; about: Point; by: Point } | null {
   if (!shapes.length) return null;
   const d = drawnBox(shapes);
   const dw = d.x1 - d.x0, dh = d.y1 - d.y0;
-  const room = { w: page.w - 2 * margin, h: page.h - 2 * margin };
+  const room = { w: page.w - 2 * margin, h: page.h - margin - bottom };
   if (room.w <= 0 || room.h <= 0) return null;
   // A drawing that is only a line across or down has no height (or width) to fit by.
   const k = Math.min(dw > 1e-9 ? room.w / dw : Infinity, dh > 1e-9 ? room.h / dh : Infinity);

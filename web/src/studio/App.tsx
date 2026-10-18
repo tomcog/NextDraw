@@ -377,7 +377,7 @@ export default function App() {
    const next = list.map((sh) => {
     const p = sh.photo;
     if (!p?.fit) return sh;
-    const { crop, ...box } = placeOnPage(p.width / p.height, page, p.fit, p.margin ?? 0.5, p.align);
+    const { crop, ...box } = placeOnPage(p.width / p.height, page, p.fit, p.margin ?? 0.5, p.align, p.marginBottom ?? p.margin ?? 0.5);
     if (Math.abs(box.x - sh.x) < 1e-6 && Math.abs(box.y - sh.y) < 1e-6 && Math.abs(box.x2 - sh.x2) < 1e-6 && Math.abs(box.y2 - sh.y2) < 1e-6) return sh;
     changed = true;
     return { ...sh, ...box, rotation: undefined, photo: { ...p, crop } };
@@ -1056,9 +1056,9 @@ export default function App() {
  };
 
 
- /** Scale the drawing as big as the paper allows inside a margin all round, and centre it there. */
- const fitDrawing = (marginMm: number, align: FitAlign) => {
-  const fit = fitToPage(shapes, page, marginMm / 25.4, align);
+ /** Scale the drawing as big as the paper allows inside a margin all round - deeper at the bottom, if asked - placed as `align` says. */
+ const fitDrawing = (marginMm: number, align: FitAlign, bottomMm = marginMm) => {
+  const fit = fitToPage(shapes, page, marginMm / 25.4, align, bottomMm / 25.4);
   if (fit) reshape(fit.k, fit.about, fit.by);
  };
 

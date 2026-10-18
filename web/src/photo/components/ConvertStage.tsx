@@ -90,6 +90,9 @@ interface Props {
   onZoom: (zoom: Zoom) => void;
   loupe: boolean;
   onLoupe: (on: boolean) => void;
+  /** The drawing's other layers - an effect baked before, paths drawn in Studio - bottom first, each its
+   *  paths' data in inches on the page and its ink: drawn under the image's lines. */
+  others?: { color: string; d: string[] }[];
   /** Cropping: the part of the whole picture kept - left, top, right, bottom, as fractions - set by dragging. */
   cropping?: { part: Part; onPart: (part: Part) => void };
 }
@@ -101,7 +104,7 @@ type Part = [number, number, number, number];
  * zooms and the loupe that Studio and Plot show a drawing on. Photo's own views go first in the bar, before
  * the shared ones; side by side, a second canvas follows the first's zoom.
  */
-export function ConvertStage({ photo, parts, box, page, paperColor, model, ink, view, onView, show, onShow, zoom, onZoom, loupe, onLoupe, cropping }: Props) {
+export function ConvertStage({ photo, parts, box, page, paperColor, model, ink, view, onView, show, onShow, zoom, onZoom, loupe, onLoupe, cropping, others = [] }: Props) {
   const read = usePhotoRead(photo.src);
   const w = box.x1 - box.x0;
   const h = box.y1 - box.y0;
@@ -185,6 +188,12 @@ export function ConvertStage({ photo, parts, box, page, paperColor, model, ink, 
   // The lines as ink, drawn the way Studio draws a drawing's layers: Outline or Preview.
   const lines = (
     <InkGroup sim={view === "preview"} penIn={ink.penWidthMm / 25.4} build={ink.build}>
+      {/* What's under the image on the page: earlier effects baked into layers, and the rest. */}
+      {others.map((o, k) => (
+        <InkLayer key={`o${k}`} color={o.color} sim={view === "preview"} opacity={ink.opacity} build={ink.build} builds={ink.builds} opaque={ink.opaque}>
+          {o.d.map((d, i) => <path key={i} d={d} fill="none" />)}
+        </InkLayer>
+      ))}
       <g transform={`translate(${at.x} ${at.y})`}>
         {read && parts.map((part, k) => (
           // Ink is see-through unless the pen's preset says it's opaque (Tom, 2026-10-11): laid on the
