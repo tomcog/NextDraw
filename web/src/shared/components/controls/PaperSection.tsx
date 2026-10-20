@@ -64,8 +64,8 @@ interface Props {
   /** Measure in inches or millimetres: one choice for all three apps (useUnits, and Plot's settings). */
   onUnits: (units: Units) => void;
   /** Turn the paper and everything on it a quarter turn, 1 right or -1 left: landscape to portrait, as a
-   *  sheet is turned by hand. Also what Landscape and Portrait do while there's a drawing, so it stays on
-   *  the sheet as it was. Left out while there is no drawing to turn. */
+   *  sheet is turned by hand. Landscape and Portrait never do this: they turn the paper alone. Left out
+   *  while there is no drawing to turn. */
   onTurnDrawing?: (dir: 1 | -1) => void;
   /** Scale the drawing to fill the paper less a margin all round (in mm), placed in the room left
    *  over as `align` says - centred, or against an edge. Left out while there is no drawing to fit. */
@@ -217,12 +217,9 @@ export function PaperSection({ w, h, sizeId, units, color, collapsibleKey, disab
                 title={hint}
                 disabled={disabled}
                 onClick={() => {
-                  if (on) return; // already lying that way
-                  // With a drawing on it, the sheet is turned with the drawing on it - a right turn to
-                  // lie on its side, a left one to stand up, so going back and forth comes back as it
-                  // was. With nothing on it, only its sides swap.
-                  if (onTurnDrawing) onTurnDrawing(wide ? 1 : -1);
-                  else onDimensions(h, w);
+                  // Only the paper turns, as it lies on the plotter: the drawing stays as it is. The
+                  // Drawing transform's turn buttons are what take the drawing with it.
+                  if (!on) onDimensions(h, w); // already lying that way otherwise
                 }}
               />
             );

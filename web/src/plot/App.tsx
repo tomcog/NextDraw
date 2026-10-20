@@ -1001,27 +1001,6 @@ export default function App() {
   const layerCount = drawingLayers ? drawingLayers.length : null;
   const simulate = showPenUp && layerCount !== null && (layerCount <= 1 || Boolean(plotLayerId));
   const [artWarnings, setArtWarnings] = useState<string[]>([]);
-  // Which drawing, and which change to it, the artwork on show was read from - the key it was asked
-  // for by - so it's never taken for another's.
-  const [artKey, setArtKey] = useState("");
-  // A drawing reaching Plot lying the other way from the paper on the bed - its page on its side on
-  // paper standing up, or the other way about - is turned with its page to lie the way the paper does,
-  // as the sheet would be turned to go on the bed. Once for each drawing opened, when its page is first
-  // known; the paper stays as it lies. A change not saved, like a turn by hand.
-  const autoTurned = useRef<string | null>(null);
-  useEffect(() => {
-    const opened = status?.file_opened;
-    const current = artKey === [fileName, drawingVersion, refs.current.scale, refs.current.rotation, JSON.stringify(refs.current.hatchSpacing)].join("|");
-    if (!fileName || !artPreview || !opened || !current || !sharedReady || busy || autoTurned.current === opened) return;
-    const { paper_w: pw, paper_h: ph } = settings;
-    const { widthIn: dw, heightIn: dh } = artPreview;
-    if (!(pw > 0 && ph > 0) || Math.abs(pw - ph) < 0.5 || Math.abs(dw - dh) < 0.02) return; // a square lies neither way
-    autoTurned.current = opened;
-    if (pw > ph === dw > dh) return;
-    void reshape({ turn_paper: 1, page_only: true }).then((res) => {
-      if (res?.turned_paper) setLocalMessage({ text: `Turned the drawing to lie the way the paper does: ${pw > ph ? "landscape" : "portrait"}`, tone: "ok" });
-    });
-  }, [fileName, artPreview, artKey, drawingVersion, status?.file_opened, sharedReady, busy, settings.paper_w, settings.paper_h]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {
     if (!fileName) return;
     const seq = ++estimateSeq.current;
@@ -1037,7 +1016,6 @@ export default function App() {
         .then((art) => {
           if (key !== artworkKey.current) return; // a newer size or turn was asked for
           setArtPreview(parsePreview(art.svg));
-          setArtKey(key);
           setDrawingLayers(art.layers);
           setArtWarnings(art.warnings);
         })

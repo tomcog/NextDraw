@@ -4536,8 +4536,7 @@ def reshape_current():
             root.set("width", f"{page_h:g}in")
             root.set("height", f"{page_w:g}in")
             root.set("viewBox", f"{vx:g} {vy:g} {vh:g} {vw:g}")
-            # page_only: the page turned to lie the way the paper already does - that paper stays.
-            plot = None if body.get("page_only") else read_plot(root)
+            plot = read_plot(root)
             paper = plot.get("paper") if isinstance(plot, dict) else None
             if isinstance(paper, dict) and "paper_w" in paper and "paper_h" in paper:
                 paper["paper_w"], paper["paper_h"] = paper["paper_h"], paper["paper_w"]
