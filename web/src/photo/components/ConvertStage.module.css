@@ -51,17 +51,6 @@
   vector-effect: non-scaling-stroke;
 }
 
-/* The trim, where the print is cut: a guide on the stage only, never drawn. */
-.trimGuide {
-  fill: none;
-  stroke: var(--ui-action);
-  stroke-width: 1;
-  stroke-dasharray: 4 3;
-  opacity: 0.7;
-  vector-effect: non-scaling-stroke;
-  pointer-events: none;
-}
-
 /* The trim marks over the picture, before there are lines: thin, in their layer's ink. */
 .trimMarks {
   fill: none;

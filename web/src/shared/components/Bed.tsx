@@ -4,6 +4,7 @@ import styles from "./Bed.module.css";
 import { inkLayer, VARNISH_LINE_MM } from "../lib/ink";
 import { type Box, type Zoom } from "./BedCanvas";
 import { NextDrawCanvas } from "./NextDrawCanvas";
+import { TrimGuide } from "./TrimGuide";
 import type { PreviewToolbarProps } from "./PreviewToolbar";
 import { MM, UNITS } from "../lib/constants";
 import { maxPlacement, minPlacement, type Footprint } from "../lib/geometry";
@@ -31,6 +32,7 @@ interface Props {
   canDrag: boolean;
   onOpenBrowser: () => void;
   toolbar?: ReactNode; // sits on the width dimension line, at its right end
+  trimBoxes?: { x0: number; y0: number; x1: number; y1: number }[]; // trim marks' trims, in inches on the drawing's page: dashed, on screen only
   layerLooks: Record<string, { color: string | null; skipped: boolean; hidden: boolean }> | null;
   layerOrder?: string[]; // ids bottom-first: the order they plot, and so the order they stack
   inkOpacity?: number; // how solid the tool's ink is; strokes multiply, so crossings darken
@@ -376,6 +378,10 @@ export function Bed(props: Props) {
             height={fp.h * UNITS}
           />
         )}
+        {/* Where the print is cut, as in Studio and Image: with the drawing, wherever it's placed. */}
+        {fp && props.trimBoxes?.map((b, i) => (
+          <TrimGuide key={i} box={{ x0: (fp.x + b.x0) * UNITS, y0: (fp.y + b.y0) * UNITS, x1: (fp.x + b.x1) * UNITS, y1: (fp.y + b.y1) * UNITS }} />
+        ))}
       </g>
 
       <g

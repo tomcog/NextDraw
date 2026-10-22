@@ -139,8 +139,10 @@ get complicated, and it never needs Studio's tools for drawing and transforming 
     `trimMarks.ts`); Image and Studio make them to the drawing they hold, and Plot, which holds no
     shapes, reads the current drawing, makes them and sends it back as a change not saved
     (`editCurrent.ts`) - refused for a drawing with marks the shapes can't hold. A paper turn stands
-    the trim the other way round rather than turning it (`whole.ts`). Image's stage shows the trim as a
-    dashed guide in every view, and the marks over the picture too. Tests: `tests/trimMarks.test.ts`.
+    the trim the other way round rather than turning it (`whole.ts`). Every app shows the trim as a
+    dashed outline, on screen only (`shared/components/TrimGuide.tsx`): Image's stage in every view,
+    Studio's canvas, Plot's preview (which reads the drawing into shapes only when it has trim marks).
+    Image also shows the marks over the picture. Tests: `tests/trimMarks.test.ts`.
   - Photo holds the whole drawing. Anything Studio added (crop marks, words) is kept and saved back.
     The drawing worked on last is picked up again (`photo-last-file`), and `/image?open=<path>` (once `/photo`, which still forwards) opens
     a given one.

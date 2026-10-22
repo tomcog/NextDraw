@@ -18,10 +18,13 @@ const sizeIdOf = (page: Page) =>
     return (Math.abs(w - page.w) < 0.01 && Math.abs(h - page.h) < 0.01) || (Math.abs(h - page.w) < 0.01 && Math.abs(w - page.h) < 0.01);
   })?.id ?? "custom";
 
-/** The current drawing as shapes, or null with none open. Throws for one that can't be read whole. */
-export async function readCurrent(): Promise<{ current: Current; drawing: ReturnType<typeof parseDrawing> } | null> {
+/**
+ * The current drawing as shapes, or null with none open - or with one `wanted` turns down, which is
+ * then never parsed: reading a big drawing into shapes takes a while. Throws for one that can't be read.
+ */
+export async function readCurrent(wanted?: (svg: string) => boolean): Promise<{ current: Current; drawing: ReturnType<typeof parseDrawing> } | null> {
   const current = await api<Current>("/api/current");
-  if (current.empty) return null;
+  if (current.empty || (wanted && !wanted(current.svg))) return null;
   return { current, drawing: parseDrawing(current.svg) };
 }
 

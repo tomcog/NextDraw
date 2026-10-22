@@ -14,6 +14,7 @@ import { textRuns, type StrokeFont } from "../../shared/lib/drawing/text";
 import type { Layer } from "../../shared/lib/drawing/shapes";
 import { type BedCanvasHandle, type Box } from "../../shared/components/BedCanvas";
 import { NextDrawCanvas } from "../../shared/components/NextDrawCanvas";
+import { TrimGuide } from "../../shared/components/TrimGuide";
 import { InkGroup, InkLayer } from "../../shared/components/Ink";
 import { isVarnishLayer, VARNISH_LINE_MM } from "../../shared/lib/ink";
 import type { PreviewToolbarProps, View } from "../../shared/components/PreviewToolbar";
@@ -835,6 +836,11 @@ export function Canvas({ bar, page, paperColor, shapes, fills, layers, activeLay
                 );
               })}
             </InkGroup>
+            {/* The trim each set of trim marks is for, dashed: on screen only, as in Image and Plot.
+                It goes with the marks when they're carried, and away when their layer's hidden. */}
+            {shapes.filter((sh) => sh.curve?.kind === "trim" && !layers.find((l) => l.id === sh.layerId)?.hidden).map((sh) => (
+              <TrimGuide key={`trim-${sh.id}`} box={boxOf(sh)} transform={[carriedIds?.has(sh.id) ? shift : "", turnAttr(sh) ?? ""].join(" ").trim() || undefined} />
+            ))}
 
             {/* Interface: what you can see and grab that the pen will never draw. Outside the ink
                 group on purpose - the preview rules paint everything under them as ink, so a dashed

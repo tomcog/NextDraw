@@ -1,0 +1,10 @@
+/* The trim, where the print is cut: a guide on screen only, never drawn - the same in every app. */
+.guide {
+  fill: none;
+  stroke: var(--ui-action);
+  stroke-width: 1;
+  stroke-dasharray: 4 3;
+  opacity: 0.7;
+  vector-effect: non-scaling-stroke;
+  pointer-events: none;
+}

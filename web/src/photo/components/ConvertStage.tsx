@@ -4,6 +4,7 @@ import { useId, useRef, type ReactNode } from "react";
 import type { Box, Zoom } from "../../shared/components/BedCanvas";
 import { InkGroup, InkLayer } from "../../shared/components/Ink";
 import { NextDrawCanvas } from "../../shared/components/NextDrawCanvas";
+import { TrimGuide } from "../../shared/components/TrimGuide";
 import type { View } from "../../shared/components/PreviewToolbar";
 import { DEFAULT_SETTINGS, UNITS } from "../../shared/lib/constants";
 import { channelAdjusted, photoMarks, photoOrigin, pictureOf, type Photo } from "../../shared/lib/drawing/photo";
@@ -230,7 +231,7 @@ export function ConvertStage({ photo, parts, box, page, paperColor, model, ink, 
   // The trim as a guide on every view; over the picture alone, its marks too, since there are no lines there.
   const trimGuide = (marks: boolean) => trim && (
     <>
-      <rect className={styles.trimGuide} x={trim.box.x0} y={trim.box.y0} width={trim.box.x1 - trim.box.x0} height={trim.box.y1 - trim.box.y0} />
+      <TrimGuide box={trim.box} />
       {marks && trim.d.map((d, i) => <path key={i} className={styles.trimMarks} stroke={trim.color} d={d} />)}
     </>
   );

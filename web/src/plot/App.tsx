@@ -48,6 +48,7 @@ import { PaperSection, paperMarginMm } from "../shared/components/controls/Paper
 import { TrimMarksSection } from "../shared/components/controls/TrimMarksSection";
 import { editCurrent, readCurrent } from "../shared/lib/drawing/editCurrent";
 import type { Opened } from "../shared/lib/drawing/parse";
+import { boxOf } from "../shared/lib/drawing/shapes";
 import { drawingBoxOf, trimShapeOf, withDrawingMoved, withTrimBox, withTrimMarks, withTrimOff, withTrimOn, type TrimDrawing } from "../shared/lib/drawing/trimMarks";
 import { PanelToolbar, panelIcon } from "../shared/components/PanelToolbar";
 import { PenSection } from "./components/controls/PenSection";
@@ -1017,15 +1018,17 @@ export default function App() {
   // shown straight away; the plot simulation - pen paths, time, reach - takes seconds on a big
   // drawing and replaces it when done. `updating` covers the gap, and Plot waits for it.
   const [drawingVersion, setDrawingVersion] = useState(0); // bumped when a drawing is (re)loaded
-  // The drawing as shapes, for the Trim marks card while it's out (see editTrim): read again whenever it changes.
+  // The drawing as shapes, for the Trim marks card (see editTrim) and the trim's dashed outline on the
+  // preview: read again whenever it changes. Only a drawing with trim marks is read into shapes - the
+  // rest only while the card is out, to be given some.
   const [trimDrawing, setTrimDrawing] = useState<Opened | null>(null);
   useEffect(() => {
-    if (!trimCard || !fileName) {
+    if (!fileName) {
       setTrimDrawing(null);
       return;
     }
     let stale = false;
-    readCurrent()
+    readCurrent((svg) => trimCard || /"kind"\s*:\s*"trim"/.test(svg))
       .then((read) => !stale && setTrimDrawing(read?.drawing ?? null))
       .catch(() => !stale && setTrimDrawing(null));
     return () => {
@@ -1946,6 +1949,9 @@ export default function App() {
               settings={settings}
               preview={preview}
               footprint={fp}
+              trimBoxes={trimDrawing?.shapes
+                .filter((sh) => sh.curve?.kind === "trim" && !trimDrawing.layers.find((l) => l.id === sh.layerId)?.hidden)
+                .map((sh) => boxOf(sh))}
               fitsOnBed={onBed}
               fitsOnPaper={onPaper}
               placement={placement}
