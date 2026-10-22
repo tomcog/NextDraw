@@ -47,6 +47,14 @@ const numbers = (raw: string | null) =>
 
 const attr = (el: Element, name: string) => Number(el.getAttribute(name) ?? "0") || 0;
 
+/**
+ * Illustrator marks what it saves as SVG with a "Generator: Adobe Illustrator" comment. Export As
+ * leaves the comment out, but still names layers and groups in data-name and styles as .cls-1, .cls-2
+ * - and still counts in points. Read as is_illustrator_svg in server.py reads it.
+ */
+const isIllustrator = (text: string) =>
+  /Adobe Illustrator/.test(text) || /\sdata-name=/.test(text) || /\.cls-\d+\s*\{/.test(text);
+
 export function parseDrawing(text: string): Opened {
   const doc = new DOMParser().parseFromString(text, "image/svg+xml");
   const svg = doc.documentElement;
@@ -59,7 +67,8 @@ export function parseDrawing(text: string): Opened {
   // A file saved without a page size is sized from its viewBox, which counts in units rather than
   // inches: 72 to the inch for Illustrator's exports, 96 for everyone else's - the same reading
   // Plot's normalize_size makes, so the two apps agree on how big a drawing is.
-  const perUnit = /Adobe Illustrator/.test(text.slice(0, 4000)) ? 72 : 96;
+  const illustrator = isIllustrator(text);
+  const perUnit = illustrator ? 72 : 96;
   // The page in inches, and how many of the drawing's own units make one inch. A drawing Studio wrote
   // has a viewBox in inches, so the scale is 1; anything else is converted on the way in.
   const page: Page = {
@@ -166,7 +175,6 @@ export function parseDrawing(text: string): Opened {
   // Illustrator writes a layer's name: with the characters an id can't hold escaped (_x31_ is "1"),
   // a long number on the end where a name was used twice, and spaces as underscores. Read the way
   // Plot reads them (layer_name in server.py), so both apps call the same layer the same thing.
-  const illustrator = /Generator:\s*Adobe Illustrator/.test(text);
   const labelOf = (g: Element) => (g.getAttribute("inkscape:label") ?? g.getAttribute("label"))?.trim() || undefined;
   const nameOf = (g: Element) => {
     const label = labelOf(g) ?? g.getAttribute("data-name")?.trim();

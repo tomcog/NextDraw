@@ -26,7 +26,7 @@ import { loadFont, type StrokeFont } from "../shared/lib/drawing/font";
 import type { Fill } from "../shared/lib/drawing/hatch";
 import { parseDrawing } from "../shared/lib/drawing/parse";
 import { buildSvg, cleanFileName } from "../shared/lib/drawing/svg";
-import { placeOnPage, plateSetOf, stemWithoutPlate, type Photo } from "../shared/lib/drawing/photo";
+import { plateSetOf, stemWithoutPlate, type Photo } from "../shared/lib/drawing/photo";
 import { boxOf, drawnNodes, newLayerId, type Layer, type Page, type Shape } from "../shared/lib/drawing/shapes";
 import { pathData } from "../shared/lib/drawing/path";
 import { useDrawingFile, type Current } from "../shared/lib/drawing/useDrawingFile";
@@ -242,22 +242,6 @@ export default function App() {
   // Plot drawing this, or waiting to resume it: looked at, not changed (useEditLock).
   const mainRef = useRef<HTMLElement>(null);
   useEditLock(file.lock, mainRef);
-
-  // Photos sized to the page follow it: a new paper size, or turning it, sizes them again.
-  useEffect(() => {
-    setShapes((list) => {
-      let changed = false;
-      const next = list.map((sh) => {
-        const p = sh.photo;
-        if (!p?.fit) return sh;
-        const { crop, ...box } = placeOnPage(p.width / p.height, page, p.fit, p.margin ?? 0.5, p.align, p.marginBottom ?? p.margin ?? 0.5);
-        if (Math.abs(box.x - sh.x) < 1e-6 && Math.abs(box.y - sh.y) < 1e-6 && Math.abs(box.x2 - sh.x2) < 1e-6 && Math.abs(box.y2 - sh.y2) < 1e-6) return sh;
-        changed = true;
-        return { ...sh, ...box, rotation: undefined, photo: { ...p, crop } };
-      });
-      return changed ? next : list;
-    });
-  }, [page]);
 
   const setSize = (id: string) => {
     const size = SIZES.find((s) => s.id === id);

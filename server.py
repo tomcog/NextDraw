@@ -616,8 +616,15 @@ def clean_scale(raw):
 PX_PER_UNIT = {"": 1.0, "px": 1.0, "in": 96.0, "mm": 96 / 25.4, "cm": 96 / 2.54, "pt": 96 / 72, "pc": 16.0}
 
 
+ILLUSTRATOR_CLASS_RULE = re.compile(r"\.cls-\d+\s*\{")  # how Illustrator's Export As names its styles
+
+
 def is_illustrator_svg(root):
-    """Illustrator marks its SVG exports with a 'Generator: Adobe Illustrator' comment."""
+    """
+    Illustrator marks what it saves as SVG with a 'Generator: Adobe Illustrator' comment. Export As
+    leaves the comment out, but still names layers and groups in data-name and styles as .cls-1, .cls-2
+    - and still counts in points.
+    """
     from lxml import etree
     for node in root.iter(etree.Comment):
         if "Adobe Illustrator" in (node.text or ""):
@@ -627,6 +634,11 @@ def is_illustrator_svg(root):
         if isinstance(parent, etree._Comment) and "Adobe Illustrator" in (parent.text or ""):
             return True
         parent = parent.getprevious()
+    for el in root.iter(etree.Element):
+        if el.get("data-name") is not None:
+            return True
+        if el.tag == SVG_NS + "style" and ILLUSTRATOR_CLASS_RULE.search(el.text or ""):
+            return True
     return False
 
 
@@ -4105,8 +4117,61 @@ def restore_page():
 
 
 
+PAPER_KEYS = ("paper_size", "paper_w", "paper_h", "paper_x", "paper_y", "paper_color")
+
+
+def current_paper():
+    """
+    The paper the current drawing is on, and where that drawing sits on the bed: from its block, or its
+    page when it has none - the page is the paper in the editors. Then the paper Plot has chosen, with
+    no drawing open. None when there's nothing to go by.
+    """
+    plot, paper = {}, {}
+    if CURRENT_SVG.exists():
+        try:
+            root = parse_svg(CURRENT_SVG).getroot()
+            plot = read_plot(root) or {}
+            if isinstance(plot.get("paper"), dict):
+                paper = {k: v for k, v in plot["paper"].items() if k in PAPER_KEYS}
+            if not (paper.get("paper_w") and paper.get("paper_h")):
+                frame = page_frame(root)
+                if frame:
+                    paper.update(paper_size="custom", paper_w=round(frame["w"] * 25.4, 2), paper_h=round(frame["h"] * 25.4, 2))
+        except Exception:  # noqa: BLE001 - an unreadable drawing has no paper to keep
+            plot, paper = {}, {}
+    if not (paper.get("paper_w") and paper.get("paper_h")):
+        settings = shared_settings.get("settings") or {}
+        paper = {k: settings[k] for k in PAPER_KEYS if settings.get(k) is not None}
+    if not (paper.get("paper_w") and paper.get("paper_h")):
+        return None
+    return {"paper": paper, **({"placement": plot["placement"]} if isinstance(plot.get("placement"), dict) else {})}
+
+
+def onto_paper(path, kept):
+    """
+    A dropped drawing put on the paper already in use, at full size: the paper, and where the drawing
+    sits on it, go into its block, which every app takes its paper from - so the file's own page size,
+    or a paper saved with it, doesn't change the paper. The drawing keeps its own units and place on
+    its page, so it lands at 100% from the paper's corner.
+    """
+    tree = parse_svg(path)
+    root = tree.getroot()
+    plot = read_plot(root) or {}
+    if plot.get("original_page"):
+        return  # trimmed to its drawing by Plot: its page isn't its paper, and is left as it was
+    plot["paper"] = {**(plot.get("paper") if isinstance(plot.get("paper"), dict) else {}), **kept["paper"]}
+    if "placement" in kept:
+        plot["placement"] = kept["placement"]
+    write_plot(root, plot)
+    path.write_bytes(svg_bytes(tree))
+
+
 @app.post("/api/upload")
 def upload():
+    """
+    A drawing dragged in from the computer, made the current drawing. It goes on the paper already in
+    use rather than bringing its own: dropping a drawing never changes the paper.
+    """
     if job.busy():
         return jsonify(error="Wait for the current plot to finish before loading a new file."), 409
     file = request.files.get("file")
@@ -4115,10 +4180,13 @@ def upload():
     data = file.read()
     if b"<svg" not in data[:4096] and b"<svg" not in data:
         return jsonify(error="That file doesn't look like an SVG."), 400
+    kept = current_paper()
     clear_resume()  # a stopped plot of the previous drawing can't be resumed on this one
     forget_printed()
     CURRENT_SVG.write_bytes(data)
     try:
+        if kept:
+            onto_paper(CURRENT_SVG, kept)
         ensure_layer_ids(CURRENT_SVG)
         plot = read_plot(parse_svg(CURRENT_SVG).getroot())
     except Exception:  # noqa: BLE001 - an unreadable SVG is reported by the estimate

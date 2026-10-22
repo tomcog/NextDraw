@@ -37,7 +37,7 @@ import { fontNames, loadFont, type StrokeFont } from "../shared/lib/drawing/font
 import { fitText } from "../shared/lib/drawing/text";
 import { type Repeat } from "../shared/lib/drawing/repeat";
 import { parseDrawing } from "../shared/lib/drawing/parse";
-import { PLATE_OFF, platesOf, placeOnPage } from "../shared/lib/drawing/photo";
+import { PLATE_OFF, platesOf } from "../shared/lib/drawing/photo";
 import { useHistory } from "../shared/lib/useHistory";
 import { useDrawingFile, type Current } from "../shared/lib/drawing/useDrawingFile";
 import { lockBanner, useEditLock } from "../shared/lib/useEditLock";
@@ -369,22 +369,6 @@ export default function App() {
    return changed ? next : list;
   });
  }, [layers, shapes]);
-
- // Photos sized to the page follow it: a new paper size, or turning it, sizes them again.
- useEffect(() => {
-  setShapes((list) => {
-   let changed = false;
-   const next = list.map((sh) => {
-    const p = sh.photo;
-    if (!p?.fit) return sh;
-    const { crop, ...box } = placeOnPage(p.width / p.height, page, p.fit, p.margin ?? 0.5, p.align, p.marginBottom ?? p.margin ?? 0.5);
-    if (Math.abs(box.x - sh.x) < 1e-6 && Math.abs(box.y - sh.y) < 1e-6 && Math.abs(box.x2 - sh.x2) < 1e-6 && Math.abs(box.y2 - sh.y2) < 1e-6) return sh;
-    changed = true;
-    return { ...sh, ...box, rotation: undefined, photo: { ...p, crop } };
-   });
-   return changed ? next : list;
-  });
- }, [page]);
 
  const snapshot = useMemo<Snapshot>(() => ({ shapes, fills, layers, page }), [shapes, fills, layers, page]);
  const restore = useCallback((next: Snapshot) => {

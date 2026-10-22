@@ -29,16 +29,37 @@ import server  # noqa: E402
 FOLDERS = [ROOT / "samples",
            Path.home() / "Library" / "Mobile Documents" / "com~apple~CloudDocs" / "NextDraw Studio" / "Drawings"]
 
+# One line of JSON a drawing, written as each is walked: every drawing's points in one string grew past
+# the longest string Node will make.
 SCRIPT = """
 import { flattenPath } from "%s";
 const fs = require("fs");
-const out = {};
+const out = fs.openSync(%s, "w");
 for (const file of %s) {
   const svg = fs.readFileSync(file, "utf8");
-  out[file] = [...svg.matchAll(/\\sd="([^"]+)"/g)].map((m) => flattenPath(m[1], 0.01).map((run) => run.map((p) => [p.x, p.y])));
+  const runs = [...svg.matchAll(/\\sd="([^"]+)"/g)].map((m) => flattenPath(m[1], 0.01).map((run) => run.map((p) => [p.x, p.y])));
+  fs.writeSync(out, JSON.stringify(runs) + "\\n");
 }
-console.log(JSON.stringify(out));
+fs.closeSync(out);
 """
+
+
+def compare(file, studio, failed_before):
+    """One drawing's paths, walked out here and as Studio walked them: (paths differing, paths, points)."""
+    svg = Path(file).read_text(encoding="utf-8", errors="replace")
+    failures = paths = points = 0
+    for d, theirs in zip(re.findall(r'\sd="([^"]+)"', svg), studio):
+        ours = server.flatten_path_data(d, 0.01)
+        paths += 1
+        same = len(ours) == len(theirs) and all(
+            len(a) == len(b) and all(abs(p[0] - q[0]) < 1e-9 and abs(p[1] - q[1]) < 1e-9 for p, q in zip(a, b))
+            for a, b in zip(ours, theirs))
+        points += sum(len(r) for r in ours)
+        if not same:
+            failures += 1
+            if failed_before + failures <= 5:
+                print(f"DIFFERS  {Path(file).name}: {d[:70]}…  (python {sum(len(r) for r in ours)} points, studio {sum(len(r) for r in theirs)})")
+    return failures, paths, points
 
 
 def main():
@@ -46,26 +67,17 @@ def main():
     esbuild = ROOT / "web" / "node_modules" / ".bin" / "esbuild"
     with tempfile.TemporaryDirectory() as tmp:
         src = Path(tmp) / "run.ts"
-        src.write_text(SCRIPT % (ROOT / "web" / "src" / "shared" / "lib" / "drawing" / "path.ts", json.dumps(files)))
+        walked = Path(tmp) / "studio.jsonl"
+        src.write_text(SCRIPT % (ROOT / "web" / "src" / "shared" / "lib" / "drawing" / "path.ts", json.dumps(str(walked)), json.dumps(files)))
         out = Path(tmp) / "run.js"
         subprocess.run([str(esbuild), str(src), "--bundle", "--platform=node", "--log-level=error", f"--outfile={out}"], check=True)
-        studio = json.loads(subprocess.run(["node", str(out)], check=True, capture_output=True, text=True).stdout)
+        subprocess.run(["node", str(out)], check=True)
 
-    failures = paths = points = 0
-    for file in files:
-        svg = Path(file).read_text(encoding="utf-8", errors="replace")
-        ds = re.findall(r'\sd="([^"]+)"', svg)
-        for d, theirs in zip(ds, studio[file]):
-            ours = server.flatten_path_data(d, 0.01)
-            paths += 1
-            same = len(ours) == len(theirs) and all(
-                len(a) == len(b) and all(abs(p[0] - q[0]) < 1e-9 and abs(p[1] - q[1]) < 1e-9 for p, q in zip(a, b))
-                for a, b in zip(ours, theirs))
-            points += sum(len(r) for r in ours)
-            if not same:
-                failures += 1
-                if failures <= 5:
-                    print(f"DIFFERS  {Path(file).name}: {d[:70]}…  (python {sum(len(r) for r in ours)} points, studio {sum(len(r) for r in theirs)})")
+        failures = paths = points = 0
+        with walked.open(encoding="utf-8") as studio:
+            for file, line in zip(files, studio):
+                f, p, n = compare(file, json.loads(line), failures)
+                failures, paths, points = failures + f, paths + p, points + n
     print(f"{len(files)} drawings, {paths} paths, {points} points walked out: "
           f"{'Plot and Studio agree on every one' if not failures else f'{failures} paths differ'}.")
     sys.exit(1 if failures else 0)
