@@ -368,14 +368,18 @@ export function Bed(props: Props) {
       <g className={styles.placed} data-drag="" data-dragging={Boolean(drag)} style={fp ? undefined : { display: "none" }}>
         {fp && <rect className={styles.dragTarget} x={fp.x * UNITS} y={fp.y * UNITS} width={fp.w * UNITS} height={fp.h * UNITS} />}
         <g ref={artRef} transform={artTransform} className={showPenUp ? undefined : "hide-pen-up"} style={plotPaths ? { display: "none" } : undefined} />
-        {fp && (
+        {/* The drawing's outline: its trim where it has trim marks (below), and otherwise the box its
+            lines make - not its page, which in every app is the paper's size and so says nothing the
+            paper doesn't. Round the lines in red, trim or no trim, when they go past the plotter's
+            reach or off the paper. */}
+        {fp && (!props.trimBoxes?.length || !(props.fitsOnBed && props.fitsOnPaper)) && (
           <rect
             className={styles.sheetEdge}
             data-over={!(props.fitsOnBed && props.fitsOnPaper)}
-            x={fp.x * UNITS}
-            y={fp.y * UNITS}
-            width={fp.w * UNITS}
-            height={fp.h * UNITS}
+            x={fp.ink.x0 * UNITS}
+            y={fp.ink.y0 * UNITS}
+            width={(fp.ink.x1 - fp.ink.x0) * UNITS}
+            height={(fp.ink.y1 - fp.ink.y0) * UNITS}
           />
         )}
         {/* Where the print is cut, as in Studio and Image: with the drawing, wherever it's placed. */}

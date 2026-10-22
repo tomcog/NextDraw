@@ -27,8 +27,9 @@ const TOL = 0.003;
 
 export function fitsOnBed(fp: Footprint | null, model: PlotterModel | undefined) {
   if (!model || !fp) return true;
+  // The lines alone, as on the paper: the page's empty margin may run past the rails on any side.
   return fp.ink.x0 >= -TOL && fp.ink.y0 >= -TOL
-    && fp.x + fp.w <= model.travel_in[0] + TOL && fp.y + fp.h <= model.travel_in[1] + TOL;
+    && fp.ink.x1 <= model.travel_in[0] + TOL && fp.ink.y1 <= model.travel_in[1] + TOL;
 }
 
 export function fitsOnPaper(fp: Footprint | null, s: Settings) {
@@ -50,8 +51,9 @@ export function minPlacement(fp: Footprint | null) {
 export function maxPlacement(fp: Footprint | null, model: PlotterModel | undefined) {
   if (!model || !fp) return { x: Infinity, y: Infinity };
   return {
-    x: Math.max(0, (model.travel_in[0] - fp.w) * 25.4),
-    y: Math.max(0, (model.travel_in[1] - fp.h) * 25.4),
+    // As far as the lines' far edges can go, not the page's: as fitsOnBed judges it.
+    x: Math.max(0, (model.travel_in[0] - (fp.ink.x1 - fp.x)) * 25.4),
+    y: Math.max(0, (model.travel_in[1] - (fp.ink.y1 - fp.y)) * 25.4),
   };
 }
 

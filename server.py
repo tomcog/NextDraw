@@ -1955,6 +1955,15 @@ def placement_problem(settings, placement, estimate):
     width, height = estimate["doc_in"]
     if estimate["rotated"]:
         width, height = height, width
+    else:
+        # Only the lines have to stay within reach, not the page's empty margin past them: with the page
+        # the paper's size, a big sheet's page runs past the rails even where every line is in reach.
+        # Measured as the software flattens them, which keeps them within the travel from the page's
+        # corner - so placed at home what lies beyond is cut there, as it always was, and placed away
+        # from home the far edge still shows how far the carriage would go.
+        bounds = drawing_bounds(settings)
+        if bounds:
+            width, height = bounds[2], bounds[3]
     tol = 0.003
     start_x, start_y = carriage_start(placement)
     # Lines moved left or up to start at home end that much sooner.
