@@ -44,7 +44,11 @@ import { FileSection } from "../shared/components/controls/FileSection";
 import { LayersSection } from "./components/controls/LayersSection";
 import { PositionSection } from "./components/controls/PositionSection";
 import { PresetSection } from "./components/controls/PresetSection";
-import { PaperSection } from "../shared/components/controls/PaperSection";
+import { PaperSection, paperMarginMm } from "../shared/components/controls/PaperSection";
+import { TrimMarksSection } from "../shared/components/controls/TrimMarksSection";
+import { editCurrent, readCurrent } from "../shared/lib/drawing/editCurrent";
+import type { Opened } from "../shared/lib/drawing/parse";
+import { drawingBoxOf, trimShapeOf, withDrawingMoved, withTrimBox, withTrimMarks, withTrimOff, withTrimOn, type TrimDrawing } from "../shared/lib/drawing/trimMarks";
 import { PanelToolbar, panelIcon } from "../shared/components/PanelToolbar";
 import { PenSection } from "./components/controls/PenSection";
 import { SpeedSection } from "./components/controls/SpeedSection";
@@ -423,6 +427,9 @@ export default function App() {
   useEffect(() => save(STORAGE.penCard, penCard), [penCard]);
   const [queueCard, setQueueCard] = useState(() => load<boolean>(STORAGE.queueCard) ?? false);
   useEffect(() => save(STORAGE.queueCard, queueCard), [queueCard]);
+  // The Trim marks card: the same card as Studio's and Image's.
+  const [trimCard, setTrimCard] = useState(() => load<boolean>("plot-trim-card") ?? false);
+  useEffect(() => save("plot-trim-card", trimCard), [trimCard]);
   // What is set less often - where the drawing sits, how it's plotted, the pen and carriage by hand -
   // a card each, from a toolbar of their own at the foot of the others. Put away until wanted.
   const [positionCard, setPositionCard] = useState(() => load<boolean>(STORAGE.positionCard) ?? false);
@@ -594,6 +601,24 @@ export default function App() {
       return null;
     }
   };
+  // Trim marks, set here as in Studio and Image: the drawing read as shapes while their card is out -
+  // Plot doesn't parse drawings otherwise (trimDrawing, below) - and each change made with the same
+  // edits as theirs, then sent back as the current drawing, a change not saved. One at a time.
+  const [trimming, setTrimming] = useState(false);
+  const editTrim = async (edit: (d: TrimDrawing) => TrimDrawing) => {
+    if (busy || trimming) return;
+    setTrimming(true);
+    try {
+      const res = await editCurrent(edit);
+      refs.current.edited = res.edited; // our own change: nothing for the poll to catch up on
+      setDrawingVersion((v) => v + 1);
+    } catch (err) {
+      setLocalMessage({ text: (err as Error).message, tone: "error" });
+    } finally {
+      setTrimming(false);
+    }
+  };
+
   // Fit to the paper where it lies under the page: its corner and size, in inches on the page.
   const fitToPaper = fileName && settings.paper_w > 0 && settings.paper_h > 0
     ? async (marginMm: number, align: FitAlign, bottomMm = marginMm) => {
@@ -992,6 +1017,21 @@ export default function App() {
   // shown straight away; the plot simulation - pen paths, time, reach - takes seconds on a big
   // drawing and replaces it when done. `updating` covers the gap, and Plot waits for it.
   const [drawingVersion, setDrawingVersion] = useState(0); // bumped when a drawing is (re)loaded
+  // The drawing as shapes, for the Trim marks card while it's out (see editTrim): read again whenever it changes.
+  const [trimDrawing, setTrimDrawing] = useState<Opened | null>(null);
+  useEffect(() => {
+    if (!trimCard || !fileName) {
+      setTrimDrawing(null);
+      return;
+    }
+    let stale = false;
+    readCurrent()
+      .then((read) => !stale && setTrimDrawing(read?.drawing ?? null))
+      .catch(() => !stale && setTrimDrawing(null));
+    return () => {
+      stale = true;
+    };
+  }, [trimCard, fileName, drawingVersion]);
   const [updating, setUpdating] = useState(false);
   const artworkKey = useRef("");
   const estimatedSeq = useRef(0); // the last request whose full simulation is on screen
@@ -1871,6 +1911,7 @@ export default function App() {
               { key: "paper", on: paperCard, toggle: () => setPaperCard((on) => !on) },
               { key: "pen", on: penCard, toggle: () => setPenCard((on) => !on) },
               { key: "queue", on: queueCard, toggle: () => setQueueCard((on) => !on) },
+              { key: "trim", on: trimCard, toggle: () => setTrimCard((on) => !on) },
             ]}
           />
           {/* Setup's way in, at the foot of the toolbars, as it was in Studio and Image. */}
@@ -2113,6 +2154,27 @@ export default function App() {
                 onRemove={(id) => changeQueue(queue.filter((i) => i.id !== id))}
                 onRemoveDone={() => changeQueue(queue.filter((i) => !i.done))}
                 onMove={moveInQueue}
+              />
+            </div>
+          </Card>
+          )}
+          {trimCard && (
+          <Card variant="flat" className={styles.controls}>
+            <div className={`${styles.cardBody} ${controls.cardSections}`}>
+              <TrimMarksSection
+                collapsibleKey="plot-trim"
+                trim={trimDrawing ? trimShapeOf(trimDrawing.shapes) : undefined}
+                drawing={trimDrawing ? drawingBoxOf(trimDrawing.shapes) : null}
+                page={trimDrawing?.page ?? { w: settings.paper_w / 25.4, h: settings.paper_h / 25.4 }}
+                units={settings.units}
+                busy={busy || trimming || !trimDrawing}
+                refused={!fileName ? "Open a drawing to give it trim marks."
+                  : trimDrawing?.unsupported ? `This drawing has ${trimDrawing.unsupported === 1 ? "a mark" : `${trimDrawing.unsupported} marks`} that can't be redrawn from shapes, so changing it would lose ${trimDrawing.unsupported === 1 ? "it" : "them"}. Add trim marks in Studio or Image instead.`
+                  : undefined}
+                onOn={(on) => void editTrim((d) => (on ? withTrimOn(d, active?.palette ?? [], paperMarginMm() / 25.4) : withTrimOff(d)))}
+                setBox={(box) => void editTrim((d) => withTrimBox(d, box))}
+                setMarks={(curve) => void editTrim((d) => withTrimMarks(d, curve))}
+                moveDrawing={(dx, dy) => void editTrim((d) => withDrawingMoved(d, dx, dy))}
               />
             </div>
           </Card>

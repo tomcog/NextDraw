@@ -128,16 +128,19 @@ get complicated, and it never needs Studio's tools for drawing and transforming 
   - Hatching has a Smoothing setting (mm on the page): the photo, colours too, is blurred before it's
     hatched, so busy patches come out as tone rather than short dashes. `squiggle()` in
     `shared/lib/drawing/photo.ts`; tests in `web/tests/squiggle.test.ts`.
-  - Trim marks (2026-10-21), the scissors in the Vignette and Mask toolbar: the size the print is cut
-    to (a common size or typed, Turn), where the trim sits on the paper, and where the image sits in
-    it (Center on paper, Center on image, Center image), with each mark's length and its offset off the
-    corner. The marks are a live layer of their own ("Black - Trim marks", the darkest pen, on top): a
-    `trim` curve in `shared/lib/drawing/parametric.ts` whose box is the trim, redrawn whenever a number
-    changes, so Studio's Curve card sets the same two numbers and Plot plots them as any layer. Studio
-    also has a Trim marks tool in its drawing tools: drag the trim, and the marks go on the Trim marks layer (made if needed). A
-    paper turn stands the trim the other way round rather than turning it (`whole.ts`). The stage shows
-    the trim as a dashed guide in every view, and the marks over the picture too. Helpers and tests:
-    `trimMarks.ts`, `tests/trimMarks.test.ts`.
+  - Trim marks (2026-10-21), the same card in all three apps (`shared/components/controls/TrimMarksSection.tsx`):
+    Image's switch is with Vignette and Mask, Studio's with Signature and Registration, Plot's with its
+    card switches. On puts marks round what's drawn; then the size the print is cut to (a common size
+    or typed, Turn), where the trim sits on the paper (Center on paper, Center on drawing), where the
+    drawing sits in it (everything but the marks moved; Center drawing), and each mark's length and
+    offset. The marks are a live layer of their own ("Black - Trim marks", the darkest pen, under any
+    Varnish): a `trim` curve in `shared/lib/drawing/parametric.ts` whose box is the trim, redrawn
+    whenever a number changes. The edits are shared (`withTrimOn`, `withTrimBox` and the rest in
+    `trimMarks.ts`); Image and Studio make them to the drawing they hold, and Plot, which holds no
+    shapes, reads the current drawing, makes them and sends it back as a change not saved
+    (`editCurrent.ts`) - refused for a drawing with marks the shapes can't hold. A paper turn stands
+    the trim the other way round rather than turning it (`whole.ts`). Image's stage shows the trim as a
+    dashed guide in every view, and the marks over the picture too. Tests: `tests/trimMarks.test.ts`.
   - Photo holds the whole drawing. Anything Studio added (crop marks, words) is kept and saved back.
     The drawing worked on last is picked up again (`photo-last-file`), and `/image?open=<path>` (once `/photo`, which still forwards) opens
     a given one.

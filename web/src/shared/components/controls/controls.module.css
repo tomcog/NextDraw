@@ -670,3 +670,12 @@
   color: var(--ui-text-faint);
   flex: none;
 }
+
+/* Trim marks' fields and buttons: as many to a row as fit, each at least a narrow field wide. */
+.trimFields {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 0.5rem;
+}
+.trimFields > * { flex: 1 1 4.5rem; min-width: 4.5rem; }

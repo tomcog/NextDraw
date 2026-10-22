@@ -1,9 +1,9 @@
 import { Segment, SegmentedControl, Toolbar } from "@tomcoggia/ui";
-import { Grid3x3, Image, Layers2, ListOrdered, Move, Pen, Save, SlidersHorizontal, StickyNote, Wrench } from "lucide-react";
+import { Grid3x3, Image, Layers2, ListOrdered, Move, Pen, Save, Scissors, SlidersHorizontal, StickyNote, Wrench } from "lucide-react";
 import bar from "./PreviewToolbar.module.css";
 import { ToolbarIcons } from "./ToolbarIcons";
 
-/** The rail's cards the toolbar shows and hides, in the order they stack. Grid is Studio's; Image, and Layers and Adjustments (a toolbar of their own), Image's; Queue, and Drawing position, Plot options and Utilities (a toolbar of their own), Plot's (Studio's Layers switch is with its tools). */
+/** The rail's cards the toolbar shows and hides, in the order they stack. Grid is Studio's; Image, and Layers and Adjustments (a toolbar of their own), Image's; Queue, and Drawing position, Plot options and Utilities (a toolbar of their own), Plot's (Studio's Layers switch is with its tools). Trim marks is every app's. */
 const PANELS = {
   file: { label: "File", icon: <Save />, what: "the File card" },
   paper: { label: "Paper", icon: <StickyNote />, what: "the Paper card: what the drawing is plotted on" },
@@ -16,12 +16,17 @@ const PANELS = {
   position: { label: "Drawing position", icon: <Move />, what: "the Drawing position card: where the drawing sits on the plotter" },
   options: { label: "Plot options", icon: <SlidersHorizontal />, what: "the Plot options card: how the drawing is plotted" },
   utilities: { label: "Utilities", icon: <Wrench />, what: "the Utilities card: moving the pen and carriage by hand" },
+  // Every app's: the switch is with Image's vignette and mask, Studio's signature, and Plot's cards.
+  trim: { label: "Trim marks", icon: <Scissors />, what: "the Trim marks card: where the print is cut, for the size it's finished at, and the drawing placed in it" },
 };
 
 export type Panel = keyof typeof PANELS;
 
 /** A card's glyph, for its heading: the same as its button here. */
 export const panelIcon = (key: Panel) => PANELS[key].icon;
+
+/** A card's switch's tooltip, for an app that puts the switch in a toolbar of its own. */
+export const panelTitle = (key: Panel, on: boolean) => `${on ? "Hide" : "Show"} ${PANELS[key].what}`;
 
 /**
  * Shared: which of the rail's cards are out - File, Paper, Pen and whatever is the app's own. Each a

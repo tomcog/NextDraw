@@ -28,6 +28,8 @@ import { Canvas, isStrokeTool, type Tool } from "./components/Canvas";
 import { strokeKey, withoutStrokes } from "./lib/strokePick";
 import { mergeLines } from "./lib/mergeLines";
 import { SIGNATURE_FONT, SIGNATURE_LABEL, signatureShapes, signatureSize } from "./lib/signature";
+import { TrimMarksSection } from "../shared/components/controls/TrimMarksSection";
+import { drawingBoxOf, trimShapeOf, withDrawingMoved, withTrimBox, withTrimMarks, withTrimOff, withTrimOn, type TrimDrawing } from "../shared/lib/drawing/trimMarks";
 import { TRIM_LABEL } from "../shared/lib/drawing/trimMarks";
 import { isRegistrationBlock, registrationShapes, registrationSize } from "./lib/registration";
 import { clearSpot, inkMap } from "./lib/clearSpot";
@@ -293,6 +295,9 @@ export default function App() {
  useEffect(() => remember("studio-pen-card", penCard), [penCard]);
  const [gridCard, setGridCard] = useState(() => load<boolean>("studio-grid-card") ?? true);
  useEffect(() => remember("studio-grid-card", gridCard), [gridCard]);
+ // The Trim marks card, from its switch beside the signature: the same card as Image's and Plot's.
+ const [trimCard, setTrimCard] = useState(() => load<boolean>("studio-trim-card") ?? false);
+ useEffect(() => remember("studio-trim-card", trimCard), [trimCard]);
  // The Simplifier as the tool in hand, its card out. Put down each time the page opens, as a tool is.
  const [simplifierCard, setSimplifierCard] = useState(false);
  // Jiggle the same way: a tool in hand with its card out, put down when another is taken up. Its
@@ -1106,6 +1111,15 @@ export default function App() {
   setTargets((list) => (list.includes(on) ? list : [...list, on]));
   pick(shape.id);
   setTool("select");
+ };
+
+ /** A change to the trim marks, or to the drawing placed in them: one undo step. */
+ const editTrim = (edit: (d: TrimDrawing) => TrimDrawing) => {
+  const next = edit({ shapes, layers, page });
+  if (next.shapes === shapes && next.layers === layers) return;
+  record();
+  setShapes(next.shapes);
+  setLayers(next.layers);
  };
 
  const addSignature = async () => {
@@ -2073,6 +2087,7 @@ export default function App() {
       simplifying={simplifierCard}
       jiggling={jiggleCard}
       onSignature={() => void addSignature()}
+      trimCard={{ on: trimCard, toggle: () => setTrimCard((on) => !on) }}
       onRegistration={() => void addRegistration()}
       // Picked, the page picks shapes as Select does; picked again, it's put down for Select.
       onSimplify={() => {
@@ -2172,6 +2187,25 @@ export default function App() {
      <Card variant="flat" className={styles.controls}>
       <div className={`${styles.cardBody} ${controls.cardSections}`}>
        <GridSection snapping={snapping} onSnapping={setSnapping} step={snapStep} onStep={setSnapStep} />
+      </div>
+     </Card>
+     )}
+     {/* Trim marks: a live layer, set from this card - the same edits Image and Plot make. */}
+     {trimCard && (
+     <Card variant="flat" className={styles.controls}>
+      <div className={`${styles.cardBody} ${controls.cardSections}`}>
+       <TrimMarksSection
+        collapsibleKey="studio-trim"
+        trim={trimShapeOf(shapes)}
+        drawing={drawingBoxOf(shapes)}
+        page={page}
+        units={units}
+        busy={busy}
+        onOn={(on) => editTrim((d) => (on ? withTrimOn(d, palette, paperMarginMm() / 25.4) : withTrimOff(d)))}
+        setBox={(box) => editTrim((d) => withTrimBox(d, box))}
+        setMarks={(curve) => editTrim((d) => withTrimMarks(d, curve))}
+        moveDrawing={(dx, dy) => editTrim((d) => withDrawingMoved(d, dx, dy))}
+       />
       </div>
      </Card>
      )}

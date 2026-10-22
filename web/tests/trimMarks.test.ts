@@ -5,7 +5,7 @@ import { DOMParser } from "linkedom";
 import { buildSvg } from "../src/shared/lib/drawing/svg";
 import { parseDrawing } from "../src/shared/lib/drawing/parse";
 import { curveStrokes } from "../src/shared/lib/drawing/parametric";
-import { newTrimMarks, trimOffPaper, trimShapeOf, trimSizeIdOf } from "../src/shared/lib/drawing/trimMarks";
+import { drawingBoxOf, newTrimMarks, trimOffPaper, trimShapeOf, trimSizeIdOf, withDrawingMoved, withTrimOff, withTrimOn, withTrimSize } from "../src/shared/lib/drawing/trimMarks";
 import { turnWhole } from "../src/shared/lib/drawing/whole";
 import { boxOf, type Page } from "../src/shared/lib/drawing/shapes";
 
@@ -60,4 +60,24 @@ test("marks past the paper's edge are noticed; sizes are known either way round"
   assert.equal(trimOffPaper(newTrimMarks(box, palette).shape, page), false);
   assert.equal(trimSizeIdOf(7, 5), "5x7");
   assert.equal(trimSizeIdOf(7.1, 5), "custom");
+});
+
+test("the edits every app makes: on round the drawing, sized, the drawing moved in it, off", () => {
+  const ink = { id: "ink", name: "Red", color: "#e5322d" };
+  const varnish = { id: "v", name: "Varnish", color: "#e6e8ec" };
+  const drawn = { id: "r", kind: "rect" as const, x: 3, y: 2, x2: 7, y2: 5, layerId: "ink" };
+  let d = withTrimOn({ shapes: [drawn], layers: [ink, varnish], page }, palette);
+  const trim = trimShapeOf(d.shapes)!;
+  assert.deepEqual(boxOf(trim), { x0: 3, y0: 2, x1: 7, y1: 5 });
+  // Its own layer, under the varnish.
+  assert.deepEqual(d.layers.map((l) => l.name), ["Red", "Black - Trim marks", "Varnish"]);
+  assert.equal(withTrimOn(d, palette), d, "on twice is still one set of marks");
+  d = withTrimSize(d, 5, 7);
+  assert.deepEqual(boxOf(trimShapeOf(d.shapes)!), { x0: 2.5, y0: 0, x1: 7.5, y1: 7 });
+  d = withDrawingMoved(d, 0.5, -1);
+  assert.deepEqual(drawingBoxOf(d.shapes), { x0: 3.5, y0: 1, x1: 7.5, y1: 4 });
+  assert.deepEqual(boxOf(trimShapeOf(d.shapes)!), { x0: 2.5, y0: 0, x1: 7.5, y1: 7 }, "the trim stays put");
+  d = withTrimOff(d);
+  assert.equal(trimShapeOf(d.shapes), undefined);
+  assert.deepEqual(d.layers.map((l) => l.name), ["Red", "Varnish"]);
 });

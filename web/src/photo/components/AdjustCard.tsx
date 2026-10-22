@@ -1,5 +1,6 @@
 import { Card, Checkbox, Segment, SegmentedControl, Toolbar } from "@tomcoggia/ui";
-import { Focus, Scissors, SlidersHorizontal, SquareDashed } from "lucide-react";
+import { Focus, SlidersHorizontal, SquareDashed } from "lucide-react";
+import { panelIcon, panelTitle } from "../../shared/components/PanelToolbar";
 import { Section } from "../../shared/components/controls/Section";
 import { NumberField } from "../../shared/components/controls/NumberField";
 import controls from "../../shared/components/controls/controls.module.css";
@@ -124,8 +125,8 @@ export function AdjustToolbar({ vignette, mask, trim, disabled }: { vignette: { 
             className={trim.on ? bar.on : undefined}
             onClick={trim.toggle}
             disabled={disabled}
-            icon={<Scissors />}
-            title={`${trim.on ? "Hide" : "Show"} the Trim marks card: where the print is cut, for the size it's finished at, and the image placed in it`}
+            icon={panelIcon("trim")}
+            title={panelTitle("trim", trim.on)}
             aria-label="Trim marks card"
           />
         </SegmentedControl>

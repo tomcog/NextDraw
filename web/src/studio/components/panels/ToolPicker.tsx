@@ -1,12 +1,13 @@
 import { useState } from "react";
 import { Segment, SegmentedControl, Toolbar, ToolbarExpander } from "@tomcoggia/ui";
-import { LassoSelect, MousePointer2, PenTool, Pentagon, Rainbow, Scissors, Signal, Spline, SwatchBook, SquareDashedMousePointer, Star, Type, Layers, Vibrate } from "lucide-react";
+import { LassoSelect, MousePointer2, PenTool, Pentagon, Rainbow, Signal, Spline, SwatchBook, SquareDashedMousePointer, Star, Type, Layers, Vibrate } from "lucide-react";
 import { EllipseIcon, LineIcon, RectangleIcon, SignatureIcon, SpiralIcon, SpirographIcon, WaveIcon } from "./toolIcons";
 import bar from "../../../shared/components/PreviewToolbar.module.css";
 import { load, save } from "../../../shared/lib/storage";
 import type { Tool } from "../Canvas";
 import type { Shape } from "../../../shared/lib/drawing/shapes";
 import { ToolbarIcons } from "../../../shared/components/ToolbarIcons";
+import { panelIcon, panelTitle } from "../../../shared/components/PanelToolbar";
 
 /** The tools that pick rather than draw: a group of their own at the head of the Tools bar. */
 const PICKERS: Tool[] = ["select", "strokes", "lasso"];
@@ -27,13 +28,14 @@ const TOOLS: { kind: Tool; label: string; hint: string; icon: JSX.Element }[] = 
   { kind: "spiral", label: "Spiral", hint: "Draw a spiral: drag on the page, then set its turns", icon: <SpiralIcon /> },
   { kind: "arc", label: "Arc", hint: "Arc (A): drag on the page, then set where it starts and how far it goes", icon: <Rainbow /> },
   { kind: "wave", label: "Wave", hint: "Draw a wave: drag on the page, then set how many", icon: <WaveIcon /> },
-  { kind: "trim", label: "Trim marks", hint: "Trim marks: drag the size the print is cut to - marks go at its corners, on a Trim marks layer of their own - then set their length and offset", icon: <Scissors /> },
   { kind: "text", label: "Text", hint: "Text (T): drag to say how tall, then type the words", icon: <Type /> },
 ];
 
 /** A shape's glyph, for its card: the tool that draws its kind, or for a path, which none does, a curve. */
 export function shapeIcon(shape: Shape): JSX.Element | undefined {
   if (shape.kind === "path") return <Spline />;
+  // Trim marks are set from their card rather than drawn with a tool: its glyph.
+  if (shape.curve?.kind === "trim") return panelIcon("trim");
   const kind = shape.curve?.kind ?? shape.kind;
   return TOOLS.find((t) => t.kind === kind)?.icon;
 }
@@ -52,6 +54,8 @@ interface Props {
   onLayers: () => void;
   /** Put the signature on the page: TC and this year, on its own layer, ready to move. */
   onSignature: () => void;
+  /** The Trim marks card - the same as Image's and Plot's - out or away. */
+  trimCard: { on: boolean; toggle: () => void };
   /** Put a registration block for each layer in the page's lower left corner, in plotting order. */
   onRegistration: () => void;
 }
@@ -62,7 +66,7 @@ interface Props {
  * one pressed is what a drag on the page makes. Last, on its own, the Simplifier, which works on
  * what's drawn from its card. One tool in hand at a time across all of them. The names are in the tooltips.
  */
-export function ToolPicker({ tool, onTool, simplifying, onSimplify, jiggling, onJiggle, layersOut, onLayers, onSignature, onRegistration }: Props) {
+export function ToolPicker({ tool, onTool, simplifying, onSimplify, jiggling, onJiggle, layersOut, onLayers, onSignature, trimCard, onRegistration }: Props) {
   // The drawing tools fold away behind their Tool button, open or shut as it was last left.
   const [drawerOpen, setDrawerOpen] = useState(() => load<boolean>("studio-tools-drawer") ?? true);
   const toggleDrawer = (open: boolean) => {
@@ -102,12 +106,12 @@ export function ToolPicker({ tool, onTool, simplifying, onSimplify, jiggling, on
       <ToolbarIcons><Toolbar tone="white" orientation="vertical" aria-label="Drawing tools">
         <ToolbarExpander size="sm" icon={<PenTool />} label="Tool" open={drawerOpen} onOpenChange={toggleDrawer} aria-label="Drawing tool"
           // On the drawer, which the Tool button takes it from; each tool in it has its own.
-          title={drawerOpen ? "Tool: put the drawing tools away" : "Tool: the drawing tools - rectangle, oval, line, the curves, trim marks and text"}>
+          title={drawerOpen ? "Tool: put the drawing tools away" : "Tool: the drawing tools - rectangle, oval, line, the curves and text"}>
           {TOOLS.filter((t) => !PICKERS.includes(t.kind)).map(segment)}
         </ToolbarExpander>
       </Toolbar></ToolbarIcons>
       {/* What works on what's drawn: the Simplifier and Jiggle, from their cards; then what's added at
-          once, so actions - the signature and the registration blocks, placed to be moved from there. */}
+          once, so actions - the signature, trim marks and the registration blocks, placed to be moved from there. */}
       <ToolbarIcons><Toolbar tone="white" orientation="vertical" aria-label="Work on the drawing">
         <SegmentedControl size="sm" aria-label="Work on what's drawn">
           <Segment selected={simplifying} icon={<Spline />} title="Simplifier: fewer points in the drawing's paths, set from its card" onClick={onSimplify}>
@@ -120,6 +124,9 @@ export function ToolPicker({ tool, onTool, simplifying, onSimplify, jiggling, on
         <SegmentedControl size="sm" variant="dark" actions aria-label="Add">
           <Segment icon={<SignatureIcon />} title="Signature: TC and this year, in the page's bottom right corner on its own Signature layer - drag it where it goes" onClick={onSignature}>
             Signature
+          </Segment>
+          <Segment icon={panelIcon("trim")} aria-pressed={trimCard.on} className={trimCard.on ? bar.on : undefined} title={panelTitle("trim", trimCard.on)} onClick={trimCard.toggle}>
+            Trim marks
           </Segment>
           <Segment icon={<SwatchBook />} title="Registration: a solid block for each layer in the page's lower left corner, left to right in the order they're plotted - again to make them afresh after the layers change" onClick={onRegistration}>
             Registration
