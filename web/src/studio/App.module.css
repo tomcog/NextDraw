@@ -328,3 +328,10 @@ span.shapeName { cursor: pointer; }
    main part. */
 /* Doubled, to outweigh the shared rule for every sub-heading (.cardSections fieldset fieldset legend). */
 .pathsSection.pathsSection > fieldset > legend { font-size: 14px; }
+
+/* While a drawing is dragged over the page, an outline says it can be dropped there, as in Image. */
+.stage[data-dragging-file] {
+  outline: 2px dashed var(--ui-action);
+  outline-offset: 4px;
+  border-radius: 4px;
+}

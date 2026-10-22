@@ -11,7 +11,7 @@ import type { FitAlign } from "../../shared/lib/geometry";
 import type { PenColor, Preset } from "../../shared/lib/types";
 import {
   BAND_NAMES, LAYER_SETTINGS, MOST_SIDE_LAYERS, paperToneOf, mostColorsOf, MOST_LAYERS, PHOTO_DEFAULTS, PLATES, PLATE_AIMS, colourGroups, isColourful, matchPens, photoMode,
-  placeOnPage, croppedCopy, partOfPart, photoData, photoFromData, inkNamed, loadProfile, plateOfPhoto, platePens, presetAngle, readTones, hexLinear, linearHex, coverSteps, stemWithoutPlate, turnedCopy, workingCopy, MASK_EDGE_PX, MASK_SIDES, type AnglePreset, type Photo, type PhotoPart, type Plate, type PlateSet, PLATE_SETS, plateSetOf, platesOf,
+  placeOnPage, placeAtOwnSize, photoScale, croppedCopy, joinedPicture, keptPlatesAlike, partOfPart, photoData, photoFromData, inkNamed, loadProfile, plateOfPhoto, platePens, presetAngle, readTones, hexLinear, linearHex, coverSteps, stemWithoutPlate, turnedCopy, workingCopy, MASK_EDGE_PX, MASK_SIDES, type AnglePreset, type Photo, type PhotoPart, type Plate, type PlateSet, PLATE_SETS, plateSetOf, platesOf,
 } from "../../shared/lib/drawing/photo";
 import { boxOf, newLayerId, newShapeId, type Layer, type Page, type Shape } from "../../shared/lib/drawing/shapes";
 import { snapshotShapes } from "../../shared/lib/drawing/snapshot";
@@ -21,6 +21,7 @@ import { searchPensOffPage } from "./penSearch";
 import { folderOf, pictureChannels, pictureSources, type Inks } from "./separationFolder";
 import { load, save as remember } from "../../shared/lib/storage";
 import type { InkProfile, Rendering } from "../../shared/lib/drawing/icc";
+import { penWidthOf } from "../../shared/lib/constants";
 
 /** The profile a photo was last split by, and its intent: what the next is split by to start with. */
 export const PROFILE_KEY = "photo-profile";
@@ -90,24 +91,24 @@ export function photoActions(ctx: PhotoContext) {
   };
   const defaults = { spacingMm: ctx.spacingMm };
 
-  // A photo, from a file on this Mac: made into a working copy, fitted to the page inside a half-inch
-  // margin at its own proportions, and put on the layer being drawn on - whose ink it is hatched in.
+  // A photo, from a file on this Mac: made into a working copy, at the size its file says it is in the
+  // middle of the page, and put on the layer being drawn on - whose ink it is hatched in. Never sized
+  // to the paper: how big it's drawn is the user's to say.
   const addPhoto = async (file: File | undefined) => {
     if (!file || !active) return;
     try {
       const copy = await workingCopy(file);
       await readTones(copy.src);
-      const margin = 0.5;
-      const { crop, ...box } = placeOnPage(copy.width / copy.height, page, "fit", margin);
+      const box = placeAtOwnSize(copy, page);
       const stem = file.name.replace(/\.[^.]+$/, "");
-      const photo: Photo = { ...copy, ...PHOTO_DEFAULTS, spacingMm: defaults.spacingMm, crop, fit: "fit", margin, source: pictureSources.get(file) };
+      const photo: Photo = { ...copy, ...PHOTO_DEFAULTS, spacingMm: defaults.spacingMm, source: pictureSources.get(file) };
       const pens = tool2?.palette ?? [];
       // Matched to the tool's pens as it comes in. A colour photo is split into CMYK, each plate in the
       // pen nearest it (Tom, 2026-10-13) - or with fewer than four colors to choose from, by its
       // colours, each group in the nearest pen. A black and white one is one layer, in the pen
       // nearest its darkest shade. With no palette, it goes on the layer being drawn on, in its ink.
       let parts: { pen: PenColor; photo: Partial<Photo> }[] = [];
-      const penMm = tool2?.settings.pen_width ?? 0.5;
+      const penMm = penWidthOf(tool2);
       const colourful = isColourful(copy.src);
       const cmyk = colourful && pens.length >= PLATES.length ? platePens(pens, PLATES, { penMm, spacingMm: photo.spacingMm, levels: photo.levels }) : [];
       if (cmyk.length && cmyk.every(Boolean)) {
@@ -202,8 +203,8 @@ export function photoActions(ctx: PhotoContext) {
       const matched = used.length ? platePens(pens, used) : [];
       const darkest = darkestPen(pens);
       const [first] = copies;
-      const margin = 0.5;
-      const { crop, ...box } = placeOnPage(first.copy.width / first.copy.height, page, "fit", margin);
+      // At the size the first file says it is: the plates are one picture, so they lie on one another.
+      const box = placeAtOwnSize(first.copy, page);
       const stem = stemWithoutPlate(first.file.name, pens, folderOf(first.file));
       const group = copies.length > 1 ? newShapeId() : undefined;
       const parts = copies.map(({ file, copy }, i) => {
@@ -219,7 +220,7 @@ export function photoActions(ctx: PhotoContext) {
           layerName: pen?.name ?? separation,
           layerColor: pen?.color ?? active.color,
           photo: {
-            ...copy, ...PHOTO_DEFAULTS, spacingMm: defaults.spacingMm, crop, fit: "fit" as const, margin, group, separation, source: pictureSources.get(file), sourceChannel: pictureChannels.get(file),
+            ...copy, ...PHOTO_DEFAULTS, spacingMm: defaults.spacingMm, group, separation, source: pictureSources.get(file), sourceChannel: pictureChannels.get(file),
             angle: plate ? PLATE_AIMS[plate].angle : PHOTO_DEFAULTS.angle + 15 * i,
           } as Photo,
         };
@@ -310,27 +311,98 @@ export function photoActions(ctx: PhotoContext) {
   };
 
   /** The chosen photo's layers as they stand, bottom first: what a mode remembers of itself. */
-  const photoParts = (): PhotoPart[] => {
+  const photoParts = (more: readonly (keyof Photo)[] = []): PhotoPart[] => {
     if (!chosen?.photo) return [];
     const members = chosen.photo.group ? shapes.filter((sh) => sh.photo?.group === chosen.photo!.group) : [chosen];
     const place = (sh: Shape) => layers.findIndex((l) => l.id === sh.layerId);
     return [...members].sort((a, b) => place(a) - place(b)).map((m) => {
       const layer = layers.find((l) => l.id === m.layerId);
-      const own = Object.fromEntries(LAYER_SETTINGS.map((k) => [k, m.photo![k]]));
+      const own = Object.fromEntries([...LAYER_SETTINGS, ...more].map((k) => [k, m.photo![k]]));
       return { layerName: layer?.name ?? "Black", layerColor: layer?.color ?? "#262626", shapeName: m.name ?? "Image", photo: own };
     });
+  };
+
+  /**
+   * The chosen separation's plates as one colour picture, each in its layer's ink, read. A Multichannel
+   * file's are remembered by channel: `one` is the file, `channelInks` each channel's ink, so Reload
+   * joins them again.
+   */
+  const joinedPlates = async () => {
+    const was = chosen!.photo!;
+    const members = was.group ? shapes.filter((sh) => sh.photo?.group === was.group) : [chosen!];
+    const inkOf = (sh: Shape) => layers.find((l) => l.id === sh.layerId)?.color ?? "#262626";
+    const joined = await joinedPicture(members.map((sh) => ({ picture: sh.photo!.src, ink: inkOf(sh) })));
+    await readTones(joined.src);
+    const sources = new Set(members.map((sh) => sh.photo!.source));
+    const one = sources.size === 1 && members.every((sh) => sh.photo!.sourceChannel !== undefined) ? was.source : undefined;
+    const channelInks = one ? Array.from({ length: Math.max(...members.map((sh) => sh.photo!.sourceChannel!)) + 1 }, () => "#ffffff") : undefined;
+    if (channelInks) for (const sh of members) channelInks[sh.photo!.sourceChannel!] = inkOf(sh);
+    return { joined, one, channelInks };
+  };
+
+  /** What a separation's plate has of its own, besides its settings: kept with them to put it back. */
+  const PLATE_OWN = ["src", "width", "height", "ppi", "source", "sourceChannel", "quarterTurns", "cut", "separation", "channelBrightness", "channelContrast", "channelBlackPoint"] as const;
+
+  /**
+   * The chosen separation's plates joined into one colour picture - each plate's ink laid on white
+   * where it's dark, as they'd print together - as one B&W layer, so it can be split by B&W, CMYK,
+   * Image or Multi like any photo. The plates are kept, to come back to as Channels; a Multichannel
+   * file's are remembered by channel, so Reload joins them again. False when there was nothing to join.
+   */
+  const joinSeparations = async () => {
+    const was = chosen?.photo;
+    if (!chosen || !was?.separation || was.profile) return false;
+    setBusy(true);
+    try {
+      const { joined, one, channelInks } = await joinedPlates();
+      const pen = darkestPen(tool2?.palette ?? []) ?? { name: "Black", color: "#262626" };
+      const { name } = photoStem();
+      rebuildPhoto([{
+        layerName: pen.name,
+        layerColor: pen.color,
+        shapeName: name,
+        photo: {
+          // How it's drawn stays; how the plates were split, each its own ink, goes.
+          ...Object.fromEntries(LAYER_SETTINGS.filter((k) => !["style", "angle", "spacingMm", "levels", "offsetMm"].includes(k)).map((k) => [k, undefined])),
+          src: joined.src, width: joined.width, height: joined.height,
+          source: one, sourceChannel: undefined, channelInks, quarterTurns: one ? was.quarterTurns : undefined, cut: one ? was.cut : undefined,
+          separation: undefined, channelBrightness: undefined, channelContrast: undefined, channelBlackPoint: undefined,
+          modes: { ...(was.modes ?? {}), separations: photoParts(PLATE_OWN) },
+        },
+      }], undefined, "Joined the channels into one picture", true);
+      return true;
+    } catch (err) {
+      setMessage({ text: `Couldn't join the channels: ${(err as Error).message}`, ok: false });
+      return false;
+    } finally {
+      setBusy(false);
+    }
   };
 
   /**
     * Split the chosen photo the other way - by value or by colour - keeping how it was split this way
     * for when it comes back, and putting back how it was split that way before, if it has been.
     */
-  const switchPhotoMode = (to: "value" | "colour" | "cmyk" | "profile") => {
+  const switchPhotoMode = (to: "value" | "colour" | "cmyk" | "profile" | "separations") => {
     if (!chosen?.photo) return;
     const from = photoMode(chosen.photo);
     if (from === to) return;
     // A profile split isn't kept to come back to: it's made again, as quickly, from the profile.
     const modes = from === "profile" || from === "separations" ? { ...(chosen.photo.modes ?? {}) } : { ...(chosen.photo.modes ?? {}), [from]: photoParts() };
+    if (to === "separations") {
+      // Back to the file's own channels, each its own picture again, as they were kept.
+      const { separations: back, ...rest } = modes;
+      if (!back?.length) return;
+      const { style, brightness, contrast, saturation } = chosen.photo;
+      const clear = Object.fromEntries(LAYER_SETTINGS.map((k) => [k, undefined]));
+      rebuildPhoto(
+        back.map((part) => ({ ...part, photo: { ...clear, channelInks: undefined, ...part.photo, modes: rest, style, brightness, contrast, saturation } })),
+        back.length > 1 ? chosen.photo.group ?? newShapeId() : undefined,
+        "Back to the file's own channels",
+        true,
+      );
+      return;
+    }
     if (to === "profile") {
       // The profile split by last, while it's still in the folder; or the folder's first.
       const last = load<{ file?: string; path?: string; intent?: number; bpc?: boolean }>(PROFILE_KEY);
@@ -431,7 +503,7 @@ export function photoActions(ctx: PhotoContext) {
       return;
     }
     // Judged by how this pen's lines hatch at this photo's spacing and passes.
-    const matched = platePens(pens, use.plates, { penMm: tool2?.settings.pen_width ?? 0.5, spacingMm: chosen.photo.spacingMm, levels: chosen.photo.levels });
+    const matched = platePens(pens, use.plates, { penMm: penWidthOf(tool2), spacingMm: chosen.photo.spacingMm, levels: chosen.photo.levels });
     if (matched.some((p) => !p)) return;
     const plates = matched.map((p) => p!.color);
     const { name } = photoStem();
@@ -449,7 +521,7 @@ export function photoActions(ctx: PhotoContext) {
           plate, plates, ink: pen.color, angle: PLATE_AIMS[plate].angle,
           // The pen's line width: with the spacing, how much paper each pass covers, which the
           // separation works out its passes from.
-          penMm: tool2?.settings.pen_width ?? 0.5,
+          penMm: penWidthOf(tool2),
           ...extra,
         },
       })),
@@ -630,7 +702,7 @@ export function photoActions(ctx: PhotoContext) {
 
   /** What a best fit for the chosen photo is made with: its hatching's steps, the tool's ink, and pairs or not. */
   const fitSettings = (pairs: boolean) => ({
-    steps: coverSteps(tool2?.settings.pen_width ?? 0.5, chosen?.photo?.spacingMm ?? 0.5, chosen?.photo?.levels ?? 4),
+    steps: coverSteps(penWidthOf(tool2), chosen?.photo?.spacingMm ?? 0.5, chosen?.photo?.levels ?? 4),
     pairs,
     opaque: tool2?.settings.ink_opaque === true,
   });
@@ -697,7 +769,7 @@ export function photoActions(ctx: PhotoContext) {
         shapeName: `${name} ${pen.name}`,
         photo: {
           band: undefined, side: undefined, paperTone: undefined, key: undefined, keyInk: undefined, plate: undefined, plates: undefined,
-          ink: pen.color, regions, region, regionInks, fitPaper: paper, penMm: tool2.settings.pen_width ?? 0.5,
+          ink: pen.color, regions, region, regionInks, fitPaper: paper, penMm: penWidthOf(tool2),
           fitPairs: pairs || undefined, fitOpaque: tool2.settings.ink_opaque === true || undefined,
           ...extra,
         },
@@ -709,7 +781,8 @@ export function photoActions(ctx: PhotoContext) {
 
   /**
     * Size the chosen photo - all its bands - to the page: all of it as large as it fits, or filling the
-    * page and cropped, inside a margin. Square to the page again, whatever it was turned to.
+    * page and cropped, inside a margin. Square to the page again, whatever it was turned to. Once, when
+    * Fit or Fill is pressed: nothing is kept that would size it again when the paper changes.
     */
   const placePhoto = (how: "fit" | "fill", margin: number, align?: FitAlign, bottom = margin) => {
     if (!chosen?.photo) return;
@@ -717,31 +790,48 @@ export function photoActions(ctx: PhotoContext) {
     // Fitted against an edge stays against it - as Fit to paper chose, or as it was last fitted.
     const at = align ?? chosen.photo.align;
     const { crop, ...box } = placeOnPage(chosen.photo.width / chosen.photo.height, page, how, margin, at, bottom);
-    // The bottom margin is kept only where it's deeper than the rest, so it's sized the same again.
-    const marginBottom = Math.abs(bottom - margin) > 1e-6 ? bottom : undefined;
     setShapes((list) => list.map((sh) => (sameImage(sh)
-      ? { ...sh, ...box, rotation: undefined, photo: { ...sh.photo!, crop, fit: how, margin, marginBottom, align: at } }
+      ? { ...sh, ...box, rotation: undefined, photo: { ...sh.photo!, crop, fit: undefined, margin: undefined, marginBottom: undefined, align: at } }
       : sh)));
   };
 
 
   /**
+   * Draw the chosen image - all its layers - at a percent of the size its file says it is, about its
+   * middle: 100 puts it back to that size, whatever it was before. A photo from a drawing made before
+   * that size was kept is taken to be at 100% as it is now, and scales from there.
+   */
+  const scalePhoto = (percent: number) => {
+    if (!chosen?.photo || !(percent > 0)) return;
+    const was = photoScale(chosen);
+    const k = percent / was;
+    if (Math.abs(k - 1) < 1e-9) return;
+    const b = boxOf(chosen);
+    const cx = (b.x0 + b.x1) / 2, cy = (b.y0 + b.y1) / 2;
+    record();
+    setShapes((list) => list.map((sh) => {
+      if (!sameImage(sh)) return sh;
+      const p = sh.photo!;
+      // Its pixels to the inch as drawn now, where the file's weren't kept: now is 100%.
+      const [l, , r] = p.crop ?? [0, 0, 1, 1];
+      const ppi = p.ppi ?? ((r - l) * p.width) / Math.max(1e-9, Math.abs(sh.x2 - sh.x));
+      const at = (v: number, c: number) => c + (v - c) * k;
+      return { ...sh, x: at(sh.x, cx), y: at(sh.y, cy), x2: at(sh.x2, cx), y2: at(sh.y2, cy), photo: { ...p, ppi, fit: undefined } };
+    }));
+  };
+
+  /**
     * Put a different picture in the chosen photo - all its layers - keeping everything else: how it's
-    * split, its layers and pens, and every layer's settings. Sized to the page, it's sized again for the
-    * new picture; placed by hand, it keeps its place and width, its height following the new picture.
+    * split, its layers and pens, and every layer's settings. It keeps its place and width, its height
+    * following the new picture - never sized to the paper.
     * Split by colour, the new picture is sorted into the same colour groups, so the layers stay as
     * they are.
     */
   /**
-   * Where a new picture of this proportion goes in place of the chosen one: sized to the page as it
-   * was, or as wide as it was, about the same middle - uncropped either way.
+   * Where a new picture of this proportion goes in place of the chosen one: as wide as it was, about
+   * the same middle, uncropped - the size the user gave it, never the paper's.
    */
   const placedInstead = (sh: Shape, aspect: number) => {
-    const was = sh.photo!;
-    if (was.fit) {
-      const placed = placeOnPage(aspect, page, was.fit, was.margin ?? 0.5, was.align, was.marginBottom ?? was.margin ?? 0.5);
-      return { box: { x: placed.x, y: placed.y, x2: placed.x2, y2: placed.y2 }, crop: placed.crop };
-    }
     const b = boxOf(sh);
     const w = b.x1 - b.x0;
     const h = w / aspect;
@@ -754,18 +844,29 @@ export function photoActions(ctx: PhotoContext) {
    * and put it in place of the working copy: an edit made to the picture since, in Photoshop say.
    * Turned as it was turned here. The same shape as before, everything stays, crop and place
    * included; another shape, it's placed as Replace places a picture. Every setting stays either way.
+   * `from`: a Multichannel Photoshop file to read instead - Replace with one, on a separation - each
+   * plate taking the channel of its own ink, and remembering it for Reload. False when `from` isn't
+   * Multichannel, and nothing was done.
    */
-  const reloadPhoto = async () => {
+  const reloadPhoto = async (from?: string): Promise<boolean> => {
     const was = chosen?.photo;
-    if (!was?.source) return;
-    const name = was.source.slice(was.source.lastIndexOf("/") + 1);
+    const path = from ?? was?.source;
+    if (!was) return false;
+    // Dragged in or opened from the Mac's own dialog: the browser never says where the file was.
+    if (!path) {
+      setMessage({ text: `NextDraw doesn't know where ${chosen!.name ?? "this image"}'s file is: it was dragged in or opened from the Mac's own dialog. Use Replace… to put in the new version, keeping every setting`, ok: false });
+      return false;
+    }
+    const name = path.slice(path.lastIndexOf("/") + 1);
+    const notMultichannel = new Error("it isn't a Multichannel file any more");
+    const missing = new Error("missing");
     setBusy(true);
     try {
       // A split photo's layers share one picture. Separations each have their own - a file each, or a
       // channel each of one Photoshop file - and are all reloaded together, so they stay in register.
       // A profile's inks are all the one photo, split again as they're drawn.
       const plates = was.separation && !was.profile && was.group
-        ? shapes.filter((sh) => sh.photo?.group === was.group && sh.photo?.source)
+        ? shapes.filter((sh) => sh.photo?.group === was.group && (from || sh.photo?.source))
         : null;
       const turn = async (copy: { src: string; width: number; height: number }, turns: number) => {
         if (turns === 3) copy = await turnedCopy(copy.src, -1);
@@ -774,35 +875,49 @@ export function photoActions(ctx: PhotoContext) {
         return copy;
       };
       // Each file read once, however many layers it's for: a Photoshop file's channels together.
-      const files = new Map<string, Promise<Blob | Blob[]>>();
-      const read = (p: Photo) => {
-        const key = p.source!;
+      type Channels = { names: string[]; blobs: Blob[] };
+      const files = new Map<string, Promise<Blob | Channels>>();
+      const read = (key: string, channel: boolean) => {
         if (!files.has(key)) {
           files.set(key, (async () => {
-            const res = await fetch(p.sourceChannel !== undefined
+            const res = await fetch(channel
               ? `/api/image-channels?path=${encodeURIComponent(key)}`
               : `/api/image-file?path=${encodeURIComponent(key)}`);
+            if (res.status === 404) throw missing;
             if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error ?? `${name} couldn't be read`);
-            if (p.sourceChannel === undefined) return res.blob();
-            const { channels } = await res.json() as { channels: { png: string }[] | null };
-            if (!channels) throw new Error("it isn't a Multichannel file any more");
-            return channels.map((ch) => new Blob([Uint8Array.from(atob(ch.png), (c) => c.charCodeAt(0))], { type: "image/png" }));
+            if (!channel) return res.blob();
+            const { channels } = await res.json() as { channels: { name: string; png: string }[] | null };
+            if (!channels) throw notMultichannel;
+            return {
+              names: channels.map((ch) => ch.name.toLowerCase()),
+              blobs: channels.map((ch) => new Blob([Uint8Array.from(atob(ch.png), (c) => c.charCodeAt(0))], { type: "image/png" })),
+            };
           })());
         }
         return files.get(key)!;
       };
       const fresh = async (p: Photo) => {
-        const got = await read(p);
-        const blob = Array.isArray(got) ? got[p.sourceChannel!] : got;
-        if (!blob) throw new Error(`it has no channel ${p.sourceChannel! + 1} any more`);
-        const turned = await turn(await workingCopy(new File([blob], name, { type: blob.type })), p.quarterTurns ?? 0);
+        const source = from ?? p.source!;
+        const got = await read(source, from !== undefined || p.sourceChannel !== undefined || Boolean(p.channelInks));
+        // Another file's channels: the one of this plate's own ink, by its name, or else where it was.
+        const named = from && !(got instanceof Blob) ? got.names.indexOf((p.separation ?? "").toLowerCase()) : -1;
+        const channel = got instanceof Blob || p.channelInks ? undefined : named >= 0 ? named : p.sourceChannel;
+        // A Multichannel file's channels joined into one picture: joined again, each in its ink.
+        const joined = p.channelInks && !(got instanceof Blob)
+          ? await (await fetch((await joinedPicture(got.blobs.map((picture, i) => ({ picture, ink: p.channelInks![i] ?? "#ffffff" })))).src)).blob()
+          : undefined;
+        const blob = joined ?? (got instanceof Blob ? got : got.blobs[channel ?? -1]);
+        if (!blob) throw new Error(channel === undefined ? `it has no ${p.separation ?? "matching"} channel` : `it has no channel ${channel + 1} any more`);
+        const copy = await workingCopy(new File([blob], name, { type: blob.type }));
+        // Turning and cutting keep the pixels' size: the file's own resolution still holds.
+        const turned = { ...await turn(copy, p.quarterTurns ?? 0), ppi: copy.ppi, source, channel };
         if (!p.cut) return turned;
         // Cropped here: the file cut again the same way.
         const cut = await croppedCopy(turned.src, p.cut);
         await readTones(cut.src);
-        return cut;
+        return { ...cut, ppi: copy.ppi, source, channel };
       };
-      const copies = new Map<string, { src: string; width: number; height: number }>();
+      const copies = new Map<string, { src: string; width: number; height: number; ppi?: number; source: string; channel?: number }>();
       for (const sh of plates ?? [chosen!]) copies.set(sh.id, await fresh(sh.photo!));
       const copy = copies.get(chosen!.id) ?? [...copies.values()][0];
       const same = Math.abs(copy.width / copy.height / (was.width / was.height) - 1) < 0.01;
@@ -810,19 +925,29 @@ export function photoActions(ctx: PhotoContext) {
       record();
       setShapes((list) => list.map((sh) => {
         const mine = plates ? copies.get(sh.id) : sameImage(sh) ? copy : undefined;
-        return mine ? { ...sh, ...(box ?? {}), photo: { ...sh.photo!, src: mine.src, width: mine.width, height: mine.height, crop } } : sh;
+        return mine ? { ...sh, ...(box ?? {}), photo: { ...sh.photo!, src: mine.src, width: mine.width, height: mine.height, ppi: mine.ppi, crop, ...(from ? { source: mine.source, sourceChannel: mine.channel } : {}) } } : sh;
       }));
+      const did = from ? `Replaced the plates with ${name}'s channels, keeping their settings` : `Reloaded ${name}`;
       setMessage(same
-        ? { text: `Reloaded ${name}`, ok: true }
-        : { text: `Reloaded ${name}: it's a different shape now, so it was placed again`, ok: true });
+        ? { text: did, ok: true }
+        : { text: `${did}: it's a different shape now, so it was placed again`, ok: true });
+      return true;
     } catch (err) {
-      setMessage({ text: `Couldn't reload ${name}: ${(err as Error).message}`, ok: false });
+      if (from && err === notMultichannel) return false;
+      if (err === missing) {
+        const folder = path.slice(0, path.lastIndexOf("/")).replace(/^\/Users\/[^/]+/, "~");
+        setMessage({ text: `${name} isn't in ${folder} any more. Use Replace… to put in the new version, keeping every setting`, ok: false });
+        return true;
+      }
+      setMessage({ text: `Couldn't ${from ? "replace with" : "reload"} ${name}: ${(err as Error).message}`, ok: false });
+      return true;
     } finally {
       setBusy(false);
     }
   };
 
-  const replacePhoto = async (file: File | undefined) => {
+  /** `channelInks`: the picture is a Multichannel file's channels joined, in these inks, for Reload to join again. */
+  const replacePhoto = async (file: File | undefined, channelInks?: string[]) => {
     if (!file || !chosen?.photo) return;
     setBusy(true);
     try {
@@ -835,7 +960,7 @@ export function photoActions(ctx: PhotoContext) {
       if (was.separation && !was.profile) {
         // A separation is one plate of the photo: only its own picture changes, in the same place, so it
         // stays in register with the rest.
-        setShapes((list) => list.map((sh) => (sh.id === chosen.id ? { ...sh, photo: { ...sh.photo!, src: copy.src, width: copy.width, height: copy.height, source: pictureSources.get(file), quarterTurns: undefined, cut: undefined } } : sh)));
+        setShapes((list) => list.map((sh) => (sh.id === chosen.id ? { ...sh, photo: { ...sh.photo!, src: copy.src, width: copy.width, height: copy.height, ppi: copy.ppi, source: pictureSources.get(file), sourceChannel: pictureChannels.get(file), quarterTurns: undefined, cut: undefined } } : sh)));
         const aspect0 = was.width / was.height;
         setMessage(Math.abs(aspect / aspect0 - 1) > 0.01
           ? { text: `${file.name} isn't the same shape as the other plates, so it's stretched to them and won't line up`, ok: false }
@@ -843,7 +968,7 @@ export function photoActions(ctx: PhotoContext) {
         return;
       }
       setShapes((list) => list.map((sh) => (sameImage(sh)
-        ? { ...sh, ...box, photo: { ...sh.photo!, src: copy.src, width: copy.width, height: copy.height, crop, source: pictureSources.get(file), quarterTurns: undefined, cut: undefined } }
+        ? { ...sh, ...box, photo: { ...sh.photo!, src: copy.src, width: copy.width, height: copy.height, ppi: copy.ppi, crop, source: pictureSources.get(file), sourceChannel: pictureChannels.get(file), channelInks, quarterTurns: undefined, cut: undefined } }
         : sh)));
       setMessage({ text: `Replaced the image with ${file.name}, keeping its settings`, ok: true });
     } catch (err) {
@@ -912,8 +1037,8 @@ export function photoActions(ctx: PhotoContext) {
     * Crop the chosen photo - every layer of it - to a part of its picture: left, top, right, bottom, as
     * fractions of the whole picture. The picture itself is cut, so Fit, Fill and the lines all see only
     * what's kept; a separation's plates are each cut alike, so they stay in register. Kept with the
-    * photo too, so Reload cuts its file again the same way. Sized to the page, it's sized again; placed
-    * by hand, what's kept stays where it was on the page.
+    * photo too, so Reload cuts its file again the same way. What's kept stays where it was on the
+    * page, at the size it was drawn.
     */
   const cropPhoto = async (part: [number, number, number, number]) => {
     if (!chosen?.photo) return;
@@ -925,27 +1050,24 @@ export function photoActions(ctx: PhotoContext) {
         if (!cut.has(sh.photo!.src)) cut.set(sh.photo!.src, await croppedCopy(sh.photo!.src, part));
       }
       await Promise.all([...cut.values()].map((c) => readTones(c.src)));
-      const was = chosen.photo;
-      const kept = cut.get(was.src)!;
-      let box: { x: number; y: number; x2: number; y2: number };
-      let crop: Photo["crop"];
-      if (was.fit) {
-        const placed = placeOnPage(kept.width / kept.height, page, was.fit, was.margin ?? 0.5, was.align, was.marginBottom ?? was.margin ?? 0.5);
-        crop = placed.crop;
-        box = { x: placed.x, y: placed.y, x2: placed.x2, y2: placed.y2 };
-      } else {
-        // Where the whole picture would lie, from the part of it that shows in the box; then the part kept.
-        const [vl, vt, vr, vb] = was.crop ?? [0, 0, 1, 1];
-        const b = boxOf(chosen);
-        const fw = (b.x1 - b.x0) / (vr - vl), fh = (b.y1 - b.y0) / (vb - vt);
-        const x0 = b.x0 - vl * fw, y0 = b.y0 - vt * fh;
-        box = { x: x0 + part[0] * fw, y: y0 + part[1] * fh, x2: x0 + part[2] * fw, y2: y0 + part[3] * fh };
-        crop = undefined;
+      // Plates kept for Channels, cut alike, so they come back as the picture is now.
+      const plates = new Map<string, Promise<Pick<Photo, "src" | "width" | "height">>>();
+      const modes = new Map<string, Photo["modes"]>();
+      for (const sh of members) {
+        modes.set(sh.id, await keptPlatesAlike(sh.photo!, (src) => croppedCopy(src, part), (p) => ({ cut: partOfPart(p.cut, part) }), plates));
       }
+      // Where the whole picture would lie, from the part of it that shows in the box; then the part
+      // kept, where it was - at the size it was drawn.
+      const [vl, vt, vr, vb] = chosen.photo.crop ?? [0, 0, 1, 1];
+      const b = boxOf(chosen);
+      const fw = (b.x1 - b.x0) / (vr - vl), fh = (b.y1 - b.y0) / (vb - vt);
+      const x0 = b.x0 - vl * fw, y0 = b.y0 - vt * fh;
+      const box = { x: x0 + part[0] * fw, y: y0 + part[1] * fh, x2: x0 + part[2] * fw, y2: y0 + part[3] * fh };
+      const crop: Photo["crop"] = undefined;
       record();
       const ids = new Set(members.map((sh) => sh.id));
       setShapes((list) => list.map((sh) => (ids.has(sh.id)
-        ? { ...sh, ...box, photo: { ...sh.photo!, ...cut.get(sh.photo!.src)!, crop, cut: partOfPart(sh.photo!.cut, part) } }
+        ? { ...sh, ...box, photo: { ...sh.photo!, ...cut.get(sh.photo!.src)!, crop, cut: partOfPart(sh.photo!.cut, part), modes: modes.get(sh.id) } }
         : sh)));
     } catch (err) {
       setMessage({ text: `Couldn’t crop the image: ${(err as Error).message}`, ok: false });
@@ -1220,11 +1342,25 @@ export function photoActions(ctx: PhotoContext) {
    * Another pass over the chosen image: a layer of its own, on top, in the palette's darkest pen,
    * drawn as Edges - lines where the tone changes sharply - over whatever the image already draws.
    * It shares the picture and its place with the image's other passes and keeps its own settings;
-   * its effect can be changed like any other's, and it can be split into layers of its own.
+   * its effect can be changed like any other's, and it can be split into layers of its own. Over a
+   * separation, it draws the plates joined into one colour picture, not the plate in hand.
    */
-  const addPass = () => {
+  const addPass = async () => {
     const was = chosen?.photo;
     if (!chosen || !was) return;
+    let picture: Pick<Photo, "src" | "width" | "height"> & Partial<Photo> = { src: was.src, width: was.width, height: was.height, source: was.source, quarterTurns: was.quarterTurns, cut: was.cut };
+    if (was.separation && !was.profile) {
+      setBusy(true);
+      try {
+        const { joined, one, channelInks } = await joinedPlates();
+        picture = { ...joined, source: one, channelInks, quarterTurns: one ? was.quarterTurns : undefined, cut: one ? was.cut : undefined };
+      } catch (err) {
+        setMessage({ text: `Couldn't join the channels: ${(err as Error).message}`, ok: false });
+        return;
+      } finally {
+        setBusy(false);
+      }
+    }
     record();
     const link = was.link ?? newShapeId();
     const pen = darkestPen(tool2?.palette ?? []) ?? { name: "Black", color: "#1a1a1a" };
@@ -1241,8 +1377,7 @@ export function photoActions(ctx: PhotoContext) {
       name: `${name} new`,
       photo: {
         // The picture and its place, from the image; everything else fresh.
-        src: was.src, width: was.width, height: was.height, crop: was.crop, fit: was.fit, margin: was.margin, align: was.align,
-        source: was.source, quarterTurns: was.quarterTurns, cut: was.cut,
+        ...picture, ppi: was.ppi, crop: was.crop, fit: was.fit, margin: was.margin, align: was.align,
         edgeMask: was.edgeMask, edgeMaskName: was.edgeMaskName, edgeMaskInvert: was.edgeMaskInvert, edgeMaskSides: was.edgeMaskSides, edgeGen: was.edgeGen, vignette: was.vignette,
         ...PHOTO_DEFAULTS, spacingMm: 0.5,
         // Waiting for its effect: the card asks for one, and the toolbar's choice draws it.
@@ -1335,7 +1470,7 @@ export function photoActions(ctx: PhotoContext) {
   return {
     setChannelOf, splitPhotoProfile,
     addPhoto, addSeparations, switchPhotoMode, setKeyLayer, splitPhoto, splitPhotoBestFit,
-    placePhoto, replacePhoto, reloadPhoto, cropPhoto, bakeEffect, savePreset, applyPreset, deletePreset, setPhotoOf, addEdgeMask, chooseEdgeMask, deleteEdgeMask, setEdgeGen, saveEdgeGen, setAngles, photoStem, splitPhotoCmyk, setLayerColor,
+    placePhoto, scalePhoto, replacePhoto, reloadPhoto, joinSeparations, cropPhoto, bakeEffect, savePreset, applyPreset, deletePreset, setPhotoOf, addEdgeMask, chooseEdgeMask, deleteEdgeMask, setEdgeGen, saveEdgeGen, setAngles, photoStem, splitPhotoCmyk, setLayerColor,
     splitAroundPaper, setPaperTone, addPass, removePass,
   };
 }

@@ -3,6 +3,7 @@ import { joinLayerName } from "../ink";
 import type { PenColor, Preset } from "../types";
 import { newFillId, type Fill } from "../drawing/hatch";
 import { newLayerId, newShapeId, type Layer, type Page, type Shape } from "../drawing/shapes";
+import { penWidthOf } from "../constants";
 
 // A calibration sheet: every pen of a drawing tool, hatched at a few densities, on the paper it will
 // be used on. Photographed back in, it tells Studio what each pen really looks like there - at full
@@ -52,7 +53,7 @@ export function calibrationSheet(tool: Preset, page: Page, font: string): Calibr
   const pens: PenColor[] = tool.palette ?? [];
   if (!pens.length) return { error: `${tool.name} has no colors yet. Add its colors to the palette first.` };
 
-  const widthMm = tool.settings.pen_width ?? 0.5;
+  const widthMm = penWidthOf(tool);
   const angle = tool.hatch?.angle ?? 45;
   // Solid is the spacing this tool was measured solid at, where it has one: a felt tip bleeds, and
   // lines a pen-width apart can leave gaps a slightly closer spacing doesn't.

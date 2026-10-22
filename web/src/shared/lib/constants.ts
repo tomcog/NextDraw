@@ -3,6 +3,15 @@ import type { Settings } from "./types";
 export const UNITS = 100; // preview drawing units per inch
 export const MM = UNITS / 25.4; // preview drawing units per mm
 
+/**
+ * The line a pen draws, in mm: its own width, or - for a tip not measured yet - one width every app
+ * agrees on. Plot, Studio and Image each had a fallback of their own (Plot the last tip's width,
+ * Studio 0.7, Image 0.5), so an unmeasured tip looked three ways on the same drawing.
+ */
+export const PEN_WIDTH_FALLBACK_MM = 0.5;
+export const penWidthOf = (tool: { settings?: { pen_width?: number } } | null | undefined): number =>
+  tool?.settings?.pen_width && tool.settings.pen_width > 0 ? tool.settings.pen_width : PEN_WIDTH_FALLBACK_MM;
+
 
 // The second plotter, an iDraw (server.py has the details): the AxiDraw V3/A3 model's travel and no
 // automatic homing. Its tools are its own, and until one is chosen it starts from its own software's

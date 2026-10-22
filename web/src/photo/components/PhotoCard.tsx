@@ -54,7 +54,7 @@ export interface PhotoActions {
   setEdgeGen: (gen: EdgeGen) => void;
   /** Keep the made edge in the library as a picture. */
   saveEdgeGen: (taken: string[]) => Promise<void>;
-  switchMode: (to: "value" | "colour" | "cmyk" | "profile") => void;
+  switchMode: (to: "value" | "colour" | "cmyk" | "profile" | "separations") => void;
   /** Split the image by a printer's color profile, by its path, at a rendering intent (0 to 3) and
    *  with or without black point compensation. */
   setProfile: (path: string, rendering: Rendering) => void;
@@ -227,22 +227,31 @@ export function PhotoCard({ shape, title, shapes, busy, targeted, layerCount, sh
   const splits = photo.separation || (effect.key !== "silhouette" && effect.key !== "edges");
   // How the photo is split into pens: B&W, CMYK or Colour, with that mode's own settings. The whole
   // drawing's - in the Color mode card, above every effect's own card.
+  // Separations - a Multichannel file's channels, or a folder's plates - can be joined into one picture
+  // and split any of the ways a photo is; their own plates come back as Channels.
+  const channels = photoMode(photo) === "separations" || Boolean(photo.modes?.separations?.length);
+  const modeControl = (
+    <SegmentedControl size="sm" variant="dark" aria-label="Color mode">
+      {/* A Multichannel file's own channels, a plate each: there to come back to once it's split another way. */}
+      {channels && <Segment selected={noProfiles === null && photoMode(photo) === "separations"} title="Channels: the file's own separations, a layer for each of its channels in its ink" onClick={() => { setNoProfiles(null); actions.switchMode("separations"); }}>Channels</Segment>}
+      <Segment selected={noProfiles === null && photoMode(photo) === "value"} title="B&W: the image as black and white, in one color or split into tone bands" onClick={() => { setNoProfiles(null); actions.switchMode("value"); }}>B&amp;W</Segment>
+      <Segment selected={noProfiles === null && photoMode(photo) === "cmyk"} title="CMYK: print's four plates - cyan, magenta, yellow and black - in the pen's nearest colors, blended on paper" onClick={() => { setNoProfiles(null); actions.switchMode("cmyk"); }}>CMYK</Segment>
+      <Segment selected={noProfiles === null && photoMode(photo) === "colour"} title="Image: as many colors as you choose from the pen's palette, the ones that best match the image" onClick={() => { setNoProfiles(null); actions.switchMode("colour"); }}>Image</Segment>
+      <Segment selected={noProfiles !== null || photoMode(photo) === "profile"} title="Multi: split by a printer's color profile in NextDraw's Color profiles folder - CMYK, a Riso set, extended gamut - a layer for each of its inks" onClick={chooseProfile}>Multi</Segment>
+    </SegmentedControl>
+  );
   const colourMode = (
     <>
       {photoMode(photo) === "separations" ? (
-        // Separations made elsewhere: each layer is its own picture, so there's nothing to split.
+        // Separations made elsewhere: each layer is its own picture, split as it is until joined.
         // Which plate each is, and its pen, came from its file's name; its color is its swatch's.
         <>
-          <p className={styles.empty}>A separation: this layer draws its own grayscale picture, more of its color where it's darker. The Picture view shows every plate in its ink, together; a layer's eye takes it out. Click a layer's name in the Layers card to see its settings; the targeted layers are the ones the settings change. Each plate's brightness and contrast are in the Adjustments card. Replace swaps the shown plate alone.</p>
+          {modeControl}
+          <p className={styles.empty}>A separation: this layer draws its own grayscale picture, more of its color where it's darker. The Picture view shows every plate in its ink, together; a layer's eye takes it out. Click a layer's name in the Layers card to see its settings; the targeted layers are the ones the settings change. Each plate's brightness and contrast are in the Adjustments card. B&amp;W, CMYK, Image or Multi joins the plates into one picture in their inks and splits that; Channels brings the plates back. Replace with a Multichannel file swaps every plate for its own ink's channel; with any other picture, the shown plate alone.</p>
         </>
       ) : (
         <>
-          <SegmentedControl size="sm" variant="dark" aria-label="Color mode">
-            <Segment selected={noProfiles === null && photoMode(photo) === "value"} title="B&W: the image as black and white, in one color or split into tone bands" onClick={() => { setNoProfiles(null); actions.switchMode("value"); }}>B&amp;W</Segment>
-            <Segment selected={noProfiles === null && photoMode(photo) === "cmyk"} title="CMYK: print's four plates - cyan, magenta, yellow and black - in the pen's nearest colors, blended on paper" onClick={() => { setNoProfiles(null); actions.switchMode("cmyk"); }}>CMYK</Segment>
-            <Segment selected={noProfiles === null && photoMode(photo) === "colour"} title="Image: as many colors as you choose from the pen's palette, the ones that best match the image" onClick={() => { setNoProfiles(null); actions.switchMode("colour"); }}>Image</Segment>
-            <Segment selected={noProfiles !== null || photoMode(photo) === "profile"} title="Multi: split by a printer's color profile in NextDraw's Color profiles folder - CMYK, a Riso set, extended gamut - a layer for each of its inks" onClick={chooseProfile}>Multi</Segment>
-          </SegmentedControl>
+          {modeControl}
           {noProfiles !== null ? (
             <>
               <p className={styles.empty}>No color profiles yet. Put printer profiles (.icc) in {noProfiles} - Show folder opens it - and the image is split by the first of them when you come back.</p>
@@ -492,8 +501,8 @@ export function PhotoCard({ shape, title, shapes, busy, targeted, layerCount, sh
                     variant="secondary"
                     title={photo.source
                       ? `Reload ${photo.source.slice(photo.source.lastIndexOf("/") + 1)} from its file, keeping every setting - after editing it elsewhere`
-                      : "Opened from the Mac's own dialog, so its file isn't known: open it from NextDraw's file browser to be able to reload it"}
-                    disabled={busy || !photo.source}
+                      : "Reload the image from its file, keeping every setting. One dragged in or opened from the Mac's own dialog has no file NextDraw knows: Replace puts in the new version"}
+                    disabled={busy}
                     onClick={actions.reload}
                   >
                     Reload

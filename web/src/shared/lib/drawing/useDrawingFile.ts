@@ -456,6 +456,29 @@ export function useDrawingFile({ shapes, fills, layers, page, sizeId, toolName, 
     return Boolean(current);
   }, [openPath, take]);
 
+  /**
+   * An SVG dropped from the computer, made the current drawing - as Plot takes a dropped one - and put
+   * on screen here. The browser hands over its contents but not where it lives, so it belongs to no
+   * file: Save puts it in a new one.
+   */
+  const openDropped = useCallback(async (file: File) => {
+    const form = new FormData();
+    form.append("file", file);
+    setMessage({ text: `Opening ${file.name}…`, ok: true, progress: true });
+    try {
+      await api("/api/upload", { method: "POST", body: form });
+      const current = await api<Current>("/api/current");
+      // Cleared before it's on screen, so what the app says of the drawing - marks it can't redraw,
+      // no image in it - stays.
+      setMessage({ text: "", ok: true });
+      take(current);
+      return true;
+    } catch (err) {
+      setMessage({ text: (err as Error).message, ok: false });
+      return false;
+    }
+  }, [setMessage, take]);
+
   // Write the drawing into its file, or a new one. Returns where it landed, or null on failure.
   const save = async (): Promise<Saved> => {
     if (!shapes.length) {
@@ -579,5 +602,5 @@ export function useDrawingFile({ shapes, fills, layers, page, sizeId, toolName, 
 
   const fileState: FileState = { name, saved, saveTo, foreign, openedAs };
 
-  return { name, setName, saved, dirty, unsent, lock, touch, loaded, combined, started, resumed, fileState, save, snapshot, open, goTo, openIn };
+  return { name, setName, saved, dirty, unsent, lock, touch, loaded, combined, started, resumed, fileState, save, snapshot, open, openDropped, goTo, openIn };
 }

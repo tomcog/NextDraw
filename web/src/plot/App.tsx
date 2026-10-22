@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Button, Card } from "@tomcoggia/ui";
 import styles from "./App.module.css";
+import { isSvgFile, useFileDrop } from "../shared/lib/useFileDrop";
 import { api, postJSON } from "../shared/lib/api";
-import { barrelOffsetMm, BUSY_STATES, DEFAULT_SETTINGS, IDRAW_MODEL, NONE_PEN, PAPER_SIZES, PLOTTING_STATES, PRESET_FIELD_NAMES, PRESET_FIELDS, STEPS, STORAGE } from "../shared/lib/constants";
+import { barrelOffsetMm, BUSY_STATES, DEFAULT_SETTINGS, IDRAW_MODEL, NONE_PEN, PAPER_SIZES, penWidthOf, PLOTTING_STATES, PRESET_FIELD_NAMES, PRESET_FIELDS, STEPS, STORAGE } from "../shared/lib/constants";
 import { cleanNote, listOf } from "../shared/lib/format";
 import { lightness } from "../shared/lib/color";
 import { fitsOnBed, fitsOnPaper, footprint, minPlacement, type FitAlign } from "../shared/lib/geometry";
@@ -1680,9 +1681,9 @@ export default function App() {
     [layerViews, secondTool, secondToolLayers, secondPreset, active],
   );
   const layerPenWidths = useMemo(
-    () => Object.fromEntries(layerViews.map((l) => [l.id, (usesSecond(l.id) ? secondPreset : active)?.settings.pen_width])),
+    () => Object.fromEntries(layerViews.map((l) => [l.id, penWidthOf((usesSecond(l.id) ? secondPreset : active) ?? { settings })])),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [layerViews, secondTool, secondToolLayers, secondPreset, active],
+    [layerViews, secondTool, secondToolLayers, secondPreset, active, settings],
   );
   const assignLayerTool = (id: string, second: boolean) => {
     setSecondToolLayers((list) => (second ? [...list.filter((x) => x !== id), id] : list.filter((x) => x !== id)));
@@ -1802,38 +1803,10 @@ export default function App() {
   }
 
   // Drag a file anywhere onto the page.
-  const uploadRef = useRef(uploadFile);
-  uploadRef.current = uploadFile;
-  const [draggingFile, setDraggingFile] = useState(false);
-  useEffect(() => {
-    let depth = 0;
-    const enter = (e: DragEvent) => {
-      if (!e.dataTransfer?.types.includes("Files") || isBusy(refs.current.status)) return;
-      depth++;
-      setDraggingFile(true);
-    };
-    const leave = () => {
-      depth = Math.max(0, depth - 1);
-      if (!depth) setDraggingFile(false);
-    };
-    const over = (e: DragEvent) => e.preventDefault();
-    const drop = (e: DragEvent) => {
-      e.preventDefault();
-      depth = 0;
-      setDraggingFile(false);
-      uploadRef.current(e.dataTransfer?.files[0]);
-    };
-    window.addEventListener("dragenter", enter);
-    window.addEventListener("dragleave", leave);
-    window.addEventListener("dragover", over);
-    window.addEventListener("drop", drop);
-    return () => {
-      window.removeEventListener("dragenter", enter);
-      window.removeEventListener("dragleave", leave);
-      window.removeEventListener("dragover", over);
-      window.removeEventListener("drop", drop);
-    };
-  }, []);
+  const draggingFile = useFileDrop(
+    (files) => uploadFile(files.find(isSvgFile) ?? files[0]),
+    () => !isBusy(refs.current.status),
+  );
   // The Plot button's, and the chosen layer's own button's in the Layers card, Layer by layer.
   const canPlot = !busy && Boolean(fileName) && Boolean(preview) && onBed && plotterReady && !needsLayerChoice && !nothingShown;
   const plotLabel = !plotterReady ? "No plotter connected" : nothingShown ? "Show a layer to plot" : needsLayerChoice ? "Choose a layer to plot" : printTarget && plotLayerId ? `Plot ${layerNumber(printTarget.id)} · ${printTarget.name}${printIds.length > 1 ? ` · ${printIds.length} layers` : ""}` : "Plot";
@@ -1944,7 +1917,7 @@ export default function App() {
               onOpenBrowser={openBrowser}
               layerLooks={layerLooks}
               layerOrder={layerOrder}
-              penWidthMm={active?.settings.pen_width ?? settings.pen_width}
+              penWidthMm={penWidthOf(active ?? { settings })}
               // The ink is the tool's own, never one left in the page's settings by the tool chosen
               // before it: picking a tool merges its settings over the page's, so a value it doesn't
               // set stays behind - the MATTEHOP's opaque ink made the Flair cover instead of blend. A

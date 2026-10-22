@@ -10,9 +10,10 @@ import { FileBrowser, type CombineResult } from "../shared/components/FileBrowse
 import { Section } from "../shared/components/controls/Section";
 import controls from "../shared/components/controls/controls.module.css";
 import { api } from "../shared/lib/api";
+import { isSvgFile, useFileDrop } from "../shared/lib/useFileDrop";
 import type { FitAlign } from "../shared/lib/geometry";
 import { load, save as remember } from "../shared/lib/storage";
-import { DEFAULT_SETTINGS, PAPER_SIZES } from "../shared/lib/constants";
+import { DEFAULT_SETTINGS, PAPER_SIZES, penWidthOf } from "../shared/lib/constants";
 import type { Info, PenColor, PlotterModel, Preset } from "../shared/lib/types";
 import { listOf } from "../shared/lib/format";
 import { lightness } from "../shared/lib/color";
@@ -317,7 +318,7 @@ export default function App() {
 
  // The drawing is the current drawing, shared by the three apps: picked up on starting, and again
  // when it's changed or replaced in another app or window (showCurrent, below).
- const { name, setName, saved, dirty, lock, touch, loaded, combined, started, save, snapshot: takeSnapshot, open, goTo, openIn } = useDrawingFile({
+ const { name, setName, saved, dirty, lock, touch, loaded, combined, started, save, snapshot: takeSnapshot, open, openDropped, goTo, openIn } = useDrawingFile({
   shapes, fills, layers, page, sizeId, toolName, paperColor, fonts, setBusy, setMessage, onCurrent: (current) => showCurrent(current),
  });
 
@@ -702,6 +703,16 @@ export default function App() {
  const unsaved = dirty && shapes.length > 0;
  const ask = (what: string, go: () => void) => (unsaved ? setConfirmNext({ what, go }) : go());
 
+ // An SVG dragged from the computer onto the page opens in this one's place, as Open… does.
+ const draggingFile = useFileDrop((files) => {
+  const svg = files.find(isSvgFile);
+  if (!svg) {
+   setMessage({ text: "Drop an SVG file to open it. Open Illustrator files with Open… so they can be imported.", ok: false });
+   return;
+  }
+  ask("open another", () => void openDropped(svg));
+ }, () => !busy && !lock);
+
  // The current drawing, on screen: on starting, opened here, or changed in another app or window.
  const showCurrent = useCallback((current: Current) => {
   if (current.empty) {
@@ -832,7 +843,7 @@ export default function App() {
  const palette: PenColor[] = tool2?.palette?.length ? tool2.palette : [PLAIN_PEN];
  // Darkest last in the list, so the default pen is the one you'd reach for first.
  // The real line the pen lays down, so the drawing shows its true weight against the hatch spacing.
- const penWidthMm = tool2?.settings.pen_width ?? 0.7;
+ const penWidthMm = penWidthOf(tool2);
  // The same three numbers Plot reads off the same preset, so the ink looks the same in both.
  const inkOpacity = tool2?.settings.ink_opacity ?? 1;
  const inkBuilds = tool2?.settings.ink_builds !== false;
@@ -1143,6 +1154,31 @@ export default function App() {
   pick(made[0].id);
  };
 
+ /**
+  * Bake a shape's copies and spread them across layers: the first stays on the shape's layer, and
+  * each one after it goes onto a layer of its own - the same pen, named as a copy of that layer
+  * ("Black 2", "Black 3") and placed after it in the copies' order - so each can be plotted, hidden
+  * or given another pen by itself. A copy leaves the shape's group: a group lives on one layer.
+  */
+ const spreadRepeat = (id: string) => {
+  const shape = shapes.find((s) => s.id === id);
+  const home = shape && layers.find((l) => l.id === shape.layerId);
+  const baked = shape ? bakedCopies(shape) : [];
+  if (!home || baked.length < 2) return;
+  record();
+  const names = layers.map((l) => l.name);
+  const made: Layer[] = baked.slice(1).map(() => {
+   const name = uniqueName(home.name, names);
+   names.push(name);
+   return { ...home, id: newLayerId(), name };
+  });
+  const spread = baked.map((s, i) => (i ? { ...s, layerId: made[i - 1].id, group: undefined } : s));
+  setLayers((list) => list.flatMap((l) => (l.id === home.id ? [l, ...made] : [l])));
+  setShapes((list) => list.flatMap((s) => (s.id === id ? spread : [s])));
+  setFills((list) => handOutFills(list, id, spread));
+  pick(spread[0].id);
+ };
+
  /** Join what's picked into one shape (see joined). A fill on the first of them is kept. */
  const joinShapes = () => {
   const ids = new Set(selected);
@@ -1420,7 +1456,7 @@ export default function App() {
   varnishSilhouette(shapes.filter((sh) => sh.layerId === id), joinLayerName("Silhouette", layer.name), `${layer.name}'s silhouette`);
  };
  const varnishSilhouette = (drawn: Shape[], name: string, what: string) => {
-  const runs = silhouetteOf(drawn, { penMm: tool2?.settings.pen_width ?? 0.5 });
+  const runs = silhouetteOf(drawn, { penMm: penWidthOf(tool2) });
   if (!runs.length) {
    setMessage({ text: "There's nothing drawn there yet to varnish", ok: false });
    return;
@@ -2026,7 +2062,7 @@ export default function App() {
      />
      <HistoryToolbar canUndo={canUndo} canRedo={canRedo} onUndo={undo} onRedo={redo} disabled={busy} />
     </div>
-    <section className={styles.stage} aria-label="Drawing page">
+    <section className={styles.stage} aria-label="Drawing page" data-dragging-file={draggingFile || undefined}>
      <Canvas
       page={page}
       paperColor={paperColor}
@@ -2284,6 +2320,7 @@ export default function App() {
          setShapes((list) => list.map((sh) => (sh.id === chosen.id ? addPointOnLongest(sh) : sh)));
         },
         bake: bakeRepeat,
+        spread: spreadRepeat,
        }}
       />
      )}

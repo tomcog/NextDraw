@@ -3,6 +3,7 @@ import { Button, ButtonRound, Checkbox, InputSelect, Segment, SegmentedControl }
 import { Pipette, RotateCcwSquare, RotateCwSquare } from "lucide-react";
 import styles from "./controls.module.css";
 import { LengthField } from "./LengthField";
+import { NumberField } from "./NumberField";
 import { UnitSwitch } from "./UnitSwitch";
 import { Section } from "./Section";
 import { panelIcon } from "../PanelToolbar";
@@ -73,6 +74,10 @@ interface Props {
   /** Image only: scale the picture to cover the paper less the margin, cropping what's over - the
    *  alignment says which part stays. Left out, there's no Fill: a drawing of paths can't be cropped. */
   onFill?: (marginMm: number, align: FitAlign, bottomMm: number) => void;
+  /** Image only: how big the picture is drawn, as a percent of the size its file says it is. */
+  scale?: number;
+  /** Draw it at that percent of its file's size - 100 puts it back. Left out, there's no Scale field. */
+  onScale?: (percent: number) => void;
 }
 
 // Common paper colours, plus any colour from the picker. The paper is drawn in this colour whatever
@@ -108,7 +113,7 @@ const PAPER_COLORS = [
  * drawing on it: its turn, and fitting it to the paper. Each app does those to the drawing
  * itself, so all three show the same. Every app passes all of it: the card is the same everywhere.
  */
-export function PaperSection({ w, h, sizeId, units, color, collapsibleKey, disabled, onSize, onDimensions, onColor, onUnits, onTurnDrawing, onFit, onFill }: Props) {
+export function PaperSection({ w, h, sizeId, units, color, collapsibleKey, disabled, onSize, onDimensions, onColor, onUnits, onTurnDrawing, onFit, onFill, scale, onScale }: Props) {
   const landscape = w >= h;
   // Custom chosen by hand stays chosen while its width and height are typed, even through a size
   // that happens to be one of the list's on the way. The size belongs to this drawing alone: it is
@@ -275,6 +280,9 @@ export function PaperSection({ w, h, sizeId, units, color, collapsibleKey, disab
             </Button>
           )}
         </div>
+        {onScale && (
+          <NumberField label="Scale" unit="%" min={1} max={10000} step={5} value={scale ?? 100} disabled={disabled} onChange={onScale} />
+        )}
         {onFit && (
           <Checkbox size="md"
             checked={deepBottom}

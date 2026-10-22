@@ -3,6 +3,7 @@ import { joinLayerName } from "../ink";
 import type { PenColor, Preset } from "../types";
 import { newFillId, type Fill } from "../drawing/hatch";
 import { newLayerId, newShapeId, type Layer, type Page, type Shape } from "../drawing/shapes";
+import { penWidthOf } from "../constants";
 
 // A pen pairs sheet: two of a tool's pens hatched over each other, the lighter first and the darker
 // across it - what overlaid hatching really makes on paper, where print gets its in-between colours
@@ -112,7 +113,7 @@ export interface PairsSheet {
 export function pairsSheet(tool: Preset, page: Page, font: string): PairsSheet | { error: string } {
   const palette: PenColor[] = tool.palette ?? [];
   if (palette.length < 2) return { error: `${tool.name} needs at least two colors in its palette for a pairs sheet.` };
-  const widthMm = tool.settings.pen_width ?? 0.5;
+  const widthMm = penWidthOf(tool);
   const angle = tool.hatch?.angle ?? 45;
   const named = PHOTO_PAIRS[tool.name]
     ?.map(([a, b]) => [palette.find((p) => p.name === a), palette.find((p) => p.name === b)])

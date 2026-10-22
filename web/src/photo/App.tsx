@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Button, Card } from "@tomcoggia/ui";
 // Separations into many plates are solved off the page (importing this turns it on).
 import "../shared/lib/drawing/separationWorker";
@@ -16,17 +16,18 @@ import { ToolbarSeparator } from "../shared/components/ToolbarSeparator";
 import { UnsavedChangesModal } from "../shared/components/UnsavedChangesModal";
 import { StatusBanner } from "../shared/components/StatusBanner";
 import { api, postJSON } from "../shared/lib/api";
+import { isSvgFile, useFileDrop } from "../shared/lib/useFileDrop";
 import { PAPER_SIZES } from "../shared/lib/constants";
 import { load, save as remember } from "../shared/lib/storage";
 import type { Info, PlotterModel, Preset } from "../shared/lib/types";
 import type { Zoom } from "../shared/components/BedCanvas";
-import { DEFAULT_SETTINGS, NONE_PEN } from "../shared/lib/constants";
+import { DEFAULT_SETTINGS, NONE_PEN, penWidthOf } from "../shared/lib/constants";
 import { useHistory } from "../shared/lib/useHistory";
 import { loadFont, type StrokeFont } from "../shared/lib/drawing/font";
 import type { Fill } from "../shared/lib/drawing/hatch";
 import { parseDrawing } from "../shared/lib/drawing/parse";
 import { buildSvg, cleanFileName } from "../shared/lib/drawing/svg";
-import { plateSetOf, stemWithoutPlate, type Photo } from "../shared/lib/drawing/photo";
+import { joinedPicture, photoMode, photoScale, PLATE_AIMS, plateSetOf, stemWithoutPlate, type Photo } from "../shared/lib/drawing/photo";
 import { boxOf, drawnNodes, newLayerId, type Layer, type Page, type Shape } from "../shared/lib/drawing/shapes";
 import { pathData } from "../shared/lib/drawing/path";
 import { useDrawingFile, type Current } from "../shared/lib/drawing/useDrawingFile";
@@ -76,7 +77,7 @@ const NO_FILLS: Fill[] = [];
 const firstLayer = (): Layer => ({ id: newLayerId(), name: "Black", color: "#262626" });
 
 /** What waits on the question about unsaved work: a new drawing, photos opened, or a file opened. */
-type Next = { kind: "new" } | { kind: "photos"; files: File[]; skipped?: string[]; found?: Inks; name?: string } | { kind: "open"; path: string } | { kind: "snapshot"; app: "studio" | "plot"; path: string };
+type Next = { kind: "new" } | { kind: "photos"; files: File[]; skipped?: string[]; found?: Inks; name?: string } | { kind: "open"; path: string } | { kind: "dropped"; file: File } | { kind: "snapshot"; app: "studio" | "plot"; path: string };
 
 export default function App() {
   const [page, setPage] = useState<Page>({ w: 11, h: 8.5 });
@@ -198,7 +199,7 @@ export default function App() {
   const preset = toolName === NONE_PEN ? null : presets.find((t) => t.name === toolName) ?? null;
   const nonePen = presets.find((t) => t.name === NONE_PEN);
   const tool = preset ?? (nonePen ? { ...GENERAL_PEN, settings: { ...GENERAL_PEN.settings, ...nonePen.settings }, hatch: nonePen.hatch ?? GENERAL_PEN.hatch } : GENERAL_PEN);
-  const penWidthMm = tool.settings.pen_width ?? 0.5;
+  const penWidthMm = penWidthOf(tool);
 
   // ---- The photo drawing ----
 
@@ -359,7 +360,7 @@ export default function App() {
 
   const {
     addPhoto, addSeparations, switchPhotoMode, setKeyLayer, splitPhoto, splitPhotoBestFit,
-    placePhoto, replacePhoto, reloadPhoto, cropPhoto, bakeEffect, savePreset, applyPreset, deletePreset, setPhotoOf, addEdgeMask, chooseEdgeMask, deleteEdgeMask, setEdgeGen, saveEdgeGen, setAngles, photoStem, splitPhotoCmyk, setLayerColor,
+    placePhoto, scalePhoto, replacePhoto, reloadPhoto, joinSeparations, cropPhoto, bakeEffect, savePreset, applyPreset, deletePreset, setPhotoOf, addEdgeMask, chooseEdgeMask, deleteEdgeMask, setEdgeGen, saveEdgeGen, setAngles, photoStem, splitPhotoCmyk, setLayerColor,
     splitAroundPaper, setPaperTone, addPass, removePass, setChannelOf, splitPhotoProfile,
   } = photoActions({
     chosen, shapes, setShapes, layers, setLayers, active, setActiveLayer, page, tool,
@@ -367,6 +368,14 @@ export default function App() {
     // spacing is for Studio's solid fills, not a picture's tones.
     spacingMm: 0.5, targets, paper: paperColor, record, addShape, pick, setMessage, setBusy,
   });
+  // A separation's channels joined into one picture, to be split the way that was asked once it's the
+  // photo in hand: the split reads the joined picture, not a plate.
+  const [modeAfterJoin, setModeAfterJoin] = useState<"value" | "colour" | "cmyk" | "profile" | null>(null);
+  useEffect(() => {
+    if (!modeAfterJoin || !chosen?.photo || photoMode(chosen.photo) === "separations") return;
+    setModeAfterJoin(null);
+    switchPhotoMode(modeAfterJoin);
+  }, [modeAfterJoin, chosen]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // A new, empty drawing on the paper as it is.
   const newDrawing = useCallback(() => {
@@ -470,6 +479,7 @@ export default function App() {
     if (next.kind === "new") newDrawing();
     else if (next.kind === "photos") startPhotos(next.files, next.skipped, next.found, next.name);
     else if (next.kind === "open") void file.open(next.path);
+    else if (next.kind === "dropped") void file.openDropped(next.file);
     else void file.openIn(next.app, next.path);
   };
   const ask = (next: Next) => (file.dirty && shapes.length ? setConfirmNext(next) : goOn(next));
@@ -490,34 +500,15 @@ export default function App() {
     if (files.length) ask({ kind: "photos", files });
   };
 
-  // Drag pictures onto the stage to open them, as Open… does.
-  const dragDepth = useRef(0);
-  const [draggingFile, setDraggingFile] = useState(false);
-  const stageDrop = {
-    onDragEnter: (e: DragEvent) => {
-      if (!e.dataTransfer.types.includes("Files") || busy) return;
-      dragDepth.current++;
-      setDraggingFile(true);
-    },
-    onDragLeave: () => {
-      dragDepth.current = Math.max(0, dragDepth.current - 1);
-      if (!dragDepth.current) setDraggingFile(false);
-    },
-    onDragOver: (e: DragEvent) => {
-      if (e.dataTransfer.types.includes("Files")) e.preventDefault();
-    },
-    onDrop: (e: DragEvent) => {
-      if (!e.dataTransfer.types.includes("Files")) return;
-      e.preventDefault();
-      dragDepth.current = 0;
-      setDraggingFile(false);
-      if (busy) return;
-      const files = [...e.dataTransfer.files];
-      const pictures = files.filter((f) => f.type.startsWith("image/") || isPhotoshop(f.name));
-      if (!pictures.length) return setMessage({ text: "Drop an image file to open it.", ok: false });
-      void openPicked(pictures);
-    },
-  };
+  // Drag files onto the page to open them, as Open… does: an SVG as the drawing, in this one's
+  // place; pictures to convert.
+  const draggingFile = useFileDrop((files) => {
+    const svg = files.find(isSvgFile);
+    if (svg) return ask({ kind: "dropped", file: svg });
+    const pictures = files.filter((f) => f.type.startsWith("image/") || isPhotoshop(f.name));
+    if (!pictures.length) return setMessage({ text: "Drop an image or an SVG file to open it.", ok: false });
+    void openPicked(pictures);
+  }, () => !busy && !file.lock);
   // Asked in the library's Modal, over everything, as Studio and Plot ask it.
   const confirmModal = (
     <UnsavedChangesModal
@@ -555,11 +546,14 @@ export default function App() {
         setPage({ w: w / 25.4, h: h / 25.4 });
       }}
       onColor={pickPaperColor}
-      // The paper turned with everything on it, as in every app; and Fit with the Paper card's margin
-      // and alignment, which the image keeps, so it follows the paper when that changes.
+      // The paper turned with everything on it, as in every app; Fit and Fill with the Paper card's
+      // margin and alignment, once, when pressed; and the picture's size as a percent of its file's.
+      // Nothing here sizes the picture when the paper changes: its size is the user's.
       onTurnDrawing={shapes.length ? (dir) => void turnAll(dir) : undefined}
       onFit={chosen?.photo ? (marginMm, align, bottomMm) => placePhoto("fit", marginMm / 25.4, align, bottomMm / 25.4) : undefined}
       onFill={chosen?.photo ? (marginMm, align, bottomMm) => placePhoto("fill", marginMm / 25.4, align, bottomMm / 25.4) : undefined}
+      scale={chosen?.photo ? Math.round(photoScale(chosen) * 10) / 10 : undefined}
+      onScale={chosen?.photo ? scalePhoto : undefined}
     />
   );
   // A pen chosen by hand: the photo's colors are chosen again from its palette - each plate, or each
@@ -742,7 +736,7 @@ export default function App() {
         savePreset,
         applyPreset,
         deletePreset,
-        reload: reloadPhoto,
+        reload: () => void reloadPhoto(),
         bake: bakeEffect,
         crop: () => setCropDraft(chosen?.photo?.crop ?? [0, 0, 1, 1]),
         cropDone: keepCrop,
@@ -755,7 +749,12 @@ export default function App() {
         deleteEdgeMask,
         setEdgeGen,
         saveEdgeGen,
-        switchMode: switchPhotoMode,
+        switchMode: (to) => {
+          // From a separation's own channels: joined into one picture first, then split the way asked.
+          if (chosen?.photo && photoMode(chosen.photo) === "separations" && to !== "separations") {
+            void joinSeparations().then((joined) => joined && setModeAfterJoin(to));
+          } else switchPhotoMode(to);
+        },
         setProfile: (path, rendering) => void splitPhotoProfile(path, rendering),
         set: setPhotoOf,
         split: splitPhoto,
@@ -872,8 +871,28 @@ export default function App() {
           try {
             // Replace: the new picture goes in the image's place, with every setting it had.
             if (browsing === "replace") {
+              // A Multichannel Photoshop file over separations - each plate gets its own ink's channel - or
+              // over its channels joined into one picture, joined again.
+              const plates = Boolean(chosen?.photo && ((chosen.photo.separation && !chosen.photo.profile) || chosen.photo.channelInks));
+              if (plates && isPhotoshop(name) && await reloadPhoto(path)) return;
               const res = await fetch(`/api/image-file?path=${encodeURIComponent(path)}`);
-              if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error ?? `${name} couldn't be read`);
+              if (!res.ok) {
+                // A Multichannel file has no one picture of its own: its channels, joined in their inks.
+                const channels = !plates && isPhotoshop(name) ? await channelsOf({ name, path }, tool.palette ?? []).catch(() => null) : null;
+                if (channels) {
+                  const inks = channels.files.map((f) => {
+                    const ink = channels.found.inks.get(f);
+                    return ink?.pen?.color ?? ink?.color?.color ?? (ink?.plate ? PLATE_AIMS[ink.plate].color : "#262626");
+                  });
+                  const joined = await joinedPicture(channels.files.map((picture, i) => ({ picture, ink: inks[i] })));
+                  const blob = await (await fetch(joined.src)).blob();
+                  const picked = new File([blob], name, { type: blob.type });
+                  pictureSources.set(picked, path);
+                  await replacePhoto(picked, inks);
+                  return;
+                }
+                throw new Error((await res.json().catch(() => ({}))).error ?? `${name} couldn't be read`);
+              }
               const blob = await res.blob();
               const picked = new File([blob], name, { type: blob.type });
               pictureSources.set(picked, path);
@@ -977,7 +996,7 @@ export default function App() {
           {chosen?.photo && <AdjustToolbar vignette={{ on: vignetteCard, toggle: () => setVignetteCard((on) => !on) }} mask={{ on: maskCard, toggle: () => setMaskCard((on) => !on) }} />}
           {chosen?.photo && <HistoryToolbar canUndo={canUndo} canRedo={canRedo} onUndo={undo} onRedo={redo} disabled={busy} />}
         </div>
-        <section className={styles.stage} aria-label="Image conversion" data-dragging-file={draggingFile || undefined} {...stageDrop}>
+        <section className={styles.stage} aria-label="Image conversion" data-dragging-file={draggingFile || undefined}>
           {chosen?.photo && convertBox ? (
             <ConvertStage
               photo={chosen.photo}

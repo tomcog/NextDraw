@@ -18,10 +18,21 @@ export interface Photo {
   /** The working copy's size in pixels, so its proportions are known before it has been read. */
   width: number;
   height: number;
+  /**
+   * The working copy's pixels to the inch at the size its file says it is - the file's own resolution,
+   * scaled as the copy was - so the picture can come in at that size, and be put back to it (100%).
+   * Absent from drawings made before it was kept.
+   */
+  ppi?: number;
   /** The file it was made from, where it was opened from NextDraw's own file browser: what Reload reads again. */
   source?: string;
   /** A channel of a Multichannel Photoshop `source`, counted from 0: what Reload reads it from. */
   sourceChannel?: number;
+  /**
+   * A Multichannel `source`'s channels joined into one colour picture, each in its ink, by channel:
+   * what Reload joins them in again. Absent, the file is read as one picture.
+   */
+  channelInks?: string[];
   /** Quarter turns given it since it came from its file, clockwise, 0 to 3: what Reload turns the file again by. */
   quarterTurns?: number;
   /**
@@ -270,7 +281,7 @@ export interface Photo {
    * How the photo was split the other way, kept for when it's split that way again: switching between
    * value and colour puts back the layers and settings it had, rather than starting over.
    */
-  modes?: Partial<Record<"value" | "colour" | "cmyk", PhotoPart[]>>;
+  modes?: Partial<Record<"value" | "colour" | "cmyk" | "separations", PhotoPart[]>>;
   /** Split by colour: every group's pen, by group, and the key's, so each layer can be worked out alongside the rest. */
   regionInks?: (string | null)[];
   keyInk?: string;
@@ -366,8 +377,8 @@ export interface Photo {
    * shows, before any effect reads it (vignette.ts). The whole photo's, like the edge mask. Absent, none.
    */
   vignette?: Vignette;
-  /** Sized to the page: all of it as large as it fits, or filling the page and cropped. Absent once
-   *  it has been moved or sized by hand. A photo sized to the page is sized again when the page is. */
+  /** From drawings made before the size was left to the user: once said the photo was sized to the
+   *  page, and sized again with it. Read and written back as it was, but nothing sizes a photo by it. */
   fit?: "fit" | "fill";
   /** The margin, in inches, it is fitted or filled inside. */
   margin?: number;
@@ -1220,12 +1231,13 @@ export function pictureOf(p: Photo): string | undefined {
  * so a drawing that carries it stays a size a browser opens without a pause. Rejects with a sentence
  * to show when the browser can't read the file - an iPhone's HEIC, in most of them.
  */
-export async function workingCopy(file: File, edge = WORKING_EDGE): Promise<Pick<Photo, "src" | "width" | "height">> {
-  const img = await readPicture(file);
+export async function workingCopy(file: File, edge = WORKING_EDGE): Promise<Pick<Photo, "src" | "width" | "height" | "ppi">> {
+  const [img, dpi] = await Promise.all([readPicture(file), fileDpi(file).catch(() => null)]);
   try {
     const scale = Math.min(1, edge / Math.max(img.width, img.height));
     const width = Math.max(1, Math.round(img.width * scale));
     const height = Math.max(1, Math.round(img.height * scale));
+    const ppi = (dpi ?? DEFAULT_DPI) * (width / img.width);
     const canvas = document.createElement("canvas");
     canvas.width = width;
     canvas.height = height;
@@ -1233,10 +1245,159 @@ export async function workingCopy(file: File, edge = WORKING_EDGE): Promise<Pick
     ctx.fillStyle = "#ffffff"; // a transparent PNG is on white paper, not black
     ctx.fillRect(0, 0, width, height);
     ctx.drawImage(img, 0, 0, width, height);
-    return { src: canvas.toDataURL("image/jpeg", 0.85), width, height };
+    return { src: canvas.toDataURL("image/jpeg", 0.85), width, height, ppi };
   } finally {
     img.close();
   }
+}
+
+/**
+ * Separation plates - greyscale, darker where more ink goes - as one colour picture: each plate's ink
+ * laid over white in proportion to its darkness, as they'd print together. At the first plate's size,
+ * the rest stretched to it, as the plates are drawn; a JPEG, as a working copy is.
+ */
+export async function joinedPicture(plates: { picture: Blob | string; ink: string }[]): Promise<Pick<Photo, "src" | "width" | "height">> {
+  const bitmaps = await Promise.all(plates.map(async (p) => createImageBitmap(typeof p.picture === "string" ? await (await fetch(p.picture)).blob() : p.picture)));
+  try {
+    const width = bitmaps[0].width;
+    const height = bitmaps[0].height;
+    const canvas = document.createElement("canvas");
+    canvas.width = width;
+    canvas.height = height;
+    const ctx = canvas.getContext("2d", { willReadFrequently: true })!;
+    const out = new Float32Array(width * height * 3).fill(1);
+    bitmaps.forEach((bitmap, i) => {
+      const ink = /^#?([0-9a-f]{6})$/i.exec(plates[i].ink)?.[1] ?? "000000";
+      const rgb = [0, 2, 4].map((at) => parseInt(ink.slice(at, at + 2), 16) / 255);
+      ctx.clearRect(0, 0, width, height);
+      ctx.fillStyle = "#ffffff"; // a transparent plate is no ink
+      ctx.fillRect(0, 0, width, height);
+      ctx.drawImage(bitmap, 0, 0, width, height);
+      const { data } = ctx.getImageData(0, 0, width, height);
+      for (let p = 0, d = 0; d < data.length; p += 3, d += 4) {
+        const amount = 1 - (0.2126 * data[d] + 0.7152 * data[d + 1] + 0.0722 * data[d + 2]) / 255;
+        for (let c = 0; c < 3; c++) out[p + c] *= 1 - amount * (1 - rgb[c]);
+      }
+    });
+    const image = ctx.createImageData(width, height);
+    for (let p = 0, d = 0; d < image.data.length; p += 3, d += 4) {
+      image.data[d] = out[p] * 255;
+      image.data[d + 1] = out[p + 1] * 255;
+      image.data[d + 2] = out[p + 2] * 255;
+      image.data[d + 3] = 255;
+    }
+    ctx.putImageData(image, 0, 0);
+    return { src: canvas.toDataURL("image/jpeg", 0.85), width, height };
+  } finally {
+    bitmaps.forEach((b) => b.close());
+  }
+}
+
+/** A picture whose file doesn't say how big it is: 72 pixels to the inch, as Photoshop takes it. */
+export const DEFAULT_DPI = 72;
+
+/**
+ * The pixels to the inch a picture file says it is, or null where it doesn't say: a JPEG's JFIF or
+ * Exif resolution, a PNG's pHYs, a TIFF's XResolution, a Photoshop file's ResolutionInfo.
+ */
+export async function fileDpi(file: File): Promise<number | null> {
+  const v = new DataView(await file.arrayBuffer());
+  const n = v.byteLength;
+  const ascii = (at: number, len: number) => (at + len <= n ? String.fromCharCode(...new Uint8Array(v.buffer, at, len)) : "");
+  const sane = (dpi: number) => (Number.isFinite(dpi) && dpi >= 1 && dpi <= 10000 ? dpi : null);
+  // A TIFF header and its first directory, from `base`: Exif inside a JPEG, or the whole of a TIFF.
+  const tiff = (base: number): number | null => {
+    if (base + 8 > n) return null;
+    const le = ascii(base, 2) === "II";
+    if (!le && ascii(base, 2) !== "MM") return null;
+    const u16 = (at: number) => v.getUint16(base + at, le);
+    const u32 = (at: number) => v.getUint32(base + at, le);
+    const ifd = u32(4);
+    if (base + ifd + 2 > n) return null;
+    let res: number | null = null;
+    let unit = 2; // inches, when it doesn't say
+    for (let i = 0, count = u16(ifd); i < count; i++) {
+      const at = ifd + 2 + i * 12;
+      if (base + at + 12 > n) break;
+      const tag = u16(at);
+      if (tag === 282) {
+        const off = u32(at + 8);
+        if (base + off + 8 <= n && u32(off + 4)) res = u32(off) / u32(off + 4);
+      } else if (tag === 296) unit = u16(at + 8);
+    }
+    return res === null || unit === 1 ? null : sane(unit === 3 ? res * 2.54 : res);
+  };
+  if (n > 4 && v.getUint16(0) === 0xffd8) {
+    let jfif: number | null = null, exif: number | null = null;
+    for (let at = 2; at + 4 <= n && v.getUint8(at) === 0xff;) {
+      const marker = v.getUint8(at + 1);
+      if (marker === 0xda || marker === 0xd9) break; // the picture itself: no more headers
+      const len = v.getUint16(at + 2);
+      if (marker === 0xe0 && ascii(at + 4, 5) === "JFIF\0" && at + 16 <= n) {
+        const units = v.getUint8(at + 11), x = v.getUint16(at + 12);
+        if (units === 1 || units === 2) jfif = sane(units === 2 ? x * 2.54 : x);
+      } else if (marker === 0xe1 && ascii(at + 4, 6) === "Exif\0\0") {
+        exif = tiff(at + 10);
+      }
+      at += 2 + len;
+    }
+    return jfif ?? exif;
+  }
+  if (ascii(1, 3) === "PNG") {
+    for (let at = 8; at + 8 <= n;) {
+      const len = v.getUint32(at), type = ascii(at + 4, 4);
+      if (type === "pHYs" && at + 17 <= n) // Kept per metre, which no round number of pixels to the inch is: 300 is 11811, which reads
+      // back as 299.9994. Rounded to a hundredth, so 100% is the size the picture was saved at.
+      return v.getUint8(at + 16) === 1 ? sane(Math.round(v.getUint32(at + 8) * 2.54) / 100) : null;
+      if (type === "IDAT" || type === "IEND") break;
+      at += 12 + len;
+    }
+    return null;
+  }
+  if (ascii(0, 2) === "II" || ascii(0, 2) === "MM") return tiff(0);
+  if (ascii(0, 4) === "8BPS" && n > 30) {
+    let at = 26 + 4 + v.getUint32(26); // past the colour mode data
+    if (at + 4 > n) return null;
+    const end = at + 4 + v.getUint32(at);
+    for (at += 4; at + 12 <= end && at + 12 <= n && ascii(at, 4) === "8BIM";) {
+      const id = v.getUint16(at + 4);
+      const nameLen = v.getUint8(at + 6);
+      const data = at + 6 + ((nameLen + 2) & ~1); // a Pascal name, padded to even
+      if (data + 4 > n) break;
+      const size = v.getUint32(data);
+      if (id === 0x03ed && data + 10 <= n) {
+        // Fixed 16.16 pixels to the unit, then the unit: 1 inches, 2 centimetres.
+        const res = v.getUint32(data + 4) / 65536;
+        return sane(v.getUint16(data + 8) === 2 ? res * 2.54 : res);
+      }
+      at = data + 4 + ((size + 1) & ~1);
+    }
+  }
+  return null;
+}
+
+/**
+ * Where a picture goes at the size its file says it is: in the middle of the page, whether or not it
+ * fits there - how big it is drawn is the user's to change. Pixels to the inch from its file, or 72.
+ */
+export function placeAtOwnSize(copy: Pick<Photo, "width" | "height" | "ppi">, page: { w: number; h: number }) {
+  const ppi = copy.ppi ?? DEFAULT_DPI;
+  const w = copy.width / ppi, h = copy.height / ppi;
+  const x = (page.w - w) / 2, y = (page.h - h) / 2;
+  return { x, y, x2: x + w, y2: y + h };
+}
+
+/**
+ * How big a photo is drawn, as a percent of the size its file says it is: its box over the part of the
+ * picture that shows, at the file's pixels to the inch. A photo from before that was kept has no such
+ * size; it's taken as it is now, so 100% leaves it where it is.
+ */
+export function photoScale(sh: { x: number; x2: number; photo?: Photo }): number {
+  const p = sh.photo;
+  if (!p?.ppi) return 100;
+  const [l, , r] = p.crop ?? [0, 0, 1, 1];
+  const own = ((r - l) * p.width) / p.ppi;
+  return own > 0 ? (Math.abs(sh.x2 - sh.x) / own) * 100 : 100;
 }
 
 /**
@@ -1320,6 +1481,29 @@ export function turnedCrop(crop: Photo["crop"], quarter: 1 | -1): Photo["crop"] 
   if (!crop) return undefined;
   const [l, t, r, b] = crop;
   return quarter === 1 ? [1 - b, l, 1 - t, r] : [t, 1 - r, b, 1 - l];
+}
+
+/**
+ * A photo's separation plates kept to come back to as Channels (`modes.separations`), cut or turned as
+ * its picture just was, so they come back matching it: `picture` makes a plate's new picture, and
+ * `own` its new cut and turns. `made` shares each new picture between the layers that keep the same
+ * plates. The photo's modes as they now are; unchanged when it keeps no plates.
+ */
+export async function keptPlatesAlike(
+  photo: Photo,
+  picture: (src: string) => Promise<Pick<Photo, "src" | "width" | "height">>,
+  own: (plate: Partial<Photo>) => Partial<Photo>,
+  made: Map<string, Promise<Pick<Photo, "src" | "width" | "height">>>,
+): Promise<Photo["modes"]> {
+  const kept = photo.modes?.separations;
+  if (!kept?.length) return photo.modes;
+  const plates = await Promise.all(kept.map(async (part) => {
+    const src = part.photo.src;
+    if (!src) return part;
+    if (!made.has(src)) made.set(src, picture(src));
+    return { ...part, photo: { ...part.photo, ...await made.get(src)!, ...own(part.photo) } };
+  }));
+  return { ...photo.modes, separations: plates };
 }
 
 // ---------- Hatching ----------
@@ -5021,6 +5205,7 @@ export function photoFromData(raw: Record<string, unknown>): Photo | null {
     src,
     width: num(raw.width, 1),
     height: num(raw.height, 1),
+    ...(Number(raw.ppi) > 0 ? { ppi: Number(raw.ppi) } : {}),
     brightness: num(raw.brightness, PHOTO_DEFAULTS.brightness),
     contrast: num(raw.contrast, PHOTO_DEFAULTS.contrast),
     ...(num(raw.channel_brightness, 0) ? { channelBrightness: num(raw.channel_brightness, 0) } : {}),
@@ -5038,6 +5223,7 @@ export function photoFromData(raw: Record<string, unknown>): Photo | null {
     spacingMm: num(raw.spacing_mm, 0.3),
     ...(typeof raw.source === "string" && raw.source ? { source: raw.source } : {}),
     ...(Number.isInteger(raw.source_channel) && Number(raw.source_channel) >= 0 ? { sourceChannel: Number(raw.source_channel) } : {}),
+    ...(Array.isArray(raw.channel_inks) && raw.channel_inks.every((c) => typeof c === "string") ? { channelInks: raw.channel_inks as string[] } : {}),
     ...([1, 2, 3].includes(Number(raw.quarter_turns)) ? { quarterTurns: Number(raw.quarter_turns) } : {}),
     ...(isPart(raw.cut) ? { cut: raw.cut } : {}),
     ...(raw.idle === true ? { idle: true } : {}),
@@ -5147,6 +5333,7 @@ export function photoFromData(raw: Record<string, unknown>): Photo | null {
 /** A photo as the design block keeps it. */
 export const photoData = (p: Photo) => ({
   src: p.src, width: p.width, height: p.height, brightness: p.brightness, contrast: p.contrast,
+  ...(p.ppi ? { ppi: p.ppi } : {}),
   ...(p.channelBrightness ? { channel_brightness: p.channelBrightness } : {}),
   ...(p.channelContrast ? { channel_contrast: p.channelContrast } : {}),
   ...(p.channelBlackPoint ? { channel_black_point: p.channelBlackPoint } : {}),
@@ -5155,6 +5342,7 @@ export const photoData = (p: Photo) => ({
   angle: p.angle, spacing_mm: p.spacingMm, levels: p.levels,
   ...(p.source ? { source: p.source } : {}),
   ...(p.source && p.sourceChannel !== undefined ? { source_channel: p.sourceChannel } : {}),
+  ...(p.source && p.channelInks ? { channel_inks: p.channelInks } : {}),
   ...(p.quarterTurns ? { quarter_turns: p.quarterTurns } : {}),
   ...(p.cut ? { cut: p.cut } : {}),
   ...(p.idle ? { idle: true } : {}),

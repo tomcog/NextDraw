@@ -3,7 +3,7 @@
 
 import type { FitAlign } from "../geometry";
 import type { Fill } from "./hatch";
-import { readTones, turnedCopy, turnedCrop, type Photo } from "./photo";
+import { keptPlatesAlike, readTones, turnedCopy, turnedCrop, type Photo } from "./photo";
 import { boxOf, type Page, type Shape } from "./shapes";
 import { turnWhole } from "./whole";
 
@@ -24,6 +24,13 @@ export async function turnPaperAndDrawing(shapes: Shape[], fills: Fill[], page: 
     if (sh.photo && !pictures.has(sh.photo.src)) pictures.set(sh.photo.src, await turnedCopy(sh.photo.src, dir));
   }
   await Promise.all([...pictures.values()].map((t) => readTones(t.src)));
+  // Separation plates kept for Channels, turned alike, so they come back standing as the picture does.
+  const turns = (n: number | undefined) => (((n ?? 0) + dir) % 4 + 4) % 4 || undefined;
+  const plates = new Map<string, Promise<Pick<Photo, "src" | "width" | "height">>>();
+  const modes = new Map<string, Photo["modes"]>();
+  for (const sh of shapes) {
+    if (sh.photo) modes.set(sh.id, await keptPlatesAlike(sh.photo, (src) => turnedCopy(src, dir), (p) => ({ cut: turnedCrop(p.cut, dir), quarterTurns: turns(p.quarterTurns) }), plates));
+  }
   const before = new Map(shapes.map((sh) => [sh.id, sh]));
   const next = turned.shapes.map((sh) => {
     const was = before.get(sh.id);
@@ -43,7 +50,8 @@ export async function turnPaperAndDrawing(shapes: Shape[], fills: Fill[], page: 
         crop: turnedCrop(was.photo.crop, dir),
         cut: turnedCrop(was.photo.cut, dir),
         ...(was.photo.align && { align: turnedAlign(was.photo.align, dir) }),
-        quarterTurns: (((was.photo.quarterTurns ?? 0) + dir) % 4 + 4) % 4 || undefined,
+        quarterTurns: turns(was.photo.quarterTurns),
+        modes: modes.get(sh.id),
       },
     };
   });

@@ -7,8 +7,8 @@ import { fillRuns, newFillId, type Fill } from "../../shared/lib/drawing/hatch";
 import type { StrokeFont } from "../../shared/lib/drawing/font";
 import { curveStrokes, type Point } from "../../shared/lib/drawing/parametric";
 import { flattenPath, flattenRun, mapNode, parsePath, refitRun, simplifyRun, type Node } from "../../shared/lib/drawing/path";
-import { placements } from "../../shared/lib/drawing/repeat";
-import { centerOf, drawnNodes, drawnRuns, newShapeId, outlinePoints, pathRuns, pointsBox, turnPoint, type Shape } from "../../shared/lib/drawing/shapes";
+import { placePoint, placements } from "../../shared/lib/drawing/repeat";
+import { boxOf, centerOf, drawnNodes, drawnRuns, newShapeId, outlinePoints, pathRuns, pointsBox, scaleInto, turnPoint, type Shape } from "../../shared/lib/drawing/shapes";
 import { textRuns } from "../../shared/lib/drawing/text";
 
 /**
@@ -96,7 +96,7 @@ export function bakedCopies(shape: Shape): Shape[] {
     run.map((n) => mapNode(n, (p) => ({ x: p.x + dx, y: p.y + dy })));
   return placements(shape).map((place, i) => {
     const turn = (shape.rotation ?? 0) + place.deg;
-    return {
+    const moved: Shape = {
       ...shape,
       id: i ? newShapeId() : shape.id,
       repeat: undefined,
@@ -109,6 +109,15 @@ export function bakedCopies(shape: Shape): Shape[] {
           ? { points: shift(shape.points, place.dx, place.dy) }
           : {}),
     };
+    // A copy a step scaled is its own size, about its own middle, as Scale on the card makes it.
+    const k = place.k ?? 1;
+    if (k === 1) return moved;
+    const b = boxOf(moved);
+    const cx = (b.x0 + b.x1) / 2, cy = (b.y0 + b.y1) / 2;
+    const w = ((b.x1 - b.x0) * k) / 2, h = ((b.y1 - b.y0) * k) / 2;
+    const [sized] = scaleInto([moved], b, { x0: cx - w, y0: cy - h, x1: cx + w, y1: cy + h });
+    const percent = Number(((shape.scale ?? 100) * k).toFixed(4));
+    return { ...sized, scale: percent === 100 ? undefined : percent };
   });
 }
 
@@ -122,8 +131,7 @@ export function markRuns(shape: Shape, font: StrokeFont | undefined, fills?: Fil
   const runs: Point[][] = [];
   for (const place of placements(shape)) {
     const put = (p: Point) => {
-      const turned = turnPoint(turnPoint(p, centre, shape.rotation ?? 0), centre, place.deg);
-      return { x: turned.x + place.dx, y: turned.y + place.dy };
+      return placePoint(centre, place, turnPoint(p, centre, shape.rotation ?? 0));
     };
     const own = shape.kind === "text"
       ? textRuns(shape, font).flatMap((g) => flattenPath(g.d))
@@ -153,8 +161,7 @@ export function markNodes(shape: Shape, font: StrokeFont | undefined): Node[][] 
   const out: Node[][] = [];
   for (const place of placements(shape)) {
     const put = (p: Point): Point => {
-      const turned = turnPoint(turnPoint(p, centre, shape.rotation ?? 0), centre, place.deg);
-      return { x: turned.x + place.dx, y: turned.y + place.dy };
+      return placePoint(centre, place, turnPoint(p, centre, shape.rotation ?? 0));
     };
     const own: Node[][] = shape.kind === "text"
       ? textRuns(shape, font).flatMap((g) => parsePath(g.d))

@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 import { Button, ButtonRound, Card, Checkbox, Segment, SegmentedControl, Toolbar } from "@tomcoggia/ui";
-import { ArrowDownLeft, ArrowDownRight, ArrowDownToLine, ArrowUpLeft, ArrowUpRight, Ellipsis, FlameKindling, Grid2x2, Orbit, PaintBucket, PaintRoller, Pipette, RotateCw, Scaling, Spline, SquareStack } from "lucide-react";
+import { ArrowDownLeft, ArrowDownRight, ArrowDownToLine, ArrowUpLeft, ArrowUpRight, Ellipsis, FlameKindling, Grid2x2, Layers2, Orbit, PaintBucket, PaintRoller, Pipette, RotateCw, Scaling, Shell, Spline, SquareStack } from "lucide-react";
 import { Section } from "../../../shared/components/controls/Section";
 import { NumberField } from "../../../shared/components/controls/NumberField";
 import controls from "../../../shared/components/controls/controls.module.css";
@@ -19,6 +19,7 @@ const REPEATS: { kind: RepeatKind; label: string; hint: string; icon: JSX.Elemen
   { kind: "line", label: "Row", hint: "Repeat it in a row, in whatever direction you point it", icon: <Ellipsis /> },
   { kind: "grid", label: "Grid", hint: "Repeat it in rows and columns", icon: <Grid2x2 /> },
   { kind: "ring", label: "Ring", hint: "Repeat it round a circle, with this shape at the top", icon: <Orbit /> },
+  { kind: "step", label: "Step", hint: "Repeat it as a step: each copy is the one before moved, scaled and turned by the same amounts - a turn curves them round, a scale under 100% winds them in", icon: <Shell /> },
 ];
 
 /**
@@ -42,6 +43,7 @@ export interface ShapeActions {
   setScale: (percent: number) => void;
   setRepeat: (repeat: Repeat | undefined) => void;
   bake: (id: string) => void;
+  spread: (id: string) => void;
   /** A varnish mask: a point halfway along its longest edge, to drag where it's wanted. */
   addPoint?: () => void;
 }
@@ -219,7 +221,7 @@ export function ShapeCard({ shape, title, icon, busy, hasFill, canPaste, panel, 
                 <Segment selected={scaling} icon={<Scaling />} hideLabel title="Scale: make this path bigger or smaller, about the middle of its box" onClick={() => onPanel("scale")}>
                   Scale
                 </Segment>
-                <Segment selected={repeating} icon={<SquareStack />} hideLabel title="Repeat: draw this path more than once, in a row, a grid or a ring" onClick={() => onPanel("repeat")}>
+                <Segment selected={repeating} icon={<SquareStack />} hideLabel title="Repeat: draw this path more than once, in a row, a grid, a ring or a step of moves, scales and turns" onClick={() => onPanel("repeat")}>
                   Repeat
                 </Segment>
               </SegmentedControl>
@@ -351,6 +353,13 @@ export function ShapeCard({ shape, title, icon, busy, hasFill, canPaste, panel, 
                     aria-label="Bake the copies"
                     title={`Bake: all ${placements(shape).length} copies become paths of their own, each still made of its own numbers`}
                     onClick={() => actions.bake(shape.id)}
+                  />
+                  <ButtonRound
+                    size="sm"
+                    icon={<Layers2 />}
+                    aria-label="Spread duplicates across layers"
+                    title={`Spread duplicates across layers: bake the ${placements(shape).length} copies, the first on this layer and each after it on a layer of its own with the same pen`}
+                    onClick={() => actions.spread(shape.id)}
                   />
                 </div>
               )}

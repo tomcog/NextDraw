@@ -2,9 +2,9 @@
 // shape itself stays the one you drew and the one you edit; the copies are worked out from it, so
 // changing the shape - or its fill, or its angle - changes every copy at once.
 
-import { centerOf, type Shape } from "./shapes";
+import { centerOf, turnPoint, type Shape } from "./shapes";
 
-export type RepeatKind = "line" | "grid" | "ring";
+export type RepeatKind = "line" | "grid" | "ring" | "step";
 
 /** Copies in a row, each `step` inches on from the last, in whatever direction `angle` points. */
 export interface LineRepeat {
@@ -34,13 +34,33 @@ export interface RingRepeat {
   facing: boolean;
 }
 
-export type Repeat = LineRepeat | GridRepeat | RingRepeat;
+/**
+ * Copies made one from another, as a step repeated: each is the one before it moved by `moveX`/`moveY`
+ * inches, scaled by `scale` percent and turned `turn` degrees about its own middle. The move is the
+ * copy's own, so it shrinks with the scale and swings with the turn - a turn steers the copies round
+ * in a curve, and a scale under 100 winds them into a spiral. With neither, they stand in a row.
+ */
+export interface StepRepeat {
+  kind: "step";
+  /** How many copies are made, the shape that was drawn not included. */
+  copies: number;
+  moveX: number;
+  moveY: number;
+  scale: number;
+  turn: number;
+}
 
-/** One copy's place: how far it is moved, and how far it is turned about its own middle. */
+export type Repeat = LineRepeat | GridRepeat | RingRepeat | StepRepeat;
+
+/**
+ * One copy's place: how far it is moved, how far it is turned about its own middle, and how much it is
+ * scaled about its middle - absent, it is the shape's own size.
+ */
 export interface Placement {
   dx: number;
   dy: number;
   deg: number;
+  k?: number;
 }
 
 /** A repeat to start from, sized to the shape so the first copies land clear of the original. */
@@ -52,6 +72,9 @@ export function defaultRepeat(kind: RepeatKind, s: Shape): Repeat {
   }
   if (kind === "grid") {
     return { kind: "grid", across: 3, down: 2, stepX: Number((w * 1.2).toFixed(3)), stepY: Number((h * 1.2).toFixed(3)) };
+  }
+  if (kind === "step") {
+    return { kind: "step", copies: 5, moveX: Number((w * 1.2).toFixed(3)), moveY: 0, scale: 90, turn: 15 };
   }
   return { kind: "ring", count: 6, radius: Number((Math.max(w, h) * 1.5).toFixed(3)), facing: true };
 }
@@ -72,6 +95,14 @@ export const REPEAT_FIELDS: Record<RepeatKind, { key: string; label: string; min
     // "Shapes" rather than "copies": the count takes in the shape that was drawn, not just its copies.
     { key: "count", label: "Shapes", min: 1, max: 200, step: 1 },
     { key: "radius", label: "Radius", min: 0, max: 50, step: 0.1, unit: "in" },
+  ],
+  step: [
+    // "Copies" here, unlike the others: what is asked is how many times the step is taken.
+    { key: "copies", label: "Copies", min: 0, max: 500, step: 1 },
+    { key: "moveX", label: "Move X", min: -50, max: 50, step: 0.1, unit: "in" },
+    { key: "moveY", label: "Move Y", min: -50, max: 50, step: 0.1, unit: "in" },
+    { key: "scale", label: "Scale", min: 1, max: 1000, step: 5, unit: "%" },
+    { key: "turn", label: "Rotation", min: -360, max: 360, step: 5, unit: "°" },
   ],
 };
 
@@ -102,6 +133,23 @@ export function placements(s: Shape): Placement[] {
     }
     return out.length ? out : none;
   }
+  if (r.kind === "step") {
+    // Each copy is the last one stepped on: its move turned and scaled as that copy is, so the
+    // steps follow the copies round rather than all running one way across the page.
+    const copies = Math.max(0, Math.round(r.copies));
+    const k = r.scale > 0 ? r.scale / 100 : 1;
+    const out: Placement[] = [{ dx: 0, dy: 0, deg: 0 }];
+    let x = 0, y = 0, deg = 0, size = 1;
+    for (let i = 0; i < copies; i++) {
+      const rad = (deg * Math.PI) / 180;
+      x += size * (r.moveX * Math.cos(rad) - r.moveY * Math.sin(rad));
+      y += size * (r.moveX * Math.sin(rad) + r.moveY * Math.cos(rad));
+      deg += r.turn;
+      size *= k;
+      out.push({ dx: x, dy: y, deg, ...(size !== 1 ? { k: size } : {}) });
+    }
+    return out;
+  }
   const count = Math.max(1, Math.round(r.count));
   // The ring hangs below the shape, so the shape itself is the copy at twelve o'clock and stays
   // exactly where it was drawn. Everything else goes round from there.
@@ -115,14 +163,25 @@ export function placements(s: Shape): Placement[] {
   });
 }
 
-/** One copy's move and turn, as an SVG transform - nothing at all for a copy that stays put. */
+/** One copy's move, turn and scale, as an SVG transform - nothing at all for a copy that stays put. */
 export function placementAttr(s: Shape, p: Placement): string | undefined {
-  if (!p.dx && !p.dy && !p.deg) return undefined;
+  const k = p.k ?? 1;
+  if (!p.dx && !p.dy && !p.deg && k === 1) return undefined;
   const n = (v: number) => Number(v.toFixed(4));
+  const nk = (v: number) => Number(v.toFixed(6));
   const c = centerOf(s);
   const move = p.dx || p.dy ? `translate(${n(p.dx)} ${n(p.dy)})` : "";
   const turn = p.deg ? `rotate(${n(p.deg)} ${n(c.x)} ${n(c.y)})` : "";
-  return [move, turn].filter(Boolean).join(" ");
+  const size = k !== 1 ? `translate(${n(c.x)} ${n(c.y)}) scale(${nk(k)}) translate(${n(-c.x)} ${n(-c.y)})` : "";
+  return [move, turn, size].filter(Boolean).join(" ");
+}
+
+/** Where a point of the shape (already in its own turn) lands in one copy: scaled, turned, then moved. */
+export function placePoint(c: { x: number; y: number }, p: Placement, pt: { x: number; y: number }) {
+  const k = p.k ?? 1;
+  const sized = k === 1 ? pt : { x: c.x + (pt.x - c.x) * k, y: c.y + (pt.y - c.y) * k };
+  const turned = p.deg ? turnPoint(sized, c, p.deg) : sized;
+  return { x: turned.x + p.dx, y: turned.y + p.dy };
 }
 
 /** A repeat read back from a saved drawing: only numbers are kept, so check them on the way in. */
@@ -136,6 +195,9 @@ export function repeatFromData(raw: unknown): Repeat | null {
   }
   if (d.kind === "ring") {
     return { kind: "ring", count: n("count", 6), radius: n("radius", 1), facing: d.facing !== false };
+  }
+  if (d.kind === "step") {
+    return { kind: "step", copies: n("copies", 5), moveX: n("moveX", 1), moveY: n("moveY", 0), scale: n("scale", 100), turn: n("turn", 0) };
   }
   return null;
 }

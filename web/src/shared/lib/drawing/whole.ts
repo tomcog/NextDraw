@@ -6,7 +6,7 @@
 import { newFillId, type Fill } from "./hatch";
 import { type Point } from "./parametric";
 import { mapNode, type Node } from "./path";
-import { placements } from "./repeat";
+import { placePoint, placements } from "./repeat";
 import { boxOf, centerOf, drawnRuns, newShapeId, outlinePoints, shiftShape, turnPoint, type Page, type Shape } from "./shapes";
 import { FIT_CENTERED, type FitAlign } from "../geometry";
 
@@ -31,10 +31,8 @@ export function drawnBox(shapes: Shape[]): Box {
       : [{ x: b.x0, y: b.y0 }, { x: b.x1, y: b.y0 }, { x: b.x1, y: b.y1 }, { x: b.x0, y: b.y1 }];
     const c = centerOf(s);
     for (const place of placements(s)) {
-      const deg = (s.rotation ?? 0) + place.deg;
       for (const p of own) {
-        const q = deg ? turnPoint(p, c, deg) : p;
-        const x = q.x + place.dx, y = q.y + place.dy;
+        const { x, y } = placePoint(c, place, s.rotation ? turnPoint(p, c, s.rotation) : p);
         if (x < box.x0) box.x0 = x;
         if (y < box.y0) box.y0 = y;
         if (x > box.x1) box.x1 = x;
@@ -100,6 +98,9 @@ export function turnDrawingLeft(shapes: Shape[], fills: Fill[], page: Page): { s
     const r = s.repeat;
     if (r?.kind === "line") {
       next.repeat = { ...r, angle: r.angle - 90 < -360 ? r.angle + 270 : r.angle - 90 };
+    } else if (r?.kind === "step") {
+      // The step turns with the page; how far each copy turns on from the last doesn't change.
+      next.repeat = { ...r, moveX: r.moveY, moveY: -r.moveX };
     } else if (r?.kind === "grid") {
       // Columns become rows. The grid's last column is now its top row, so the shape moves to that
       // corner and the steps stay positive, as the fields need them.
@@ -148,6 +149,7 @@ export function reshapeDrawing(shapes: Shape[], k: number, about: Point, by: Poi
       ...(r && {
         repeat: r.kind === "line" ? { ...r, step: r.step * k }
           : r.kind === "grid" ? { ...r, stepX: r.stepX * k, stepY: r.stepY * k }
+          : r.kind === "step" ? { ...r, moveX: r.moveX * k, moveY: r.moveY * k }
           : { ...r, radius: r.radius * k },
       }),
     };
