@@ -90,6 +90,13 @@ export function turnDrawingLeft(shapes: Shape[], fills: Fill[], page: Page): { s
           x: b.y0, y: W - b.x1, x2: b.y1, y2: W - b.x0,
           ...(s.runs ? { runs: s.runs.map(by) } : s.points ? { points: by(s.points) } : {}),
         };
+    } else if (s.curve?.kind === "trim" && !s.rotation) {
+      // Trim marks look the same either way up, so their box stands the other way round about its
+      // middle instead of turning: the trim's width and height stay what they say they are.
+      const b = boxOf(s);
+      const at = to({ x: (b.x0 + b.x1) / 2, y: (b.y0 + b.y1) / 2 });
+      const w = b.y1 - b.y0, h = b.x1 - b.x0;
+      next = { ...s, x: at.x - w / 2, y: at.y - h / 2, x2: at.x + w / 2, y2: at.y + h / 2 };
     } else {
       const c = centerOf(s);
       const at = to(c);

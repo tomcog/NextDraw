@@ -1,5 +1,5 @@
 import { Card, Checkbox, Segment, SegmentedControl, Toolbar } from "@tomcoggia/ui";
-import { Focus, SlidersHorizontal, SquareDashed } from "lucide-react";
+import { Focus, Scissors, SlidersHorizontal, SquareDashed } from "lucide-react";
 import { Section } from "../../shared/components/controls/Section";
 import { NumberField } from "../../shared/components/controls/NumberField";
 import controls from "../../shared/components/controls/controls.module.css";
@@ -96,11 +96,11 @@ export function AdjustCard({ photo, channels, set, setChannel }: Props) {
  * The Vignette and Mask cards' switches, in a toolbar of their own down the left: each pressed while
  * its card shows. Adjustments' own switch is with Layers'.
  */
-export function AdjustToolbar({ vignette, mask, disabled }: { vignette: { on: boolean; toggle: () => void }; mask: { on: boolean; toggle: () => void }; disabled?: boolean }) {
+export function AdjustToolbar({ vignette, mask, trim, disabled }: { vignette: { on: boolean; toggle: () => void }; mask: { on: boolean; toggle: () => void }; trim: { on: boolean; toggle: () => void }; disabled?: boolean }) {
   return (
     <span className={bar.row}>
-      <ToolbarIcons><Toolbar tone="white" orientation="vertical" aria-label="Vignette and mask">
-        <SegmentedControl size="sm" variant="dark" actions aria-label="Vignette and mask">
+      <ToolbarIcons><Toolbar tone="white" orientation="vertical" aria-label="Vignette, mask and trim marks">
+        <SegmentedControl size="sm" variant="dark" actions aria-label="Vignette, mask and trim marks">
           <Segment
             aria-pressed={vignette.on}
             className={vignette.on ? bar.on : undefined}
@@ -118,6 +118,15 @@ export function AdjustToolbar({ vignette, mask, disabled }: { vignette: { on: bo
             icon={<SquareDashed />}
             title={`${mask.on ? "Hide" : "Show"} the Mask card: the image's edges left as paper - a grunge border, a torn edge`}
             aria-label="Mask card"
+          />
+          <Segment
+            aria-pressed={trim.on}
+            className={trim.on ? bar.on : undefined}
+            onClick={trim.toggle}
+            disabled={disabled}
+            icon={<Scissors />}
+            title={`${trim.on ? "Hide" : "Show"} the Trim marks card: where the print is cut, for the size it's finished at, and the image placed in it`}
+            aria-label="Trim marks card"
           />
         </SegmentedControl>
       </Toolbar></ToolbarIcons>

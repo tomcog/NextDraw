@@ -93,6 +93,9 @@ interface Props {
   /** The drawing's other layers - an effect baked before, paths drawn in Studio - bottom first, each its
    *  paths' data in inches on the page and its ink: drawn under the image's lines. */
   others?: { color: string; d: string[] }[];
+  /** The drawing's trim marks, if it has them: their ink, their paths in inches on the page, and the
+   *  trim itself, shown as a guide that's never drawn. */
+  trim?: { color: string; d: string[]; box: { x0: number; y0: number; x1: number; y1: number } };
   /** Cropping: the part of the whole picture kept - left, top, right, bottom, as fractions - set by dragging. */
   cropping?: { part: Part; onPart: (part: Part) => void };
 }
@@ -104,7 +107,7 @@ type Part = [number, number, number, number];
  * zooms and the loupe that Studio and Plot show a drawing on. Photo's own views go first in the bar, before
  * the shared ones; side by side, a second canvas follows the first's zoom.
  */
-export function ConvertStage({ photo, parts, box, page, paperColor, model, ink, view, onView, show, onShow, zoom, onZoom, loupe, onLoupe, cropping, others = [] }: Props) {
+export function ConvertStage({ photo, parts, box, page, paperColor, model, ink, view, onView, show, onShow, zoom, onZoom, loupe, onLoupe, cropping, others = [], trim }: Props) {
   const read = usePhotoRead(photo.src);
   const w = box.x1 - box.x0;
   const h = box.y1 - box.y0;
@@ -194,6 +197,11 @@ export function ConvertStage({ photo, parts, box, page, paperColor, model, ink, 
           {o.d.map((d, i) => <path key={i} d={d} fill="none" />)}
         </InkLayer>
       ))}
+      {trim && (
+        <InkLayer color={trim.color} sim={view === "preview"} opacity={ink.opacity} build={ink.build} builds={ink.builds} opaque={ink.opaque}>
+          {trim.d.map((d, i) => <path key={i} d={d} fill="none" />)}
+        </InkLayer>
+      )}
       <g transform={`translate(${at.x} ${at.y})`}>
         {read && parts.map((part, k) => (
           // Ink is see-through unless the pen's preset says it's opaque (Tom, 2026-10-11): laid on the
@@ -218,6 +226,14 @@ export function ConvertStage({ photo, parts, box, page, paperColor, model, ink, 
     </SegmentedControl>
   );
   const bar = { view, onView, zoom, onZoom, canDrawing: true, loupe, onLoupe, extras };
+
+  // The trim as a guide on every view; over the picture alone, its marks too, since there are no lines there.
+  const trimGuide = (marks: boolean) => trim && (
+    <>
+      <rect className={styles.trimGuide} x={trim.box.x0} y={trim.box.y0} width={trim.box.x1 - trim.box.x0} height={trim.box.y1 - trim.box.y0} />
+      {marks && trim.d.map((d, i) => <path key={i} className={styles.trimMarks} stroke={trim.color} d={d} />)}
+    </>
+  );
 
   const pane = (body: ReactNode | ((mark: number) => ReactNode), first: boolean) => (
     <figure className={styles.pane}>
@@ -245,13 +261,13 @@ export function ConvertStage({ photo, parts, box, page, paperColor, model, ink, 
 
   return (
     <div className={styles.panes} data-view={show}>
-      {show === "picture" && pane(picture(), true)}
-      {show === "lines" && pane(lines, true)}
-      {show === "over" && pane(<>{picture(true)}{lines}</>, true)}
+      {show === "picture" && pane(<>{picture()}{trimGuide(true)}</>, true)}
+      {show === "lines" && pane(<>{lines}{trimGuide(false)}</>, true)}
+      {show === "over" && pane(<>{picture(true)}{lines}{trimGuide(false)}</>, true)}
       {show === "side" && (
         <>
-          {pane(picture(), true)}
-          {pane(lines, false)}
+          {pane(<>{picture()}{trimGuide(true)}</>, true)}
+          {pane(<>{lines}{trimGuide(false)}</>, false)}
         </>
       )}
       {!read && <p className={styles.reading}>Reading the image…</p>}

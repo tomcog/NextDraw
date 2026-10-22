@@ -37,6 +37,9 @@ import { photoActions, pictureSources } from "./lib/photoActions";
 import { ConvertStage, type ConvertView } from "./components/ConvertStage";
 import { AdjustCard, AdjustToolbar } from "./components/AdjustCard";
 import { VignetteCard } from "./components/VignetteCard";
+import { TrimCard } from "./components/TrimCard";
+import { curveStrokes } from "../shared/lib/drawing/parametric";
+import { newTrimMarks, trimAbout, trimOffPaper, trimShapeOf } from "../shared/lib/drawing/trimMarks";
 import { EFFECTS, EffectToolbar, effectOf, type Effect } from "./components/EffectToolbar";
 import { PanelToolbar, panelIcon } from "../shared/components/PanelToolbar";
 import { LayersSection } from "../shared/components/controls/LayersSection";
@@ -166,6 +169,9 @@ export default function App() {
   // And the Mask card, under Vignette: the image's edges left as paper.
   const [maskCard, setMaskCard] = useState(() => load<boolean>("photo-mask-card") ?? false);
   useEffect(() => remember("photo-mask-card", maskCard), [maskCard]);
+  // And the Trim marks card, under Mask: the size the print is cut to, and the image placed in it.
+  const [trimCard, setTrimCard] = useState(() => load<boolean>("photo-trim-card") ?? false);
+  useEffect(() => remember("photo-trim-card", trimCard), [trimCard]);
 
   // None until a pen is picked: the server's None pen, first in the list (once "", before it was one).
   const [toolName, setToolName] = useState<string>(() => load<string>(TOOL_KEY) || NONE_PEN);
@@ -712,6 +718,58 @@ export default function App() {
 
   const vignetteSection = chosen?.photo && vignetteCard ? <VignetteCard photo={chosen.photo} set={setPhotoOf} /> : null;
 
+  // The trim marks: a live layer of their own, redrawn from the trim's box and the marks' two numbers
+  // whenever either changes. On, they go round the image at its size, for a size to be typed in.
+  const trim = trimShapeOf(shapes);
+  const trimLayer = trim ? layers.find((l) => l.id === trim.layerId) : undefined;
+  const setTrimOn = (on: boolean) => {
+    if (on === Boolean(trim)) return;
+    record();
+    if (on) {
+      if (!convertBox) return;
+      const { shape, layer } = newTrimMarks(trimAbout(convertBox, convertBox.x1 - convertBox.x0, convertBox.y1 - convertBox.y0), tool.palette ?? []);
+      // On top, so they're plotted last, over everything else.
+      setLayers((list) => [...list, layer]);
+      setShapes((list) => [...list, shape]);
+      return;
+    }
+    // Off: the marks gone, and their layer with them unless something else was put on it.
+    const gone = trim!;
+    const keepLayer = shapes.some((sh) => sh.layerId === gone.layerId && sh.id !== gone.id);
+    setShapes((list) => list.filter((sh) => sh.id !== gone.id));
+    if (!keepLayer) setLayers((list) => list.filter((l) => l.id !== gone.layerId));
+  };
+  const setTrimShape = (patch: Partial<Shape>) => {
+    if (!trim) return;
+    record();
+    setShapes((list) => list.map((sh) => (sh.id === trim.id ? { ...sh, ...patch } : sh)));
+  };
+  // The image - every layer of it - moved on the page; the trim stays where it is.
+  const moveImage = (dx: number, dy: number) => {
+    if (!chosen || (Math.abs(dx) < 1e-9 && Math.abs(dy) < 1e-9)) return;
+    record();
+    setShapes((list) => list.map((sh) => (ofImage(sh) ? { ...sh, x: sh.x + dx, y: sh.y + dy, x2: sh.x2 + dx, y2: sh.y2 + dy } : sh)));
+  };
+  const trimSection = chosen?.photo && convertBox && trimCard ? (
+    <TrimCard
+      trim={trim}
+      image={convertBox}
+      page={page}
+      units={units}
+      busy={busy}
+      offPaper={Boolean(trim && trimOffPaper(trim, page))}
+      onOn={setTrimOn}
+      setBox={(b) => setTrimShape({ x: b.x0, y: b.y0, x2: b.x1, y2: b.y1 })}
+      setMarks={(curve) => setTrimShape({ curve })}
+      moveImage={moveImage}
+    />
+  ) : null;
+  // The marks as the stage draws them, in every view - the picture's too, so the image can be placed
+  // in the trim before there are any lines. A hidden layer drops out, as from the lines.
+  const trimOnStage = trim && trimLayer && !trimLayer.hidden
+    ? { color: trimLayer.color, d: curveStrokes(trim).map((run) => `M ${run.map((p) => `${p.x} ${p.y}`).join(" L ")}`), box: boxOf(trim) }
+    : undefined;
+
   // The chosen photo's card: how it's turned into lines.
   const photoCard = chosen?.photo ? (
     <PhotoCard
@@ -730,6 +788,7 @@ export default function App() {
       layersCard={layersSection}
       adjustCard={adjustSection}
       vignetteCard={vignetteSection}
+      trimCard={trimSection}
       maskCard={maskCard}
       actions={{
         replace: () => setBrowsing("replace"),
@@ -827,7 +886,7 @@ export default function App() {
   // The toolbar's effect is the whole photo's. Silhouette has no tones or colours to split by, so a
   // split photo comes back together as one layer drawn that way; separations keep a plate each.
   // Whether the rail has any card to show; with none, the stage takes its width.
-  const railOut = Boolean(fileCard || paperCard || penCard || infoCard || (chosen?.photo && (effectCards || layersCard || adjustCard || vignetteCard || maskCard)));
+  const railOut = Boolean(fileCard || paperCard || penCard || infoCard || (chosen?.photo && (effectCards || layersCard || adjustCard || vignetteCard || maskCard || trimCard)));
 
   const setEffect = (effect: Effect) => {
     setEffectCards(true);
@@ -993,7 +1052,7 @@ export default function App() {
             ]}
           />
           <EffectToolbar effect={chosen?.photo && !chosen.photo.idle ? effectOf(chosen.photo) : undefined} onEffect={setEffect} onAgain={() => setEffectCards((on) => !on)} disabled={!chosen?.photo || busy} />
-          {chosen?.photo && <AdjustToolbar vignette={{ on: vignetteCard, toggle: () => setVignetteCard((on) => !on) }} mask={{ on: maskCard, toggle: () => setMaskCard((on) => !on) }} />}
+          {chosen?.photo && <AdjustToolbar vignette={{ on: vignetteCard, toggle: () => setVignetteCard((on) => !on) }} mask={{ on: maskCard, toggle: () => setMaskCard((on) => !on) }} trim={{ on: trimCard, toggle: () => setTrimCard((on) => !on) }} />}
           {chosen?.photo && <HistoryToolbar canUndo={canUndo} canRedo={canRedo} onUndo={undo} onRedo={redo} disabled={busy} />}
         </div>
         <section className={styles.stage} aria-label="Image conversion" data-dragging-file={draggingFile || undefined}>
@@ -1023,6 +1082,7 @@ export default function App() {
               onShow={setConvertView}
               cropping={cropDraft ? { part: cropDraft, onPart: setCropDraft } : undefined}
               others={otherLayers}
+              trim={trimOnStage}
             />
           ) : (
             <>

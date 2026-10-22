@@ -83,8 +83,9 @@ interface OutlineEdge {
  * a spirograph included - their fills are clipped to the outline itself, not to the box.
  */
 // A parabolic's strings are the drawing rather than an outline round anything, and a spiral and an
-// arc are lines that never close, so there is no inside for a fill to be in.
-const OPEN_CURVES = ["parabolic", "spiral", "arc", "wave"];
+// arc are lines that never close, so there is no inside for a fill to be in. Trim marks are only
+// the corners' ticks, outside the print.
+const OPEN_CURVES = ["parabolic", "spiral", "arc", "wave", "trim"];
 
 export const canFill = (s: Shape) =>
   s.kind !== "line" && s.kind !== "text" && s.kind !== "photo" && !OPEN_CURVES.includes(s.curve?.kind ?? "")

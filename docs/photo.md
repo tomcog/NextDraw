@@ -128,6 +128,15 @@ get complicated, and it never needs Studio's tools for drawing and transforming 
   - Hatching has a Smoothing setting (mm on the page): the photo, colours too, is blurred before it's
     hatched, so busy patches come out as tone rather than short dashes. `squiggle()` in
     `shared/lib/drawing/photo.ts`; tests in `web/tests/squiggle.test.ts`.
+  - Trim marks (2026-10-21), the scissors in the Vignette and Mask toolbar: the size the print is cut
+    to (a common size or typed, Turn), where the trim sits on the paper, and where the image sits in
+    it (Center on paper, Center on image, Center image), with each mark's length and its offset off the
+    corner. The marks are a live layer of their own ("Black - Trim marks", the darkest pen, on top): a
+    `trim` curve in `shared/lib/drawing/parametric.ts` whose box is the trim, redrawn whenever a number
+    changes, so Studio's Curve card sets the same two numbers and Plot plots them as any layer. A
+    paper turn stands the trim the other way round rather than turning it (`whole.ts`). The stage shows
+    the trim as a dashed guide in every view, and the marks over the picture too. Helpers and tests:
+    `trimMarks.ts`, `tests/trimMarks.test.ts`.
   - Photo holds the whole drawing. Anything Studio added (crop marks, words) is kept and saved back.
     The drawing worked on last is picked up again (`photo-last-file`), and `/image?open=<path>` (once `/photo`, which still forwards) opens
     a given one.

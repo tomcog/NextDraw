@@ -107,6 +107,8 @@ interface Props {
   adjustCard?: ReactNode;
   /** The Vignette card, when it's out: under the Adjustments card. */
   vignetteCard?: ReactNode;
+  /** The Trim marks card, under Mask. */
+  trimCard?: ReactNode;
   /** Whether the Mask card is out: under the Vignette card. */
   maskCard?: boolean;
 }
@@ -115,7 +117,7 @@ interface Props {
  * The chosen photo's card - in the drawing's rail, and in image conversion's under its own: how it is
  * split into layers, sized to the page, and what each layer's lines are drawn as.
  */
-export function PhotoCard({ shape, title, shapes, busy, targeted, layerCount, shownName, actions, cropping = false, penWidthMm = 0.5, infoCard = true, effectCards = true, layersCard, adjustCard, vignetteCard, maskCard = false }: Props) {
+export function PhotoCard({ shape, title, shapes, busy, targeted, layerCount, shownName, actions, cropping = false, penWidthMm = 0.5, infoCard = true, effectCards = true, layersCard, adjustCard, vignetteCard, trimCard, maskCard = false }: Props) {
   // The presets, shared between Macs; and the one last picked here, for Delete.
   const [presets, setPresets] = useState<string[]>([]);
   const readPresets = () => api<{ presets: string[] }>("/api/image-presets").then((r) => setPresets(r.presets)).catch(() => {});
@@ -600,6 +602,7 @@ export function PhotoCard({ shape, title, shapes, busy, targeted, layerCount, sh
       {adjustCard}
       {vignetteCard}
       {maskCard && <MaskCard photo={photo} busy={busy} layerCount={layerCount} actions={actions} />}
+      {trimCard}
       {/* A card for each pass over the picture, in the order they were added: its Color mode, then its
         effect's own numbers. The pass being worked on is open; another, folded, opens when clicked -
         becoming the one the effect toolbar and the Layers card are about. */}

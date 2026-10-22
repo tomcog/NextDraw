@@ -1109,10 +1109,11 @@ export function photoActions(ctx: PhotoContext) {
       : layerId ? shapes.find((sh) => ours(sh) && sh.layerId === layerId)
       : chosen;
     if (!target?.photo) {
-      // A layer with none of this image on it - one Studio added: its color and name alone.
+      // A layer with none of this image on it - one Studio added, the trim marks: its color and its
+      // name's pen alone, keeping any label after it ("Red - Trim marks").
       if (layerId) {
         record();
-        setLayers((list) => list.map((l) => (l.id === layerId ? { ...l, color, ...(name ? { name } : {}) } : l)));
+        setLayers((list) => list.map((l) => (l.id === layerId ? { ...l, color, ...(name ? { name: joinLayerName(name, splitLayerName(l.name, tool2?.palette ?? []).label) } : {}) } : l)));
       }
       return;
     }

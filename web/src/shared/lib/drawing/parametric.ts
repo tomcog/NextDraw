@@ -7,7 +7,7 @@
 
 import { boxOf, pointsBox, type Shape } from "./shapes";
 
-export type CurveKind = "hypotrochoid" | "parabolic" | "polygon" | "star" | "spiral" | "arc" | "wave";
+export type CurveKind = "hypotrochoid" | "parabolic" | "polygon" | "star" | "spiral" | "arc" | "wave" | "trim";
 
 /** A spirograph: a circle of radius `r` rolling inside one of radius `R`, pen `d` from its centre. */
 export interface Hypotrochoid {
@@ -77,7 +77,18 @@ export interface Wave {
   swing: number;
 }
 
-export type Curve = Hypotrochoid | Parabolic | Polygon | Star | Spiral | Arc | Wave;
+/**
+ * Trim marks: where a print is to be cut, for a finished size. The box is the trim itself - the size
+ * the print comes out - and at each corner two short lines run out from its edges, standing `offset`
+ * mm off the corner so the cut never shows them. Nothing is drawn inside the box.
+ */
+export interface Trim {
+  kind: "trim";
+  length: number; // mm, each mark's length
+  offset: number; // mm, the gap between the trim's corner and where each mark starts
+}
+
+export type Curve = Hypotrochoid | Parabolic | Polygon | Star | Spiral | Arc | Wave | Trim;
 
 export interface Point {
   x: number;
@@ -92,6 +103,8 @@ export const DEFAULT_CURVE: Record<CurveKind, Curve> = {
   spiral: { kind: "spiral", turns: 4, inner: 5 },
   arc: { kind: "arc", start: 0, sweep: 180, arcs: 1, inner: 40 },
   wave: { kind: "wave", waves: 3, swing: 100 },
+  // The printer's usual: a quarter inch long, an eighth of an inch off the corner.
+  trim: { kind: "trim", length: 6.35, offset: 3.175 },
 };
 
 export const CURVE_LABEL: Record<CurveKind, string> = {
@@ -102,6 +115,7 @@ export const CURVE_LABEL: Record<CurveKind, string> = {
   spiral: "Spiral",
   arc: "Arc",
   wave: "Wave",
+  trim: "Trim marks",
 };
 
 /** The numbers a curve shows in the panel: what to call each one and how far it may go. */
@@ -136,6 +150,10 @@ export const CURVE_FIELDS: Record<CurveKind, { key: string; label: string; min: 
     { key: "sweep", label: "Sweep", min: -360, max: 360, step: 15, unit: "°" },
     { key: "arcs", label: "Arcs", min: 1, max: 200, step: 1 },
     { key: "inner", label: "Innermost", min: 1, max: 99, step: 5, unit: "%" },
+  ],
+  trim: [
+    { key: "length", label: "Mark length", min: 0.5, max: 50, step: 0.5, unit: "mm" },
+    { key: "offset", label: "Offset", min: 0, max: 50, step: 0.5, unit: "mm" },
   ],
 };
 
@@ -349,6 +367,24 @@ function parabolicPoints(c: Parabolic, b: ReturnType<typeof boxOf>): Point[][] {
 }
 
 /**
+ * Trim marks round the box, in the page's inches: at each corner one mark across and one down, each
+ * in line with an edge of the box and out beyond the other, so the cut runs along both.
+ */
+function trimPoints(c: Trim, b: ReturnType<typeof boxOf>): Point[][] {
+  const gap = Math.max(0, c.offset) / 25.4;
+  const len = Math.max(0, c.length) / 25.4;
+  if (len <= 0) return [];
+  const runs: Point[][] = [];
+  // Corners in the order the pen goes round: top left, top right, bottom right, bottom left.
+  for (const [x, y, sx, sy] of [[b.x0, b.y0, -1, -1], [b.x1, b.y0, 1, -1], [b.x1, b.y1, 1, 1], [b.x0, b.y1, -1, 1]]) {
+    // Each drawn from its outer end toward the corner, the way a cut is lined up.
+    runs.push([{ x: x + sx * (gap + len), y }, { x: x + sx * gap, y }]);
+    runs.push([{ x, y: y + sy * (gap + len) }, { x, y: y + sy * gap }]);
+  }
+  return runs;
+}
+
+/**
  * The strokes a parametric shape draws, in the page's inches. More than one where the curve is drawn
  * in separate passes (each corner of a parabolic), so the pen lifts only where it has to.
  */
@@ -357,6 +393,7 @@ export function curveStrokes(shape: Shape): Point[][] {
   if (!curve) return [];
   const b = boxOf(shape);
   if (curve.kind === "parabolic") return parabolicPoints(curve, b);
+  if (curve.kind === "trim") return trimPoints(curve, b);
   if (curve.kind === "polygon" || curve.kind === "star") return [fitToBox(cornerPoints(curve), b, true)];
   // A spiral and an arc are drawn round the box the way an ellipse is, so a wide box gives a wide one.
   if (curve.kind === "wave") return [wavePoints(curve, b)];
@@ -390,6 +427,7 @@ export function curveFromData(raw: unknown): Curve | null {
   if (d.kind === "star") return { kind: "star", points: n("points", 5), inner: n("inner", 40) };
   if (d.kind === "spiral") return { kind: "spiral", turns: n("turns", 4), inner: n("inner", 5) };
   if (d.kind === "wave") return { kind: "wave", waves: n("waves", 3), swing: n("swing", 100) };
+  if (d.kind === "trim") return { kind: "trim", length: Math.max(0, n("length", 6.35)), offset: Math.max(0, n("offset", 3.175)) };
   if (d.kind === "arc") {
     return { kind: "arc", start: n("start", 0), sweep: n("sweep", 180), arcs: n("arcs", 1), inner: n("inner", 40) };
   }
