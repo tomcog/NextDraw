@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Segment, SegmentedControl, Toolbar, ToolbarExpander } from "@tomcoggia/ui";
-import { LassoSelect, MousePointer2, PenTool, Pentagon, Rainbow, Signal, Spline, SwatchBook, SquareDashedMousePointer, Star, Type, Layers, Vibrate } from "lucide-react";
+import { LassoSelect, MousePointer2, PenTool, Pentagon, Rainbow, Scissors, Signal, Spline, SwatchBook, SquareDashedMousePointer, Star, Type, Layers, Vibrate } from "lucide-react";
 import { EllipseIcon, LineIcon, RectangleIcon, SignatureIcon, SpiralIcon, SpirographIcon, WaveIcon } from "./toolIcons";
 import bar from "../../../shared/components/PreviewToolbar.module.css";
 import { load, save } from "../../../shared/lib/storage";
@@ -27,6 +27,7 @@ const TOOLS: { kind: Tool; label: string; hint: string; icon: JSX.Element }[] = 
   { kind: "spiral", label: "Spiral", hint: "Draw a spiral: drag on the page, then set its turns", icon: <SpiralIcon /> },
   { kind: "arc", label: "Arc", hint: "Arc (A): drag on the page, then set where it starts and how far it goes", icon: <Rainbow /> },
   { kind: "wave", label: "Wave", hint: "Draw a wave: drag on the page, then set how many", icon: <WaveIcon /> },
+  { kind: "trim", label: "Trim marks", hint: "Trim marks: drag the size the print is cut to - marks go at its corners, on a Trim marks layer of their own - then set their length and offset", icon: <Scissors /> },
   { kind: "text", label: "Text", hint: "Text (T): drag to say how tall, then type the words", icon: <Type /> },
 ];
 
@@ -101,7 +102,7 @@ export function ToolPicker({ tool, onTool, simplifying, onSimplify, jiggling, on
       <ToolbarIcons><Toolbar tone="white" orientation="vertical" aria-label="Drawing tools">
         <ToolbarExpander size="sm" icon={<PenTool />} label="Tool" open={drawerOpen} onOpenChange={toggleDrawer} aria-label="Drawing tool"
           // On the drawer, which the Tool button takes it from; each tool in it has its own.
-          title={drawerOpen ? "Tool: put the drawing tools away" : "Tool: the drawing tools - rectangle, oval, line, the curves and text"}>
+          title={drawerOpen ? "Tool: put the drawing tools away" : "Tool: the drawing tools - rectangle, oval, line, the curves, trim marks and text"}>
           {TOOLS.filter((t) => !PICKERS.includes(t.kind)).map(segment)}
         </ToolbarExpander>
       </Toolbar></ToolbarIcons>

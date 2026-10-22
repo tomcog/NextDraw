@@ -28,6 +28,7 @@ import { Canvas, isStrokeTool, type Tool } from "./components/Canvas";
 import { strokeKey, withoutStrokes } from "./lib/strokePick";
 import { mergeLines } from "./lib/mergeLines";
 import { SIGNATURE_FONT, SIGNATURE_LABEL, signatureShapes, signatureSize } from "./lib/signature";
+import { TRIM_LABEL } from "../shared/lib/drawing/trimMarks";
 import { isRegistrationBlock, registrationShapes, registrationSize } from "./lib/registration";
 import { clearSpot, inkMap } from "./lib/clearSpot";
 import { SizePopover } from "./components/SizePopover";
@@ -1082,6 +1083,31 @@ export default function App() {
   * is one, else a new one in Black (or the darkest pen) - kept under Varnish, so it's plotted last
   * and can be any pen.
   */
+ /**
+  * Trim marks drawn with their tool: on the drawing's Trim marks layer - made, in the darkest pen and
+  * under any Varnish, if there isn't one yet - whatever layer is in hand, so they plot as their own pen
+  * and Image's Trim marks card finds them.
+  */
+ const addTrimMarks = (shape: Shape) => {
+  // One undo step for the layer and the marks on it.
+  record();
+  let layer = layers.find((l) => splitLayerName(l.name, palette).label.trim().toLowerCase() === TRIM_LABEL.toLowerCase());
+  if (!layer) {
+   const pen = [...palette].sort((a, b) => (lightness(a.color) ?? 1) - (lightness(b.color) ?? 1))[0];
+   const made: Layer = { id: newLayerId(), name: uniqueName(joinLayerName(pen.name, TRIM_LABEL), layers.map((l) => l.name)), color: pen.color };
+   layer = made;
+   setLayers((list) => {
+    const varnish = list.findIndex((l) => isVarnishLayer(l.name));
+    return varnish >= 0 ? [...list.slice(0, varnish), made, ...list.slice(varnish)] : [...list, made];
+   });
+  }
+  const on = layer.id;
+  setShapes((list) => [...list, { ...shape, layerId: on }]);
+  setTargets((list) => (list.includes(on) ? list : [...list, on]));
+  pick(shape.id);
+  setTool("select");
+ };
+
  const addSignature = async () => {
   let font = fonts[SIGNATURE_FONT];
   if (!font) {
@@ -2097,7 +2123,7 @@ export default function App() {
       selected={selected}
       onSelect={selectOnCanvas}
       onUpdateMany={previewing ? keepAsIs : updateShapes}
-      onAdd={previewing ? keepAsIs : addShape}
+      onAdd={previewing ? keepAsIs : (shape) => (shape.curve?.kind === "trim" ? addTrimMarks(shape) : addShape(shape))}
       onUpdate={previewing ? keepAsIs : updateShape}
       onEditStart={previewing ? keepAsIs : record}
       onPick={pickingLayer ? pickArea : undefined}

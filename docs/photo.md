@@ -133,7 +133,8 @@ get complicated, and it never needs Studio's tools for drawing and transforming 
     it (Center on paper, Center on image, Center image), with each mark's length and its offset off the
     corner. The marks are a live layer of their own ("Black - Trim marks", the darkest pen, on top): a
     `trim` curve in `shared/lib/drawing/parametric.ts` whose box is the trim, redrawn whenever a number
-    changes, so Studio's Curve card sets the same two numbers and Plot plots them as any layer. A
+    changes, so Studio's Curve card sets the same two numbers and Plot plots them as any layer. Studio
+    also has a Trim marks tool in its drawing tools: drag the trim, and the marks go on the Trim marks layer (made if needed). A
     paper turn stands the trim the other way round rather than turning it (`whole.ts`). The stage shows
     the trim as a dashed guide in every view, and the marks over the picture too. Helpers and tests:
     `trimMarks.ts`, `tests/trimMarks.test.ts`.
