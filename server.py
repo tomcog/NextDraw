@@ -1008,15 +1008,25 @@ def registration_first(root):
         return
     made = []
     for layer in plotted:
-        blocks = [el for el in layer if el.get("id") in ids]
+        # At any depth: a turned drawing keeps each layer's shapes in a <g transform="rotate(...)">.
+        blocks = [el for el in layer.iter() if el is not layer and el.get("id") in ids]
         if not blocks:
             continue
         first = etree.Element(layer.tag, {k: v for k, v in layer.attrib.items() if k != "id"})
         first.set("id", f"{layer.get('id') or 'layer'}-registration")
         first.set(INKSCAPE_NS + "label", (layer.get(INKSCAPE_NS + "label") or "").lstrip("!"))
         for el in blocks:
-            layer.remove(el)
-            first.append(el)
+            # The groups it sat in go with it, without their ids, so it keeps its turn and place.
+            between = []
+            for group in el.iterancestors():
+                if group is layer:
+                    break
+                between.append(group)
+            into = first
+            for group in reversed(between):
+                into = etree.SubElement(into, group.tag, {k: v for k, v in group.attrib.items() if k != "id"})
+            el.getparent().remove(el)
+            into.append(el)
         made.append(first)
     for first in made:
         plotted[0].addprevious(first)

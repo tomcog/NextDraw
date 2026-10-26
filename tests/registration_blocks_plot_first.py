@@ -81,6 +81,14 @@ check("after a pause and a layer number, before the name", numbered.get(server.I
 plain = etree.fromstring(FIXTURE.replace('"names":{"reg-y":"Registration","reg-p":"Registration"}', '"names":{}').encode())
 server.registration_first(plain)
 check("a drawing with no blocks is left as it is", len(server.layer_groups(plain)), 2)
+# A drawing turned in Studio keeps each layer's shapes in a rotate group: the block still moves, in its turn.
+turned = etree.fromstring(FIXTURE.replace('<polyline id="reg-y"', '<g transform="rotate(270 5 4)"><polyline id="reg-y"')
+                          .replace('0.51,7.8"/>', '0.51,7.8"/></g>', 1).encode())
+server.registration_first(turned)
+block_layer = server.layer_groups(turned)[0]
+check("a turned drawing's block moves, in its turn",
+      (block_layer.get("id"), block_layer[0].get("transform"), block_layer[0][0].get("id")),
+      ("layer-y-registration", "rotate(270 5 4)", "reg-y"))
 
 
 def waits_s(svg_text):
