@@ -5,7 +5,7 @@ import assert from "node:assert/strict";
 import { existsSync, readFileSync } from "node:fs";
 import { parsePath } from "../src/shared/lib/drawing/path";
 import type { Layer } from "../src/shared/lib/drawing/shapes";
-import { isRegistrationBlock, registrationShapes } from "../src/studio/lib/registration";
+import { isRegistrationBlock, registrationLayers, registrationShapes } from "../src/studio/lib/registration";
 
 const REFERENCE = `${process.env.HOME}/Desktop/registration blocks.svg`;
 const LAYERS: Layer[] = [
@@ -28,6 +28,17 @@ test("a hidden layer gets no block, and the next butts up against the last", () 
   const made = registrationShapes(LAYERS.map((l) => (l.id === "p" ? { ...l, hidden: true } : l)), { x: 0.5, y: 8 });
   assert.deepEqual(made.map((s) => s.layerId), ["y", "t", "g", "v"]);
   made.slice(1).forEach((s, i) => assert.ok(Math.abs(s.x - made[i].x2) < 1e-9, "each starts where the last ends"));
+});
+
+test("the trim marks' and the signature's layers get no block", () => {
+  const palette = [{ name: "Black", color: "#000000" }];
+  const extra: Layer[] = [
+    { id: "tm", name: "Black - Trim marks", color: "#000000" },
+    { id: "sg", name: "Black - Signature", color: "#000000" },
+    { id: "k", name: "Black - Crop", color: "#000000" },
+  ];
+  const kept = registrationLayers([...LAYERS, ...extra], palette);
+  assert.deepEqual(kept.map((l) => l.id), ["y", "p", "t", "g", "v", "k"]);
 });
 
 test("each block is the drawing's: the same zigzag, the same size, turning where it turns", { skip: !existsSync(REFERENCE) }, () => {

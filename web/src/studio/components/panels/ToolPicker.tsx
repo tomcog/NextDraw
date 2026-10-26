@@ -7,7 +7,7 @@ import { load, save } from "../../../shared/lib/storage";
 import type { Tool } from "../Canvas";
 import type { Shape } from "../../../shared/lib/drawing/shapes";
 import { ToolbarIcons } from "../../../shared/components/ToolbarIcons";
-import { panelIcon, panelTitle } from "../../../shared/components/PanelToolbar";
+import { panelIcon } from "../../../shared/components/PanelToolbar";
 
 /** The tools that pick rather than draw: a group of their own at the head of the Tools bar. */
 const PICKERS: Tool[] = ["select", "strokes", "lasso"];
@@ -54,8 +54,6 @@ interface Props {
   onLayers: () => void;
   /** Put the signature on the page: TC and this year, on its own layer, ready to move. */
   onSignature: () => void;
-  /** The Trim marks card - the same as Image's and Plot's - out or away. */
-  trimCard: { on: boolean; toggle: () => void };
   /** Put a registration block for each layer in the page's lower left corner, in plotting order. */
   onRegistration: () => void;
 }
@@ -66,7 +64,7 @@ interface Props {
  * one pressed is what a drag on the page makes. Last, on its own, the Simplifier, which works on
  * what's drawn from its card. One tool in hand at a time across all of them. The names are in the tooltips.
  */
-export function ToolPicker({ tool, onTool, simplifying, onSimplify, jiggling, onJiggle, layersOut, onLayers, onSignature, trimCard, onRegistration }: Props) {
+export function ToolPicker({ tool, onTool, simplifying, onSimplify, jiggling, onJiggle, layersOut, onLayers, onSignature, onRegistration }: Props) {
   // The drawing tools fold away behind their Tool button, open or shut as it was last left.
   const [drawerOpen, setDrawerOpen] = useState(() => load<boolean>("studio-tools-drawer") ?? true);
   const toggleDrawer = (open: boolean) => {
@@ -111,7 +109,7 @@ export function ToolPicker({ tool, onTool, simplifying, onSimplify, jiggling, on
         </ToolbarExpander>
       </Toolbar></ToolbarIcons>
       {/* What works on what's drawn: the Simplifier and Jiggle, from their cards; then what's added at
-          once, so actions - the signature, trim marks and the registration blocks, placed to be moved from there. */}
+          once, so actions - the signature and the registration blocks, placed to be moved from there. */}
       <ToolbarIcons><Toolbar tone="white" orientation="vertical" aria-label="Work on the drawing">
         <SegmentedControl size="sm" aria-label="Work on what's drawn">
           <Segment selected={simplifying} icon={<Spline />} title="Simplifier: fewer points in the drawing's paths, set from its card" onClick={onSimplify}>
@@ -124,9 +122,6 @@ export function ToolPicker({ tool, onTool, simplifying, onSimplify, jiggling, on
         <SegmentedControl size="sm" variant="dark" actions aria-label="Add">
           <Segment icon={<SignatureIcon />} title="Signature: TC and this year, in the page's bottom right corner on its own Signature layer - drag it where it goes" onClick={onSignature}>
             Signature
-          </Segment>
-          <Segment icon={panelIcon("trim")} aria-pressed={trimCard.on} className={trimCard.on ? bar.on : undefined} title={panelTitle("trim", trimCard.on)} onClick={trimCard.toggle}>
-            Trim marks
           </Segment>
           <Segment icon={<SwatchBook />} title="Registration: a solid block for each layer in the page's lower left corner, left to right in the order they're plotted - again to make them afresh after the layers change" onClick={onRegistration}>
             Registration

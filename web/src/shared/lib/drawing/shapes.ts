@@ -101,6 +101,8 @@ export interface Layer {
   name: string;
   color: string;
   hidden?: boolean;
+  /** Can't be picked or moved on the page; its pen can still be changed. */
+  locked?: boolean;
 }
 
 let layerCounter = 0;

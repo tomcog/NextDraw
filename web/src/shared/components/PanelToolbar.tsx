@@ -3,7 +3,7 @@ import { Grid3x3, Image, Layers2, ListOrdered, Move, Pen, Save, Scissors, Slider
 import bar from "./PreviewToolbar.module.css";
 import { ToolbarIcons } from "./ToolbarIcons";
 
-/** The rail's cards the toolbar shows and hides, in the order they stack. Grid is Studio's; Image, and Layers and Adjustments (a toolbar of their own), Image's; Queue, and Drawing position, Plot options and Utilities (a toolbar of their own), Plot's (Studio's Layers switch is with its tools). Trim marks is every app's. */
+/** The rail's cards the toolbar shows and hides, in the order they stack. Grid is Studio's; Image, and Layers and Adjustments (a toolbar of their own), Image's; Queue, and Drawing position, Plot options and Utilities (a toolbar of their own), Plot's (Studio's Layers switch is with its tools). Trim marks is every app's, last. */
 const PANELS = {
   file: { label: "File", icon: <Save />, what: "the File card" },
   paper: { label: "Paper", icon: <StickyNote />, what: "the Paper card: what the drawing is plotted on" },
@@ -16,7 +16,7 @@ const PANELS = {
   position: { label: "Drawing position", icon: <Move />, what: "the Drawing position card: where the drawing sits on the plotter" },
   options: { label: "Plot options", icon: <SlidersHorizontal />, what: "the Plot options card: how the drawing is plotted" },
   utilities: { label: "Utilities", icon: <Wrench />, what: "the Utilities card: moving the pen and carriage by hand" },
-  // Every app's: the switch is with Image's vignette and mask, Studio's signature, and Plot's cards.
+  // Every app's: the last switch in the toolbar with File.
   trim: { label: "Trim marks", icon: <Scissors />, what: "the Trim marks card: where the print is cut, for the size it's finished at, and the drawing placed in it" },
 };
 

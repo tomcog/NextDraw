@@ -232,6 +232,9 @@ export function BedCanvas(props: BedCanvasProps) {
   const paperBox: Box | null = hasPaper
     ? [s.paper_x * MM, s.paper_y * MM, (s.paper_x + s.paper_w) * MM, (s.paper_y + s.paper_h) * MM]
     : null;
+  // Paper that goes past what the plotter can reach covers the bed's own edge, so the edge is drawn
+  // again over everything, dashed: where the pen stops.
+  const pastReach = Boolean(paperBox && (paperBox[0] < 0 || paperBox[1] < 0 || paperBox[2] > W || paperBox[3] > H));
 
   // What to frame: the whole plotter (plus the paper and drawing, if they stick out), the paper, or
   // the drawing. The dimension lines measure the same thing.
@@ -386,6 +389,8 @@ export function BedCanvas(props: BedCanvasProps) {
         <g id={drawnId}>
           {typeof props.children === "function" ? props.children({ mark: font, viewBox }) : props.children}
         </g>
+
+        {pastReach && <rect className={styles.reach} x={0} y={0} width={W} height={H} aria-hidden />}
 
         <circle className={styles.home} cx={0} cy={0} r={font * 0.28} />
 

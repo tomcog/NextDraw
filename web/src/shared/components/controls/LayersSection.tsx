@@ -1,6 +1,6 @@
 import { useRef, type ReactNode } from "react";
 import { ButtonRound, LayerController } from "@tomcoggia/ui";
-import { EllipsisVertical, Layers2, LayersArrowUp, Plus, Sparkles } from "lucide-react";
+import { EllipsisVertical, Layers2, LayersArrowUp, Lock, Plus, Sparkles } from "lucide-react";
 import { Section } from "./Section";
 import { panelIcon } from "../PanelToolbar";
 import { isPalettePen, labelAfter, LABEL_SEPARATOR } from "../../lib/ink";
@@ -41,6 +41,8 @@ interface Props {
   /** Target this layer alone, or with `add` put it in with the others or take it out. */
   onSwitch: (id: string, add?: boolean) => void;
   onVisible: (id: string, visible: boolean) => void;
+  /** A locked layer's padlock, pressed: Studio's, to let it go again. */
+  onUnlock?: (id: string) => void;
   onColorMenu: (id: string, anchor: HTMLElement) => void;
   /** The menu at the end of a layer's row: Studio's duplicate, merge, rename and delete; Image's delete. */
   onRowMenu?: (id: string, anchor: HTMLElement) => void;
@@ -213,6 +215,14 @@ export function LayersSection(props: Props) {
                   onPointerDown: (e) => start(e, layer.id),
                 }}
               />
+              {/* Locked (Studio, from the row's menu): nothing on it can be picked or moved. */}
+              {layer.locked && props.onUnlock && (
+                <ButtonRound size="sm" variant="tertiary" icon={<Lock />}
+                  aria-label={`Unlock ${layer.name}`}
+                  title="Locked: nothing on this layer can be picked or moved - click to unlock"
+                  disabled={busy}
+                  onClick={() => props.onUnlock?.(layer.id)} />
+              )}
               {/* The selection, moved onto this layer - drawn in its pen - in one click. */}
               {(() => {
                 const count = props.movableTo?.(layer.id) ?? 0;

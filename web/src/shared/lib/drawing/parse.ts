@@ -123,7 +123,7 @@ export function parseDrawing(text: string): Opened {
   let design: {
     fills?: unknown; on?: Record<string, string>; curves?: unknown; photos?: unknown;
     turned?: Record<string, unknown>; scaled?: Record<string, unknown>; repeats?: Record<string, unknown>; smoothed?: Record<string, unknown>;
-    names?: Record<string, unknown>;
+    names?: Record<string, unknown>; locked?: unknown;
     texts?: Record<string, { text?: unknown; font?: unknown; box?: unknown; tracking?: unknown; leading?: unknown }>;
   } = {};
   try {
@@ -257,13 +257,14 @@ export function parseDrawing(text: string): Opened {
   const marked = top.filter((g) => g.getAttribute("inkscape:groupmode") === "layer");
   const groups = marked.length ? marked : top.filter((g) => g.querySelector(ART));
   const layers: Layer[] = [];
+  const lockedNames = new Set(Array.isArray(design.locked) ? design.locked.map(String) : []);
   const byGroup = new Map<Element, string>();
   groups.forEach((g, i) => {
     const name = nameOf(g) || `Layer ${i + 1}`;
     if (name.startsWith("%")) return;
     const id = newLayerId();
     byGroup.set(g, id);
-    layers.push({ id, name, color: colorOf(g) });
+    layers.push({ id, name, color: colorOf(g), ...(lockedNames.has(name) ? { locked: true } : {}) });
   });
   const layerOf = new Map<string, string>(); // shape id -> layer id
   const layerFor = (el: Element) => {

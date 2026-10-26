@@ -4,7 +4,7 @@ import { useId, useRef, type ReactNode } from "react";
 import type { Box, Zoom } from "../../shared/components/BedCanvas";
 import { InkGroup, InkLayer } from "../../shared/components/Ink";
 import { NextDrawCanvas } from "../../shared/components/NextDrawCanvas";
-import { TrimGuide } from "../../shared/components/TrimGuide";
+import { TrimGrab, TrimGuide } from "../../shared/components/TrimGuide";
 import type { View } from "../../shared/components/PreviewToolbar";
 import { DEFAULT_SETTINGS, UNITS } from "../../shared/lib/constants";
 import { channelAdjusted, photoMarks, photoOrigin, pictureOf, type Photo } from "../../shared/lib/drawing/photo";
@@ -97,6 +97,8 @@ interface Props {
   /** The drawing's trim marks, if it has them: their ink, their paths in inches on the page, and the
    *  trim itself, shown as a guide that's never drawn. */
   trim?: { color: string; d: string[]; box: { x0: number; y0: number; x1: number; y1: number } };
+  /** The trim dragged on the stage this far, in inches. */
+  onTrimMove?: (dx: number, dy: number) => void;
   /** Cropping: the part of the whole picture kept - left, top, right, bottom, as fractions - set by dragging. */
   cropping?: { part: Part; onPart: (part: Part) => void };
 }
@@ -108,7 +110,7 @@ type Part = [number, number, number, number];
  * zooms and the loupe that Studio and Plot show a drawing on. Photo's own views go first in the bar, before
  * the shared ones; side by side, a second canvas follows the first's zoom.
  */
-export function ConvertStage({ photo, parts, box, page, paperColor, model, ink, view, onView, show, onShow, zoom, onZoom, loupe, onLoupe, cropping, others = [], trim }: Props) {
+export function ConvertStage({ photo, parts, box, page, paperColor, model, ink, view, onView, show, onShow, zoom, onZoom, loupe, onLoupe, cropping, others = [], trim, onTrimMove }: Props) {
   const read = usePhotoRead(photo.src);
   const w = box.x1 - box.x0;
   const h = box.y1 - box.y0;
@@ -229,12 +231,17 @@ export function ConvertStage({ photo, parts, box, page, paperColor, model, ink, 
   const bar = { view, onView, zoom, onZoom, canDrawing: true, loupe, onLoupe, extras };
 
   // The trim as a guide on every view; over the picture alone, its marks too, since there are no lines there.
-  const trimGuide = (marks: boolean) => trim && (
-    <>
-      <TrimGuide box={trim.box} />
-      {marks && trim.d.map((d, i) => <path key={i} className={styles.trimMarks} stroke={trim.color} d={d} />)}
-    </>
-  );
+  // Picked up anywhere inside and dragged, to move it over the picture.
+  const trimGuide = (marks: boolean) => {
+    if (!trim) return null;
+    const shown = (
+      <>
+        <TrimGuide box={trim.box} />
+        {marks && trim.d.map((d, i) => <path key={i} className={styles.trimMarks} stroke={trim.color} d={d} />)}
+      </>
+    );
+    return onTrimMove ? <TrimGrab box={trim.box} onMove={onTrimMove}>{shown}</TrimGrab> : shown;
+  };
 
   const pane = (body: ReactNode | ((mark: number) => ReactNode), first: boolean) => (
     <figure className={styles.pane}>

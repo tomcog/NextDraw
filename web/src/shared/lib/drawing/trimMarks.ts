@@ -110,6 +110,14 @@ export const withTrimBox = (d: TrimDrawing, box: Box): TrimDrawing => ({
   shapes: d.shapes.map((s) => (isTrim(s) ? { ...s, x: box.x0, y: box.y0, x2: box.x1, y2: box.y1 } : s)),
 });
 
+/** The trim moved by this much, in inches, at its size: dragged on the canvas. */
+export function withTrimMoved(d: TrimDrawing, dx: number, dy: number): TrimDrawing {
+  const trim = trimShapeOf(d.shapes);
+  if (!trim || (Math.abs(dx) < 1e-9 && Math.abs(dy) < 1e-9)) return d;
+  const b = boxOf(trim);
+  return withTrimBox(d, { x0: b.x0 + dx, y0: b.y0 + dy, x1: b.x1 + dx, y1: b.y1 + dy });
+}
+
 /** The marks' own numbers: their length and offset. */
 export const withTrimMarks = (d: TrimDrawing, curve: Trim): TrimDrawing => ({
   ...d,

@@ -5,7 +5,7 @@ import "../shared/lib/drawing/separationWorker";
 import { PaperSection, paperMarginMm } from "../shared/components/controls/PaperSection";
 import { PanelToolbar, panelIcon } from "../shared/components/PanelToolbar";
 import { Button, Card } from "@tomcoggia/ui";
-import { ArrowDownToLine, ClipboardCopy, ClipboardPaste, Copy, Layers, Layers2, LayersArrowDown, MousePointer2, PenLine, Sparkles, Spline, SquareDimensions, Trash2, Ungroup } from "lucide-react";
+import { ArrowDownToLine, ClipboardCopy, ClipboardPaste, Copy, Layers, Layers2, LayersArrowDown, Lock, LockOpen, MousePointer2, PenLine, Sparkles, Spline, SquareDimensions, Trash2, Ungroup } from "lucide-react";
 import { FileBrowser, type CombineResult } from "../shared/components/FileBrowser";
 import { Section } from "../shared/components/controls/Section";
 import controls from "../shared/components/controls/controls.module.css";
@@ -31,7 +31,7 @@ import { SIGNATURE_FONT, SIGNATURE_LABEL, signatureShapes, signatureSize } from 
 import { TrimMarksSection } from "../shared/components/controls/TrimMarksSection";
 import { drawingBoxOf, trimShapeOf, withDrawingMoved, withTrimBox, withTrimMarks, withTrimOff, withTrimOn, type TrimDrawing } from "../shared/lib/drawing/trimMarks";
 import { TRIM_LABEL } from "../shared/lib/drawing/trimMarks";
-import { isRegistrationBlock, registrationShapes, registrationSize } from "./lib/registration";
+import { isRegistrationBlock, registrationLayers, registrationShapes, registrationSize } from "./lib/registration";
 import { clearSpot, inkMap } from "./lib/clearSpot";
 import { SizePopover } from "./components/SizePopover";
 import { StudioHeader } from "./components/StudioHeader";
@@ -224,7 +224,12 @@ export default function App() {
  // A path of a shape made of several is never picked alone: picking it picks the whole shape. What
  // was asked for is kept as it was; the selection everything else works from is that, made whole.
  const [picks, setSelected] = useState<string[]>([]);
- const selected = useMemo(() => withWholeGroups(picks, shapes), [picks, shapes]);
+ // Nothing on a locked layer is ever in it, however it was asked for.
+ const selected = useMemo(() => {
+  const locked = new Set(layers.filter((l) => l.locked).map((l) => l.id));
+  const whole = withWholeGroups(picks, shapes);
+  return locked.size ? whole.filter((id) => !locked.has(shapes.find((s) => s.id === id)?.layerId ?? "")) : whole;
+ }, [picks, shapes, layers]);
  // Strokes picked with Stroke select or the Lasso - single runs of paths, by strokeKey - for Delete
  // to take out without taking their paths apart. Only while one of those tools is in hand: taking it
  // up lets the shapes go, putting it down lets the strokes go.
@@ -295,7 +300,7 @@ export default function App() {
  useEffect(() => remember("studio-pen-card", penCard), [penCard]);
  const [gridCard, setGridCard] = useState(() => load<boolean>("studio-grid-card") ?? true);
  useEffect(() => remember("studio-grid-card", gridCard), [gridCard]);
- // The Trim marks card, from its switch beside the signature: the same card as Image's and Plot's.
+ // The Trim marks card, from its switch last in the panels toolbar: the same card as Image's and Plot's.
  const [trimCard, setTrimCard] = useState(() => load<boolean>("studio-trim-card") ?? false);
  useEffect(() => remember("studio-trim-card", trimCard), [trimCard]);
  // The Simplifier as the tool in hand, its card out. Put down each time the page opens, as a tool is.
@@ -1161,22 +1166,24 @@ export default function App() {
  };
 
  /**
-  * Registration blocks (registration.ts): one for each shown layer, butted with no gap for a hidden
+  * Registration blocks (registration.ts): one for each shown layer but the trim marks' and the
+  * signature's, butted with no gap for a hidden
   * one, in the page's lower left corner inside the Paper card's margin - moved down into the margin
   * if the drawing is there (clearSpot.ts) - left to right in plotting order. Any already there go first, so pressing it again after the layers change makes them afresh
   * rather than piling up.
   */
  const addRegistration = async () => {
-  if (!layers.length) return;
+  const blocked = registrationLayers(layers, palette);
+  if (!blocked.length) return;
   const gone = new Set(shapes.filter(isRegistrationBlock).map((s) => s.id));
   const inset = paperMarginMm() / 25.4;
-  const size = registrationSize(layers);
+  const size = registrationSize(blocked);
   const rest = shapes.filter((s) => !gone.has(s.id));
   const map = await inkMap(buildSvg(rest, fills, layers, page, { paperSizeId: sizeId, toolName, paperColor, fonts }), page);
   const { at, clear } = clearSpot(map, page, inset, size, "bl");
   if (!clear) setMessage({ text: "The drawing reaches the page edge here - the registration blocks are on it", ok: false });
   record();
-  const made = registrationShapes(layers, { x: at.x, y: at.y + size.h });
+  const made = registrationShapes(blocked, { x: at.x, y: at.y + size.h });
   setShapes((list) => [...list.filter((s) => !gone.has(s.id)), ...made]);
   setFills((list) => list.filter((f) => !gone.has(f.shapeId)));
   setSelected((ids) => ids.filter((id) => !gone.has(id)));
@@ -1942,7 +1949,7 @@ export default function App() {
        {
         label: "Select all on layer",
         icon: <MousePointer2 />,
-        disabled: !shapes.some((s) => s.layerId === rowMenu.id),
+        disabled: !shapes.some((s) => s.layerId === rowMenu.id) || layers.find((l) => l.id === rowMenu.id)?.locked,
         // Picked as one, they move as one: the way a whole layer is shifted about the page. The layer
         // becomes the target too, as only the target layer's shapes are picked on the page.
         onSelect: () => {
@@ -1950,6 +1957,10 @@ export default function App() {
          setSelected(shapes.filter((s) => s.layerId === rowMenu.id).map((s) => s.id));
         },
        },
+       // Locked, nothing on it can be picked or moved on the page; its pen can still be changed.
+       layers.find((l) => l.id === rowMenu.id)?.locked
+        ? { label: "Unlock layer", icon: <LockOpen />, onSelect: () => patchLayer(rowMenu.id, { locked: false }) }
+        : { label: "Lock layer", icon: <Lock />, onSelect: () => patchLayer(rowMenu.id, { locked: true }) },
        {
         label: "Rename",
         icon: <PenLine />,
@@ -2073,6 +2084,7 @@ export default function App() {
        { key: "paper", on: paperCard, toggle: () => setPaperCard((on) => !on) },
        { key: "pen", on: penCard, toggle: () => setPenCard((on) => !on) },
        { key: "grid", on: gridCard, toggle: () => setGridCard((on) => !on) },
+       { key: "trim", on: trimCard, toggle: () => setTrimCard((on) => !on) },
       ]}
      />
      <ToolPicker
@@ -2087,7 +2099,6 @@ export default function App() {
       simplifying={simplifierCard}
       jiggling={jiggleCard}
       onSignature={() => void addSignature()}
-      trimCard={{ on: trimCard, toggle: () => setTrimCard((on) => !on) }}
       onRegistration={() => void addRegistration()}
       // Picked, the page picks shapes as Select does; picked again, it's put down for Select.
       onSimplify={() => {
@@ -2229,6 +2240,7 @@ export default function App() {
         onVarnish={varnishWhole}
         onSwitch={switchLayer}
         onVisible={(id, visible) => patchLayer(id, { hidden: !visible })}
+        onUnlock={(id) => patchLayer(id, { locked: false })}
         onColorMenu={(id, anchor) => setColorMenu((open) => (open?.id === id ? null : { id, anchor }))}
         onRowMenu={(id, anchor) => setRowMenu((open) => (open?.id === id ? null : { kind: "layer", id, anchor }))}
         onRenameType={typeLayerName}

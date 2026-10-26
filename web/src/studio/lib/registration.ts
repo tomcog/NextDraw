@@ -4,6 +4,10 @@
 // in (Desktop/registration blocks.svg): each square one path, a zigzag of 21 strokes up and down with
 // round turns, close enough together to lay the ink down solid.
 import { newShapeId, type Layer, type Shape } from "../../shared/lib/drawing/shapes";
+import { TRIM_LABEL } from "../../shared/lib/drawing/trimMarks";
+import { splitLayerName } from "../../shared/lib/ink";
+import type { PenColor } from "../../shared/lib/types";
+import { SIGNATURE_LABEL } from "./signature";
 import type { Node } from "../../shared/lib/drawing/path";
 import type { Point } from "../../shared/lib/drawing/parametric";
 
@@ -33,6 +37,14 @@ function block(layerId: string, at: Point): Shape {
     id: newShapeId(), layerId, kind: "path", points, name: REGISTRATION_NAME,
     x: at.x, y: at.y, x2: at.x + BLOCK_W, y2: at.y + BLOCK_H,
   };
+}
+
+// Layers that are no part of the print's colours, so get no block: the trim marks and the signature.
+const NO_BLOCK = [TRIM_LABEL, SIGNATURE_LABEL].map((l) => l.toLowerCase());
+
+/** The layers that get a block: every one but the Trim marks and Signature layers. */
+export function registrationLayers(layers: Layer[], palette: PenColor[]): Layer[] {
+  return layers.filter((l) => !NO_BLOCK.includes(splitLayerName(l.name, palette).label.trim().toLowerCase()));
 }
 
 /**

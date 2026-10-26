@@ -392,6 +392,8 @@ export function Canvas({ bar, page, paperColor, shapes, fills, layers, activeLay
   }, [shapes]);
   const photos = useMemo<PhotoView>(() => ({ on: view === "photo", leads: photoLeads }), [view, photoLeads]);
   const hiddenLayers = new Set(layers.filter((l) => l.hidden).map((l) => l.id));
+  // Nothing on a locked layer is picked, banded, cleaned up or dragged.
+  const lockedLayers = new Set(layers.filter((l) => l.locked).map((l) => l.id));
   const shown = useMemo(() => shapes.filter((sh) => !hiddenLayers.has(sh.layerId)), [shapes, layers]); // eslint-disable-line react-hooks/exhaustive-deps
   const picked = useMemo(() => new Set(selected), [selected]);
 
@@ -429,7 +431,7 @@ export function Canvas({ bar, page, paperColor, shapes, fills, layers, activeLay
   // The cleanup tools' strokes: every run of every path on the targeted layers, as the page shows it.
   // Worked out only while one of them is in hand.
   const cleaning = isStrokeTool(tool);
-  const strokes = useMemo(() => (cleaning ? strokesOf(shown, (id) => targetLayers.has(id)) : []), [cleaning, shown, targetLayers]);
+  const strokes = useMemo(() => (cleaning ? strokesOf(shown, (id) => targetLayers.has(id) && !lockedLayers.has(id)) : []), [cleaning, shown, targetLayers]);
   const strokePicked = useMemo(() => new Set(strokePick), [strokePick]);
   const shapeById = useMemo(() => new Map(shapes.map((sh) => [sh.id, sh])), [shapes]);
   /** Screen pixels to the page's inch where the pointer is, for how near a press must come to a stroke. */
@@ -689,7 +691,7 @@ export function Canvas({ bar, page, paperColor, shapes, fills, layers, activeLay
       // Anything the band touches, so a shape doesn't have to be swallowed whole to be caught - on the
       // target layer only, as a press picks.
       const caught = shown.filter((sh) => {
-        if (!targetLayers.has(sh.layerId)) return false;
+        if (!targetLayers.has(sh.layerId) || lockedLayers.has(sh.layerId)) return false;
         const b = boxOf(sh);
         return b.x0 <= band.x1 && b.x1 >= band.x0 && b.y0 <= band.y1 && b.y1 >= band.y0;
       });
@@ -846,11 +848,25 @@ export function Canvas({ bar, page, paperColor, shapes, fills, layers, activeLay
                 group on purpose - the preview rules paint everything under them as ink, so a dashed
                 guide or a transparent grip would come out as a stroke the plotter appears to make. */}
             <g className={styles.chrome}>
+              {/* The trim marks are picked up anywhere in their trim, whichever layers are targeted.
+                  First, so the drawing's own grips inside the trim still come before it. */}
+              {shown.filter((sh) => sh.curve?.kind === "trim" && !lockedLayers.has(sh.layerId)).map((sh) => (
+                <rect
+                  key={`${sh.id}-trim-grab`}
+                  className={styles.grab}
+                  transform={[carriedIds?.has(sh.id) ? shift : "", turnAttr(sh) ?? ""].join(" ").trim() || undefined}
+                  x={boxOf(sh).x0}
+                  y={boxOf(sh).y0}
+                  width={boxOf(sh).x1 - boxOf(sh).x0}
+                  height={boxOf(sh).y1 - boxOf(sh).y0}
+                  onPointerDown={(e) => onShapeDown(e, sh)}
+                />
+              ))}
               {shown.map((sh) => {
                 if (bigLayers.has(sh.layerId)) return null; // picked up with the rest of their layer
                 // Only the targeted layers' shapes can be picked: a press on another layer's goes
                 // through to the page, as if it weren't there.
-                if (!targetLayers.has(sh.layerId)) return null;
+                if (!targetLayers.has(sh.layerId) || lockedLayers.has(sh.layerId)) return null;
                 // Not in Preview, which shows only what the pen will draw: there the hatch is the shape.
                 const guide = sh.outline === false && !inkSim;
                 return (

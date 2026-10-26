@@ -49,7 +49,7 @@ import { TrimMarksSection } from "../shared/components/controls/TrimMarksSection
 import { editCurrent, readCurrent } from "../shared/lib/drawing/editCurrent";
 import type { Opened } from "../shared/lib/drawing/parse";
 import { boxOf } from "../shared/lib/drawing/shapes";
-import { drawingBoxOf, trimShapeOf, withDrawingMoved, withTrimBox, withTrimMarks, withTrimOff, withTrimOn, type TrimDrawing } from "../shared/lib/drawing/trimMarks";
+import { drawingBoxOf, trimShapeOf, withDrawingMoved, withTrimBox, withTrimMarks, withTrimMoved, withTrimOff, withTrimOn, type TrimDrawing } from "../shared/lib/drawing/trimMarks";
 import { PanelToolbar, panelIcon } from "../shared/components/PanelToolbar";
 import { PenSection } from "./components/controls/PenSection";
 import { SpeedSection } from "./components/controls/SpeedSection";
@@ -1961,6 +1961,7 @@ export default function App() {
               hasFile={Boolean(fileName)}
               draggingFile={draggingFile}
               canDrag={!busy}
+              onTrimMove={trimming ? undefined : (dx, dy) => void editTrim((d) => withTrimMoved(d, dx, dy))}
               onOpenBrowser={openBrowser}
               layerLooks={layerLooks}
               layerOrder={layerOrder}

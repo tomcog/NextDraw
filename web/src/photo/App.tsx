@@ -40,7 +40,7 @@ import { VignetteCard } from "./components/VignetteCard";
 import { TrimMarksSection } from "../shared/components/controls/TrimMarksSection";
 import { paperMarginMm } from "../shared/components/controls/PaperSection";
 import { curveStrokes } from "../shared/lib/drawing/parametric";
-import { drawingBoxOf, trimShapeOf, withDrawingMoved, withTrimBox, withTrimMarks, withTrimOff, withTrimOn, type TrimDrawing } from "../shared/lib/drawing/trimMarks";
+import { drawingBoxOf, trimShapeOf, withDrawingMoved, withTrimBox, withTrimMarks, withTrimMoved, withTrimOff, withTrimOn, type TrimDrawing } from "../shared/lib/drawing/trimMarks";
 import { EFFECTS, EffectToolbar, effectOf, type Effect } from "./components/EffectToolbar";
 import { PanelToolbar, panelIcon } from "../shared/components/PanelToolbar";
 import { LayersSection } from "../shared/components/controls/LayersSection";
@@ -170,7 +170,7 @@ export default function App() {
   // And the Mask card, under Vignette: the image's edges left as paper.
   const [maskCard, setMaskCard] = useState(() => load<boolean>("photo-mask-card") ?? false);
   useEffect(() => remember("photo-mask-card", maskCard), [maskCard]);
-  // And the Trim marks card, under Mask: the size the print is cut to, and the image placed in it.
+  // And the Trim marks card, under Mask (its switch last in the panels toolbar): the size the print is cut to, and the image placed in it.
   const [trimCard, setTrimCard] = useState(() => load<boolean>("photo-trim-card") ?? false);
   useEffect(() => remember("photo-trim-card", trimCard), [trimCard]);
 
@@ -1025,6 +1025,7 @@ export default function App() {
               { key: "paper", on: paperCard, toggle: () => setPaperCard((on) => !on) },
               { key: "pen", on: penCard, toggle: () => setPenCard((on) => !on) },
               { key: "image", on: infoCard, toggle: () => setInfoCard((on) => !on) },
+              { key: "trim", on: trimCard, toggle: () => setTrimCard((on) => !on), disabled: !chosen?.photo, why: "open an image first" },
             ]}
           />
           {/* The image's layers and its adjustments, a toolbar of their own. */}
@@ -1036,7 +1037,7 @@ export default function App() {
             ]}
           />
           <EffectToolbar effect={chosen?.photo && !chosen.photo.idle ? effectOf(chosen.photo) : undefined} onEffect={setEffect} onAgain={() => setEffectCards((on) => !on)} disabled={!chosen?.photo || busy} />
-          {chosen?.photo && <AdjustToolbar vignette={{ on: vignetteCard, toggle: () => setVignetteCard((on) => !on) }} mask={{ on: maskCard, toggle: () => setMaskCard((on) => !on) }} trim={{ on: trimCard, toggle: () => setTrimCard((on) => !on) }} />}
+          {chosen?.photo && <AdjustToolbar vignette={{ on: vignetteCard, toggle: () => setVignetteCard((on) => !on) }} mask={{ on: maskCard, toggle: () => setMaskCard((on) => !on) }} />}
           {chosen?.photo && <HistoryToolbar canUndo={canUndo} canRedo={canRedo} onUndo={undo} onRedo={redo} disabled={busy} />}
         </div>
         <section className={styles.stage} aria-label="Image conversion" data-dragging-file={draggingFile || undefined}>
@@ -1067,6 +1068,7 @@ export default function App() {
               cropping={cropDraft ? { part: cropDraft, onPart: setCropDraft } : undefined}
               others={otherLayers}
               trim={trimOnStage}
+              onTrimMove={busy ? undefined : (dx, dy) => editTrim((d) => withTrimMoved(d, dx, dy))}
             />
           ) : (
             <>
