@@ -580,13 +580,9 @@ export default function App() {
       setReshaping(null);
     }
   };
-  // The paper and everything on it a quarter turn, as in every app: the server turns the drawing and
-  // its page, and the paper here lies the other way to match - on the bed where it was.
-  const turnDrawing = (dir: 1 | -1) => void reshape({ turn_paper: dir }).then((res) => {
-    if (!res?.turned_paper) return; // only the paper the server turned is turned here
-    const was = refs.current.settings;
-    updateSettings({ paper_w: was.paper_h, paper_h: was.paper_w });
-  });
+  // The drawing a quarter turn on the paper, about its middle, as in every app: the paper stays as it
+  // lies - only the Paper card's Landscape / Portrait turns that.
+  const turnDrawing = (dir: 1 | -1) => void reshape({ turn: dir });
   // A layer given another ink, written into the drawing (see colorAndNameLayer).
   const inkLayer = async (change: { id: string; name?: string; color: string }) => {
     if (busy) return null;

@@ -223,7 +223,7 @@ export function PaperSection({ w, h, sizeId, units, color, collapsibleKey, disab
                 disabled={disabled}
                 onClick={() => {
                   // Only the paper turns, as it lies on the plotter: the drawing stays as it is. The
-                  // Drawing transform's turn buttons are what take the drawing with it.
+                  // Drawing transform's turn buttons turn the drawing alone, never the paper.
                   if (!on) onDimensions(h, w); // already lying that way otherwise
                 }}
               />
@@ -242,14 +242,14 @@ export function PaperSection({ w, h, sizeId, units, color, collapsibleKey, disab
       {/* What's done to the drawing on the paper, apart from the paper itself: turning it, and fitting
           it inside a margin. Folds on its own, its choice remembered per app. */}
       <Section title="Drawing transform" collapsibleKey={`${collapsibleKey}-transform`}>
-        {/* One row: the paper and everything on it turned a quarter, in every app; then Fit: as big as the paper allows
+        {/* One row: the drawing turned a quarter on the paper, which stays as it lies, in every app; then Fit: as big as the paper allows
             inside the margin. A drawing of another proportion than the paper fills it only one way;
             the alignment below says where it sits the other way - centred, or against an edge. */}
         <div className={styles.transformRow}>
           {onTurnDrawing && (
             <>
-              <ButtonRound size="sm" icon={<RotateCcwSquare />} aria-label="Turn the paper and drawing left" title="Turn the paper and everything on it 90° left: landscape becomes portrait, the drawing still on it as it was" disabled={disabled} onClick={() => onTurnDrawing(-1)} />
-              <ButtonRound size="sm" icon={<RotateCwSquare />} aria-label="Turn the paper and drawing right" title="Turn the paper and everything on it 90° right: landscape becomes portrait, the drawing still on it as it was" disabled={disabled} onClick={() => onTurnDrawing(1)} />
+              <ButtonRound size="sm" icon={<RotateCcwSquare />} aria-label="Turn the drawing left" title="Turn the drawing 90° left about its middle; the paper stays as it lies" disabled={disabled} onClick={() => onTurnDrawing(-1)} />
+              <ButtonRound size="sm" icon={<RotateCwSquare />} aria-label="Turn the drawing right" title="Turn the drawing 90° right about its middle; the paper stays as it lies" disabled={disabled} onClick={() => onTurnDrawing(1)} />
             </>
           )}
           <div className={styles.marginField}>

@@ -1,6 +1,6 @@
 import { Segment, SegmentedControl } from "@tomcoggia/ui";
 import { Columns2, Image, Layers, Spline } from "lucide-react";
-import { useId, useRef, type ReactNode } from "react";
+import { useId, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
 import type { Box, Zoom } from "../../shared/components/BedCanvas";
 import { InkGroup, InkLayer } from "../../shared/components/Ink";
 import { NextDrawCanvas } from "../../shared/components/NextDrawCanvas";
@@ -99,6 +99,8 @@ interface Props {
   trim?: { color: string; d: string[]; box: { x0: number; y0: number; x1: number; y1: number } };
   /** The trim dragged on the stage this far, in inches. */
   onTrimMove?: (dx: number, dy: number) => void;
+  /** The image dragged on the stage this far, in inches: picked up anywhere on it, outside the trim. */
+  onMove?: (dx: number, dy: number) => void;
   /** Cropping: the part of the whole picture kept - left, top, right, bottom, as fractions - set by dragging. */
   cropping?: { part: Part; onPart: (part: Part) => void };
 }
@@ -110,7 +112,7 @@ type Part = [number, number, number, number];
  * zooms and the loupe that Studio and Plot show a drawing on. Photo's own views go first in the bar, before
  * the shared ones; side by side, a second canvas follows the first's zoom.
  */
-export function ConvertStage({ photo, parts, box, page, paperColor, model, ink, view, onView, show, onShow, zoom, onZoom, loupe, onLoupe, cropping, others = [], trim, onTrimMove }: Props) {
+export function ConvertStage({ photo, parts, box, page, paperColor, model, ink, view, onView, show, onShow, zoom, onZoom, loupe, onLoupe, cropping, others = [], trim, onTrimMove, onMove }: Props) {
   const read = usePhotoRead(photo.src);
   const w = box.x1 - box.x0;
   const h = box.y1 - box.y0;
@@ -181,8 +183,11 @@ export function ConvertStage({ photo, parts, box, page, paperColor, model, ink, 
   const plates = photo.separation
     ? parts.filter((part, i) => part.photo.separation && parts.findIndex((o) => plateOf(o.photo) === plateOf(part.photo)) === i)
     : [];
+  // While the image is dragged, how far it's gone so far: the picture and its lines follow, in every pane.
+  const [by, setBy] = useState<{ x: number; y: number } | null>(null);
+  const moved = by ? `translate(${by.x} ${by.y})` : undefined;
   const picture = (faded?: boolean, whole = false) => (
-    <g opacity={faded ? 0.3 : 1}>
+    <g opacity={faded ? 0.3 : 1} transform={whole ? undefined : moved}>
       {photo.separation
         ? plates.map((part, i) => (
             <g key={i} style={{ mixBlendMode: "multiply" }}>{plate(part.photo, `${adjustId}-${i}`, part.color, whole)}</g>
@@ -205,7 +210,7 @@ export function ConvertStage({ photo, parts, box, page, paperColor, model, ink, 
           {trim.d.map((d, i) => <path key={i} d={d} fill="none" />)}
         </InkLayer>
       )}
-      <g transform={`translate(${at.x} ${at.y})`}>
+      <g transform={`${moved ?? ""} translate(${at.x} ${at.y})`}>
         {read && parts.map((part, k) => (
           // Ink is see-through unless the pen's preset says it's opaque (Tom, 2026-10-11): laid on the
           // paper it multiplies, so on black paper a translucent ink is simply black. With no preset,
@@ -243,6 +248,9 @@ export function ConvertStage({ photo, parts, box, page, paperColor, model, ink, 
     return onTrimMove ? <TrimGrab box={trim.box} onMove={onTrimMove}>{shown}</TrimGrab> : shown;
   };
 
+  // The image to pick up and drag, under the trim's own grip so the trim is still the one moved inside it.
+  const grab = onMove ? <PictureGrab box={box} by={by} onBy={setBy} onMove={onMove} /> : null;
+
   const pane = (body: ReactNode | ((mark: number) => ReactNode), first: boolean) => (
     <figure className={styles.pane}>
       <NextDrawCanvas bar={first ? bar : undefined} zoom={zoom} loupe={loupe} model={model} settings={settings} drawingBox={drawingBox}>
@@ -269,17 +277,70 @@ export function ConvertStage({ photo, parts, box, page, paperColor, model, ink, 
 
   return (
     <div className={styles.panes} data-view={show}>
-      {show === "picture" && pane(<>{picture()}{trimGuide(true)}</>, true)}
-      {show === "lines" && pane(<>{lines}{trimGuide(false)}</>, true)}
-      {show === "over" && pane(<>{picture(true)}{lines}{trimGuide(false)}</>, true)}
+      {show === "picture" && pane(<>{picture()}{grab}{trimGuide(true)}</>, true)}
+      {show === "lines" && pane(<>{lines}{grab}{trimGuide(false)}</>, true)}
+      {show === "over" && pane(<>{picture(true)}{lines}{grab}{trimGuide(false)}</>, true)}
       {show === "side" && (
         <>
-          {pane(<>{picture()}{trimGuide(true)}</>, true)}
-          {pane(<>{lines}{trimGuide(false)}</>, false)}
+          {pane(<>{picture()}{grab}{trimGuide(true)}</>, true)}
+          {pane(<>{lines}{grab}{trimGuide(false)}</>, false)}
         </>
       )}
       {!read && <p className={styles.reading}>Reading the image…</p>}
     </div>
+  );
+}
+
+/**
+ * The image's grip: its box, invisible, to pick it up by and drag. The way gone is shown as it's dragged
+ * and the image moved there when it's let go - one change, as the trim's grip does it.
+ */
+function PictureGrab({ box, by, onBy, onMove }: {
+  box: { x0: number; y0: number; x1: number; y1: number };
+  by: { x: number; y: number } | null;
+  onBy: (by: { x: number; y: number } | null) => void;
+  onMove: (dx: number, dy: number) => void;
+}) {
+  const from = useRef<{ id: number; ctm: DOMMatrix; x: number; y: number } | null>(null);
+  const at = (e: ReactPointerEvent, ctm: DOMMatrix) => new DOMPoint(e.clientX, e.clientY).matrixTransform(ctm);
+  const down = (e: ReactPointerEvent<SVGRectElement>) => {
+    if (e.button !== 0) return;
+    e.stopPropagation();
+    const ctm = e.currentTarget.getScreenCTM()?.inverse();
+    if (!ctm) return;
+    e.currentTarget.setPointerCapture(e.pointerId);
+    const p = at(e, ctm);
+    from.current = { id: e.pointerId, ctm, x: p.x, y: p.y };
+    onBy({ x: 0, y: 0 });
+  };
+  const move = (e: ReactPointerEvent) => {
+    const f = from.current;
+    if (!f || e.pointerId !== f.id) return;
+    const p = at(e, f.ctm);
+    onBy({ x: p.x - f.x, y: p.y - f.y });
+  };
+  const up = (e: ReactPointerEvent) => {
+    const f = from.current;
+    if (!f || e.pointerId !== f.id) return;
+    const p = at(e, f.ctm);
+    from.current = null;
+    onBy(null);
+    if (p.x !== f.x || p.y !== f.y) onMove(p.x - f.x, p.y - f.y);
+  };
+  // Drawn where the image is now, so it stays under the pointer as it's dragged.
+  return (
+    <rect
+      className={styles.grab}
+      data-dragging={by ? "true" : undefined}
+      x={box.x0 + (by?.x ?? 0)}
+      y={box.y0 + (by?.y ?? 0)}
+      width={box.x1 - box.x0}
+      height={box.y1 - box.y0}
+      onPointerDown={down}
+      onPointerMove={move}
+      onPointerUp={up}
+      onPointerCancel={up}
+    />
   );
 }
 

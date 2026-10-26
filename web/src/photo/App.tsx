@@ -53,7 +53,7 @@ import { PhotoCard } from "./components/PhotoCard";
 import { PhotoHeader } from "./components/PhotoHeader";
 import { GENERAL_PEN } from "./lib/generalPen";
 import { channelsOf, folderOf, isPhotoshop, type Inks } from "./lib/separationFolder";
-import { turnPaperAndDrawing } from "../shared/lib/drawing/turnPaper";
+import { turnDrawingOnPaper } from "../shared/lib/drawing/turnPaper";
 import { useSharedPen } from "../shared/lib/useSharedPen";
 import styles from "./App.module.css";
 
@@ -274,17 +274,16 @@ export default function App() {
     // All of it kept is no crop at all.
     if (part && (part[0] > 1e-4 || part[1] > 1e-4 || part[2] < 1 - 1e-4 || part[3] < 1 - 1e-4)) void cropPhoto(part);
   };
-  /** The paper and everything on it a quarter turn, right or left: landscape to portrait, as a sheet is turned. */
+  /** The drawing a quarter turn on the paper, right or left, about its middle: the paper stays as it lies. */
   const turnAll = async (dir: 1 | -1) => {
     let turned;
     try {
-      turned = await turnPaperAndDrawing(shapes, fills, page, dir);
+      turned = await turnDrawingOnPaper(shapes, fills, page, dir);
     } catch (err) {
       setMessage({ text: `Couldn’t turn the image: ${(err as Error).message}`, ok: false });
       return;
     }
     record();
-    setPage(turned.page);
     setFills(turned.fills);
     setShapes(turned.shapes);
   };
@@ -367,7 +366,7 @@ export default function App() {
 
   const {
     addPhoto, addSeparations, switchPhotoMode, setKeyLayer, splitPhoto, splitPhotoBestFit,
-    placePhoto, scalePhoto, replacePhoto, reloadPhoto, joinSeparations, cropPhoto, bakeEffect, savePreset, applyPreset, deletePreset, setPhotoOf, addEdgeMask, chooseEdgeMask, deleteEdgeMask, setEdgeGen, saveEdgeGen, setAngles, photoStem, splitPhotoCmyk, setLayerColor,
+    placePhoto, scalePhoto, movePhoto, replacePhoto, reloadPhoto, joinSeparations, cropPhoto, bakeEffect, savePreset, applyPreset, deletePreset, setPhotoOf, addEdgeMask, chooseEdgeMask, deleteEdgeMask, setEdgeGen, saveEdgeGen, setAngles, photoStem, splitPhotoCmyk, setLayerColor,
     splitAroundPaper, setPaperTone, addPass, removePass, setChannelOf, splitPhotoProfile,
   } = photoActions({
     chosen, shapes, setShapes, layers, setLayers, active, setActiveLayer, page, tool,
@@ -1069,6 +1068,7 @@ export default function App() {
               others={otherLayers}
               trim={trimOnStage}
               onTrimMove={busy ? undefined : (dx, dy) => editTrim((d) => withTrimMoved(d, dx, dy))}
+              onMove={busy ? undefined : movePhoto}
             />
           ) : (
             <>

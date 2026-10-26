@@ -1,11 +1,12 @@
-// The paper and everything on it a quarter turn, as a sheet is turned by hand: what the Paper card's
-// turn does in Studio and Image (Plot asks the server to do the same to the file).
+// The paper and everything on it a quarter turn, as a sheet is turned by hand; and the drawing alone
+// turned on the paper, which is what the Drawing transform's turn buttons do in Studio and Image (Plot
+// asks the server to do the same to the file). The paper only turns from its own Landscape / Portrait.
 
 import type { FitAlign } from "../geometry";
 import type { Fill } from "./hatch";
 import { keptPlatesAlike, readTones, turnedCopy, turnedCrop, type Photo } from "./photo";
-import { boxOf, type Page, type Shape } from "./shapes";
-import { turnWhole } from "./whole";
+import { boxOf, shiftShape, type Page, type Shape } from "./shapes";
+import { drawnBox, turnWhole } from "./whole";
 
 /** Where a picture fitted against an edge goes on a turn: on a left turn what was against the top is against the left. */
 const turnedAlign = (a: FitAlign, dir: 1 | -1) => (dir < 0 ? { x: a.y, y: 1 - a.x } : { x: 1 - a.y, y: a.x }) as FitAlign;
@@ -56,4 +57,18 @@ export async function turnPaperAndDrawing(shapes: Shape[], fills: Fill[], page: 
     };
   });
   return { shapes: next, fills: turned.fills, page: turned.page };
+}
+
+/**
+ * The drawing alone a quarter turn on the paper, 1 right or -1 left, about the middle of what it puts
+ * on paper: the paper stays as it lies. Turned as with its paper, then moved back so its middle is
+ * where it was. Throws when a picture can't be turned.
+ */
+export async function turnDrawingOnPaper(shapes: Shape[], fills: Fill[], page: Page, dir: 1 | -1): Promise<{ shapes: Shape[]; fills: Fill[] }> {
+  const turned = await turnPaperAndDrawing(shapes, fills, page, dir);
+  const was = drawnBox(shapes);
+  const now = drawnBox(turned.shapes);
+  const dx = (was.x0 + was.x1) / 2 - (now.x0 + now.x1) / 2;
+  const dy = (was.y0 + was.y1) / 2 - (now.y0 + now.y1) / 2;
+  return { shapes: turned.shapes.map((sh) => shiftShape(sh, dx, dy)), fills: turned.fills };
 }

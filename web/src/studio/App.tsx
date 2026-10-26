@@ -67,7 +67,7 @@ import { addPointOnLongest, boxAround, boxOf, clampToPage, groupLabel, groupsOf,
 import { areaPicker, silhouetteOf } from "../shared/lib/drawing/silhouette";
 import { buildSvg, svgForMarks } from "../shared/lib/drawing/svg";
 import { fitToPage, reshapeDrawing, runsOffPage } from "../shared/lib/drawing/whole";
-import { turnPaperAndDrawing } from "../shared/lib/drawing/turnPaper";
+import { turnDrawingOnPaper } from "../shared/lib/drawing/turnPaper";
 import { useSharedPen } from "../shared/lib/useSharedPen";
 import styles from "./App.module.css";
 
@@ -1038,17 +1038,16 @@ export default function App() {
   setShapes((list) => list.map((s) => (s.id === chosen.id ? { ...scaled, scale: percent === 100 ? undefined : percent } : s)));
  };
 
- /** The paper and everything on it a quarter turn, right or left: landscape to portrait, as a sheet is turned. */
+ /** The drawing a quarter turn on the paper, right or left, about its middle: the paper stays as it lies. */
  const turnAll = async (dir: 1 | -1) => {
   let turned;
   try {
-   turned = await turnPaperAndDrawing(shapes, fills, page, dir);
+   turned = await turnDrawingOnPaper(shapes, fills, page, dir);
   } catch (err) {
    setMessage({ text: `Couldn’t turn the image: ${(err as Error).message}`, ok: false });
    return;
   }
   record();
-  setPage(turned.page);
   setFills(turned.fills);
   setShapes(turned.shapes);
  };

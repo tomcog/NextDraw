@@ -58,3 +58,13 @@
   vector-effect: non-scaling-stroke;
   pointer-events: none;
 }
+
+/* The image's grip: its whole box, invisible, to pick it up by and drag (PictureGrab). */
+.grab {
+  fill: transparent;
+  stroke: none;
+  pointer-events: all;
+  cursor: grab;
+}
+
+.grab[data-dragging] { cursor: grabbing; }

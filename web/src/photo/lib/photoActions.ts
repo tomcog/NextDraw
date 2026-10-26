@@ -820,6 +820,15 @@ export function photoActions(ctx: PhotoContext) {
     }));
   };
 
+  /** Move the chosen image - all its layers - this far on the page, in inches: dragged on the stage. */
+  const movePhoto = (dx: number, dy: number) => {
+    if (!chosen?.photo || (!dx && !dy)) return;
+    record();
+    setShapes((list) => list.map((sh) => (sameImage(sh)
+      ? { ...sh, x: sh.x + dx, y: sh.y + dy, x2: sh.x2 + dx, y2: sh.y2 + dy, photo: { ...sh.photo!, fit: undefined } }
+      : sh)));
+  };
+
   /**
     * Put a different picture in the chosen photo - all its layers - keeping everything else: how it's
     * split, its layers and pens, and every layer's settings. It keeps its place and width, its height
@@ -1471,7 +1480,7 @@ export function photoActions(ctx: PhotoContext) {
   return {
     setChannelOf, splitPhotoProfile,
     addPhoto, addSeparations, switchPhotoMode, setKeyLayer, splitPhoto, splitPhotoBestFit,
-    placePhoto, scalePhoto, replacePhoto, reloadPhoto, joinSeparations, cropPhoto, bakeEffect, savePreset, applyPreset, deletePreset, setPhotoOf, addEdgeMask, chooseEdgeMask, deleteEdgeMask, setEdgeGen, saveEdgeGen, setAngles, photoStem, splitPhotoCmyk, setLayerColor,
+    placePhoto, scalePhoto, movePhoto, replacePhoto, reloadPhoto, joinSeparations, cropPhoto, bakeEffect, savePreset, applyPreset, deletePreset, setPhotoOf, addEdgeMask, chooseEdgeMask, deleteEdgeMask, setEdgeGen, saveEdgeGen, setAngles, photoStem, splitPhotoCmyk, setLayerColor,
     splitAroundPaper, setPaperTone, addPass, removePass,
   };
 }
