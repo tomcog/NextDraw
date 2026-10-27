@@ -25,14 +25,14 @@ interface Props {
   inUse?: boolean;
   /** What belongs to this tool, under it: Plot's angle and one-way switches, and its layers. */
   under?: ReactNode;
-  /** Anything after the tool: Plot's second tool, and Chill mode. */
+  /** Anything after the tool: Plot's second tool. */
   children?: ReactNode;
 }
 
 /**
  * Shared: the drawing tool, the same card in both apps - the marker, its tip, the drawing of the tip
  * and what the tool is always set up for. What only one app has - Plot's setup buttons, the angle
- * and one-way switches, a second tool, Chill mode - is passed in by that app, and simply isn't there
+ * and one-way switches, a second tool - is passed in by that app, and simply isn't there
  * in the other.
  */
 export function DrawingToolSection({ tools, value, onPick, collapsibleKey, disabled, changed, placeholder, none, label, action, inUse, under, children }: Props) {

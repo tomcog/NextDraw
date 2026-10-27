@@ -9,12 +9,11 @@ import type { Handling, Preset, Settings, Units } from "../../shared/lib/types";
 
 interface Props {
   settings: Settings;    // the settings as they would be sent to the plotter, small paths included
-  own: Settings;         // the same before small paths slows them: the tool's own values, which the fields set
+  own: Settings;         // the tool's own values, which the fields set
   handling: Handling[];
   tool: string | null;   // the drawing tool preset in use
   preset: Preset | undefined; // that tool, for its tilt offset
   secondTool: string | null;
-  smallPaths: number | null; // percent slower for tiny marks, or null when off
   units: Units;
   disabled: boolean;
   /** Change the tool: the next plot uses it at once, and the preset keeps it. */
@@ -44,7 +43,7 @@ const speedMM = (percent: number, ceilingInS: number | undefined) =>
 
 type Offset = { x: number; y: number };
 
-export function SettingsHud({ settings: s, own, handling, tool, preset, secondTool, smallPaths, units, disabled, onToolValues }: Props) {
+export function SettingsHud({ settings: s, own, handling, tool, preset, secondTool, units, disabled, onToolValues }: Props) {
   const mode = handling.find((h) => h.id === s.handling);
 
   // Dragged by its grip to uncover whatever it sits on. The offset is from its usual corner and is
@@ -91,9 +90,6 @@ export function SettingsHud({ settings: s, own, handling, tool, preset, secondTo
     onPointerUp: () => { drag.current = null; },
     onDoubleClick: () => setOffset({ x: 0, y: 0 }),
   };
-  // Chill mode slows what's sent; the field keeps the tool's own number and the note says what goes out.
-  const slowed = (key: keyof Settings) => (s[key] !== own[key] ? `${s[key]} in Chill mode` : undefined);
-
   const field = (label: string, key: "speed_pendown" | "pen_pos_down" | "pen_pos_up" | "pen_rate_lower" | "pen_rate_raise", min: number) => (
     <span className={styles.field}>
       <NumberField
@@ -108,12 +104,12 @@ export function SettingsHud({ settings: s, own, handling, tool, preset, secondTo
     </span>
   );
   const rateNote = (key: "pen_rate_lower" | "pen_rate_raise") =>
-    [RATE_NAMES[own[key]], slowed(key)].filter(Boolean).join(" · ") || undefined;
+    RATE_NAMES[own[key]];
 
   const rows: [string, ReactNode, string?][] = [
     ["Tool", secondTool ? `${tool ?? "—"} + ${secondTool}` : tool ?? "—"],
     ["Drawing", field("Drawing speed", "speed_pendown", 1),
-      [speedText(s.speed_pendown, mode?.speed_in_s), speedMM(s.speed_pendown, mode?.speed_in_s), slowed("speed_pendown")].filter(Boolean).join(" · ")],
+      [speedText(s.speed_pendown, mode?.speed_in_s), speedMM(s.speed_pendown, mode?.speed_in_s)].filter(Boolean).join(" · ")],
     ["Travel", speedText(s.speed_penup, mode?.speed_up_in_s), speedMM(s.speed_penup, mode?.speed_up_in_s) ?? undefined],
     ["Motion", mode?.name ?? `Mode ${s.handling}`, mode ? `${mode.steps_per_in} steps/in` : undefined],
     ["Acceleration", String(s.accel)],
@@ -161,7 +157,6 @@ export function SettingsHud({ settings: s, own, handling, tool, preset, secondTo
       : `mm · tip ${trimNum(Math.abs(down), 2)} mm ${down > 0 ? "lower" : "higher"}`]);
   }
   rows.push(["Paths", PATH_ORDER[s.reordering] ?? String(s.reordering)]);
-  if (smallPaths) rows.push(["Small paths", `${smallPaths}% slower`]);
 
   return (
     <dl ref={ref} className={styles.hud} aria-label="Printing settings" style={{ transform: `translate(${offset.x}px, ${offset.y}px)` }}>

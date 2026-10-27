@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useState } from "react";
 import { ToolPicker } from "../../../shared/components/controls/ToolPicker";
 import { Button, ButtonRound, Checkbox, InputText } from "@tomcoggia/ui";
 import { CirclePlus, Palette, SlidersHorizontal, X } from "lucide-react";
@@ -30,8 +30,6 @@ interface Props {
   onHud: () => void;
   onPalette: () => void;
   onInk: (patch: { ink_opacity?: number; ink_build?: number }) => void;
-  smallPaths: number | null; // percent slower, or null when off
-  onSmallPaths: (percent: number | null) => void;
   tiltOn: (tool: Preset | undefined) => boolean;
   onTilt: (toolName: string, on: boolean) => void;
   dragOn: (tool: Preset | undefined) => boolean;
@@ -49,7 +47,7 @@ export function PresetSection({
   label,
   presets, active, changed, disabled, onApply, onSave, onDelete,
   secondTool, secondLayers, layers, inUse, onAddSecond, onSecondTool, onRemoveSecond, onAssign,
-  smallPaths, onSmallPaths, tiltOn, onTilt, dragOn, onDrag, paletteOpen, onPalette, hudOpen, onHud, onInk,
+  tiltOn, onTilt, dragOn, onDrag, paletteOpen, onPalette, hudOpen, onHud, onInk,
 }: Props) {
   // A tool used at more than one angle keeps its switch. The label gives the angle to set.
   const tiltSwitch = (tool: Preset | undefined) => tool?.tilt && !tool.tilt.fixed && (
@@ -73,9 +71,6 @@ export function PresetSection({
         onChange={(e) => onDrag(tool.name, e.target.checked)}
       />
   );
-  // Turning Chill mode back on returns to the last amount chosen.
-  const lastSlow = useRef(smallPaths ?? 50);
-  if (smallPaths !== null) lastSlow.current = smallPaths;
   const mixed = secondTool !== null;
   // Layer number chips under each tool: a layer belongs to exactly one, so turning a chip on under one
   // tool takes it off the other.
@@ -201,17 +196,9 @@ export function PresetSection({
         </div>
       )}
 
-      <div className={styles.smallPaths}>
-        <div className={styles.smallPathsRow}>
-        <Checkbox
-          size="md"
-          label="Chill mode"
-          checked={smallPaths !== null}
-          disabled={disabled}
-          title="For drawings full of tiny marks: slows acceleration, travel and drawing speed, and pen lifts, so the plotter doesn't shake"
-          onChange={(e) => onSmallPaths(e.target.checked ? lastSlow.current : null)}
-        />
-        {!mixed && (
+      {/* Slowing a plot down is the speed slider shown once it starts; here only the second pen. */}
+      {!mixed && (
+        <div className={styles.addPenRow}>
           <ButtonRound
             size="sm"
             icon={<CirclePlus />}
@@ -220,22 +207,8 @@ export function PresetSection({
             disabled={disabled || !presets.length}
             onClick={onAddSecond}
           />
-        )}
         </div>
-        {smallPaths !== null && (
-          // Shown as the share of the tool's speed that's kept (right is faster); stored as how much slower.
-          <Slider
-            label="Speed"
-            value={100 - smallPaths}
-            min={10}
-            max={90}
-            step={5}
-            format={(v) => `${v}%`}
-            disabled={disabled}
-            onChange={(v) => onSmallPaths(100 - v)}
-          />
-        )}
-      </div>
+      )}
 
       {!presets.length && (
         <p className={styles.hint}>Save the heights and speeds that work for a pen, then switch back to them in one click.</p>

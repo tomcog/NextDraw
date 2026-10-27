@@ -148,8 +148,6 @@ export default function App() {
   // A second drawing tool (mixed media): null normally; "" once added but not yet chosen.
   const [secondTool, setSecondTool] = useState<string | null>(null);
   const [secondToolLayers, setSecondToolLayers] = useState<string[]>([]);
-  // Small paths: slow the plotter by this percent for drawings full of tiny marks; null when off.
-  const [smallPaths, setSmallPaths] = useState<number | null>(null);
   // The one layer chosen to print (the green printer in the Layers card). None until the operator picks one.
   const [printLayer, setPrintLayer] = useState<string | null>(null);
   // The drawing's layers as they are in the file - name, order and color all Studio's. Plot adds only
@@ -657,7 +655,6 @@ export default function App() {
     setLayerLinks(plot?.layer_links ?? []);
     setHatchSpacing(plot?.hatch_spacing ?? {});
     setSkipTiny(plot?.skip_tiny ?? null);
-    setSmallPaths(plot?.small_paths ?? null);
     setSecondTool(plot?.second_tool ?? null);
     setSecondToolLayers(plot?.second_tool_layers ?? []);
     // The drawing tool is deliberately NOT taken from the file. It stands for the pen actually in the
@@ -709,7 +706,6 @@ export default function App() {
     scale,
     rotation,
     tool: activePreset ?? undefined,
-    ...(smallPaths ? { small_paths: smallPaths } : {}),
     ...(secondTool ? { second_tool: secondTool, second_tool_layers: secondToolLayers } : {}),
     ...(hiddenLayers.length ? { hidden_layers: hiddenLayers } : {}),
     ...(Object.keys(inkColors).length ? { layer_colors: inkColors } : {}),
@@ -1310,7 +1306,7 @@ export default function App() {
     setLastAction("plot");
     setLocalMessage(null);
     try {
-      // Resume with the settings chosen now (for the stopped layer's tool), so Small paths or speed changes
+      // Resume with the settings chosen now (for the stopped layer's tool), so speed changes
       // made while stopped apply to the rest of the plot.
       await postJSON("/api/resume", settingsFor(status?.resume?.layer ?? plotLayerId));
       setStatus((s) => (s ? { ...s, state: "preparing", message: "", started: false } : s));
@@ -1671,30 +1667,15 @@ export default function App() {
   };
   // A fat barrel puts the tip further down the page than the pen the paper is lined up for.
   const tipOffsetYFor = (id: string | null) => (isVarnishId(id) ? 0 : barrelOffsetMm((usesSecond(id) ? secondPreset : active)?.barrel_mm));
-  // Small paths slows everything that makes tiny marks violent: how hard the carriage starts and stops,
-  // how fast it travels and draws, and how hard the pen is raised and lowered. Pen heights don't change.
-  const slowForSmallPaths = (s: Settings): Settings => {
-    if (!smallPaths) return s;
-    const f = 1 - smallPaths / 100;
-    const slow = (v: number) => Math.max(1, Math.round(v * f));
-    return {
-      ...s,
-      accel: slow(s.accel),
-      speed_pendown: slow(s.speed_pendown),
-      speed_penup: slow(s.speed_penup),
-      pen_rate_raise: slow(s.pen_rate_raise),
-      pen_rate_lower: slow(s.pen_rate_lower),
-    };
-  };
   const settingsFor = (id: string | null): Settings => {
     const tool = usesSecond(id) ? secondPreset : active;
-    return slowForSmallPaths({
+    return {
       ...(usesSecond(id) && secondPreset ? { ...settings, ...secondPreset.settings } : settings),
       drag_only: dragOn(tool),
-    });
+    };
   };
   // What the next plot will actually be sent: the tool's preset, the second tool where one
-  // is assigned, and any small-paths slow-down already folded in. The readout shows these.
+  // is assigned. The readout shows these.
   const plotSettings = settingsFor(plotLayerId);
   refs.current.plotSettings = plotSettings;
   const layerInkBuilds = useMemo(
@@ -2002,7 +1983,6 @@ export default function App() {
                 handling={info?.handling ?? []}
                 tool={usesSecond(plotLayerId) ? secondTool : activePreset}
                 secondTool={usesSecond(plotLayerId) ? null : secondTool}
-                smallPaths={smallPaths}
                 own={usesSecond(plotLayerId) && secondPreset ? { ...settings, ...secondPreset.settings } : settings}
                 preset={usesSecond(plotLayerId) ? secondPreset : active}
                 units={settings.units}
@@ -2120,8 +2100,6 @@ export default function App() {
                     setSecondToolLayers([]);
                   }}
                   onAssign={assignLayerTool}
-                  smallPaths={smallPaths}
-                  onSmallPaths={setSmallPaths}
                   tiltOn={tiltOn}
                   onTilt={(name, on) => setTiltChoice((c) => ({ ...c, [name]: on }))}
                   dragOn={dragOn}

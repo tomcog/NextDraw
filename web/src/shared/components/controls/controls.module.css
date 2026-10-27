@@ -426,22 +426,10 @@
   gap: 0.25rem;
 }
 
-/* Small paths: the switch, and how much slower when it's on. */
-/* The checkbox stays put when the slider appears under it: the rows stack from the top. */
-.smallPaths {
+/* Add another drawing tool, at the right under the card's palette button. */
+.addPenRow {
   display: flex;
-  flex-direction: column;
-  justify-content: flex-start;
-  gap: 0.25rem;
-  min-height: 2.875rem;
-}
-
-/* Chill mode on the left, Add another drawing tool on the right, under the card's palette button. */
-.smallPathsRow {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 0.5rem;
+  justify-content: flex-end;
 }
 
 .more {

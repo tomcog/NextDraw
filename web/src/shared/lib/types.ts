@@ -161,7 +161,6 @@ export interface Plot {
   scale?: number;
   rotation?: number; // quarter turns clockwise, in degrees
   tool?: string;
-  small_paths?: number; // percent to slow the plotter by, for drawings full of tiny marks
   second_tool?: string; // a second drawing tool, for drawings that mix pens
   second_tool_layers?: string[]; // ids of the layers that use it; every other layer uses `tool`
   hidden_layers?: string[]; // ids of the layers Plot is holding back; not a change to the drawing
