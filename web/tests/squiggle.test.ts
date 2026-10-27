@@ -204,6 +204,20 @@ test("plate sets: drawn as hatching, more plates come nearer the photo, and oran
   assert.ok(black[3] >= 4, `black pen ${black[3]} passes`);
 });
 
+test("plate sets: Black takes the colours' shared grey - at 100% a black or a grey is black ink alone", () => {
+  for (const pens of [["#00a3e0", "#d6007a", "#ffe500", "#1a1a1a"], ["#00a3e0", "#d6007a", "#ffe500", "#1a1a1a", "#ff6a13", "#00a650", "#e4002b", "#5b2c8f"]]) {
+    const colours = (rgb: [number, number, number], blackShare: number) => platePasses(rgb, pens, { blackShare }).reduce((sum, p, n) => (n === 3 ? sum : sum + p), 0);
+    for (const grey of [[20, 20, 20], [60, 60, 60]] as [number, number, number][]) {
+      assert.equal(colours(grey, 1), 0, `no colour under ${grey.join(",")} at 100%: ${platePasses(grey, pens, { blackShare: 1 }).join(",")}`);
+      assert.ok(platePasses(grey, pens, { blackShare: 1 })[3] >= 3, "drawn in black");
+      // Less black, more of the colours laid over each other.
+      assert.ok(colours(grey, 0) > colours(grey, 0.5) && colours(grey, 0.5) >= colours(grey, 1), `colours under ${grey.join(",")} fall as Black rises`);
+    }
+    // A colour with no grey in it keeps its colour.
+    assert.ok(platePasses([240, 110, 30], pens, { blackShare: 1 })[3] === 0, "no black in an orange");
+  }
+});
+
 test("plate sets: a smooth run of skin tones stays smooth in eight plates - no blotches", () => {
   // A strip of skin tones, light to dark, separated as a photo would be.
   const w = 120;

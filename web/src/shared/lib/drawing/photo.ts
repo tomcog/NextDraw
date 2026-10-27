@@ -1902,6 +1902,16 @@ export function labOfLinear([R, G, B]: number[]): [number, number, number] {
   return [116 * f(y) - 16, 500 * (f(x) - f(y)), 200 * (f(y) - f(z))];
 }
 
+/** Light per channel from CIELAB: labOfLinear the other way. */
+function linearOfLab([L, a, b]: number[]): [number, number, number] {
+  const fy = (L + 16) / 116;
+  const g = (t: number) => (t > 0.206893 ? t ** 3 : (t - 16 / 116) / 7.787);
+  const x = g(fy + a / 500) * 0.9505;
+  const y = g(fy);
+  const z = g(fy - b / 200) * 1.089;
+  return [3.2406 * x - 1.5372 * y - 0.4986 * z, -0.9689 * x + 1.8758 * y + 0.0415 * z, 0.0557 * x - 0.204 * y + 1.057 * z];
+}
+
 /**
  * Pens laid over the paper, each covering its share of it, bottom first: the colour that comes out,
  * as light per channel. Hatching seen from a little way off is the paper and the pen's colour mixed
@@ -2066,8 +2076,8 @@ const separationCache = new Map<string, Separation>();
 /**
  * How much of each of the four plates' pens the photo needs at every point, 0 to 1, laid over each
  * other on white paper. The black takes `blackShare` of the grey the colours would otherwise share
- * - the darkness every channel has in common - and cyan, magenta and yellow make up the rest between
- * them: at each point the amounts whose densities, added up, come nearest the photo's own, none less
+ * - cyan, magenta and yellow's least, taken out of all three and drawn in black (chooseCovers) - and
+ * the colours make up the rest between them: at each point the amounts whose densities, added up, come nearest the photo's own, none less
  * than nothing or more than solid. Worked out from the pens' own colours, not printing's, so the
  * blend is what these markers will actually make. Worked out small, and read at its nearest pixel.
  */
@@ -2180,7 +2190,7 @@ export function solveSeparation({ rgb, w, h, plates, brightness, contrast, black
   const off = plates.map((p) => p === PLATE_OFF);
   const pens = plates.map((p) => (p === PLATE_OFF ? [1, 1, 1] : hexLinear(p)));
   const steps = coverSteps(penMm, spacingMm, levels);
-  const reach = withinReach(pens, steps);
+  const reach = withinReach(pens, steps, blackShare, off);
   const maps = plates.map(() => new Float32Array(w * h));
   // Each colour solved once - shades an eighth of a step apart in each channel share an answer - but
   // reached from wherever its first point was, so the answer it keeps is a neighbour's.
@@ -2212,17 +2222,25 @@ export function solveSeparation({ rgb, w, h, plates, brightness, contrast, black
 
 /**
  * The photo's colours brought within what these pens can draw - black-point compensation, as print's
- * colour management does it. Hatching covers only part of the paper, so the darkest it can draw (every
- * pen at its most) is often a mid grey; matched exactly, everything darker than that goes to full ink
- * and the photo's shadows, mid-tones and much of its light are drawn alike - flat. So the photo's
- * black becomes the pens' darkest, white stays the paper, and every tone and colour between is
- * spread in proportion. Returns the mapping, Lab to Lab.
+ * colour management does it. Hatching covers only part of the paper, so the darkest it can draw is
+ * often a mid grey; matched exactly, everything darker than that goes to full ink and the photo's
+ * shadows, mid-tones and much of its light are drawn alike - flat. So the photo's black becomes the
+ * pens' darkest, white stays the paper, and every tone and colour between is spread in proportion.
+ * The darkest follows the black share: with none, every pen at its most laid over each other; with
+ * all of it, the black pen at its most on its own - so a black that is all black ink is the photo's
+ * black, rather than a target only the colours stacked under it can reach. Returns the mapping, Lab to Lab.
  */
-function withinReach(pens: number[][], steps: number[]): (lab: number[]) => number[] {
+function withinReach(pens: number[][], steps: number[], blackShare = BLACK_SHARE, off: boolean[] = []): (lab: number[]) => number[] {
   const most = steps[steps.length - 1];
-  const darkest = labOfLinear(mixOf([1, 1, 1], pens, pens.map(() => most), false))[0];
+  const all = labOfLinear(mixOf([1, 1, 1], pens, pens.map((_, n) => (off[n] ? 0 : most)), false))[0];
+  const black = hasBlack(pens, off) ? labOfLinear(mixOf([1, 1, 1], pens, pens.map((_, n) => (n === BLACK ? most : 0)), false))[0] : all;
+  const share = Math.min(1, Math.max(0, blackShare));
+  const darkest = all + (black - all) * share;
+  // Only the lightness follows it: colour is scaled as every pen together can draw it, so turning the
+  // black up doesn't wash out an orange or a navy that has no black in it.
   const k = Math.max(0, Math.min(1, (100 - darkest) / 100));
-  return ([L, a, b]) => [100 - (100 - L) * k, a * k, b * k];
+  const colour = Math.max(0, Math.min(1, (100 - all) / 100));
+  return ([L, a, b]) => [100 - (100 - L) * k, a * colour, b * colour];
 }
 
 /** How far apart two neighbouring colours are, in ΔE, before they count as an edge and are solved afresh. */
@@ -2239,17 +2257,51 @@ function coverTone(cover: number, steps: number[]): number {
   return passes ? (passes + 0.5) / (most + 1) : 0;
 }
 
+/** Where the black plate is in every plate set: fourth, after cyan, magenta and yellow. */
+const BLACK = 3;
+const hasBlack = (pens: number[][], off: boolean[]) => pens.length > BLACK && !off[BLACK];
+
 /**
  * How much paper each pen should cover (in plate order, black fourth) to come nearest a colour `want`
- * in Lab: one pen at a time, its best amount found with the others held, until none moves. Started
- * from `from` - a neighbour's mix - or, with none, from the one pen that comes nearest on its own:
- * from nothing, the first pens tried (cyan, magenta, yellow) settle an orange as yellow over magenta
- * and the orange pen is never reached.
+ * in Lab, with black generation as print does it (gray component replacement). The grey in a colour is
+ * the darkness all three of its channels share - its lightest channel's - which any mix of the colours
+ * spends ink laying down together. `blackShare` of that darkness is the black's to draw: the black
+ * plate is never less than that, and the others make up only what's left, the colour the black can't
+ * give. So at all of it a grey or a black is black ink alone; at none the black is used only where it
+ * comes cheaper than the colours over each other, as before.
  */
 function chooseCovers(want: number[], pens: number[][], steps: number[], blackShare: number, from: number[] | null, off: boolean[] = []): number[] {
+  const share = Math.min(1, Math.max(0, blackShare));
+  if (!hasBlack(pens, off) || share === 0) return fitCovers(want, pens, steps, share, from, off);
+  const floors = pens.map((_, n) => (n === BLACK ? blackFloor(want, pens[BLACK], steps, share) : 0));
+  return fitCovers(want, pens, steps, share, from, off, floors);
+}
+
+/**
+ * The least black for `want`: `share` of its grey, as density - the darkness its lightest channel has -
+ * drawn by the black pen, whose own lightest channel passes that much light at that cover.
+ */
+function blackFloor(want: number[], black: number[], steps: number[], share: number): number {
+  const lightest = Math.min(1, Math.max(...linearOfLab(want)));
+  if (lightest >= 1) return 0;
+  const passed = Math.exp(share * Math.log(Math.max(1e-4, lightest)));
+  // Black at cover c passes 1 - c (1 - its own lightest channel) of the light.
+  const cover = (1 - passed) / Math.max(1e-4, 1 - Math.max(...black));
+  return Math.min(steps[steps.length - 1], Math.max(0, cover));
+}
+
+/**
+ * The amounts themselves: one pen at a time, its best amount found with the others held, until none
+ * moves - each pen kept to at least its `floors` amount. Started from `from` - a neighbour's mix, or
+ * the black generation's - or, with none, from the one pen that comes nearest on its own: from
+ * nothing, the first pens tried (cyan, magenta, yellow) settle an orange as yellow over magenta and the
+ * orange pen is never reached.
+ */
+function fitCovers(want: number[], pens: number[][], steps: number[], blackShare: number, from: number[] | null, off: boolean[] = [], floors: number[] = []): number[] {
   const most = steps[steps.length - 1];
-  const covers = from ? [...from] : new Array<number>(pens.length).fill(0);
-  const weight = pens.map((_, n) => (n === 3 ? 1 - blackShare : blackShare) * 2 * INK_COST);
+  const low = (n: number) => floors[n] ?? 0;
+  const covers = from ? from.map((c, n) => (off[n] ? 0 : Math.max(low(n), c))) : pens.map((_, n) => low(n));
+  const weight = pens.map((_, n) => (n === BLACK ? 1 - blackShare : blackShare) * 2 * INK_COST);
   const score = () => {
     const got = labOfLinear(mixOf([1, 1, 1], pens, covers, false));
     let sum = Math.hypot(got[0] - want[0], got[1] - want[1], got[2] - want[2]);
@@ -2263,11 +2315,11 @@ function chooseCovers(want: number[], pens: number[][], steps: number[], blackSh
     for (let n = 0; n < pens.length; n++) {
       if (off[n]) continue;
       for (let k = 1; k <= 16; k++) {
-        covers[n] = (most * k) / 16;
+        covers[n] = Math.max(low(n), (most * k) / 16);
         const e = score();
         if (e < best) { best = e; start = n; amount = covers[n]; }
       }
-      covers[n] = 0;
+      covers[n] = low(n);
     }
     if (start >= 0) covers[start] = amount;
   }
@@ -2276,8 +2328,8 @@ function chooseCovers(want: number[], pens: number[][], steps: number[], blackSh
     for (let n = 0; n < pens.length; n++) {
       if (off[n]) continue;
       const was = covers[n];
-      // The best amount for this pen, the others held: a golden-section search, then none if none is better.
-      let a = 0;
+      // The best amount for this pen, the others held: a golden-section search, then its least if that's no worse.
+      let a = low(n);
       let b = most;
       // Ten steps narrow it to under a hundredth of the range - finer than whole passes can show.
       for (let it = 0; it < 10; it++) {
@@ -2293,8 +2345,8 @@ function chooseCovers(want: number[], pens: number[][], steps: number[], blackSh
       const found = (a + b) / 2;
       covers[n] = found;
       const withIt = score();
-      covers[n] = 0;
-      covers[n] = score() <= withIt ? 0 : found;
+      covers[n] = low(n);
+      covers[n] = score() <= withIt ? low(n) : found;
       moved = Math.max(moved, Math.abs(covers[n] - was));
     }
     if (moved < 2e-3) break;
@@ -2307,7 +2359,7 @@ export function platePasses(rgb: [number, number, number], plates: string[], { l
   const steps = coverSteps(penMm, spacingMm, levels);
   const off = plates.map((p) => p === PLATE_OFF);
   const pens = plates.map((p) => (p === PLATE_OFF ? [1, 1, 1] : hexLinear(p)));
-  const covers = chooseCovers(withinReach(pens, steps)(labOfLinear(rgb.map(linear))), pens, steps, blackShare, null, off);
+  const covers = chooseCovers(withinReach(pens, steps, blackShare, off)(labOfLinear(rgb.map(linear))), pens, steps, blackShare, null, off);
   return covers.map((c) => {
     const tone = coverTone(c, steps);
     return tone ? Math.floor(tone * steps.length) : 0;

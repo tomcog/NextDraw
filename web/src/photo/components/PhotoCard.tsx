@@ -299,8 +299,9 @@ export function PhotoCard({ shape, title, shapes, busy, targeted, layerCount, sh
           ) : photoMode(photo) === "cmyk" ? (
             <>
               {/* Which plates: print's four, or CMYK with more inks for truer, brighter color - and, beside
-                it, how much of the colors' shared gray the black plate takes over: more, and the darks
-                are black; less, and they're the other inks laid over each other. */}
+                it, how much of the colors' shared gray the black plate takes over, taken out of cyan,
+                magenta and yellow: at 100% a gray or a black is black ink alone; at 0% the darks are
+                the other inks laid over each other, black only where they can't get dark enough. */}
               <div className={styles.menuRow}>
               <InputSelect
                 size="md"
