@@ -82,6 +82,40 @@ function HslFields({ color, name, disabled, onChange }: { color: string; name: s
   );
 }
 
+/**
+ * A colour's hex value, typed freely and taken on Return or on leaving the box - only once it's a
+ * whole colour (the # may be left off); anything else puts the colour back as it was.
+ */
+function HexField({ color, name, disabled, onChange }: { color: string; name: string; disabled: boolean; onChange: (hex: string) => void }) {
+  const [draft, setDraft] = useState(color);
+  useEffect(() => setDraft(color), [color]);
+  const commit = (text: string) => {
+    const hex = (text.trim().startsWith("#") ? text.trim() : `#${text.trim()}`).toLowerCase();
+    if (!/^#[0-9a-f]{6}$/.test(hex)) {
+      setDraft(color);
+      return;
+    }
+    setDraft(hex);
+    if (hex !== color.toLowerCase()) onChange(hex);
+  };
+  return (
+    <InputText
+      size="md"
+      label={`Hex value of ${name}`}
+      hideLabel
+      className={styles.hex}
+      value={draft}
+      maxLength={7}
+      disabled={disabled}
+      onChange={(e) => setDraft(e.target.value)}
+      onBlur={(e) => commit(e.target.value)}
+      onKeyDown={(e) => {
+        if (e.key === "Enter") commit((e.target as HTMLInputElement).value);
+      }}
+    />
+  );
+}
+
 const byDarkness = (pens: PenColor[]) =>
   [...pens].sort((a, b) => (lightness(a.color) ?? Infinity) - (lightness(b.color) ?? Infinity));
 
@@ -158,18 +192,7 @@ export function PaletteEditor({ tool, paper, disabled, saving, error, onChange }
                   onChange={(e) => change(i, { name: e.target.value })}
                 />
                 <div className={styles.hexRow}>
-                  <InputText
-                    size="md"
-                    label={`Hex value of ${pen.name}`}
-                    hideLabel
-                    className={styles.hex}
-                    value={pen.color}
-                    disabled={disabled}
-                    onChange={(e) => {
-                      const value = e.target.value.startsWith("#") ? e.target.value : `#${e.target.value}`;
-                      change(i, { color: value.slice(0, 7) });
-                    }}
-                  />
+                  <HexField color={pen.color} name={pen.name} disabled={disabled} onChange={(hex) => change(i, { color: hex })} />
                   <ButtonRound
                     size="sm"
                     variant="tertiary"

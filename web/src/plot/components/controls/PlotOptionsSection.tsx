@@ -1,8 +1,8 @@
-import { Checkbox, InputSelect, InputText } from "@tomcoggia/ui";
+import { Checkbox, InputSelect } from "@tomcoggia/ui";
 import { Slider } from "../../../shared/components/controls/Slider";
 import { LengthField } from "../../../shared/components/controls/LengthField";
+import { NumberField } from "../../../shared/components/controls/NumberField";
 import styles from "../../../shared/components/controls/controls.module.css";
-import { arrowStep } from "../../../shared/lib/format";
 import type { Settings } from "../../../shared/lib/types";
 
 interface Props {
@@ -20,45 +20,28 @@ interface Props {
 // A path no bigger than the line the pen draws only ever comes out as a dot, so that's where the size starts.
 const FALLBACK_PEN_MM = 0.3;
 
-const clampInt = (text: string, min: number, max: number) => Math.min(max, Math.max(min, Math.round(Number(text) || min)));
-
 // Plot options: the Plot options card, in the rail.
 export function PlotOptionsSection({ settings: s, disabled, onChange, handling, skipTiny, onSkipTiny, skipped }: Props) {
   return (
     <div className={styles.plotOptions}>
       <div className={styles.row2}>
-        <InputText
-          size="md"
+        {/* Typed freely, then taken on Return or on leaving the box, as every number field is. */}
+        <NumberField
           label="Copies"
-          type="number"
           min={1}
           max={100}
           value={s.copies}
           disabled={disabled}
-          onChange={(e) => onChange({ copies: clampInt(e.target.value, 1, 100) })}
-          onKeyDown={(e) => {
-            const by = arrowStep(e);
-            if (by === null) return;
-            e.preventDefault();
-            onChange({ copies: clampInt(String(s.copies + by), 1, 100) });
-          }}
+          onChange={(v) => onChange({ copies: Math.round(v) })}
         />
         {s.copies > 1 && (
-          <InputText
-            size="md"
+          <NumberField
             label="Wait between copies (s)"
-            type="number"
             min={0}
             max={3600}
             value={s.page_delay}
             disabled={disabled}
-            onChange={(e) => onChange({ page_delay: clampInt(e.target.value, 0, 3600) })}
-            onKeyDown={(e) => {
-              const by = arrowStep(e);
-              if (by === null) return;
-              e.preventDefault();
-              onChange({ page_delay: clampInt(String(s.page_delay + by), 0, 3600) });
-            }}
+            onChange={(v) => onChange({ page_delay: Math.round(v) })}
           />
         )}
       </div>
