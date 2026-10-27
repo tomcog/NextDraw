@@ -128,6 +128,16 @@ function uniqueName(wanted: string, taken: string[]): string {
 }
 
 /**
+ * Shapes made upright in a box of `size`, turned a quarter to the left so the turned box's top-left
+ * lands at `at`: made about the turned box's middle, then turned about it, each shape's own turn
+ * taking up the angle as the Turn handle's would.
+ */
+function quarterLeft(at: { x: number; y: number }, size: { w: number; h: number }, make: (topLeft: { x: number; y: number }) => Shape[]): Shape[] {
+ const mid = { x: at.x + size.h / 2, y: at.y + size.w / 2 };
+ return turnAround(make({ x: mid.x - size.w / 2, y: mid.y - size.h / 2 }), mid, -90);
+}
+
+/**
  * A photo split into tone bands is one photo on the page: whatever moved, sized or turned one band
  * takes the rest of its bands along with it.
  */
@@ -1090,7 +1100,7 @@ export default function App() {
   * The signature (signature.ts): TC and this year, in the page's bottom right corner inside the Paper
   * card's margin - moved down into the margin if the drawing is there (clearSpot.ts) - picked so it can be dragged where it goes. On its own layer - the one labelled Signature if there
   * is one, else a new one in Black (or the darkest pen) - kept under Varnish, so it's plotted last
-  * and can be any pen.
+  * and can be any pen. `turned`: the same, turned a quarter to the left (placed by its turned box).
   */
  /**
   * Trim marks drawn with their tool: on the drawing's Trim marks layer - made, in the darkest pen and
@@ -1126,7 +1136,7 @@ export default function App() {
   setLayers(next.layers);
  };
 
- const addSignature = async () => {
+ const addSignature = async (turned = false) => {
   let font = fonts[SIGNATURE_FONT];
   if (!font) {
    try {
@@ -1154,9 +1164,11 @@ export default function App() {
   const size = signatureSize(year, font);
   const inset = paperMarginMm() / 25.4;
   const map = await inkMap(buildSvg(shapes, fills, layers, page, { paperSizeId: sizeId, toolName, paperColor, fonts }), page);
-  const { at, clear } = clearSpot(map, page, inset, size, "br");
+  const { at, clear } = clearSpot(map, page, inset, turned ? { w: size.h, h: size.w } : size, "br");
   if (!clear) setMessage({ text: "The drawing reaches the page edge here - the signature is on it", ok: false });
-  const made = signatureShapes(year, font, layer.id, at);
+  const made = turned
+   ? quarterLeft(at, size, (from) => signatureShapes(year, font, layer.id, from))
+   : signatureShapes(year, font, layer.id, at);
   const on = layer.id;
   setShapes((list) => [...list, ...made]);
   setTargets((list) => (list.includes(on) ? list : [...list, on]));
@@ -1169,9 +1181,9 @@ export default function App() {
   * signature's, butted with no gap for a hidden
   * one, in the page's lower left corner inside the Paper card's margin - moved down into the margin
   * if the drawing is there (clearSpot.ts) - left to right in plotting order. Any already there go first, so pressing it again after the layers change makes them afresh
-  * rather than piling up.
+  * rather than piling up. `turned`: the row turned a quarter to the left, a column from the bottom up.
   */
- const addRegistration = async () => {
+ const addRegistration = async (turned = false) => {
   const blocked = registrationLayers(layers, palette);
   if (!blocked.length) return;
   const gone = new Set(shapes.filter(isRegistrationBlock).map((s) => s.id));
@@ -1179,10 +1191,11 @@ export default function App() {
   const size = registrationSize(blocked);
   const rest = shapes.filter((s) => !gone.has(s.id));
   const map = await inkMap(buildSvg(rest, fills, layers, page, { paperSizeId: sizeId, toolName, paperColor, fonts }), page);
-  const { at, clear } = clearSpot(map, page, inset, size, "bl");
+  const { at, clear } = clearSpot(map, page, inset, turned ? { w: size.h, h: size.w } : size, "bl");
   if (!clear) setMessage({ text: "The drawing reaches the page edge here - the registration blocks are on it", ok: false });
   record();
-  const made = registrationShapes(blocked, { x: at.x, y: at.y + size.h });
+  const row = (from: { x: number; y: number }) => registrationShapes(blocked, { x: from.x, y: from.y + size.h });
+  const made = turned ? quarterLeft(at, size, row) : row(at);
   setShapes((list) => [...list.filter((s) => !gone.has(s.id)), ...made]);
   setFills((list) => list.filter((f) => !gone.has(f.shapeId)));
   setSelected((ids) => ids.filter((id) => !gone.has(id)));
@@ -2097,8 +2110,8 @@ export default function App() {
       onLayers={() => setLayersCard((on) => !on)}
       simplifying={simplifierCard}
       jiggling={jiggleCard}
-      onSignature={() => void addSignature()}
-      onRegistration={() => void addRegistration()}
+      onSignature={(turned) => void addSignature(turned)}
+      onRegistration={(turned) => void addRegistration(turned)}
       // Picked, the page picks shapes as Select does; picked again, it's put down for Select.
       onSimplify={() => {
        setTool("select");

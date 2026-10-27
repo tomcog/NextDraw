@@ -12,6 +12,9 @@ import { panelIcon } from "../../../shared/components/PanelToolbar";
 /** The tools that pick rather than draw: a group of their own at the head of the Tools bar. */
 const PICKERS: Tool[] = ["select", "strokes", "lasso"];
 
+/** A button's glyph turned a quarter to the left, for the add that comes out turned the same way. */
+const LEFT = { transform: "rotate(-90deg)" };
+
 const TOOLS: { kind: Tool; label: string; hint: string; icon: JSX.Element }[] = [
   { kind: "select", label: "Select", hint: "Select (V): drag a shape to move it, its corners to resize", icon: <MousePointer2 /> },
   // Cleanup: single strokes picked out of a layer's paths, for Delete, leaving the paths whole.
@@ -52,10 +55,10 @@ interface Props {
   /** The Layers card - and the card of the layer being drawn on - is out; its switch heads the tools. */
   layersOut: boolean;
   onLayers: () => void;
-  /** Put the signature on the page: TC and this year, on its own layer, ready to move. */
-  onSignature: () => void;
-  /** Put a registration block for each layer in the page's lower left corner, in plotting order. */
-  onRegistration: () => void;
+  /** Put the signature on the page: TC and this year, on its own layer, ready to move - `turned` a quarter to the left. */
+  onSignature: (turned: boolean) => void;
+  /** Put a registration block for each layer in the page's lower left corner, in plotting order - `turned` a quarter to the left, a column from the bottom up. */
+  onRegistration: (turned: boolean) => void;
 }
 
 /**
@@ -109,7 +112,8 @@ export function ToolPicker({ tool, onTool, simplifying, onSimplify, jiggling, on
         </ToolbarExpander>
       </Toolbar></ToolbarIcons>
       {/* What works on what's drawn: the Simplifier and Jiggle, from their cards; then what's added at
-          once, so actions - the signature and the registration blocks, placed to be moved from there. */}
+          once, so actions - the signature and the registration blocks, placed to be moved from there,
+          each upright or turned a quarter to the left, a group of their own. */}
       <ToolbarIcons><Toolbar tone="white" orientation="vertical" aria-label="Work on the drawing">
         <SegmentedControl size="sm" aria-label="Work on what's drawn">
           <Segment selected={simplifying} icon={<Spline />} title="Simplifier: fewer points in the drawing's paths, set from its card" onClick={onSimplify}>
@@ -119,12 +123,20 @@ export function ToolPicker({ tool, onTool, simplifying, onSimplify, jiggling, on
             Jiggle
           </Segment>
         </SegmentedControl>
-        <SegmentedControl size="sm" variant="dark" actions aria-label="Add">
-          <Segment icon={<SignatureIcon />} title="Signature: TC and this year, in the page's bottom right corner on its own Signature layer - drag it where it goes" onClick={onSignature}>
+        <SegmentedControl size="sm" variant="dark" actions aria-label="Signature">
+          <Segment icon={<SignatureIcon />} title="Signature: TC and this year, in the page's bottom right corner on its own Signature layer - drag it where it goes" onClick={() => onSignature(false)}>
             Signature
           </Segment>
-          <Segment icon={<SwatchBook />} title="Registration: a solid block for each layer in the page's lower left corner, left to right in the order they're plotted - again to make them afresh after the layers change" onClick={onRegistration}>
+          <Segment icon={<SignatureIcon style={LEFT} />} title="Signature, turned left: the same, turned a quarter to the left, reading up the page" onClick={() => onSignature(true)}>
+            Signature turned
+          </Segment>
+        </SegmentedControl>
+        <SegmentedControl size="sm" variant="dark" actions aria-label="Registration">
+          <Segment icon={<SwatchBook />} title="Registration: a solid block for each layer in the page's lower left corner, left to right in the order they're plotted - again to make them afresh after the layers change" onClick={() => onRegistration(false)}>
             Registration
+          </Segment>
+          <Segment icon={<SwatchBook style={LEFT} />} title="Registration, turned left: the blocks turned a quarter to the left, a column in the lower left corner, bottom to top in the order they're plotted" onClick={() => onRegistration(true)}>
+            Registration turned
           </Segment>
         </SegmentedControl>
       </Toolbar></ToolbarIcons>

@@ -1,6 +1,8 @@
 /** Drawing-tool icons from the NextDraw Figma file (Frames 6 and 7), drawn on a 16 × 16 grid with 1px lines
  *  and shown at 24 like the lucide icons beside them. */
 
+import type { CSSProperties } from "react";
+
 /** A plain line, corner to corner (Frame 7). */
 export function LineIcon() {
   return (
@@ -40,9 +42,9 @@ export function SpirographIcon() {
 }
 
 /** The TC mark: a T inside an open C. */
-export function SignatureIcon() {
+export function SignatureIcon({ style }: { style?: CSSProperties } = {}) {
   return (
-    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true" style={style}>
       <path d="M8 0.5C11.5216 0.5 14.4763 2.92723 15.2825 6.2H13.9603C13.1882 3.63973 10.8121 1.775 8 1.775C4.56203 1.775 1.775 4.56203 1.775 8C1.775 11.438 4.56203 14.225 8 14.225C10.8121 14.225 13.1882 12.3603 13.9603 9.8H15.2825C14.4763 13.0728 11.5216 15.5 8 15.5C3.85786 15.5 0.5 12.1421 0.5 8C0.5 3.85786 3.85786 0.5 8 0.5Z" />
       <path d="M11.7903 5.6375H8.64878V13.0153H7.37378V5.6375H4.25645V4.3625H11.7903V5.6375Z" />
     </svg>
