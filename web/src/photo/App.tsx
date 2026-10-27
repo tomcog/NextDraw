@@ -1067,8 +1067,10 @@ export default function App() {
               cropping={cropDraft ? { part: cropDraft, onPart: setCropDraft } : undefined}
               others={otherLayers}
               trim={trimOnStage}
-              onTrimMove={busy ? undefined : (dx, dy) => editTrim((d) => withTrimMoved(d, dx, dy))}
-              onMove={busy ? undefined : movePhoto}
+              // Only what's on targeted layers is picked up: the trim on its own layer, the image -
+              // which moves all of its layers together - when every one of them is targeted.
+              onTrimMove={busy || !trimLayer || !targets.has(trimLayer.id) ? undefined : (dx, dy) => editTrim((d) => withTrimMoved(d, dx, dy))}
+              onMove={busy || !photoLayerIds.length || !photoLayerIds.every((id) => targets.has(id)) ? undefined : movePhoto}
             />
           ) : (
             <>

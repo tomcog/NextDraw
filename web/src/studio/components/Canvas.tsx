@@ -848,9 +848,9 @@ export function Canvas({ bar, page, paperColor, shapes, fills, layers, activeLay
                 group on purpose - the preview rules paint everything under them as ink, so a dashed
                 guide or a transparent grip would come out as a stroke the plotter appears to make. */}
             <g className={styles.chrome}>
-              {/* The trim marks are picked up anywhere in their trim, whichever layers are targeted.
-                  First, so the drawing's own grips inside the trim still come before it. */}
-              {shown.filter((sh) => sh.curve?.kind === "trim" && !lockedLayers.has(sh.layerId)).map((sh) => (
+              {/* The trim marks are picked up anywhere in their trim, when their layer is targeted - as
+                  any shape is. First, so the drawing's own grips inside the trim still come before it. */}
+              {shown.filter((sh) => sh.curve?.kind === "trim" && targetLayers.has(sh.layerId) && !lockedLayers.has(sh.layerId)).map((sh) => (
                 <rect
                   key={`${sh.id}-trim-grab`}
                   className={styles.grab}
