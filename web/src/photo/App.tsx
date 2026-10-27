@@ -170,7 +170,7 @@ export default function App() {
   // And the Mask card, under Vignette: the image's edges left as paper.
   const [maskCard, setMaskCard] = useState(() => load<boolean>("photo-mask-card") ?? false);
   useEffect(() => remember("photo-mask-card", maskCard), [maskCard]);
-  // And the Trim marks card, under Mask (its switch last in the panels toolbar): the size the print is cut to, and the image placed in it.
+  // And the Trim marks card, under the Image card as its switch is under Image's in the panels toolbar: the size the print is cut to, and the image placed in it.
   const [trimCard, setTrimCard] = useState(() => load<boolean>("photo-trim-card") ?? false);
   useEffect(() => remember("photo-trim-card", trimCard), [trimCard]);
 

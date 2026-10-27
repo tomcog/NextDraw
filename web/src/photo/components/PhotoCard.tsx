@@ -101,13 +101,13 @@ interface Props {
   penWidthMm?: number;
   /** Whether the effect's cards - its own and Split - are out. */
   effectCards?: boolean;
-  /** The Layers card, the app's: under the Image card, above the effect's. */
+  /** The Layers card, the app's: under the Image and Trim marks cards, above the effect's. */
   layersCard?: ReactNode;
   /** The Adjustments card, when it's out: under the Layers card. */
   adjustCard?: ReactNode;
   /** The Vignette card, when it's out: under the Adjustments card. */
   vignetteCard?: ReactNode;
-  /** The Trim marks card, under Mask. */
+  /** The Trim marks card, under the Image card - its switch's place in the panels toolbar. */
   trimCard?: ReactNode;
   /** Whether the Mask card is out: under the Vignette card. */
   maskCard?: boolean;
@@ -598,11 +598,12 @@ export function PhotoCard({ shape, title, shapes, busy, targeted, layerCount, sh
           </div>
         </Card>
       )}
+      {/* Trim marks next, as its switch follows Image's in the panels toolbar. */}
+      {trimCard}
       {layersCard}
       {adjustCard}
       {vignetteCard}
       {maskCard && <MaskCard photo={photo} busy={busy} layerCount={layerCount} actions={actions} />}
-      {trimCard}
       {/* A card for each pass over the picture, in the order they were added: its Color mode, then its
         effect's own numbers. The pass being worked on is open; another, folded, opens when clicked -
         becoming the one the effect toolbar and the Layers card are about. */}
