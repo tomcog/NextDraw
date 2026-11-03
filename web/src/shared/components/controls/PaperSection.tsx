@@ -1,6 +1,6 @@
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import { Button, ButtonRound, Checkbox, InputSelect, Segment, SegmentedControl } from "@tomcoggia/ui";
-import { Pipette, RotateCcwSquare, RotateCwSquare } from "lucide-react";
+import { PanelBottom, PanelLeft, PanelRight, PanelTop, Pipette, RotateCcwSquare, RotateCwSquare } from "lucide-react";
 import styles from "./controls.module.css";
 import { LengthField } from "./LengthField";
 import { NumberField } from "./NumberField";
@@ -10,7 +10,7 @@ import { panelIcon } from "../PanelToolbar";
 import { PAPER_SIZES } from "../../lib/constants";
 import { fmtLen } from "../../lib/format";
 import type { Units } from "../../lib/types";
-import { FIT_CENTERED, type FitAlign } from "../../lib/geometry";
+import { FIT_CENTERED, MARGIN_SIDES, type FitAlign, type MarginSide, type Margins } from "../../lib/geometry";
 
 /** The fit-alignment icons from the NextDraw Figma file (Frame 3): a 7 × 12 drawing
  *  beside or on a full-height line, turned for each direction. */
@@ -68,15 +68,18 @@ interface Props {
    *  sheet is turned by hand. Landscape and Portrait never do this: they turn the paper alone. Left out
    *  while there is no drawing to turn. */
   onTurnDrawing?: (dir: 1 | -1) => void;
-  /** Scale the drawing to fill the paper less a margin all round (in mm), placed in the room left
+  /** Scale the drawing to fill the paper less a margin on each side (in mm), placed in the room left
    *  over as `align` says - centred, or against an edge. Left out while there is no drawing to fit. */
-  onFit?: (marginMm: number, align: FitAlign, bottomMm: number) => void;
-  /** Image only: scale the picture to cover the paper less the margin, cropping what's over - the
-   *  alignment says which part stays. Left out, there's no Fill: a drawing of paths can't be cropped. */
-  onFill?: (marginMm: number, align: FitAlign, bottomMm: number) => void;
-  /** Image only: how big the picture is drawn, as a percent of the size its file says it is. */
+  onFit?: (marginsMm: Margins, align: FitAlign) => void;
+  /** Scale the drawing to cover the paper less the margins, cropping what's over - a picture by its
+   *  crop, lines cut at the margins - the alignment says which part stays. Left out while there is
+   *  nothing to fill. */
+  onFill?: (marginsMm: Margins, align: FitAlign) => void;
+  /** Image: how big the picture is drawn, as a percent of the size its file says it is. Left out, the
+   *  field reads 100 and scales the drawing by a percent of its size now, then reads 100 again. */
   scale?: number;
-  /** Draw it at that percent of its file's size - 100 puts it back. Left out, there's no Scale field. */
+  /** Draw it at that percent - of its file's size with `scale`, of its size now without. Left out
+   *  while there is nothing to scale. */
   onScale?: (percent: number) => void;
 }
 
@@ -84,9 +87,18 @@ interface Props {
 // the app's theme, so light or dark mode never changes how a print looks.
 const MARGIN_KEY = "nextdraw.fitMargin";
 const ALIGN_KEY = "nextdraw.fitAlign";
-const DEEP_BOTTOM_KEY = "nextdraw.fitDeepBottom";
-/** How much deeper the bottom margin is, when it's asked for: a quarter of the margin more. */
-const DEEP_BOTTOM = 1.25;
+/** Whether some sides get extra margin (once only the bottom could, hence the name). */
+const EXTRA_KEY = "nextdraw.fitDeepBottom";
+const EXTRA_SIDES_KEY = "nextdraw.fitExtraSides";
+const EXTRA_PERCENT_KEY = "nextdraw.fitExtraPercent";
+/** How much more margin the chosen sides get, as a percent of the margin, until another is chosen. */
+const EXTRA_PERCENT = 25;
+const SIDE_BUTTONS: { side: MarginSide; icon: ReactNode; label: string }[] = [
+  { side: "top", icon: <PanelTop />, label: "Top" },
+  { side: "bottom", icon: <PanelBottom />, label: "Bottom" },
+  { side: "left", icon: <PanelLeft />, label: "Left" },
+  { side: "right", icon: <PanelRight />, label: "Right" },
+];
 const ALIGN_STEPS = [0, 0.5, 1] as const;
 
 /** The margin set in the Paper card, in mm: half an inch until one is chosen. */
@@ -125,6 +137,8 @@ export function PaperSection({ w, h, sizeId, units, color, collapsibleKey, disab
   const [colorsOpen, setColorsOpen] = useState(false);
   // Kept between visits, so the margin a sheet is usually given is the one the button fits to.
   const [margin, setMargin] = useState(paperMarginMm);
+  // Scaling by a percent of the size now: the field starts again at 100 once it's done.
+  const [scaleRound, setScaleRound] = useState(0);
   const keepMargin = (mm: number) => {
     setMargin(mm);
     try { localStorage.setItem(MARGIN_KEY, String(mm)); } catch { /* kept for this visit only */ }
@@ -142,19 +156,50 @@ export function PaperSection({ w, h, sizeId, units, color, collapsibleKey, disab
     setAlign(next);
     try { localStorage.setItem(ALIGN_KEY, JSON.stringify(next)); } catch { /* kept for this visit only */ }
   };
-  // A deeper margin at the foot of the page - a quarter of the margin more - for Fit and Fill, kept
-  // between visits like the margin.
-  const [deepBottom, setDeepBottom] = useState(() => {
-    try { return localStorage.getItem(DEEP_BOTTOM_KEY) === "true"; } catch { return false; }
+  // Extra margin on the sides chosen - the bottom, until others are - a percent of the margin more, for
+  // Fit and Fill. All of it kept between visits like the margin.
+  const [extra, setExtra] = useState(() => {
+    try { return localStorage.getItem(EXTRA_KEY) === "true"; } catch { return false; }
   });
-  const keepDeepBottom = (on: boolean) => {
-    setDeepBottom(on);
-    try { localStorage.setItem(DEEP_BOTTOM_KEY, String(on)); } catch { /* kept for this visit only */ }
+  const keepExtra = (on: boolean) => {
+    setExtra(on);
+    try { localStorage.setItem(EXTRA_KEY, String(on)); } catch { /* kept for this visit only */ }
   };
-  const bottom = deepBottom ? margin * DEEP_BOTTOM : margin;
-  const margins = deepBottom ? `${fmtLen(margin, units)} margin, ${fmtLen(bottom, units)} at the bottom` : `${fmtLen(margin, units)} margin`;
+  const [extraSides, setExtraSides] = useState<MarginSide[]>(() => {
+    try {
+      const saved = JSON.parse(localStorage.getItem(EXTRA_SIDES_KEY) ?? "null");
+      return Array.isArray(saved) ? MARGIN_SIDES.filter((s) => saved.includes(s)) : ["bottom"];
+    } catch {
+      return ["bottom"];
+    }
+  });
+  const toggleSide = (side: MarginSide) => {
+    const next = MARGIN_SIDES.filter((s) => (s === side ? !extraSides.includes(s) : extraSides.includes(s)));
+    setExtraSides(next);
+    try { localStorage.setItem(EXTRA_SIDES_KEY, JSON.stringify(next)); } catch { /* kept for this visit only */ }
+  };
+  const [extraPercent, setExtraPercent] = useState(() => {
+    try {
+      const raw = localStorage.getItem(EXTRA_PERCENT_KEY);
+      const saved = raw === null ? NaN : Number(raw);
+      return saved >= 0 ? saved : EXTRA_PERCENT;
+    } catch {
+      return EXTRA_PERCENT;
+    }
+  });
+  const keepExtraPercent = (pct: number) => {
+    setExtraPercent(pct);
+    try { localStorage.setItem(EXTRA_PERCENT_KEY, String(pct)); } catch { /* kept for this visit only */ }
+  };
+  const deeper = margin * (1 + extraPercent / 100);
+  const extraOn = extra && extraSides.length > 0 && extraPercent > 0;
+  const sideMargins = Object.fromEntries(
+    MARGIN_SIDES.map((s) => [s, extraOn && extraSides.includes(s) ? deeper : margin]),
+  ) as unknown as Margins;
+  const sidesNamed = extraSides.join(", ");
+  const margins = extraOn ? `${fmtLen(margin, units)} margin, ${fmtLen(deeper, units)} at the ${sidesNamed}` : `${fmtLen(margin, units)} margin`;
   // A margin that leaves no paper between them has nothing to fit into.
-  const roomLeft = w - 2 * margin > 0 && h - margin - bottom > 0;
+  const roomLeft = w - sideMargins.left - sideMargins.right > 0 && h - sideMargins.top - sideMargins.bottom > 0;
 
   // Each size is named in the chosen unit and the way the paper lies (width × height), so the list
   // follows a turn and a change of unit.
@@ -246,12 +291,8 @@ export function PaperSection({ w, h, sizeId, units, color, collapsibleKey, disab
             inside the margin. A drawing of another proportion than the paper fills it only one way;
             the alignment below says where it sits the other way - centred, or against an edge. */}
         <div className={styles.transformRow}>
-          {onTurnDrawing && (
-            <>
-              <ButtonRound size="sm" icon={<RotateCcwSquare />} aria-label="Turn the drawing left" title="Turn the drawing 90° left about its middle; the paper stays as it lies" disabled={disabled} onClick={() => onTurnDrawing(-1)} />
-              <ButtonRound size="sm" icon={<RotateCwSquare />} aria-label="Turn the drawing right" title="Turn the drawing 90° right about its middle; the paper stays as it lies" disabled={disabled} onClick={() => onTurnDrawing(1)} />
-            </>
-          )}
+          <ButtonRound size="sm" icon={<RotateCcwSquare />} aria-label="Turn the drawing left" title="Turn the drawing 90° left about its middle; the paper stays as it lies" disabled={disabled || !onTurnDrawing} onClick={() => onTurnDrawing?.(-1)} />
+          <ButtonRound size="sm" icon={<RotateCwSquare />} aria-label="Turn the drawing right" title="Turn the drawing 90° right about its middle; the paper stays as it lies" disabled={disabled || !onTurnDrawing} onClick={() => onTurnDrawing?.(1)} />
           <div className={styles.marginField}>
             <LengthField label="Margin" mm={margin} units={units} min={0} disabled={disabled} onChange={keepMargin} />
           </div>
@@ -262,58 +303,88 @@ export function PaperSection({ w, h, sizeId, units, color, collapsibleKey, disab
               ? `Fit: scale the drawing to fill the paper inside a ${margins}, placed as the alignment below says`
               : "The margin leaves no paper to fit the drawing into"}
             disabled={disabled || !onFit || !roomLeft}
-            onClick={() => onFit?.(margin, align, bottom)}
+            onClick={() => onFit?.(sideMargins, align)}
           >
             Fit
           </Button>
-          {onFill && (
-            <Button
-              size="sm"
-              variant="secondary"
-              title={roomLeft
-                ? `Fill: scale the image to cover the paper inside a ${margins}, cropping what's over - the alignment below says which part stays`
-                : "The margin leaves no paper to fill"}
-              disabled={disabled || !roomLeft}
-              onClick={() => onFill(margin, align, bottom)}
-            >
-              Fill
-            </Button>
-          )}
+          <Button
+            size="sm"
+            variant="secondary"
+            title={roomLeft
+              ? `Fill: scale the drawing to cover the paper inside a ${margins}, cropping what's over - the alignment below says which part stays`
+              : "The margin leaves no paper to fill"}
+            disabled={disabled || !onFill || !roomLeft}
+            onClick={() => onFill?.(sideMargins, align)}
+          >
+            Fill
+          </Button>
         </div>
-        {onScale && (
-          <NumberField label="Scale" unit="%" min={1} max={10000} step={5} value={scale ?? 100} disabled={disabled} onChange={onScale} />
-        )}
-        {onFit && (
-          <Checkbox size="md"
-            checked={deepBottom}
-            label="Bottom margin +25%"
-            title={`Fit and Fill leave a quarter more margin at the bottom: ${fmtLen(margin * DEEP_BOTTOM, units)} under a ${fmtLen(margin, units)} margin`}
-            disabled={disabled}
-            onChange={(e) => keepDeepBottom(e.target.checked)}
-          />
-        )}
-        {onFit && (
-          <div className={styles.fitAlign}>
-            <SegmentedControl size="sm" variant="dark" aria-label="Fit across: left, center or right">
-              {[
-                { x: 0 as const, icon: <FitIcon />, label: "Left", hint: "Fit against the left margin" },
-                { x: 0.5 as const, icon: <FitIcon centered />, label: "Center", hint: "Fit centered across the paper" },
-                { x: 1 as const, icon: <FitIcon turn={180} />, label: "Right", hint: "Fit against the right margin" },
-              ].map(({ x, icon, label, hint }) => (
-                <Segment key={label} selected={align.x === x} icon={icon} aria-label={label} title={hint} disabled={disabled} onClick={() => keepAlign({ ...align, x })} />
-              ))}
-            </SegmentedControl>
-            <SegmentedControl size="sm" variant="dark" aria-label="Fit down: top, middle or bottom">
-              {[
-                { y: 0 as const, icon: <FitIcon turn={90} />, label: "Top", hint: "Fit against the top margin" },
-                { y: 0.5 as const, icon: <FitIcon centered turn={-90} />, label: "Middle", hint: "Fit centered down the paper" },
-                { y: 1 as const, icon: <FitIcon turn={-90} />, label: "Bottom", hint: "Fit against the bottom margin" },
-              ].map(({ y, icon, label, hint }) => (
-                <Segment key={label} selected={align.y === y} icon={icon} aria-label={label} title={hint} disabled={disabled} onClick={() => keepAlign({ ...align, y })} />
-              ))}
-            </SegmentedControl>
+        <NumberField
+          key={scaleRound}
+          label="Scale"
+          unit="%"
+          min={1}
+          max={10000}
+          step={5}
+          value={scale ?? 100}
+          disabled={disabled || !onScale}
+          onChange={(percent) => {
+            onScale?.(percent);
+            if (scale === undefined) setScaleRound((n) => n + 1);
+          }}
+        />
+        <Checkbox size="md"
+          checked={extra}
+          label="Extra margin"
+          title={`Fit and Fill leave more margin on the sides chosen: ${fmtLen(deeper, units)} there under a ${fmtLen(margin, units)} margin`}
+          disabled={disabled}
+          onChange={(e) => keepExtra(e.target.checked)}
+        />
+        {extra && (
+          <div className={styles.extraMargin}>
+            <div className={styles.extraSides} role="group" aria-label="Sides with extra margin">
+              {SIDE_BUTTONS.map(({ side, icon, label }) => {
+                const on = extraSides.includes(side);
+                return (
+                  <ButtonRound
+                    key={side}
+                    size="sm"
+                    icon={icon}
+                    className={on ? styles.roundActive : undefined}
+                    aria-label={`Extra margin at the ${label.toLowerCase()}`}
+                    aria-pressed={on}
+                    title={on ? `${label}: extra margin - click for the plain margin` : `${label}: click for extra margin`}
+                    disabled={disabled}
+                    onClick={() => toggleSide(side)}
+                  />
+                );
+              })}
+            </div>
+            <div className={styles.marginField}>
+              <NumberField label="Extra" unit="%" min={0} max={400} step={5} value={extraPercent} disabled={disabled} onChange={keepExtraPercent} />
+            </div>
           </div>
         )}
+        <div className={styles.fitAlign}>
+          <SegmentedControl size="sm" variant="dark" aria-label="Fit across: left, center or right">
+            {[
+              { x: 0 as const, icon: <FitIcon />, label: "Left", hint: "Fit against the left margin" },
+              { x: 0.5 as const, icon: <FitIcon centered />, label: "Center", hint: "Fit centered across the paper" },
+              { x: 1 as const, icon: <FitIcon turn={180} />, label: "Right", hint: "Fit against the right margin" },
+            ].map(({ x, icon, label, hint }) => (
+              <Segment key={label} selected={align.x === x} icon={icon} aria-label={label} title={hint} disabled={disabled} onClick={() => keepAlign({ ...align, x })} />
+            ))}
+          </SegmentedControl>
+          <SegmentedControl size="sm" variant="dark" aria-label="Fit down: top, middle or bottom">
+            {[
+              { y: 0 as const, icon: <FitIcon turn={90} />, label: "Top", hint: "Fit against the top margin" },
+              { y: 0.5 as const, icon: <FitIcon centered turn={-90} />, label: "Middle", hint: "Fit centered down the paper" },
+              { y: 1 as const, icon: <FitIcon turn={-90} />, label: "Bottom", hint: "Fit against the bottom margin" },
+            ].map(({ y, icon, label, hint }) => (
+              <Segment key={label} selected={align.y === y} icon={icon} aria-label={label} title={hint} disabled={disabled} onClick={() => keepAlign({ ...align, y })} />
+            ))}
+          </SegmentedControl>
+        </div>
       </Section>
 
       {colorsOpen && (

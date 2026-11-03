@@ -4,7 +4,7 @@
 // line: a photo is tens of thousands of strokes, and it is the photo and its numbers that are edited.
 
 import { colorNamed } from "../colorNames";
-import { FIT_CENTERED, type FitAlign } from "../geometry";
+import { FIT_CENTERED, type FitAlign, type Margins } from "../geometry";
 import { edgeForLayer, edgeGenFromData, edgeGenKey, edgeKeep, type EdgeGen } from "./edgeMask";
 import { vignetted, vignetteFromData, vignetteKey, vignetteOn, vignetteStrength, type Vignette } from "./vignette";
 import { inksOf, parseProfile, usesBpc, type InkProfile } from "./icc";
@@ -394,21 +394,27 @@ export interface Photo {
 export const photoMode = (p: Photo) => (p.profile ? "profile" : p.separation ? "separations" : p.plate ? "cmyk" : p.ink ? "colour" : "value");
 
 /**
- * Where a photo goes to fit or fill a page, inside a margin - `bottom` at the foot, the margin unless
- * said: its box, and the part of it that shows. `aspect` is the picture's width over its height.
+ * Where a photo goes to fit or fill a page, inside a margin on each side (inches): its box, and the
+ * part of it that shows. `aspect` is the picture's width over its height.
  */
-export function placeOnPage(aspect: number, page: { w: number; h: number }, how: "fit" | "fill", margin: number, align: FitAlign = FIT_CENTERED, bottom = margin) {
-  const m = Math.max(0, Math.min(margin, page.w / 2 - 0.1, page.h / 2 - 0.1));
-  const mb = Math.max(0, Math.min(bottom, page.h - m - 0.2));
-  const aw = page.w - m * 2;
-  const ah = page.h - m - mb;
+export function placeOnPage(aspect: number, page: { w: number; h: number }, how: "fit" | "fill", margins: Margins, align: FitAlign = FIT_CENTERED) {
+  // Each pair of sides leaves at least a sliver of page between them.
+  const pair = (a: number, b: number, size: number) => {
+    const x = Math.max(0, a), y = Math.max(0, b);
+    const k = x + y > size - 0.2 ? (size - 0.2) / (x + y) : 1;
+    return [x * k, y * k];
+  };
+  const [ml, mr] = pair(margins.left, margins.right, page.w);
+  const [mt, mb] = pair(margins.top, margins.bottom, page.h);
+  const aw = page.w - ml - mr;
+  const ah = page.h - mt - mb;
   if (how === "fit") {
     const k = Math.min(aw / aspect, ah);
     const w = aspect * k;
     const h = k;
     // What it doesn't fill one way goes where the alignment says: before it, after it, or both halves.
-    const x = m + (aw - w) * align.x;
-    const y = m + (ah - h) * align.y;
+    const x = ml + (aw - w) * align.x;
+    const y = mt + (ah - h) * align.y;
     return { x, y, x2: x + w, y2: y + h, crop: undefined };
   }
   // Filling: the whole area inside the margin, with the picture cropped on the sides that don't fit -
@@ -418,7 +424,7 @@ export function placeOnPage(aspect: number, page: { w: number; h: number }, how:
   const crop: [number, number, number, number] = aspect > area
     ? [cut * align.x, 0, cut * align.x + (1 - cut), 1]
     : [0, cut * align.y, 1, cut * align.y + (1 - cut)];
-  return { x: m, y: m, x2: page.w - m, y2: page.h - mb, crop };
+  return { x: ml, y: mt, x2: page.w - mr, y2: page.h - mb, crop };
 }
 
 /** The four plates of a CMYK split, in the order they're worked out. */
@@ -4811,15 +4817,15 @@ function scribble(tones: Tones, photo: Photo, w: number, h: number): PhotoMarks 
   const longest = Math.max(2, photo.scribbleLengthMm ?? SCRIBBLE_DEFAULTS.lengthMm) / 25.4;
   const shortest = Math.min(longest, Math.max(0, photo.scribbleMinMm ?? SCRIBBLE_DEFAULTS.minMm) / 25.4);
   const wiggle = Math.min(100, Math.max(0, photo.scribbleWiggle ?? SCRIBBLE_DEFAULTS.wiggle)) / 100;
+  // Straight runs this long between corners: the stroke wanders as before, but its pen keeps a straight
+  // line and takes the turn it has gathered all at once at the corner. 0, every step turns: smooth.
+  const segment = Math.max(0, photo.scribbleSegmentMm ?? SCRIBBLE_DEFAULTS.segmentMm) / 25.4;
   const { toneAt } = toneSampler(tones, photo, w, h, true);
   const n = (v: number) => Number(v.toFixed(4));
   // Random, from the seed and the layer: the same scribble every time it's worked out.
   let state = (photo.scribbleSeed ?? SCRIBBLE_DEFAULTS.seed) * 0x9e3779b1;
   for (const ch of layerOf(photo)) state = Math.imul(state ^ ch.charCodeAt(0), 0x01000193);
   const random = () => {
-  // Straight runs this long between corners: the stroke wanders as before, but its pen keeps a straight
-  // line and takes the turn it has gathered all at once at the corner. 0, every step turns: smooth.
-  const segment = Math.max(0, photo.scribbleSegmentMm ?? SCRIBBLE_DEFAULTS.segmentMm) / 25.4;
     state = (state + 0x6d2b79f5) | 0;
     let t = Math.imul(state ^ (state >>> 15), 1 | state);
     t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
@@ -4872,14 +4878,14 @@ function scribble(tones: Tones, photo: Photo, w: number, h: number): PhotoMarks 
     let y = sy;
     let heading = random() * Math.PI * 2;
     let turn = gauss() * curl;
+    let going = heading; // the way the pen is drawing: the wander's heading, caught up at each corner
+    let run = 0; // drawn since the last corner
     const pts: number[][] = [[x, y]];
     const inked: number[] = []; // the cell each step laid its ink in, to take back if it's left out
     let length = 0;
     let idle = 0;
     while (length < longest) {
       // Lean toward the side that wants more ink, a little ahead.
-    let going = heading; // the way the pen is drawing: the wander's heading, caught up at each corner
-    let run = 0; // drawn since the last corner
       const toLeft = need(x + Math.cos(heading - 0.6) * look, y + Math.sin(heading - 0.6) * look);
       const toRight = need(x + Math.cos(heading + 0.6) * look, y + Math.sin(heading + 0.6) * look);
       turn = turn * steady + gauss() * jolt + Math.sign(toRight - toLeft) * Math.min(1, Math.abs(toRight - toLeft)) * curl * 0.5;
@@ -5336,13 +5342,13 @@ export function photoFromData(raw: Record<string, unknown>): Photo | null {
     ...(Number.isFinite(Number(raw.paint_smallest_mm)) && raw.paint_smallest_mm !== undefined ? { paintSmallestMm: Number(raw.paint_smallest_mm) } : {}),
     ...(raw.paint_outline === false ? { paintOutline: false } : {}),
     ...(Number.isFinite(Number(raw.scribble_wiggle)) && raw.scribble_wiggle !== undefined ? { scribbleWiggle: Number(raw.scribble_wiggle) } : {}),
+    ...(Number.isFinite(Number(raw.scribble_segment_mm)) && raw.scribble_segment_mm !== undefined ? { scribbleSegmentMm: Number(raw.scribble_segment_mm) } : {}),
     ...(Number.isFinite(Number(raw.scribble_seed)) && raw.scribble_seed !== undefined ? { scribbleSeed: Number(raw.scribble_seed) } : {}),
     ...(Number.isFinite(Number(raw.stream_passes)) && raw.stream_passes !== undefined ? { streamPasses: Number(raw.stream_passes) } : {}),
     ...(Number.isFinite(Number(raw.stream_flow_mm)) && raw.stream_flow_mm !== undefined ? { streamFlowMm: Number(raw.stream_flow_mm) } : {}),
     ...(Number.isFinite(Number(raw.contours)) && raw.contours !== undefined ? { contours: Number(raw.contours) } : {}),
     ...(Number.isFinite(Number(raw.smooth_mm)) && raw.smooth_mm !== undefined ? { smoothMm: Number(raw.smooth_mm) } : {}),
     ...(typeof raw.ink === "string" ? { ink: raw.ink } : {}),
-    ...(Number.isFinite(Number(raw.scribble_segment_mm)) && raw.scribble_segment_mm !== undefined ? { scribbleSegmentMm: Number(raw.scribble_segment_mm) } : {}),
     ...(Array.isArray(raw.offset_mm) && raw.offset_mm.length === 2 && raw.offset_mm.every((v) => Number.isFinite(Number(v)))
       ? { offsetMm: [Number(raw.offset_mm[0]), Number(raw.offset_mm[1])] as [number, number] }
       : {}),
@@ -5453,13 +5459,13 @@ export const photoData = (p: Photo) => ({
   ...(p.paintSmallestMm !== undefined ? { paint_smallest_mm: p.paintSmallestMm } : {}),
   ...(p.paintOutline === false ? { paint_outline: false } : {}),
   ...(p.scribbleWiggle !== undefined ? { scribble_wiggle: p.scribbleWiggle } : {}),
+  ...(p.scribbleSegmentMm !== undefined ? { scribble_segment_mm: p.scribbleSegmentMm } : {}),
   ...(p.scribbleSeed !== undefined ? { scribble_seed: p.scribbleSeed } : {}),
   ...(p.streamPasses !== undefined ? { stream_passes: p.streamPasses } : {}),
   ...(p.streamFlowMm !== undefined ? { stream_flow_mm: p.streamFlowMm } : {}),
   ...(p.contours !== undefined ? { contours: p.contours } : {}),
   ...(p.smoothMm !== undefined ? { smooth_mm: p.smoothMm } : {}),
   ...(p.ink ? { ink: p.ink, regions: p.regions, region: p.region } : {}),
-  ...(p.scribbleSegmentMm !== undefined ? { scribble_segment_mm: p.scribbleSegmentMm } : {}),
   ...(p.fitPaper ? { fit_paper: p.fitPaper, pen_mm: p.penMm, ...(p.fitPairs ? { fit_pairs: true } : {}), ...(p.fitOpaque ? { fit_opaque: true } : {}) } : {}),
   // A plate's pen width: the separation works out its passes from it.
   ...(p.plate && p.penMm !== undefined ? { pen_mm: p.penMm } : {}),

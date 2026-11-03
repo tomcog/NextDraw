@@ -67,3 +67,17 @@ export interface FitAlign {
   y: 0 | 0.5 | 1;
 }
 export const FIT_CENTERED: FitAlign = { x: 0.5, y: 0.5 };
+
+/** The margin on each side of the paper, for Fit and Fill: the same all round unless some sides are given extra. */
+export interface Margins {
+  top: number;
+  right: number;
+  bottom: number;
+  left: number;
+}
+export const MARGIN_SIDES = ["top", "bottom", "left", "right"] as const;
+export type MarginSide = (typeof MARGIN_SIDES)[number];
+/** The same margin on every side. */
+export const marginsAll = (m: number): Margins => ({ top: m, right: m, bottom: m, left: m });
+/** Every side's margin times k: millimetres to inches, say. */
+export const marginsTimes = (m: Margins, k: number): Margins => ({ top: m.top * k, right: m.right * k, bottom: m.bottom * k, left: m.left * k });

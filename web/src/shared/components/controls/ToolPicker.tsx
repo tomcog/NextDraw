@@ -6,7 +6,7 @@ import { ToolNote } from "./ToolNote";
 import styles from "./ToolPicker.module.css";
 
 interface Props {
-  /** The tools to offer. Plot's second tool leaves out the first. */
+  /** The tools to offer. */
   tools: Preset[];
   /** The name of the tool chosen, "" when none is. */
   value: string;
@@ -21,7 +21,7 @@ interface Props {
   none?: string;
   /** Plot: the chosen tool's settings have been changed from its preset. */
   changed?: boolean;
-  /** Beside the menu, at the end of its row: Plot's button that takes the second tool away. */
+  /** Beside the menu, at the end of its row. */
   action?: ReactNode;
   disabled?: boolean;
 }

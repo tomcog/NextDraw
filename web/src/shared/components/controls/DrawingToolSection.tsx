@@ -17,25 +17,23 @@ interface Props {
   placeholder?: string;
   /** Image: the name of the first entry, no tool at all - see ToolPicker. */
   none?: string;
-  /** What the heading names while folded, when it isn't just the tool: Plot's two tools, "EnerGel + Flair". */
+  /** What the heading names while folded, when it isn't just the tool. */
   label?: string;
   /** Buttons at the end of the heading: Plot's tool setup and palette. */
   action?: ReactNode;
-  /** Plot: this tool is the one the layer about to be plotted is drawn with, so it is ringed. */
-  inUse?: boolean;
-  /** What belongs to this tool, under it: Plot's angle and one-way switches, and its layers. */
+  /** What belongs to this tool, under it: Plot's angle and one-way switches. */
   under?: ReactNode;
-  /** Anything after the tool: Plot's second tool. */
+  /** Anything after the tool: Plot's own extras. */
   children?: ReactNode;
 }
 
 /**
  * Shared: the drawing tool, the same card in both apps - the marker, its tip, the drawing of the tip
  * and what the tool is always set up for. What only one app has - Plot's setup buttons, the angle
- * and one-way switches, a second tool - is passed in by that app, and simply isn't there
+ * and one-way switches - is passed in by that app, and simply isn't there
  * in the other.
  */
-export function DrawingToolSection({ tools, value, onPick, collapsibleKey, disabled, changed, placeholder, none, label, action, inUse, under, children }: Props) {
+export function DrawingToolSection({ tools, value, onPick, collapsibleKey, disabled, changed, placeholder, none, label, action, under, children }: Props) {
   const named = label ?? (value || none);
   return (
     <Section
@@ -47,7 +45,7 @@ export function DrawingToolSection({ tools, value, onPick, collapsibleKey, disab
       // Folded, the row says which tool is loaded; open, the picker under it does.
       closedAction={named ? <span className={styles.toolInTitle}>{named}</span> : undefined}
     >
-      <div className={styles.toolBlock} data-in-use={inUse}>
+      <div className={styles.toolBlock}>
         <ToolPicker
           tools={tools}
           value={value}

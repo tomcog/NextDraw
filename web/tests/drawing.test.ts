@@ -1,6 +1,7 @@
 // The whole-drawing operations in shared/lib/drawing/whole.ts: turning, scaling, fitting.
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { marginsAll } from "../src/shared/lib/geometry";
 import { drawnBox, fitToPage, reshapeDrawing, runsOffPage, turnDrawingLeft, turnWhole } from "../src/shared/lib/drawing/whole";
 import type { Fill } from "../src/shared/lib/drawing/hatch";
 import type { Page, Shape } from "../src/shared/lib/drawing/shapes";
@@ -104,7 +105,7 @@ test("fitting fills the page inside the margin on the tighter side, centred both
     shape({ x: 1, y: 1, x2: 2, y2: 2 }),
     shape({ id: "t", kind: "line", x: 3, y: 1.5, x2: 5, y2: 1.5, repeat: { kind: "line", count: 2, step: 0.5, angle: 90 } }),
   ];
-  const fit = fitToPage(shapes, page, 0.5)!;
+  const fit = fitToPage(shapes, page, marginsAll(0.5))!;
   const after = reshapeDrawing(shapes, fit.k, fit.about, fit.by);
   const d = drawnBox(after);
   // Drawn 4 wide by 1 high: width is the tight side, so it spans the 10 inches between the margins.
@@ -116,16 +117,25 @@ test("fitting fills the page inside the margin on the tighter side, centred both
 test("a deeper bottom margin: fitted above it, against it at the bottom", () => {
   // A square 1 inch drawing on the 11 × 8.5 page, a 1 inch margin, 1.25 at the foot: 6.25 high to fill.
   const shapes = [shape({ x: 1, y: 1, x2: 2, y2: 2 })];
-  const fit = fitToPage(shapes, page, 1, { x: 0.5, y: 1 }, 1.25)!;
+  const fit = fitToPage(shapes, page, { ...marginsAll(1), bottom: 1.25 }, { x: 0.5, y: 1 })!;
   const d = drawnBox(reshapeDrawing(shapes, fit.k, fit.about, fit.by));
   close(d.y0, 1); close(d.y1, 8.5 - 1.25);
   close(d.x1 - d.x0, 6.25);
 });
 
+test("extra margin on one side: the left, fitted against it", () => {
+  // A 2 × 1 drawing, an inch all round and two at the left: 8 inches across between 2 and 10.
+  const shapes = [shape({ x: 1, y: 1, x2: 3, y2: 2 })];
+  const fit = fitToPage(shapes, page, { ...marginsAll(1), left: 2 }, { x: 0, y: 0.5 })!;
+  const d = drawnBox(reshapeDrawing(shapes, fit.k, fit.about, fit.by));
+  close(d.x0, 2); close(d.x1, 10);
+  close((d.y0 + d.y1) / 2, 4.25);
+});
+
 test("nothing to fit: no drawing, no room, or a single point", () => {
-  assert.equal(fitToPage([], page, 0.5), null);
-  assert.equal(fitToPage([shape({})], page, 5), null);
-  assert.equal(fitToPage([shape({ kind: "line", x: 1, y: 1, x2: 1, y2: 1 })], page, 0.5), null);
+  assert.equal(fitToPage([], page, marginsAll(0.5)), null);
+  assert.equal(fitToPage([shape({})], page, marginsAll(5)), null);
+  assert.equal(fitToPage([shape({ kind: "line", x: 1, y: 1, x2: 1, y2: 1 })], page, marginsAll(0.5)), null);
 });
 
 test("turning everything: the page swaps sides, a right turn is clockwise, and left undoes it", () => {

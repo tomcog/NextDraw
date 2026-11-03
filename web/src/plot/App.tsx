@@ -6,7 +6,7 @@ import { api, postJSON } from "../shared/lib/api";
 import { barrelOffsetMm, BUSY_STATES, DEFAULT_SETTINGS, IDRAW_MODEL, NONE_PEN, PAPER_SIZES, penWidthOf, PLOTTING_STATES, PRESET_FIELD_NAMES, PRESET_FIELDS, STEPS, STORAGE } from "../shared/lib/constants";
 import { cleanNote, listOf } from "../shared/lib/format";
 import { lightness } from "../shared/lib/color";
-import { fitsOnBed, fitsOnPaper, footprint, minPlacement, type FitAlign } from "../shared/lib/geometry";
+import { fitsOnBed, fitsOnPaper, footprint, minPlacement, marginsTimes, type FitAlign, type Margins } from "../shared/lib/geometry";
 import { parsePlotPaths, type PlotPaths } from "../shared/lib/progressPaths";
 import { parsePreview, type Preview } from "../shared/lib/preview";
 import { load, save } from "../shared/lib/storage";
@@ -22,7 +22,9 @@ import { CalibrationSection } from "./components/controls/CalibrationSection";
 import { calibrationSheet } from "../shared/lib/calibration/sheet";
 import { pairsSheet } from "../shared/lib/calibration/pairs";
 import { readCalibration, readingProblems, sheetLayout, type SheetLayout } from "../shared/lib/calibration/read";
-import { loadFont } from "../shared/lib/drawing/font";
+import { loadFont, type StrokeFont } from "../shared/lib/drawing/font";
+import { placeOnPaper, reshapeDrawing } from "../shared/lib/drawing/whole";
+import { cropDrawing } from "../shared/lib/drawing/crop";
 import { fitText } from "../shared/lib/drawing/text";
 import { buildSvg, cleanFileName } from "../shared/lib/drawing/svg";
 import type { Current } from "../shared/lib/drawing/useDrawingFile";
@@ -145,9 +147,6 @@ export default function App() {
   // Skip tiny paths: leave out of the plot every path whose longest side is under this (mm on paper),
   // marks so small the pen would only dab a dot. Chosen per drawing and saved in it; null when off.
   const [skipTiny, setSkipTiny] = useState<number | null>(null);
-  // A second drawing tool (mixed media): null normally; "" once added but not yet chosen.
-  const [secondTool, setSecondTool] = useState<string | null>(null);
-  const [secondToolLayers, setSecondToolLayers] = useState<string[]>([]);
   // The one layer chosen to print (the green printer in the Layers card). None until the operator picks one.
   const [printLayer, setPrintLayer] = useState<string | null>(null);
   // The drawing's layers as they are in the file - name, order and color all Studio's. Plot adds only
@@ -159,8 +158,8 @@ export default function App() {
     [presets],
   );
   const toolOfLayer = useCallback(
-    (id: string) => (secondTool && secondToolLayers.includes(id) ? secondTool : activePreset) ?? "",
-    [secondTool, secondToolLayers, activePreset],
+    (_id: string) => activePreset ?? "",
+    [activePreset],
   );
   const layerViews: LayerView[] = useMemo(() => {
     if (!fileLayers) return [];
@@ -238,7 +237,7 @@ export default function App() {
         return rest;
       }
       if (!("pen" in pick)) return { ...all, [id]: pick.hex };
-      const tool = (usesSecond(id) ? secondPreset : active)?.name;
+      const tool = active?.name;
       // No tool to name the pen against (presets never loaded): the colour still stands on its own.
       return { ...all, [id]: tool ? { tool, pen: pick.pen.name, hex: pick.pen.color } : pick.pen.color };
     });
@@ -449,7 +448,7 @@ export default function App() {
     settingsVersion: undefined as string | null | undefined, settingsUnsent: false,
     drawingSaved: undefined as string | null | undefined, unsaved: false,
     // A tool's edited values are on their way to the presets file (see setToolValues).
-    toolSavePending: false, secondTool: null as string | null,
+    toolSavePending: false,
     // The queue: the version this page shows, and whether it has a change of its own on the way.
     queueVersion: undefined as string | null | undefined, queueUnsent: false });
   refs.current.rotation = rotation;
@@ -458,7 +457,6 @@ export default function App() {
   refs.current.plotLayerIds = plotLayerIds;
   refs.current.presets = presets;
   refs.current.activePreset = activePreset;
-  refs.current.secondTool = secondTool;
   refs.current.fileName = fileName;
   refs.current.status = status;
   refs.current.lastAction = lastAction;
@@ -616,11 +614,44 @@ export default function App() {
 
   // Fit to the paper where it lies under the page: its corner and size, in inches on the page.
   const fitToPaper = fileName && settings.paper_w > 0 && settings.paper_h > 0
-    ? async (marginMm: number, align: FitAlign, bottomMm = marginMm) => {
+    ? async (margins: Margins, align: FitAlign) => {
       const box = [(settings.paper_x - placement.x) / 25.4, (settings.paper_y - placement.y) / 25.4, settings.paper_w / 25.4, settings.paper_h / 25.4];
-      await reshape({ fit: marginMm, align, box, ...(bottomMm !== marginMm ? { bottom: bottomMm } : {}) });
+      // The same all round goes as `fit`, as it always has; sides of their own as `fit_margins`, a name
+      // a server from before it refuses rather than fitting with the same margin all round.
+      const even = margins.top === margins.left && margins.right === margins.left && margins.bottom === margins.left;
+      await reshape({ ...(even ? { fit: margins.left } : { fit_margins: margins }), align, box });
     }
     : undefined;
+
+  // Fill: the drawing scaled to cover the paper inside the margins and cut off at them - the same
+  // edit Studio makes, done to the current drawing read as shapes (editCurrent) and sent back.
+  const fillPaper = fileName && settings.paper_w > 0 && settings.paper_h > 0
+    ? async (margins: Margins, align: FitAlign) => {
+      if (busy || reshapingRef.current) return;
+      reshapingRef.current = true;
+      setReshaping("Filling the paper…");
+      const paper = { x: (settings.paper_x - placement.x) / 25.4, y: (settings.paper_y - placement.y) / 25.4, w: settings.paper_w / 25.4, h: settings.paper_h / 25.4 };
+      try {
+        const res = await editCurrent(async (d) => {
+          const place = placeOnPaper(d.shapes, paper, marginsTimes(margins, 1 / 25.4), align, "fill");
+          if (!place) throw new Error("There's nothing in the drawing to fill the paper with.");
+          const fonts: Record<string, StrokeFont> = {};
+          for (const name of new Set(d.shapes.map((sh) => sh.font ?? "").filter(Boolean))) fonts[name] = await loadFont(name);
+          const cut = cropDrawing(reshapeDrawing(d.shapes, place.k, place.about, place.by), d.fills ?? [], place.box, fonts);
+          return { ...d, shapes: cut.shapes, fills: cut.fills };
+        });
+        refs.current.edited = res.edited; // our own change: nothing for the poll to catch up on
+        setDrawingVersion((v) => v + 1);
+      } catch (err) {
+        setLocalMessage({ text: (err as Error).message, tone: "error" });
+      } finally {
+        reshapingRef.current = false;
+        setReshaping(null);
+      }
+    }
+    : undefined;
+  // The whole drawing at a percent of its size now, about its middle (the server's scale).
+  const scaleDrawing = fileName ? (percent: number) => { if (percent > 0 && percent !== 100) void reshape({ scale: percent }); } : undefined;
 
   const [loadedFile, setLoadedFile] = useState<string | null>(null);
   const savedKey = useRef<string | null>(null);
@@ -655,8 +686,6 @@ export default function App() {
     setLayerLinks(plot?.layer_links ?? []);
     setHatchSpacing(plot?.hatch_spacing ?? {});
     setSkipTiny(plot?.skip_tiny ?? null);
-    setSecondTool(plot?.second_tool ?? null);
-    setSecondToolLayers(plot?.second_tool_layers ?? []);
     // The drawing tool is deliberately NOT taken from the file. It stands for the pen actually in the
     // holder, and a file can arrive at any moment - saved from Studio, synced from odin - which would
     // otherwise swap the chosen pen, and its pen positions and speeds with it, in the middle of
@@ -706,7 +735,6 @@ export default function App() {
     scale,
     rotation,
     tool: activePreset ?? undefined,
-    ...(secondTool ? { second_tool: secondTool, second_tool_layers: secondToolLayers } : {}),
     ...(hiddenLayers.length ? { hidden_layers: hiddenLayers } : {}),
     ...(Object.keys(inkColors).length ? { layer_colors: inkColors } : {}),
     ...(plotOrder?.length ? { layer_order: plotOrder } : {}),
@@ -796,11 +824,9 @@ export default function App() {
         presetsSeen.current = text;
         const changes: string[] = [];
         const kept = r.presets.map((p) => {
-          if (p.name !== refs.current.activePreset && p.name !== refs.current.secondTool) return p;
-          // The first tool plots with the page's settings, the second with its preset as the page has it.
-          const mine: Partial<Settings> | undefined = p.name === refs.current.activePreset
-            ? refs.current.settings
-            : refs.current.presets.find((q) => q.name === p.name)?.settings;
+          if (p.name !== refs.current.activePreset) return p;
+          // The tool plots with the page's settings.
+          const mine: Partial<Settings> | undefined = refs.current.settings;
           if (!mine) return p;
           const differ = PRESET_FIELDS.filter((k) => p.settings[k] !== undefined && mine[k] !== undefined && Math.abs(Number(p.settings[k]) - Number(mine[k])) > 0.0005);
           if (!differ.length) return p;
@@ -1295,7 +1321,7 @@ export default function App() {
     setLastAction("plot");
     setLocalMessage(null);
     try {
-      await postJSON("/api/plot", { ...settingsFor(plotLayerId), tool: (usesSecond(plotLayerId) ? secondPreset : active)?.name, start_x: placement.x, start_y: placement.y, tip_offset_x: tipOffsetFor(plotLayerId), tip_offset_y: tipOffsetYFor(plotLayerId), scale, layers: plotLayerIds, rotation, hatch_spacing: hatchSpacing, skip_tiny: skipTiny });
+      await postJSON("/api/plot", { ...settingsFor(plotLayerId), tool: active?.name, start_x: placement.x, start_y: placement.y, tip_offset_x: tipOffsetFor(plotLayerId), tip_offset_y: tipOffsetYFor(plotLayerId), scale, layers: plotLayerIds, rotation, hatch_spacing: hatchSpacing, skip_tiny: skipTiny });
       setStatus((s) => (s ? { ...s, state: "preparing", message: "", started: false } : s));
     } catch (err) {
       setLocalMessage({ text: (err as Error).message, tone: "error" });
@@ -1541,15 +1567,8 @@ export default function App() {
     updateSettings(presets[0].settings);
   }, [active, presets, updateSettings]);
 
-  /* ---------- A second drawing tool ---------- */
-
-  // Normally one drawing tool covers every layer. The Plus button on the Drawing tool card adds a
-  // second, and each layer is then assigned to one of the two by its number. Plotting, the preview's
-  // line width and the layer's color menu follow the layer's tool; unassigned layers use the first.
-  const secondPreset = secondTool ? presets.find((p) => p.name === secondTool) : undefined;
-  // Named on the Settings row, so the pen shows while the card is folded: both, when a drawing mixes two.
-  const toolLabel = [active?.name, secondTool].filter(Boolean).join(" + ");
-  const usesSecond = (id: string | null) => Boolean(secondTool && id && secondToolLayers.includes(id));
+  // Named on the Pen card's row, so the pen shows while the card is folded. One pen covers every layer.
+  const toolLabel = active?.name;
   // Angle compensation: on or off per tool, starting from its preset. Only tools set up tilted have it.
   const [tiltChoice, setTiltChoice] = useState<Record<string, boolean>>({});
   // A tool that is only ever used tilted keeps its compensation whatever the page remembers.
@@ -1559,7 +1578,7 @@ export default function App() {
   const [dragChoice, setDragChoice] = useState<Record<string, boolean>>({});
   const dragOn = (tool: Preset | undefined) =>
     Boolean(tool?.drag && (tool.drag.fixed || (dragChoice[tool.name] ?? tool.drag.on)));
-  const paletteFor = (id: string | null) => (usesSecond(id) ? secondPreset : active)?.palette ?? [];
+  const paletteFor = (_id: string | null) => active?.palette ?? [];
 
   // A layer named after one of its tool's pens follows that pen: edit a color in the palette and
   // every layer drawn with it catches up in the preview. Nothing is written to the drawing.
@@ -1613,7 +1632,7 @@ export default function App() {
     const merged = { ...tool.settings, ...patch };
     const tilt = tool.tilt && extra.tiltOffset !== undefined ? { ...tool.tilt, offset_mm: extra.tiltOffset } : tool.tilt;
     const barrel = extra.barrel ?? tool.barrel_mm;
-    // The first tool's values are the page's settings; the second tool's are read from its preset.
+    // The pen's values are the page's settings too.
     if (tool === active) updateSettings(patch);
     setPresets((list) => list.map((p) => (p.name === name ? { ...p, settings: merged, tilt, barrel_mm: barrel } : p)));
     window.clearTimeout(toolTimer.current);
@@ -1662,52 +1681,16 @@ export default function App() {
   const isVarnishId = (id: string | null) => Boolean(id && isVarnishLayer(layerViews.find((l) => l.id === id)?.name ?? ""));
   const tipOffsetFor = (id: string | null) => {
     if (isVarnishId(id)) return 0;
-    const tool = usesSecond(id) ? secondPreset : active;
-    return tiltOn(tool) ? tool!.tilt!.offset_mm : 0;
+    return tiltOn(active) ? active!.tilt!.offset_mm : 0;
   };
   // A fat barrel puts the tip further down the page than the pen the paper is lined up for.
-  const tipOffsetYFor = (id: string | null) => (isVarnishId(id) ? 0 : barrelOffsetMm((usesSecond(id) ? secondPreset : active)?.barrel_mm));
-  const settingsFor = (id: string | null): Settings => {
-    const tool = usesSecond(id) ? secondPreset : active;
-    return {
-      ...(usesSecond(id) && secondPreset ? { ...settings, ...secondPreset.settings } : settings),
-      drag_only: dragOn(tool),
-    };
-  };
-  // What the next plot will actually be sent: the tool's preset, the second tool where one
-  // is assigned. The readout shows these.
+  const tipOffsetYFor = (id: string | null) => (isVarnishId(id) ? 0 : barrelOffsetMm(active?.barrel_mm));
+  const settingsFor = (_id: string | null): Settings => ({ ...settings, drag_only: dragOn(active) });
+  // What the next plot will actually be sent: the tool's preset. The readout shows these.
   const plotSettings = settingsFor(plotLayerId);
   refs.current.plotSettings = plotSettings;
-  const layerInkBuilds = useMemo(
-    () => Object.fromEntries(layerViews.map((l) => [l.id, (usesSecond(l.id) ? secondPreset : active)?.settings.ink_builds])),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [layerViews, secondTool, secondToolLayers, secondPreset, active],
-  );
-  const layerInkOpaque = useMemo(
-    () => Object.fromEntries(layerViews.map((l) => [l.id, (usesSecond(l.id) ? secondPreset : active)?.settings.ink_opaque])),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [layerViews, secondTool, secondToolLayers, secondPreset, active],
-  );
   // The Varnish layer: clear glitter gel over the rest, previewed as sparkle.
   const layerVarnish = useMemo(() => Object.fromEntries(layerViews.map((l) => [l.id, isVarnishLayer(l.name)])), [layerViews]);
-  const layerInkOpacity = useMemo(
-    () => Object.fromEntries(layerViews.map((l) => [l.id, (usesSecond(l.id) ? secondPreset : active)?.settings.ink_opacity])),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [layerViews, secondTool, secondToolLayers, secondPreset, active],
-  );
-  const layerInkBuild = useMemo(
-    () => Object.fromEntries(layerViews.map((l) => [l.id, (usesSecond(l.id) ? secondPreset : active)?.settings.ink_build])),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [layerViews, secondTool, secondToolLayers, secondPreset, active],
-  );
-  const layerPenWidths = useMemo(
-    () => Object.fromEntries(layerViews.map((l) => [l.id, penWidthOf((usesSecond(l.id) ? secondPreset : active) ?? { settings })])),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [layerViews, secondTool, secondToolLayers, secondPreset, active, settings],
-  );
-  const assignLayerTool = (id: string, second: boolean) => {
-    setSecondToolLayers((list) => (second ? [...list.filter((x) => x !== id), id] : list.filter((x) => x !== id)));
-  };
 
   const applyPreset = (name: string) => {
     const preset = presets.find((p) => p.name === name);
@@ -1948,16 +1931,11 @@ export default function App() {
               // set stays behind - the MATTEHOP's opaque ink made the Flair cover instead of blend. A
               // tool without a value takes the preview's default (solid, building, not opaque).
               inkOpacity={active ? active.settings.ink_opacity : settings.ink_opacity}
-              layerInkOpacity={secondTool ? layerInkOpacity : undefined}
               inkBuilds={active ? active.settings.ink_builds : settings.ink_builds}
               inkOpaque={active ? active.settings.ink_opaque : settings.ink_opaque}
               inkBuild={active ? active.settings.ink_build : settings.ink_build}
-              layerInkBuild={secondTool ? layerInkBuild : undefined}
               inkSim={view === "preview"}
-              layerInkBuilds={secondTool ? layerInkBuilds : undefined}
-              layerInkOpaque={secondTool ? layerInkOpaque : undefined}
               layerVarnish={layerVarnish}
-              layerPenWidths={secondTool ? layerPenWidths : undefined}
               plotPaths={shownPlotPaths}
               hairlines={view === "outline" || layerMode === "work"}
               plotFraction={plotFraction}
@@ -1981,13 +1959,12 @@ export default function App() {
               <SettingsHud
                 settings={plotSettings}
                 handling={info?.handling ?? []}
-                tool={usesSecond(plotLayerId) ? secondTool : activePreset}
-                secondTool={usesSecond(plotLayerId) ? null : secondTool}
-                own={usesSecond(plotLayerId) && secondPreset ? { ...settings, ...secondPreset.settings } : settings}
-                preset={usesSecond(plotLayerId) ? secondPreset : active}
+                tool={activePreset}
+                own={settings}
+                preset={active}
                 units={settings.units}
                 disabled={plotting}
-                onToolValues={(patch, extra) => setToolValues(usesSecond(plotLayerId) ? secondPreset : active, patch, extra)}
+                onToolValues={(patch, extra) => setToolValues(active, patch, extra)}
               />
             )}
           </div>
@@ -2077,7 +2054,9 @@ export default function App() {
                   onColor={(paper_color) => updateSettings({ paper_color })}
                   onUnits={(units) => updateSettings({ units })}
                   onTurnDrawing={fileName ? turnDrawing : undefined}
-                  onFit={fitToPaper ? (margin, align, bottom) => void fitToPaper(margin, align, bottom) : undefined}
+                  onFit={fitToPaper ? (margins, align) => void fitToPaper(margins, align) : undefined}
+                  onFill={fillPaper ? (margins, align) => void fillPaper(margins, align) : undefined}
+                  onScale={scaleDrawing}
                 />
             </div>
           </Card>
@@ -2089,17 +2068,6 @@ export default function App() {
                   label={toolLabel}
                   presets={presets}
                   active={active}
-                  secondTool={secondTool}
-                  secondLayers={secondToolLayers}
-                  layers={layerViews.map((l, i) => ({ id: l.id, number: i + 1, color: l.color }))}
-                  inUse={layerMode === "work" && printTarget ? (usesSecond(printTarget.id) ? "second" : "first") : null}
-                  onAddSecond={() => setSecondTool("")}
-                  onSecondTool={(name) => setSecondTool(name)}
-                  onRemoveSecond={() => {
-                    setSecondTool(null);
-                    setSecondToolLayers([]);
-                  }}
-                  onAssign={assignLayerTool}
                   tiltOn={tiltOn}
                   onTilt={(name, on) => setTiltChoice((c) => ({ ...c, [name]: on }))}
                   dragOn={dragOn}
@@ -2204,7 +2172,7 @@ export default function App() {
                   plotLabel={plotLabel}
                   onVisible={setLayerVisible}
                   paletteFor={paletteFor}
-                  toolFor={(id) => (usesSecond(id) ? secondPreset : active)?.name ?? "this pen"}
+                  toolFor={() => active?.name ?? "this pen"}
                   onColor={colorAndNameLayer}
                   onSort={sortLayersByLightness}
                   onResetPrinted={resetPrinted}

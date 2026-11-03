@@ -4507,8 +4507,8 @@ def reshape_matrix(body, bounds):
     a quarter turn, 1 to the right or -1 to the left, about its middle; the paper stays as it lies.
     turn_paper: the page and everything on it a quarter turn together, landscape to portrait - its own
     name, so a server from before it refuses it rather than turning the drawing alone.
-    fit: as big as the paper allows inside margin_mm - bottom mm at the foot, if given - placed in the
-    room left over as align says - the paper being box (x, y, width, height in inches on the page), or
+    fit: as big as the paper allows inside margin_mm - bottom mm at the foot, if given - or fit_margins:
+    {top, right, bottom, left} in mm, a side each - placed in the room left over as align says - the paper being box (x, y, width, height in inches on the page), or
     the page.
     bake: Plot's own scale and turn from before, put into the drawing - scaled about the page's
     corner, where Plot scaled it from, and turned about its middle.
@@ -4530,15 +4530,19 @@ def reshape_matrix(body, bounds):
         return (0, 1, -1, 0, page_h, 0) if int(body["turn_paper"]) > 0 else (0, -1, 1, 0, 0, page_w)
     if "turn" in body:
         return about(1, 1 if int(body["turn"]) > 0 else 3)
-    if "fit" in body:
-        margin = max(0.0, float(body["fit"])) / 25.4
-        bottom = max(0.0, float(body["bottom"])) / 25.4 if body.get("bottom") is not None else margin
+    if "fit" in body or "fit_margins" in body:
+        if isinstance(body.get("fit_margins"), dict):
+            side = {k: max(0.0, float(body["fit_margins"].get(k, 0))) / 25.4 for k in ("top", "right", "bottom", "left")}
+        else:
+            margin = max(0.0, float(body["fit"])) / 25.4
+            bottom = max(0.0, float(body["bottom"])) / 25.4 if body.get("bottom") is not None else margin
+            side = {"top": margin, "right": margin, "bottom": bottom, "left": margin}
         align = body.get("align") or {}
         ax = min(1.0, max(0.0, float(align.get("x", 0.5))))
         ay = min(1.0, max(0.0, float(align.get("y", 0.5))))
         # The paper, in inches on the page: where Plot has the page placed on it. The page itself if not said.
         bx, by, bw, bh = [float(v) for v in body["box"]] if isinstance(body.get("box"), list) and len(body["box"]) == 4 else (0.0, 0.0, page_w, page_h)
-        room_w, room_h = bw - 2 * margin, bh - margin - bottom
+        room_w, room_h = bw - side["left"] - side["right"], bh - side["top"] - side["bottom"]
         dw, dh = x1 - x0, y1 - y0
         if room_w <= 0 or room_h <= 0:
             return None
@@ -4546,7 +4550,7 @@ def reshape_matrix(body, bounds):
         if k == float("inf"):
             return None
         # Its corner goes to the margin plus the alignment's share of the room it doesn't fill.
-        return k, 0, 0, k, bx + margin + (room_w - dw * k) * ax - x0 * k, by + margin + (room_h - dh * k) * ay - y0 * k
+        return k, 0, 0, k, bx + side["left"] + (room_w - dw * k) * ax - x0 * k, by + side["top"] + (room_h - dh * k) * ay - y0 * k
     if "bake" in body:
         bake = body["bake"] or {}
         k = float(bake.get("scale", 100)) / 100

@@ -89,6 +89,11 @@ def main():
     # Drawn 2 wide by 1 high, it fills the 9 inches across; set against the foot, it stops 1.25 short of it.
     check("across inside an inch each side, an inch and a quarter clear of the foot", near((box()[0], box()[2], box()[3]), (1.0, 10.0, 7.25)), True)
 
+    print("\nfitted with a margin of each side's own: two inches at the left")
+    client.post("/api/current/reshape", json={"fit_margins": {"top": 25.4, "right": 25.4, "bottom": 25.4, "left": 50.8}, "align": {"x": 0, "y": 0.5}, "box": [0, 0, 11, 8.5]})
+    # 8 inches across between 2 and 10, so 4 down, centred in the 6.5 between the top and bottom inch.
+    check("two inches clear on the left, an inch on the right, centred down", near(box(), (2.0, 2.25, 10.0, 6.25)), True)
+
     print("\nPlot's own scale and turn, from before")
     file2 = folder / "old.svg"
     file2.write_text(drawing('<metadata id="nextdraw-plot"><nds:plot>{"scale": 50, "rotation": 0}</nds:plot></metadata>'))

@@ -1,14 +1,13 @@
 import { useState } from "react";
-import { ToolPicker } from "../../../shared/components/controls/ToolPicker";
 import { Button, ButtonRound, Checkbox, InputText } from "@tomcoggia/ui";
-import { CirclePlus, Palette, SlidersHorizontal, X } from "lucide-react";
+import { Palette, SlidersHorizontal } from "lucide-react";
 import styles from "../../../shared/components/controls/controls.module.css";
 import { DrawingToolSection } from "../../../shared/components/controls/DrawingToolSection";
 import { Slider } from "../../../shared/components/controls/Slider";
 import type { Preset } from "../../../shared/lib/types";
 
 interface Props {
-  /** What the Drawing tool row names while folded: the tool, or both of them. */
+  /** What the Pen row names while folded: the pen. */
   label?: string;
   presets: Preset[];
   active: Preset | undefined;
@@ -17,14 +16,6 @@ interface Props {
   onApply: (name: string) => void;
   onSave: (name: string) => Promise<boolean>;
   onDelete: () => void;
-  secondTool: string | null; // null: one tool for the whole drawing; "" added but not chosen
-  secondLayers: string[]; // ids of the layers that use the second tool
-  layers: { id: string; number: number; color: string | null }[];
-  inUse: "first" | "second" | null; // layer by layer, the tool of the layer chosen to print
-  onAddSecond: () => void;
-  onSecondTool: (name: string) => void;
-  onRemoveSecond: () => void;
-  onAssign: (id: string, second: boolean) => void;
   paletteOpen: boolean; // the palette view stands in for the drawing preview
   hudOpen: boolean; // the tool's settings are showing over the preview, for setting it up
   onHud: () => void;
@@ -46,7 +37,6 @@ const SHOW_INK_TUNING = false;
 export function PresetSection({
   label,
   presets, active, changed, disabled, onApply, onSave, onDelete,
-  secondTool, secondLayers, layers, inUse, onAddSecond, onSecondTool, onRemoveSecond, onAssign,
   tiltOn, onTilt, dragOn, onDrag, paletteOpen, onPalette, hudOpen, onHud, onInk,
 }: Props) {
   // A tool used at more than one angle keeps its switch. The label gives the angle to set.
@@ -71,31 +61,6 @@ export function PresetSection({
         onChange={(e) => onDrag(tool.name, e.target.checked)}
       />
   );
-  const mixed = secondTool !== null;
-  // Layer number chips under each tool: a layer belongs to exactly one, so turning a chip on under one
-  // tool takes it off the other.
-  const chips = (second: boolean) => (
-    <div className={styles.layerChips} role="group" aria-label={second ? "Layers using the second pen" : "Layers using the first pen"}>
-      {[...layers].sort((a, b) => a.number - b.number).map((l) => {
-        const on = secondLayers.includes(l.id) === second;
-        return (
-          <button
-            key={l.id}
-            type="button"
-            className={styles.layerChip}
-            aria-pressed={on}
-            title={`Layer ${l.number}`}
-            disabled={disabled || (second && !secondTool)}
-            onClick={() => { if (!on) onAssign(l.id, second); }}
-          >
-            {l.color && <span className={styles.layerChipDot} style={{ background: l.color }} aria-hidden />}
-            {l.number}
-          </button>
-        );
-      })}
-    </div>
-  );
-
   const [naming, setNaming] = useState(false);
   const [name, setName] = useState("");
 
@@ -115,12 +80,10 @@ export function PresetSection({
       placeholder={presets.length ? "Choose a preset" : "No presets saved yet"}
       changed={changed}
       disabled={disabled}
-      inUse={inUse === "first"}
       under={
         <>
           {tiltSwitch(active)}
           {dragSwitch(active)}
-          {mixed && layers.length > 0 && chips(false)}
         </>
       }
       action={
@@ -151,24 +114,6 @@ export function PresetSection({
       }
     >
 
-      {mixed && (
-        <div className={styles.toolBlock} data-in-use={inUse === "second"}>
-          <ToolPicker
-            tools={presets.filter((p) => p.name !== active?.name)}
-            value={secondTool ?? ""}
-            onPick={onSecondTool}
-            label="Second pen"
-            placeholder="Choose a preset"
-            disabled={disabled}
-            action={
-              <ButtonRound size="sm" variant="tertiary" icon={<X />} aria-label="Remove the second pen" title="Remove the second pen; its layers go back to the first" disabled={disabled} onClick={onRemoveSecond} />
-            }
-          />
-          {tiltSwitch(presets.find((p) => p.name === secondTool))}
-          {dragSwitch(presets.find((p) => p.name === secondTool))}
-          {layers.length > 0 && chips(true)}
-        </div>
-      )}
       {SHOW_INK_TUNING && active && (
         <div className={styles.stack}>
           <Slider
@@ -193,20 +138,6 @@ export function PresetSection({
               onChange={(v) => onInk({ ink_build: v / 100 })}
             />
           )}
-        </div>
-      )}
-
-      {/* Slowing a plot down is the speed slider shown once it starts; here only the second pen. */}
-      {!mixed && (
-        <div className={styles.addPenRow}>
-          <ButtonRound
-            size="sm"
-            icon={<CirclePlus />}
-            aria-label="Add a second pen"
-            title="Add another preset, for a drawing that mixes pens"
-            disabled={disabled || !presets.length}
-            onClick={onAddSecond}
-          />
         </div>
       )}
 

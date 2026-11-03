@@ -11,7 +11,7 @@ import { Section } from "../shared/components/controls/Section";
 import controls from "../shared/components/controls/controls.module.css";
 import { api } from "../shared/lib/api";
 import { isSvgFile, useFileDrop } from "../shared/lib/useFileDrop";
-import type { FitAlign } from "../shared/lib/geometry";
+import { marginsTimes, type FitAlign, type Margins } from "../shared/lib/geometry";
 import { load, save as remember } from "../shared/lib/storage";
 import { DEFAULT_SETTINGS, PAPER_SIZES, penWidthOf } from "../shared/lib/constants";
 import type { Info, PenColor, PlotterModel, Preset } from "../shared/lib/types";
@@ -66,7 +66,8 @@ import { shapeIcon } from "./components/panels/ToolPicker";
 import { addPointOnLongest, boxAround, boxOf, clampToPage, groupLabel, groupsOf, moveBy, newGroupId, newLayerId, newShapeId, pointsBox, resizeTo, scaleInto, shapeName, turnAround, withWholeGroups, type Layer, type Page, type Shape } from "../shared/lib/drawing/shapes";
 import { areaPicker, silhouetteOf } from "../shared/lib/drawing/silhouette";
 import { buildSvg, svgForMarks } from "../shared/lib/drawing/svg";
-import { fitToPage, reshapeDrawing, runsOffPage } from "../shared/lib/drawing/whole";
+import { drawnMiddle, fitToPage, placeOnPaper, reshapeDrawing, runsOffPage } from "../shared/lib/drawing/whole";
+import { cropDrawing } from "../shared/lib/drawing/crop";
 import { turnDrawingOnPaper } from "../shared/lib/drawing/turnPaper";
 import { useSharedPen } from "../shared/lib/useSharedPen";
 import styles from "./App.module.css";
@@ -1071,10 +1072,27 @@ export default function App() {
  };
 
 
- /** Scale the drawing as big as the paper allows inside a margin all round - deeper at the bottom, if asked - placed as `align` says. */
- const fitDrawing = (marginMm: number, align: FitAlign, bottomMm = marginMm) => {
-  const fit = fitToPage(shapes, page, marginMm / 25.4, align, bottomMm / 25.4);
+ /** Scale the drawing as big as the paper allows inside the margins (mm, a side each), placed as `align` says. */
+ const fitDrawing = (marginsMm: Margins, align: FitAlign) => {
+  const fit = fitToPage(shapes, page, marginsTimes(marginsMm, 1 / 25.4), align);
   if (fit) reshape(fit.k, fit.about, fit.by);
+ };
+
+ /** Scale the drawing to cover the paper inside the margins, placed as `align` says, and cut off the lines past them. */
+ const fillDrawing = (marginsMm: Margins, align: FitAlign) => {
+  const place = placeOnPaper(shapes, { x: 0, y: 0, w: page.w, h: page.h }, marginsTimes(marginsMm, 1 / 25.4), align, "fill");
+  if (!place) return;
+  const cut = cropDrawing(reshapeDrawing(shapes, place.k, place.about, place.by), fills, place.box, fonts);
+  record();
+  setShapes(cut.shapes);
+  setFills(cut.fills);
+  setMessage({ text: "", ok: true });
+ };
+
+ /** The whole drawing at a percent of its size now, about its middle. */
+ const scaleDrawing = (percent: number) => {
+  if (!shapes.length || percent === 100 || percent <= 0) return;
+  reshape(percent / 100, drawnMiddle(shapes));
  };
 
  /** Set a shape's size from the list, in inches, keeping its top-left corner where it is. */
@@ -1783,6 +1801,8 @@ export default function App() {
    // The paper turns with the drawing: landscape to portrait with everything on it, as a sheet is turned.
    onTurnDrawing={(dir) => void turnAll(dir)}
    onFit={shapes.length ? fitDrawing : undefined}
+   onFill={shapes.length ? fillDrawing : undefined}
+   onScale={shapes.length ? scaleDrawing : undefined}
   />
  );
 

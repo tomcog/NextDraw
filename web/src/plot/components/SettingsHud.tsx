@@ -13,7 +13,6 @@ interface Props {
   handling: Handling[];
   tool: string | null;   // the drawing tool preset in use
   preset: Preset | undefined; // that tool, for its tilt offset
-  secondTool: string | null;
   units: Units;
   disabled: boolean;
   /** Change the tool: the next plot uses it at once, and the preset keeps it. */
@@ -43,7 +42,7 @@ const speedMM = (percent: number, ceilingInS: number | undefined) =>
 
 type Offset = { x: number; y: number };
 
-export function SettingsHud({ settings: s, own, handling, tool, preset, secondTool, units, disabled, onToolValues }: Props) {
+export function SettingsHud({ settings: s, own, handling, tool, preset, units, disabled, onToolValues }: Props) {
   const mode = handling.find((h) => h.id === s.handling);
 
   // Dragged by its grip to uncover whatever it sits on. The offset is from its usual corner and is
@@ -107,7 +106,7 @@ export function SettingsHud({ settings: s, own, handling, tool, preset, secondTo
     RATE_NAMES[own[key]];
 
   const rows: [string, ReactNode, string?][] = [
-    ["Tool", secondTool ? `${tool ?? "—"} + ${secondTool}` : tool ?? "—"],
+    ["Tool", tool ?? "—"],
     ["Drawing", field("Drawing speed", "speed_pendown", 1),
       [speedText(s.speed_pendown, mode?.speed_in_s), speedMM(s.speed_pendown, mode?.speed_in_s)].filter(Boolean).join(" · ")],
     ["Travel", speedText(s.speed_penup, mode?.speed_up_in_s), speedMM(s.speed_penup, mode?.speed_up_in_s) ?? undefined],

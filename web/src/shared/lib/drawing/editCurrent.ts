@@ -9,6 +9,7 @@ import { loadFont, type StrokeFont } from "./font";
 import { parseDrawing } from "./parse";
 import { buildSvg } from "./svg";
 import type { Page } from "./shapes";
+import type { Fill } from "./hatch";
 import type { TrimDrawing } from "./trimMarks";
 import type { Current } from "./useDrawingFile";
 
@@ -28,23 +29,28 @@ export async function readCurrent(wanted?: (svg: string) => boolean): Promise<{ 
   return { current, drawing: parseDrawing(current.svg) };
 }
 
+/** What an edit is given and gives back: the shapes, layers and page, and the fills on the shapes. */
+export interface EditableDrawing extends TrimDrawing {
+  fills?: Fill[];
+}
+
 /**
  * The current drawing changed by `edit` and sent back. Refused for a drawing with marks that can't be
  * redrawn from shapes - written back, they'd be lost - and while the plotter is drawing (the server's).
  */
-export async function editCurrent(edit: (d: TrimDrawing) => TrimDrawing): Promise<{ edited: string }> {
+export async function editCurrent(edit: (d: EditableDrawing) => EditableDrawing | Promise<EditableDrawing>): Promise<{ edited: string }> {
   const read = await readCurrent();
   if (!read) throw new Error("Open a drawing first.");
   const { current, drawing } = read;
   if (drawing.unsupported) {
     throw new Error(`${drawing.unsupported} ${drawing.unsupported === 1 ? "mark" : "marks"} in ${current.name} can’t be redrawn, and changing the drawing here would drop ${drawing.unsupported === 1 ? "it" : "them"}.`);
   }
-  const next = edit({ shapes: drawing.shapes, layers: drawing.layers, page: drawing.page });
+  const next = await edit({ shapes: drawing.shapes, layers: drawing.layers, page: drawing.page, fills: drawing.fills });
   const kept = new Set(next.shapes.map((s) => s.id));
   // Words are written out as the strokes of their font, so each font in use is read first.
   const fonts: Record<string, StrokeFont> = {};
   for (const name of new Set(next.shapes.map((s) => s.font ?? "").filter(Boolean))) fonts[name] = await loadFont(name);
-  const svg = buildSvg(next.shapes, drawing.fills.filter((f) => kept.has(f.shapeId)), next.layers, next.page, {
+  const svg = buildSvg(next.shapes, (next.fills ?? drawing.fills).filter((f) => kept.has(f.shapeId)), next.layers, next.page, {
     paperSizeId: sizeIdOf(next.page),
     toolName: drawing.tool ?? "",
     paperColor: drawing.paperColor ?? undefined,

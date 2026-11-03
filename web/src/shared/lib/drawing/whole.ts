@@ -8,7 +8,7 @@ import { type Point } from "./parametric";
 import { mapNode, type Node } from "./path";
 import { placePoint, placements } from "./repeat";
 import { boxOf, centerOf, drawnRuns, newShapeId, outlinePoints, shiftShape, turnPoint, type Page, type Shape } from "./shapes";
-import { FIT_CENTERED, type FitAlign } from "../geometry";
+import { FIT_CENTERED, type FitAlign, type Margins } from "../geometry";
 
 export interface Box {
   x0: number;
@@ -170,23 +170,35 @@ export function drawnMiddle(shapes: Shape[]): Point {
 }
 
 /**
- * How to fit the drawing to the page inside a margin all round (inches) - `bottom` at the foot, the
- * margin unless said - placed in the room left over as `align` says (centred unless told otherwise):
- * the scale, and the point it is scaled about and the move after it, for reshapeDrawing. Nothing when
- * it can't be done - no drawing, a margin that leaves no page, or a drawing that is a single point.
+ * How to fit the drawing to the page inside a margin on each side (inches) - placed in the room left
+ * over as `align` says (centred unless told otherwise): the scale, and the point it is scaled about
+ * and the move after it, for reshapeDrawing. Nothing when it can't be done - no drawing, a margin
+ * that leaves no page, or a drawing that is a single point.
  */
-export function fitToPage(shapes: Shape[], page: Page, margin: number, align: FitAlign = FIT_CENTERED, bottom = margin): { k: number; about: Point; by: Point } | null {
+export function fitToPage(shapes: Shape[], page: Page, margins: Margins, align: FitAlign = FIT_CENTERED): { k: number; about: Point; by: Point } | null {
+  return placeOnPaper(shapes, { x: 0, y: 0, w: page.w, h: page.h }, margins, align, "fit");
+}
+
+/**
+ * Fit or fill: the drawing as big as the room inside the margins allows (fit), or as big as covers
+ * all of it (fill - what's over is then cut off by cropDrawing, at `box`), placed as `align` says:
+ * centred, or against an edge, whose side of the drawing Fill then keeps. The paper is where it lies
+ * on the page, in inches - the page itself in Studio and Image; in Plot, the sheet under it.
+ */
+export function placeOnPaper(shapes: Shape[], paper: { x: number; y: number; w: number; h: number }, margins: Margins, align: FitAlign, how: "fit" | "fill"): { k: number; about: Point; by: Point; box: Box } | null {
   if (!shapes.length) return null;
   const d = drawnBox(shapes);
   const dw = d.x1 - d.x0, dh = d.y1 - d.y0;
-  const room = { w: page.w - 2 * margin, h: page.h - margin - bottom };
+  const room = { w: paper.w - margins.left - margins.right, h: paper.h - margins.top - margins.bottom };
   if (room.w <= 0 || room.h <= 0) return null;
-  // A drawing that is only a line across or down has no height (or width) to fit by.
-  const k = Math.min(dw > 1e-9 ? room.w / dw : Infinity, dh > 1e-9 ? room.h / dh : Infinity);
-  if (!Number.isFinite(k)) return null;
+  // A drawing that is only a line across or down has no height (or width) to fit by - or to fill by.
+  const kx = dw > 1e-9 ? room.w / dw : Infinity, ky = dh > 1e-9 ? room.h / dh : Infinity;
+  const k = how === "fit" ? Math.min(kx, ky) : Math.max(Number.isFinite(kx) ? kx : 0, Number.isFinite(ky) ? ky : 0);
+  if (!Number.isFinite(k) || k <= 0) return null;
   const about = { x: (d.x0 + d.x1) / 2, y: (d.y0 + d.y1) / 2 };
   // Scaled about its middle, the drawing is dw * k wide; its middle goes that far in from the margin,
-  // plus the alignment's share of the room it doesn't fill.
-  const middle = (room: number, size: number, share: number) => margin + (room - size * k) * share + (size * k) / 2;
-  return { k, about, by: { x: middle(room.w, dw, align.x) - about.x, y: middle(room.h, dh, align.y) - about.y } };
+  // plus the alignment's share of the room it doesn't fill (less than none, filling: what's over).
+  const middle = (start: number, room: number, size: number, share: number) => start + (room - size * k) * share + (size * k) / 2;
+  const box = { x0: paper.x + margins.left, y0: paper.y + margins.top, x1: paper.x + paper.w - margins.right, y1: paper.y + paper.h - margins.bottom };
+  return { k, about, by: { x: paper.x + middle(margins.left, room.w, dw, align.x) - about.x, y: paper.y + middle(margins.top, room.h, dh, align.y) - about.y }, box };
 }

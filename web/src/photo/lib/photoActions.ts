@@ -7,7 +7,7 @@ import type { Dispatch, SetStateAction } from "react";
 import { api, postJSON } from "../../shared/lib/api";
 import { EDGE_STYLES, edgeKeep, type EdgeGen } from "../../shared/lib/drawing/edgeMask";
 import { lightness } from "../../shared/lib/color";
-import type { FitAlign } from "../../shared/lib/geometry";
+import type { FitAlign, Margins } from "../../shared/lib/geometry";
 import type { PenColor, Preset } from "../../shared/lib/types";
 import {
   BAND_NAMES, LAYER_SETTINGS, MOST_SIDE_LAYERS, paperToneOf, mostColorsOf, MOST_LAYERS, PHOTO_DEFAULTS, PLATES, PLATE_AIMS, colourGroups, isColourful, matchPens, photoMode,
@@ -784,12 +784,12 @@ export function photoActions(ctx: PhotoContext) {
     * page and cropped, inside a margin. Square to the page again, whatever it was turned to. Once, when
     * Fit or Fill is pressed: nothing is kept that would size it again when the paper changes.
     */
-  const placePhoto = (how: "fit" | "fill", margin: number, align?: FitAlign, bottom = margin) => {
+  const placePhoto = (how: "fit" | "fill", margins: Margins, align?: FitAlign) => {
     if (!chosen?.photo) return;
     record();
     // Fitted against an edge stays against it - as Fit to paper chose, or as it was last fitted.
     const at = align ?? chosen.photo.align;
-    const { crop, ...box } = placeOnPage(chosen.photo.width / chosen.photo.height, page, how, margin, at, bottom);
+    const { crop, ...box } = placeOnPage(chosen.photo.width / chosen.photo.height, page, how, margins, at);
     setShapes((list) => list.map((sh) => (sameImage(sh)
       ? { ...sh, ...box, rotation: undefined, photo: { ...sh.photo!, crop, fit: undefined, margin: undefined, marginBottom: undefined, align: at } }
       : sh)));

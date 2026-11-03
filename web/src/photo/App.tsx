@@ -18,6 +18,7 @@ import { StatusBanner } from "../shared/components/StatusBanner";
 import { api, postJSON } from "../shared/lib/api";
 import { isSvgFile, useFileDrop } from "../shared/lib/useFileDrop";
 import { PAPER_SIZES } from "../shared/lib/constants";
+import { marginsTimes } from "../shared/lib/geometry";
 import { load, save as remember } from "../shared/lib/storage";
 import type { Info, PlotterModel, Preset } from "../shared/lib/types";
 import type { Zoom } from "../shared/components/BedCanvas";
@@ -556,8 +557,8 @@ export default function App() {
       // margin and alignment, once, when pressed; and the picture's size as a percent of its file's.
       // Nothing here sizes the picture when the paper changes: its size is the user's.
       onTurnDrawing={shapes.length ? (dir) => void turnAll(dir) : undefined}
-      onFit={chosen?.photo ? (marginMm, align, bottomMm) => placePhoto("fit", marginMm / 25.4, align, bottomMm / 25.4) : undefined}
-      onFill={chosen?.photo ? (marginMm, align, bottomMm) => placePhoto("fill", marginMm / 25.4, align, bottomMm / 25.4) : undefined}
+      onFit={chosen?.photo ? (marginsMm, align) => placePhoto("fit", marginsTimes(marginsMm, 1 / 25.4), align) : undefined}
+      onFill={chosen?.photo ? (marginsMm, align) => placePhoto("fill", marginsTimes(marginsMm, 1 / 25.4), align) : undefined}
       scale={chosen?.photo ? Math.round(photoScale(chosen) * 10) / 10 : undefined}
       onScale={chosen?.photo ? scalePhoto : undefined}
     />
