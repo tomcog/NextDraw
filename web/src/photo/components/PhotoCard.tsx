@@ -120,6 +120,8 @@ interface Props {
 export function PhotoCard({ shape, title, shapes, busy, targeted, layerCount, shownName, actions, cropping = false, penWidthMm = 0.5, infoCard = true, effectCards = true, layersCard, adjustCard, vignetteCard, trimCard, maskCard = false }: Props) {
   // The presets, shared between Macs; and the one last picked here, for Delete.
   const [presets, setPresets] = useState<string[]>([]);
+  // Randomize pressed, its new scribble not yet drawn.
+  const [scribbling, setScribbling] = useState(false);
   const readPresets = () => api<{ presets: string[] }>("/api/image-presets").then((r) => setPresets(r.presets)).catch(() => {});
   useEffect(() => { readPresets(); }, []);
   const [presetPicked, setPresetPicked] = useState("");
@@ -713,12 +715,25 @@ export function PhotoCard({ shape, title, shapes, busy, targeted, layerCount, sh
                     <NumberField label="Max" min={2} max={1000} step={5} value={photo.scribbleLengthMm ?? SCRIBBLE_DEFAULTS.lengthMm} onChange={(scribbleLengthMm) => actions.set({ scribbleLengthMm })} />
                     {/* 0, gentle bends; 100, tight curls. */}
                     <NumberField label="Wiggle" unit="%" min={0} max={100} step={5} value={photo.scribbleWiggle ?? SCRIBBLE_DEFAULTS.wiggle} onChange={(scribbleWiggle) => actions.set({ scribbleWiggle })} />
+                    {/* How far a stroke runs straight before it turns: 0, smooth curls; more, curls of straight lines with corners. */}
+                    <NumberField label="Segment" unit="mm" min={0} max={50} step={1} value={photo.scribbleSegmentMm ?? SCRIBBLE_DEFAULTS.segmentMm} onChange={(v) => actions.set({ scribbleSegmentMm: v > 0 ? v : undefined })} />
                   </div>
                   {/* The same settings, scribbled another way. */}
-                  <Button size="sm" variant="secondary" title="Scribble again: the same settings, a new random scribble" onClick={() => actions.set({ scribbleSeed: (photo.scribbleSeed ?? SCRIBBLE_DEFAULTS.seed) + 1 })}>
+                  {/* The scribble is worked out on the page, holding it up: the spinner is let paint first,
+                      then the new seed is set and the spinner cleared in the same render, so it stays
+                      up until the new lines are drawn. */}
+                  <Button size="sm" variant="secondary" title="Scribble again: the same settings, a new random scribble" loading={scribbling}
+                    onClick={() => {
+                      const seed = (photo.scribbleSeed ?? SCRIBBLE_DEFAULTS.seed) + 1;
+                      setScribbling(true);
+                      requestAnimationFrame(() => setTimeout(() => {
+                        actions.set({ scribbleSeed: seed });
+                        setScribbling(false);
+                      }));
+                    }}>
                     Randomize
                   </Button>
-                  {eachLayer("Spacing, min, max, wiggle and Randomize")}
+                  {eachLayer("Spacing, min, max, wiggle, segment and Randomize")}
                 </>
               ) : photo.style === "oneline" ? (
                 <>

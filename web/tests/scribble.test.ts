@@ -51,3 +51,20 @@ test("scribble: at Wiggle 0 every stroke is a straight line", async () => {
     for (const p of pts) assert.ok(Math.abs((b[0] - a[0]) * (a[1] - p[1]) - (a[0] - p[0]) * (b[1] - a[1])) / len < 0.001, "straight");
   }
 });
+
+test("scribble: with a Segment the curls are straight runs that long, turning at corners", async () => {
+  await picture("data:blobs", (x, y) => 0.3 + 0.7 * Math.abs(Math.sin(x / 13) * Math.cos(y / 17)));
+  const segment = 5 / 25.4;
+  const strokes = runs(photoMarks(photo("data:blobs", { scribbleWiggle: 80, scribbleSegmentMm: 5 }), 2, 2)!.passes.join(""));
+  assert.ok(strokes.length > 5);
+  let corners = 0;
+  for (const pts of strokes) {
+    // Simplified to its corners: every run but the last is at least the segment long, less a step.
+    for (let i = 1; i < pts.length - 1; i++) {
+      const len = Math.hypot(pts[i][0] - pts[i - 1][0], pts[i][1] - pts[i - 1][1]);
+      if (i > 1) assert.ok(len > segment * 0.85, `a run of ${(len * 25.4).toFixed(2)} mm`);
+      corners++;
+    }
+  }
+  assert.ok(corners > strokes.length / 4, "they turn");
+});
