@@ -1,5 +1,5 @@
 import { Segment, SegmentedControl, Toolbar } from "@tomcoggia/ui";
-import { AudioWaveform, FingerprintPattern, Frame, Hash, LineSquiggle, Paintbrush, Route, Grid2x2, Signature, Squircle, Wind, ZodiacAquarius } from "lucide-react";
+import { AudioWaveform, FingerprintPattern, Frame, Hash, LineSquiggle, Paintbrush, PencilLine, Route, Grid2x2, Signature, Squircle, Wind, ZodiacAquarius } from "lucide-react";
 import type { ReactNode } from "react";
 import type { Photo } from "../../shared/lib/drawing/photo";
 import { ToolbarIcons } from "../../shared/components/ToolbarIcons";
@@ -18,6 +18,7 @@ export const EFFECTS: { key: Effect; label: string; icon: ReactNode; about: stri
   { key: "squiggle", label: "Squiggle", icon: <ZodiacAquarius />, about: "SquiggleDraw's smooth waves, unbroken through white, the rows joinable into one line" },
   { key: "streamlines", label: "Streamlines", icon: <Wind />, about: "Lines that flow along the image's shapes, evenly apart and closer where it's darker, like an engraving" },
   { key: "scribble", label: "Scribble", icon: <LineSquiggle />, about: "Strokes that wander and curl at random, overlapping, building up ink where the image is darker - like scribbling by hand" },
+  { key: "sketch", label: "Sketch lines", icon: <PencilLine />, about: "DrawingBotV3's Sketch Lines: short straight lines chained into squiggles, each one aimed at the darkest part left, lightening it as it goes - with DrawingBot's own settings" },
   { key: "oneline", label: "One line", icon: <Route />, about: "The whole image as a single line, winding tightly where it's dark - the pen goes down once" },
   { key: "paint", label: "Paint", icon: <Paintbrush />, about: "The image as flat regions of color, each filled solid in its pen, like a finished painting by numbers" },
   { key: "hilbert", label: "Hilbert curve", icon: <Grid2x2 />, about: "One line folding into itself, square within square, finer where it's darker - a mechanical halftone" },

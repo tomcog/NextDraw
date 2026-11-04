@@ -6,7 +6,7 @@ import { Section } from "../../shared/components/controls/Section";
 import { panelIcon } from "../../shared/components/PanelToolbar";
 import { NumberField } from "../../shared/components/controls/NumberField";
 import controls from "../../shared/components/controls/controls.module.css";
-import { BLACK_SHARE, CENTER_DEFAULTS, KEY_FROM, mostColorsOf, MOST_LAYERS, MOST_SIDE_LAYERS, MOST_PASSES, paperToneOf, OUTLINE_DEFAULTS, PAINT_DEFAULTS, SILHOUETTE_DEFAULTS, STREAM_DEFAULTS, ONE_LINE_DEFAULTS, ONE_LINE_MOST, SCRIBBLE_DEFAULTS, HILBERT_DEFAULTS, WAVE_DEFAULTS, ANGLE_PRESETS, centerModeOf, EDGE_DEFAULTS, hatchShortestOf, PLATE_SETS, SQUIGGLE_DRAW, SQUIGGLE_INKSCAPE, SQUIGGLE_INKSCAPE_RANGES, SQUIGGLE_RANGES, coverSteps, plateSetOf, squiggleDrawOf, squiggleInkscapeOf, type AnglePreset, type SquiggleDraw, type SquiggleInkscape, type PlateSet, photoMarks, photoMode, type Photo, type Plate } from "../../shared/lib/drawing/photo";
+import { BLACK_SHARE, CENTER_DEFAULTS, KEY_FROM, mostColorsOf, MOST_LAYERS, MOST_SIDE_LAYERS, MOST_PASSES, paperToneOf, OUTLINE_DEFAULTS, PAINT_DEFAULTS, SILHOUETTE_DEFAULTS, STREAM_DEFAULTS, ONE_LINE_DEFAULTS, ONE_LINE_MOST, SCRIBBLE_DEFAULTS, SKETCH_LINES, sketchLinesOf, type SketchLines, HILBERT_DEFAULTS, WAVE_DEFAULTS, ANGLE_PRESETS, centerModeOf, EDGE_DEFAULTS, hatchShortestOf, PLATE_SETS, SQUIGGLE_DRAW, SQUIGGLE_INKSCAPE, SQUIGGLE_INKSCAPE_RANGES, SQUIGGLE_RANGES, coverSteps, plateSetOf, squiggleDrawOf, squiggleInkscapeOf, type AnglePreset, type SquiggleDraw, type SquiggleInkscape, type PlateSet, photoMarks, photoMode, type Photo, type Plate } from "../../shared/lib/drawing/photo";
 import type { EdgeGen } from "../../shared/lib/drawing/edgeMask";
 import { MaskCard } from "./MaskCard";
 import { boxOf, type Shape } from "../../shared/lib/drawing/shapes";
@@ -196,12 +196,12 @@ export function PhotoCard({ shape, title, shapes, busy, targeted, layerCount, sh
                       const mode = photo.style === "edges" ? photo.centerMode ?? "mixed" : centerModeOf(photo);
                       const corners = (
                         <div title="Where a line turns more than this, it keeps a sharp corner rather than being rounded through it. 0 rounds every turn">
-                          <NumberField label="Sharp corners over" unit="°" min={0} max={179} step={5} value={photo.centerCornerDeg ?? 0} onChange={(v) => actions.set({ centerCornerDeg: v > 0 ? Math.min(179, v) : undefined })} />
+                          <NumberField label="Corners" unit="°" min={0} max={179} step={5} value={photo.centerCornerDeg ?? 0} onChange={(v) => actions.set({ centerCornerDeg: v > 0 ? Math.min(179, v) : undefined })} />
                         </div>
                       );
                       const within = (
                         <div title="How far a straight segment may stray from the traced line: more makes fewer, longer straight lines">
-                          <NumberField label="Straight within" unit="mm" min={0.05} max={5} step={0.05} value={photo.centerStraightMm ?? CENTER_DEFAULTS.straightMm} onChange={(v) => actions.set({ centerStraightMm: Math.max(0.05, v) })} />
+                          <NumberField label="Tolerance" unit="mm" min={0.05} max={5} step={0.05} value={photo.centerStraightMm ?? CENTER_DEFAULTS.straightMm} onChange={(v) => actions.set({ centerStraightMm: Math.max(0.05, v) })} />
                         </div>
                       );
                       return (
@@ -211,14 +211,14 @@ export function PhotoCard({ shape, title, shapes, busy, targeted, layerCount, sh
                             <Segment selected={mode === "mixed"} title="Straight where a line runs straight, curved where it bends" onClick={() => actions.set({ centerMode: "mixed" })}>Mixed</Segment>
                             <Segment selected={mode === "straight"} title="Lines drawn as straight segments: straight edges dead straight, every corner sharp. A circle is still a circle" onClick={() => actions.set({ centerMode: "straight" })}>Straight</Segment>
                           </SegmentedControl>
-                          <div className={styles.fillRow}>
+                          <div className={`${styles.fillRow} ${styles.oneRow}`}>
                             {mode === "curves" && corners}
                             {mode === "straight" && within}
                             {mode === "mixed" && (
                               <>
                                 {within}
                                 <div title="A straight stretch at least this long is drawn as a straight line; shorter ones are where the line bends, and are drawn as curves">
-                                  <NumberField label="Straight longer than" unit="mm" min={0.5} max={50} step={0.5} value={photo.centerLongMm ?? CENTER_DEFAULTS.longMm} onChange={(v) => actions.set({ centerLongMm: Math.max(0.5, v) })} />
+                                  <NumberField label="Straight" unit="mm" min={0.5} max={50} step={0.5} value={photo.centerLongMm ?? CENTER_DEFAULTS.longMm} onChange={(v) => actions.set({ centerLongMm: Math.max(0.5, v) })} />
                                 </div>
                                 {corners}
                               </>
@@ -464,6 +464,12 @@ export function PhotoCard({ shape, title, shapes, busy, targeted, layerCount, sh
     const r = SQUIGGLE_RANGES[key];
     return <NumberField label={r.label} min={r.min} max={r.max} step={r.step} value={squiggleDrawOf(photo)[key]} onChange={(v) => setSquiggle({ [key]: v })} />;
   };
+  // A Sketch lines setting likewise, over DrawingBot's defaults.
+  const setSketch = (change: Partial<SketchLines>) => {
+    const next: Partial<SketchLines> = { ...(photo.sketchLines ?? {}), ...change };
+    for (const key of Object.keys(next) as (keyof SketchLines)[]) if (next[key] === SKETCH_LINES[key]) delete next[key];
+    actions.set({ sketchLines: Object.keys(next).length ? next : undefined });
+  };
   // An Inkscape control likewise, over the extension's defaults.
   const setInkscape = (change: Partial<SquiggleInkscape>) => {
     const next: Partial<SquiggleInkscape> = { ...(photo.squiggleInkscape ?? {}), ...change };
@@ -649,9 +655,9 @@ export function PhotoCard({ shape, title, shapes, busy, targeted, layerCount, sh
               ) : photo.style === "edges" ? (
                 <>
                   {/* Edges: where the tone changes sharply, traced as Centerlines traces strokes. */}
-                  <div className={styles.fillRow}>
+                  <div className={`${styles.fillRow} ${styles.oneRow}`}>
                     <div title="How sharp a change of tone counts as an edge, against the picture's sharpest: lower finds fainter edges">
-                      <NumberField label="Edge strength" unit="%" min={1} max={100} step={5} value={Math.round((photo.edgeFrom ?? EDGE_DEFAULTS.from) * 100)} onChange={(v) => actions.set({ edgeFrom: Math.max(0.01, v / 100) })} />
+                      <NumberField label="Strength" unit="%" min={1} max={100} step={5} value={Math.round((photo.edgeFrom ?? EDGE_DEFAULTS.from) * 100)} onChange={(v) => actions.set({ edgeFrom: Math.max(0.01, v / 100) })} />
                     </div>
                     <div title="How much the picture is smoothed first, so texture and grain aren't taken for edges">
                       <NumberField label="Smoothing" unit="mm" min={0} max={5} step={0.1} value={photo.edgeSmoothMm ?? EDGE_DEFAULTS.smoothMm} onChange={(edgeSmoothMm) => actions.set({ edgeSmoothMm })} />
@@ -682,7 +688,7 @@ export function PhotoCard({ shape, title, shapes, busy, targeted, layerCount, sh
                   <div className={styles.fillRow}>
                     {/* How broadly the shapes are read: more, and the lines sweep in long curves; less, and they follow every turn. */}
                     <NumberField label="Flow mm" min={0} max={20} step={0.5} value={photo.streamFlowMm ?? STREAM_DEFAULTS.flowMm} onChange={(streamFlowMm) => actions.set({ streamFlowMm })} />
-                    <NumberField label="Passes" min={1} max={2} step={1} value={photo.streamPasses ?? STREAM_DEFAULTS.passes} onChange={(streamPasses) => actions.set({ streamPasses })} />
+                    <NumberField label="Passes" min={1} max={3} step={1} value={photo.streamPasses ?? STREAM_DEFAULTS.passes} onChange={(streamPasses) => actions.set({ streamPasses })} />
                   </div>
                   {eachLayer("Angle, spacing, widest, flow and passes")}
                 </>
@@ -716,7 +722,7 @@ export function PhotoCard({ shape, title, shapes, busy, targeted, layerCount, sh
                     {/* 0, gentle bends; 100, tight curls. */}
                     <NumberField label="Wiggle" unit="%" min={0} max={100} step={5} value={photo.scribbleWiggle ?? SCRIBBLE_DEFAULTS.wiggle} onChange={(scribbleWiggle) => actions.set({ scribbleWiggle })} />
                     {/* How far a stroke runs straight before it turns: 0, smooth curls; more, curls of straight lines with corners. */}
-                    <NumberField label="Segment" unit="mm" min={0} max={50} step={1} value={photo.scribbleSegmentMm ?? SCRIBBLE_DEFAULTS.segmentMm} onChange={(v) => actions.set({ scribbleSegmentMm: v > 0 ? v : undefined })} />
+                    <NumberField label="Segment" min={0} max={50} step={1} value={photo.scribbleSegmentMm ?? SCRIBBLE_DEFAULTS.segmentMm} onChange={(v) => actions.set({ scribbleSegmentMm: v > 0 ? v : undefined })} />
                   </div>
                   {/* The same settings, scribbled another way. */}
                   {/* The scribble is worked out on the page, holding it up: the spinner is let paint first,
@@ -734,6 +740,47 @@ export function PhotoCard({ shape, title, shapes, busy, targeted, layerCount, sh
                     Randomize
                   </Button>
                   {eachLayer("Spacing, min, max, wiggle, segment and Randomize")}
+                </>
+              ) : photo.style === "sketch" ? (
+                <>
+                  {/* DrawingBotV3's Sketch Lines, cut down to what changes the look; the rest keep DrawingBot's
+                      defaults. Lengths are in its pixels: a pixel is Pixel size across, about a pen line. */}
+                  <div className={styles.fillRow}>
+                    <NumberField label="Pixel size" unit="mm" min={0.05} max={5} step={0.05} value={photo.spacingMm} onChange={(spacingMm) => actions.set({ spacingMm })} />
+                    {/* DrawingBot's Line Density: how far toward white the drawing takes the picture. */}
+                    <NumberField label="Density" unit="%" min={1} max={100} step={1} value={sketchLinesOf(photo).lineDensity} onChange={(v) => setSketch({ lineDensity: v })} />
+                  </div>
+                  <div className={styles.fillRow}>
+                    {/* Line Max Length: short nervous strokes, or long jagged ones. */}
+                    <NumberField label="Line length" unit="px" min={2} max={500} step={1} value={sketchLinesOf(photo).lineMax} onChange={(v) => setSketch({ lineMax: v })} />
+                    {/* Squiggle Max Length, in lines: how long the pen stays down - fewer lifts, quicker to plot. */}
+                    <NumberField label="Squiggle length" min={1} max={5000} step={10} value={sketchLinesOf(photo).squiggleMax} onChange={(v) => setSketch({ squiggleMax: v })} />
+                  </div>
+                  <div className={styles.fillRow}>
+                    {/* Angle Tests: few, messy and loose; many, each line aimed cleanly at the dark. */}
+                    <NumberField label="Aim" min={1} max={360} step={1} value={sketchLinesOf(photo).angleTests} onChange={(v) => setSketch({ angleTests: v })} />
+                    {/* Squiggle Max Deviation: low keeps a squiggle in the darks, tracing their shapes; high lets it roam into lighter parts. */}
+                    <NumberField label="Wander" unit="%" min={0} max={100} step={1} value={sketchLinesOf(photo).squiggleDeviation} onChange={(v) => setSketch({ squiggleDeviation: v })} />
+                  </div>
+                  <div className={styles.fillRow}>
+                    {/* Ours, not DrawingBot's: where the tone changes sharply is darkened for the lines to find, so they gather along the edges - with a low Wander, tracing them. */}
+                    <NumberField label="Edges" unit="%" min={0} max={100} step={5} value={sketchLinesOf(photo).edges} onChange={(v) => setSketch({ edges: v })} />
+                  </div>
+                  <Checkbox size="md" checked={sketchLinesOf(photo).liftPen} label="Lift the pen between squiggles" onChange={(e) => setSketch({ liftPen: e.target.checked })} />
+                  {/* The same settings, sketched another way; the spinner held up until the new lines are drawn, as Scribble's. */}
+                  <Button size="sm" variant="secondary" title="Sketch again: the same settings, new random lines" loading={scribbling}
+                    onClick={() => {
+                      const seed = sketchLinesOf(photo).seed + 1;
+                      setScribbling(true);
+                      requestAnimationFrame(() => setTimeout(() => {
+                        setSketch({ seed });
+                        setScribbling(false);
+                      }));
+                    }}>
+                    Randomize
+                  </Button>
+                  <Button size="sm" variant="secondary" onClick={() => actions.set({ sketchLines: undefined })}>Default</Button>
+                  {eachLayer("These settings")}
                 </>
               ) : photo.style === "oneline" ? (
                 <>
@@ -913,9 +960,11 @@ export function PhotoCard({ shape, title, shapes, busy, targeted, layerCount, sh
                     : photo.style === "centerlines"
                     ? `${marks.strokes.toLocaleString()} ${marks.strokes === 1 ? "line" : "lines"}${marks.circles ? `, ${marks.circles} of them ${marks.circles === 1 ? "a circle" : "circles"}` : ""}, each drawn once down the middle of a stroke in the picture${marks.widthMm ? ` (they're about ${marks.widthMm.toFixed(1)} mm wide there)` : ""}. Darker than sets what counts as a line; Shortest drops specks and whiskers.`
                     : photo.style === "streamlines"
-                    ? `${marks.strokes.toLocaleString()} lines, flowing along the image's shapes. They run from Spacing apart in the blacks to Widest apart, past which it's paper; Flow sets how broadly the shapes are followed${(photo.streamPasses ?? 1) > 1 ? ", and a second pass crosses the first in the darker half" : ""}.`
+                    ? `${marks.strokes.toLocaleString()} lines, flowing along the image's shapes. They run from Spacing apart in the blacks to Widest apart, past which it's paper; Flow sets how broadly the shapes are followed${(photo.streamPasses ?? 1) > 2 ? ", a second pass crosses the first in the darker two thirds, and a third runs on the diagonal in the darkest third" : (photo.streamPasses ?? 1) > 1 ? ", and a second pass crosses the first in the darker half" : ""}.`
                     : photo.style === "scribble"
                     ? `${marks.strokes.toLocaleString()} ${marks.strokes === 1 ? "stroke" : "strokes"}`
+                    : photo.style === "sketch"
+                    ? `${marks.strokes.toLocaleString()} ${marks.strokes === 1 ? "squiggle" : "squiggles"} of short straight lines, each aimed at the darkest part left. Density is how far toward white the drawing takes the picture; Wander, how far a squiggle strays from the darks.`
                     : photo.style === "paint"
                     ? `${marks.strokes.toLocaleString()} ${marks.strokes === 1 ? "stroke" : "strokes"}`
                     : photo.style === "oneline"

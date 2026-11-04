@@ -112,7 +112,7 @@ export interface Photo {
    * draws nothing until an effect is picked again. Its picture, place and split stay.
    */
   idle?: boolean;
-  style?: "hatch" | "waves" | "squiggle" | "streamlines" | "scribble" | "oneline" | "hilbert" | "outlines" | "centerlines" | "silhouette" | "edges" | "paint";
+  style?: "hatch" | "waves" | "squiggle" | "streamlines" | "scribble" | "sketch" | "oneline" | "hilbert" | "outlines" | "centerlines" | "silhouette" | "edges" | "paint";
   /**
    * Edges: how sharp a change of tone, 0 to 1 against the picture's sharpest, counts as an edge - the
    * line where a wall meets a ceiling, round a window. Lower finds fainter edges.
@@ -163,6 +163,8 @@ export interface Photo {
   /** Scribble: how far a stroke runs straight before it turns, in mm - its curls made of straight lines. 0, smooth. */
   scribbleSegmentMm?: number;
   scribbleSeed?: number;
+  /** Sketch lines: DrawingBotV3's Sketch Lines settings, those changed from its defaults - see SKETCH_LINES. */
+  sketchLines?: Partial<SketchLines>;
   /**
    * Paint: how far the borders between colors are smoothed, in mm; the smallest region kept, as the
    * side of a square in mm - a smaller one takes its biggest neighbor's color; and whether each
@@ -663,7 +665,7 @@ export interface PhotoPart {
 
 /** The settings a layer of a photo keeps as its own, as opposed to the photo's: what a mode remembers. */
 export const LAYER_SETTINGS = [
-  "style", "angle", "spacingMm", "levels", "hatchSmoothMm", "hatchShortestMm", "rowMm", "waveMm", "squiggleAmpMm", "squiggleHeight", "squiggleJoin", "squiggleLift", "squiggleSmooth", "squiggleDraw", "squiggleVersion", "squiggleInkscape", "squiggleAngle", "contours", "smoothMm", "centerFrom", "centerSmoothMm", "centerShortestMm", "centerMode", "centerStraightMm", "centerLongMm", "centerCornerDeg", "edgeFrom", "edgeSmoothMm", "edgeShortestMm", "silhouetteFrom", "silhouetteSmoothMm", "silhouetteSmallestMm", "streamWidestMm", "streamPasses", "streamFlowMm", "scribbleLengthMm", "scribbleMinMm", "scribbleWiggle", "scribbleSegmentMm", "scribbleSeed", "paintSmoothMm", "paintSmallestMm", "paintOutline", "lineDots", "lineLiftMm", "lineCurve", "lineAngle", "lineBias", "lineGrain", "lineContrast", "hilbertCoarsestMm", "hilbertLift", "hilbertCurve", "hilbertRound", "hilbertBlend", "hilbertAngle", "offsetMm",
+  "style", "angle", "spacingMm", "levels", "hatchSmoothMm", "hatchShortestMm", "rowMm", "waveMm", "squiggleAmpMm", "squiggleHeight", "squiggleJoin", "squiggleLift", "squiggleSmooth", "squiggleDraw", "squiggleVersion", "squiggleInkscape", "squiggleAngle", "contours", "smoothMm", "centerFrom", "centerSmoothMm", "centerShortestMm", "centerMode", "centerStraightMm", "centerLongMm", "centerCornerDeg", "edgeFrom", "edgeSmoothMm", "edgeShortestMm", "silhouetteFrom", "silhouetteSmoothMm", "silhouetteSmallestMm", "streamWidestMm", "streamPasses", "streamFlowMm", "scribbleLengthMm", "scribbleMinMm", "scribbleWiggle", "scribbleSegmentMm", "scribbleSeed", "sketchLines", "paintSmoothMm", "paintSmallestMm", "paintOutline", "lineDots", "lineLiftMm", "lineCurve", "lineAngle", "lineBias", "lineGrain", "lineContrast", "hilbertCoarsestMm", "hilbertLift", "hilbertCurve", "hilbertRound", "hilbertBlend", "hilbertAngle", "offsetMm",
   "band", "side", "paperTone", "ink", "regions", "region", "key", "regionInks", "keyInk", "plate", "plates", "fitPaper", "penMm", "fitPairs", "fitOpaque",
 ] as const;
 
@@ -789,6 +791,52 @@ export const squiggleInkscapeOf = (photo: Pick<Photo, "squiggleInkscape">): Squi
   }
   out.invert = out.invert === true;
   if (out.path !== "bidi" && out.path !== "join") out.path = "uni";
+  return out;
+};
+
+/**
+ * DrawingBotV3's Sketch Lines settings, with its names, ranges and numbers - its defaults, but for Line
+ * Density, which is the Edge Trace preset's 55. Its lengths are in its pixels: here a pixel is the
+ * layer's Pixel size (its spacing), about a pen line wide, as DrawingBot draws one pixel wide.
+ * Erase Min and Max are how much each line lightens what it crosses, 0 to 255; Tone curves between them.
+ */
+export const SKETCH_LINES = {
+  seed: 0, lineDensity: 55, lineMin: 2, lineMax: 40, lineLimit: -1, angleTests: 20, unlimitedTests: false,
+  squiggleMin: 25, squiggleMax: 500, squiggleDeviation: 25, liftPen: true, deltaAngle: 360,
+  shading: false, startAngleMin: -72, startAngleMax: -52, shadingThreshold: 50, shadingDeltaAngle: 180,
+  eraseMin: 50, eraseMax: 125, tone: 50,
+  /** Ours, not DrawingBot's: how strongly the picture's edges are darkened for the lines to find, 0 to 100. */
+  edges: 0,
+};
+export type SketchLines = typeof SKETCH_LINES;
+type SketchNumber = { [K in keyof SketchLines]: SketchLines[K] extends number ? K : never }[keyof SketchLines];
+export const SKETCH_RANGES: Record<SketchNumber, { label: string; min: number; max: number; step: number }> = {
+  seed: { label: "Random Seed", min: 0, max: 1000, step: 1 },
+  lineDensity: { label: "Line Density", min: 0, max: 100, step: 1 },
+  lineMin: { label: "Line Min Length", min: 2, max: 500, step: 1 },
+  lineMax: { label: "Line Max Length", min: 2, max: 500, step: 1 },
+  lineLimit: { label: "Line Max Limit", min: -1, max: 1000000, step: 100 },
+  angleTests: { label: "Angle Tests", min: 1, max: 360, step: 1 },
+  squiggleMin: { label: "Squiggle Min Length", min: 0, max: 5000, step: 1 },
+  squiggleMax: { label: "Squiggle Max Length", min: 1, max: 5000, step: 10 },
+  squiggleDeviation: { label: "Squiggle Max Deviation", min: 0, max: 100, step: 1 },
+  deltaAngle: { label: "Drawing Delta Angle", min: -360, max: 360, step: 5 },
+  startAngleMin: { label: "Start Angle Min", min: -360, max: 360, step: 1 },
+  startAngleMax: { label: "Start Angle Max", min: -360, max: 360, step: 1 },
+  shadingThreshold: { label: "Shading Threshold", min: 0, max: 100, step: 1 },
+  shadingDeltaAngle: { label: "Shading Delta Angle", min: -360, max: 360, step: 5 },
+  eraseMin: { label: "Erase Min", min: 1, max: 255, step: 1 },
+  eraseMax: { label: "Erase Max", min: 1, max: 255, step: 1 },
+  tone: { label: "Tone", min: 0, max: 100, step: 1 },
+  edges: { label: "Edges", min: 0, max: 100, step: 5 },
+};
+/** A photo's Sketch lines settings: its own over DrawingBot's defaults, each kept in its range. */
+export const sketchLinesOf = (photo: Pick<Photo, "sketchLines">): SketchLines => {
+  const out = { ...SKETCH_LINES, ...(photo.sketchLines ?? {}) };
+  for (const [key, r] of Object.entries(SKETCH_RANGES) as [SketchNumber, { min: number; max: number }][]) {
+    out[key] = Math.min(r.max, Math.max(r.min, Number.isFinite(out[key]) ? out[key] : SKETCH_LINES[key]));
+  }
+  for (const key of ["unlimitedTests", "liftPen", "shading"] as const) out[key] = typeof out[key] === "boolean" ? out[key] : SKETCH_LINES[key];
   return out;
 };
 
@@ -1562,6 +1610,7 @@ export function photoMarks(photo: Photo, w: number, h: number): PhotoMarks | nul
     : photo.style === "squiggle" ? (photo.squiggleVersion === "inkscape" ? squiggleInkscape(tones, photo, w, h) : squiggle(tones, photo, w, h))
     : photo.style === "streamlines" ? streamlines(tones, photo, w, h)
     : photo.style === "scribble" ? scribble(tones, photo, w, h)
+    : photo.style === "sketch" ? sketchLines(tones, photo, w, h)
     : photo.style === "oneline" ? oneLine(tones, photo, w, h)
     : photo.style === "hilbert" ? hilbert(tones, photo, w, h)
     : photo.style === "outlines" ? outlines(tones, photo, w, h)
@@ -1577,7 +1626,7 @@ export function photoMarks(photo: Photo, w: number, h: number): PhotoMarks | nul
 
 /** Everything a photo's lines depend on, as one string: the same key, the same lines. */
 function marksKey(photo: Photo, w: number, h: number) {
-  return [photo.src.length, photo.src.slice(-32), w.toFixed(4), h.toFixed(4), photo.brightness, photo.contrast, photo.saturation ?? 0, photo.angle, photo.spacingMm, photo.levels, photo.hatchSmoothMm ?? "", photo.hatchShortestMm ?? "", photo.band?.join(",") ?? "", photo.side ?? "", photo.paperTone?.join(",") ?? "", photo.crop?.join(",") ?? "", photo.bleed ?? 0, photo.style ?? "hatch", photo.rowMm ?? "", photo.waveMm ?? "", photo.squiggleAmpMm ?? "", photo.squiggleHeight ?? "", photo.squiggleJoin ? "join" : "", photo.squiggleLift ? "lift" : "", photo.squiggleSmooth ?? "", JSON.stringify(photo.squiggleDraw ?? {}), photo.squiggleVersion ?? "", JSON.stringify(photo.squiggleInkscape ?? {}), photo.squiggleAngle ?? "", photo.ink ?? "", photo.regions?.join(",") ?? "", photo.region ?? "", photo.contours ?? "", photo.smoothMm ?? "", photo.key ? "key" : "", photo.keyInk ?? "", photo.regionInks?.join(",") ?? "", photo.keyStrength ?? "", photo.keyFrom ?? "", photo.plate ?? "", photo.plates?.join(",") ?? "", photo.blackShare ?? "", photo.centerFrom ?? "", photo.centerSmoothMm ?? "", photo.centerShortestMm ?? "", photo.centerMode ?? "", photo.centerStraightMm ?? "", photo.centerLongMm ?? "", photo.centerCornerDeg ?? "", photo.edgeFrom ?? "", photo.edgeSmoothMm ?? "", photo.edgeShortestMm ?? "", photo.silhouetteFrom ?? "", photo.silhouetteSmoothMm ?? "", photo.silhouetteSmallestMm ?? "", photo.fitPaper ?? "", photo.penMm ?? "", photo.fitPairs ? "pairs" : "", photo.fitOpaque ? "opaque" : "", photo.streamWidestMm ?? "", photo.streamPasses ?? "", photo.streamFlowMm ?? "", photo.scribbleLengthMm ?? "", photo.scribbleMinMm ?? "", photo.scribbleWiggle ?? "", photo.scribbleSegmentMm ?? "", photo.scribbleSeed ?? "", photo.paintSmoothMm ?? "", photo.paintSmallestMm ?? "", photo.paintOutline ?? "", photo.profileInk ?? "", photo.lineDots ?? "", photo.lineLiftMm ?? "", photo.lineCurve ?? "", photo.lineAngle ?? "", photo.lineBias ?? "", photo.lineGrain ?? "", photo.lineContrast ?? "", photo.hilbertCoarsestMm ?? "", photo.hilbertLift ? "hlift" : "", photo.hilbertCurve ?? "", photo.hilbertRound ?? "", photo.hilbertBlend ?? "", photo.hilbertAngle ?? "", photo.edgeMask ? `${photo.edgeMask.length}|${photo.edgeMask.slice(-32)}` : "", photo.edgeMaskInvert ? "inv" : "", photo.edgeMaskSides?.join(",") ?? "", photo.edgeGen ? edgeGenKey(photo.edgeGen) : "", vignetteKey(photo.vignette)].join("|");
+  return [photo.src.length, photo.src.slice(-32), w.toFixed(4), h.toFixed(4), photo.brightness, photo.contrast, photo.saturation ?? 0, photo.angle, photo.spacingMm, photo.levels, photo.hatchSmoothMm ?? "", photo.hatchShortestMm ?? "", photo.band?.join(",") ?? "", photo.side ?? "", photo.paperTone?.join(",") ?? "", photo.crop?.join(",") ?? "", photo.bleed ?? 0, photo.style ?? "hatch", photo.rowMm ?? "", photo.waveMm ?? "", photo.squiggleAmpMm ?? "", photo.squiggleHeight ?? "", photo.squiggleJoin ? "join" : "", photo.squiggleLift ? "lift" : "", photo.squiggleSmooth ?? "", JSON.stringify(photo.squiggleDraw ?? {}), photo.squiggleVersion ?? "", JSON.stringify(photo.squiggleInkscape ?? {}), photo.squiggleAngle ?? "", photo.ink ?? "", photo.regions?.join(",") ?? "", photo.region ?? "", photo.contours ?? "", photo.smoothMm ?? "", photo.key ? "key" : "", photo.keyInk ?? "", photo.regionInks?.join(",") ?? "", photo.keyStrength ?? "", photo.keyFrom ?? "", photo.plate ?? "", photo.plates?.join(",") ?? "", photo.blackShare ?? "", photo.centerFrom ?? "", photo.centerSmoothMm ?? "", photo.centerShortestMm ?? "", photo.centerMode ?? "", photo.centerStraightMm ?? "", photo.centerLongMm ?? "", photo.centerCornerDeg ?? "", photo.edgeFrom ?? "", photo.edgeSmoothMm ?? "", photo.edgeShortestMm ?? "", photo.silhouetteFrom ?? "", photo.silhouetteSmoothMm ?? "", photo.silhouetteSmallestMm ?? "", photo.fitPaper ?? "", photo.penMm ?? "", photo.fitPairs ? "pairs" : "", photo.fitOpaque ? "opaque" : "", photo.streamWidestMm ?? "", photo.streamPasses ?? "", photo.streamFlowMm ?? "", photo.scribbleLengthMm ?? "", photo.scribbleMinMm ?? "", photo.scribbleWiggle ?? "", photo.scribbleSegmentMm ?? "", photo.scribbleSeed ?? "", JSON.stringify(photo.sketchLines ?? {}), photo.paintSmoothMm ?? "", photo.paintSmallestMm ?? "", photo.paintOutline ?? "", photo.profileInk ?? "", photo.lineDots ?? "", photo.lineLiftMm ?? "", photo.lineCurve ?? "", photo.lineAngle ?? "", photo.lineBias ?? "", photo.lineGrain ?? "", photo.lineContrast ?? "", photo.hilbertCoarsestMm ?? "", photo.hilbertLift ? "hlift" : "", photo.hilbertCurve ?? "", photo.hilbertRound ?? "", photo.hilbertBlend ?? "", photo.hilbertAngle ?? "", photo.edgeMask ? `${photo.edgeMask.length}|${photo.edgeMask.slice(-32)}` : "", photo.edgeMaskInvert ? "inv" : "", photo.edgeMaskSides?.join(",") ?? "", photo.edgeGen ? edgeGenKey(photo.edgeGen) : "", vignetteKey(photo.vignette)].join("|");
 }
 
 /**
@@ -4948,6 +4997,302 @@ function scribble(tones: Tones, photo: Photo, w: number, h: number): PhotoMarks 
   return { passes: [parts.join("")], strokes: parts.length };
 }
 
+// ---------- Sketch lines ----------
+
+/**
+ * Tone as DrawingBotV3's Sketch Lines (its open-source core, AbstractSketchPFM and PFMSketchLinesBasic):
+ * the picture read as a grid of pixels, 0 black to 255 white, each a Pixel size across. A squiggle
+ * starts at the darkest pixel of the darkest 10-pixel tile. From where the pen is, it tries Angle
+ * Tests straight lines (a random length from Line Min to Line Max, at angles spread round Drawing
+ * Delta Angle from a random start between the Start Angles) and takes the darkest - the point along
+ * any of them where the line so far is darkest on average. That line is drawn, the pixels under it
+ * lightened by between Erase Min and Erase Max (more where it's already lighter, curved by Tone), and
+ * the pen goes on from its end. Past Squiggle Min Length lines, the squiggle ends when its next line
+ * would be lighter than where it started by more than Squiggle Max Deviation, or than the picture's
+ * average; at Squiggle Max Length it ends regardless. It all stops once the picture has been
+ * lightened Line Density of the way to white, or Line Max Limit lines are drawn. Shading, once that far
+ * through, tries just two angles, Shading Delta Angle apart. Edges (ours, not DrawingBot's) darkens
+ * where the tone changes sharply first, so lines gather along them. Not lifting the pen, one unbroken line:
+ * each squiggle joined to the next. Random, but the same for the same seed and layer.
+ */
+function sketchLines(tones: Tones, photo: Photo, w: number, h: number): PhotoMarks {
+  const sk = sketchLinesOf(photo);
+  const [minLen, maxLen] = sk.lineMin <= sk.lineMax ? [sk.lineMin, sk.lineMax] : [sk.lineMax, sk.lineMin];
+  const [sqMin, sqMax] = sk.squiggleMin <= sk.squiggleMax ? [sk.squiggleMin, sk.squiggleMax] : [sk.squiggleMax, sk.squiggleMin];
+  const [eraseMin, eraseMax] = sk.eraseMin <= sk.eraseMax ? [sk.eraseMin, sk.eraseMax] : [sk.eraseMax, sk.eraseMin];
+  const density = sk.lineDensity / 100;
+  const deviation = sk.squiggleDeviation / 100;
+  const tone = sk.tone / 100;
+  const DESIRED = 253.5;
+
+  // The pixels: a Pixel size each, a few million at most.
+  let px = Math.max(0.05, photo.spacingMm) / 25.4;
+  if ((w / px) * (h / px) > 3e6) px = Math.sqrt((w * h) / 3e6);
+  const cols = Math.max(1, Math.round(w / px));
+  const rows = Math.max(1, Math.round(h / px));
+  const sx = w / cols;
+  const sy = h / rows;
+  const { toneAt } = toneSampler(tones, photo, w, h, true);
+  const lum = new Float64Array(cols * rows);
+  let sum = 0;
+  for (let r = 0; r < rows; r++) {
+    for (let c = 0; c < cols; c++) {
+      const t = toneAt((c + 0.5) * sx, (r + 0.5) * sy);
+      const v = t > 0 ? Math.round(255 * (1 - Math.min(1, t))) : 255;
+      lum[r * cols + c] = v;
+      sum += v;
+    }
+  }
+  // Edges: where the tone changes sharply - by Sobel, over the pixels smoothed a little so grain
+  // doesn't count - darkened, both sides of the edge, so the lines gather and run along them.
+  if (sk.edges > 0) {
+    const soft = new Float64Array(cols * rows);
+    for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) {
+      let s = 0;
+      let k = 0;
+      for (let y = Math.max(0, r - 1); y <= Math.min(rows - 1, r + 1); y++) for (let x = Math.max(0, c - 1); x <= Math.min(cols - 1, c + 1); x++) { s += lum[y * cols + x]; k++; }
+      soft[r * cols + c] = s / k;
+    }
+    const at = (x: number, y: number) => soft[Math.min(rows - 1, Math.max(0, y)) * cols + Math.min(cols - 1, Math.max(0, x))];
+    const strength = sk.edges / 100;
+    sum = 0;
+    for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) {
+      const gx = at(c + 1, r - 1) + 2 * at(c + 1, r) + at(c + 1, r + 1) - at(c - 1, r - 1) - 2 * at(c - 1, r) - at(c - 1, r + 1);
+      const gy = at(c - 1, r + 1) + 2 * at(c, r + 1) + at(c + 1, r + 1) - at(c - 1, r - 1) - 2 * at(c, r - 1) - at(c + 1, r - 1);
+      // A step from black to white is 1020; half that counts as a full edge.
+      const edge = Math.min(1, Math.hypot(gx, gy) / 510);
+      const i = r * cols + c;
+      lum[i] = Math.max(0, Math.round(lum[i] - strength * 255 * edge));
+      sum += lum[i];
+    }
+  }
+  const total = cols * rows;
+  const initial = sum / total;
+  if (density <= 0 || initial >= DESIRED) return { passes: [], strokes: 0 };
+
+  // Tiles keeping their darkness, to find the darkest part fast.
+  const tw = Math.max(10, Math.floor(cols / 200));
+  const th = Math.max(10, Math.floor(rows / 200));
+  const tCols = Math.ceil(cols / tw);
+  const tRows = Math.ceil(rows / th);
+  const tileSum = new Float64Array(tCols * tRows);
+  const tileCount = new Int32Array(tCols * tRows);
+  for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) {
+    const t = Math.floor(r / th) * tCols + Math.floor(c / tw);
+    tileSum[t] += lum[r * cols + c];
+    tileCount[t]++;
+  }
+  const setLum = (i: number, v: number) => {
+    const c = i % cols;
+    const r = (i - c) / cols;
+    const d = v - lum[i];
+    lum[i] = v;
+    sum += d;
+    tileSum[Math.floor(r / th) * tCols + Math.floor(c / tw)] += d;
+  };
+  const darkest = (): [number, number] => {
+    let best = -1;
+    let bestV = Infinity;
+    for (let t = 0; t < tileSum.length; t++) {
+      if (!tileCount[t]) continue;
+      const v = Math.floor(tileSum[t] / tileCount[t]);
+      if (best === -1 || v < bestV) [best, bestV] = [t, v];
+    }
+    const tx = (best % tCols) * tw;
+    const ty = Math.floor(best / tCols) * th;
+    let bx = tx;
+    let by = ty;
+    let bl = Infinity;
+    for (let x = tx; x < Math.min(cols, tx + tw); x++) for (let y = ty; y < Math.min(rows, ty + th); y++) {
+      if (lum[y * cols + x] < bl) [bx, by, bl] = [x, y, lum[y * cols + x]];
+    }
+    return [bx, by];
+  };
+
+  // Random, from the seed and the layer.
+  let state = (sk.seed + 1) * 0x9e3779b1;
+  for (const ch of layerOf(photo)) state = Math.imul(state ^ ch.charCodeAt(0), 0x01000193);
+  const random = () => {
+    state = (state + 0x6d2b79f5) | 0;
+    let t = Math.imul(state ^ (state >>> 15), 1 | state);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+  const randomInt = (a: number, b: number) => a + Math.floor(random() * (b - a + 1));
+
+  // Each pixel of a line, Bresenham's way, from its start.
+  const plotLine = (x0: number, y0: number, x1: number, y1: number, each: (x: number, y: number) => void) => {
+    const dx = Math.abs(x1 - x0);
+    const dy = -Math.abs(y1 - y0);
+    const stepX = x0 < x1 ? 1 : -1;
+    const stepY = y0 < y1 ? 1 : -1;
+    let err = dx + dy;
+    for (;;) {
+      each(x0, y0);
+      if (x0 === x1 && y0 === y1) return;
+      const e2 = 2 * err;
+      if (e2 >= dy) { err += dy; x0 += stepX; }
+      if (e2 <= dx) { err += dx; y0 += stepY; }
+    }
+  };
+  // The ring of pixels a radius out, for unlimited tests all round.
+  const circle = (r: number) => {
+    const out: [number, number][] = [];
+    let x = -r;
+    let y = 0;
+    let err = 2 - 2 * r;
+    do {
+      out.push([-x, y], [-y, -x], [x, -y], [y, x]);
+      const rr = err;
+      if (rr <= y) err += ++y * 2 + 1;
+      if (rr > x || err > y) err += ++x * 2 + 1;
+    } while (x < 0);
+    return out;
+  };
+
+  // The darkest line from a point: where it ends, and how light it is on average; -1, none.
+  const findDarkestLine = (x0: number, y0: number, length: number, startAngle: number, delta: number, shadingNow: boolean): [number, number, number] => {
+    let best = -1;
+    let bx = x0;
+    let by = y0;
+    const tests = sk.unlimitedTests ? -1 : sk.angleTests;
+    const ends: [number, number][] = [];
+    const ring = delta === 360 && !shadingNow ? circle(length) : null;
+    if (ring && (tests === -1 || ring.length <= tests)) {
+      for (const [ex, ey] of ring) ends.push([x0 + ex, y0 + ey]);
+    } else {
+      const n = shadingNow ? 2 : Math.max(1, tests === -1 ? Math.ceil(2 * Math.PI * length) : tests);
+      const step = shadingNow ? delta : delta / n;
+      for (let d = 0; d < n; d++) {
+        const a = ((step * d + startAngle) * Math.PI) / 180;
+        ends.push([Math.trunc(Math.cos(a) * length) + x0, Math.trunc(Math.sin(a) * length) + y0]);
+      }
+    }
+    for (const [ex, ey] of ends) {
+      // Straight across or down is a touch lighter, as DrawingBot has it, against grid-like marks in solid black.
+      let s = x0 === ex || y0 === ey ? 1 : 0;
+      let count = 0;
+      let lx = x0;
+      let ly = y0;
+      plotLine(x0, y0, ex, ey, (x, y) => {
+        if (x < 0 || y < 0 || x >= cols || y >= rows) {
+          // Off the picture: the line so far, if nothing's been found yet.
+          if (best === -1 && count > minLen) [bx, by, best] = [lx, ly, s / count];
+          return;
+        }
+        s += lum[y * cols + x];
+        count++;
+        [lx, ly] = [x, y];
+        const avg = s / count;
+        if ((best === -1 || avg < best) && count > minLen) [bx, by, best] = [x, y, avg];
+      });
+    }
+    return [bx, by, best];
+  };
+
+  // A line drawn: the pixels under it lightened, more where it starts lighter.
+  const erase = (x0: number, y0: number, x1: number, y1: number) => {
+    const start = x0 >= 0 && y0 >= 0 && x0 < cols && y0 < rows ? lum[y0 * cols + x0] : 255;
+    const xp = start / 255;
+    const yp = xp ** 3 * tone + xp * (1 - tone);
+    const amount = Math.trunc(eraseMin + yp * (eraseMax - eraseMin));
+    plotLine(x0, y0, x1, y1, (x, y) => {
+      if (x < 0 || y < 0 || x >= cols || y >= rows) return;
+      const i = y * cols + x;
+      setLum(i, Math.min(255, lum[i] + amount));
+    });
+  };
+
+  let lines = 0;
+  let lumProgress = 0;
+  const done = () => {
+    const avg = sum / total;
+    const lineProgress = sk.lineLimit === -1 ? 0 : lines / Math.max(1, sk.lineLimit);
+    lumProgress = avg >= DESIRED ? 1 : (avg - initial) / ((DESIRED - initial) * density);
+    return Math.max(lineProgress, lumProgress) >= 1;
+  };
+
+  const squiggles: number[][][] = [];
+  let pts: number[][] | null = null; // not lifting, the one line
+  let cur: [number, number] = [0, 0];
+  let fails = 0;
+  let count = 0;
+  const MOST_LINES = 2e6;
+  outer: while (!done() && lines < MOST_LINES) {
+    const last = cur;
+    cur = darkest();
+    let run: number[][];
+    if (!sk.liftPen && pts) {
+      // DrawingBot joins only when both x and y have changed.
+      if (count > 0 && last[0] !== cur[0] && last[1] !== cur[1]) {
+        erase(last[0], last[1], cur[0], cur[1]);
+        lines++;
+      }
+      pts.push(cur);
+      run = pts;
+    } else {
+      run = [cur];
+      if (!sk.liftPen) pts = run;
+    }
+    const startDark = lum[cur[1] * cols + cur[0]];
+    const allowable = sk.liftPen ? startDark + Math.max(1, DESIRED * deviation) : DESIRED;
+    let failed = false;
+    for (let s = 0; !sk.liftPen || s < sqMax; s++) {
+      const shadingNow = sk.shading && sk.shadingThreshold / 100 < lumProgress;
+      const delta = shadingNow ? sk.shadingDeltaAngle : sk.deltaAngle;
+      const startAngle = sk.startAngleMin + random() * (sk.startAngleMax - sk.startAngleMin);
+      const length = randomInt(minLen, maxLen);
+      const [dx, dy, avg] = findDarkestLine(cur[0], cur[1], length, startAngle, delta, shadingNow);
+      if (avg === -1) { failed = true; break; }
+      if (sk.liftPen && s >= sqMin && (avg > allowable || avg > sum / total)) break;
+      if (!sk.liftPen && avg > allowable) { failed = true; break; }
+      erase(cur[0], cur[1], dx, dy);
+      lines++;
+      cur = [dx, dy];
+      run.push(cur);
+      if (done() || lines >= MOST_LINES) {
+        if (sk.liftPen && run.length > 1) squiggles.push(run);
+        break outer;
+      }
+    }
+    count++;
+    if (sk.liftPen && run.length > 1) squiggles.push(run);
+    if (failed) {
+      // Nowhere to go from here: it's taken as drawn.
+      setLum(cur[1] * cols + cur[0], 255);
+      if (++fails >= 1000) break;
+    } else fails = 0;
+  }
+  if (pts && pts.length > 1) squiggles.push(pts);
+
+  // Pixel centres to the box, in inches; squiggles drawn nearest first, each from its nearer end.
+  const n = (v: number) => Number(v.toFixed(4));
+  const toBox = (run: number[][]) => run.map(([x, y]) => [(x + 0.5) * sx, (y + 0.5) * sy]);
+  const parts: string[] = [];
+  const left = new Set(squiggles.map((_, i) => i));
+  let qx = 0;
+  let qy = 0;
+  while (left.size) {
+    let best = -1;
+    let bestD = Infinity;
+    let flip = false;
+    for (const i of left) {
+      const a = squiggles[i][0];
+      const b = squiggles[i][squiggles[i].length - 1];
+      const da = (a[0] - qx) ** 2 + (a[1] - qy) ** 2;
+      const db = (b[0] - qx) ** 2 + (b[1] - qy) ** 2;
+      if (da < bestD) [best, bestD, flip] = [i, da, false];
+      if (db < bestD) [best, bestD, flip] = [i, db, true];
+    }
+    left.delete(best);
+    const run = flip ? [...squiggles[best]].reverse() : squiggles[best];
+    [qx, qy] = run[run.length - 1];
+    const kept = simplified(toBox(run), 0.01 / 25.4);
+    parts.push(`M${kept.map(([x, y]) => `${n(x)} ${n(y)}`).join("L")}`);
+  }
+  return { passes: [parts.join("")], strokes: parts.length };
+}
+
 // ---------- Streamlines ----------
 
 /**
@@ -4956,12 +5301,12 @@ function scribble(tones: Tones, photo: Photo, w: number, h: number): PhotoMarks 
  * runs on until it comes within half its spacing of another, then stops; the next starts its spacing
  * away from one already drawn, so they lie evenly, the way an engraver's do. Where the picture has no
  * shape to follow - sky, a flat wall - they settle to the layer's angle. A second pass runs across the
- * first for the deepest darks.
+ * first for the deepest darks; a third, on the diagonal between them, for the darkest third.
  */
 function streamlines(tones: Tones, photo: Photo, w: number, h: number): PhotoMarks {
   const spacing = Math.max(0.05, photo.spacingMm) / 25.4;
   const widest = Math.max(spacing, (photo.streamWidestMm ?? STREAM_DEFAULTS.widestMm) / 25.4);
-  const passCount = Math.min(2, Math.max(1, Math.round(photo.streamPasses ?? STREAM_DEFAULTS.passes)));
+  const passCount = Math.min(3, Math.max(1, Math.round(photo.streamPasses ?? STREAM_DEFAULTS.passes)));
   // One look at the photo every half a spacing along a line: close enough that a neighbour can't slip
   // between two of them unseen.
   const step = spacing / 2;
@@ -5021,7 +5366,7 @@ function streamlines(tones: Tones, photo: Photo, w: number, h: number): PhotoMar
     head.fill(-1);
     xs.length = ys.length = lineOf.length = indexOf.length = next.length = 0;
     // Each pass draws its share of the darkness: with two, the first fills in to the middle tones and
-    // the second, across it, from there to black. The spacing is the closest spacing over that share,
+    // the second, across it, from there to black; with three, a third each, the last on the diagonal. The spacing is the closest spacing over that share,
     // so the ink laid down follows the tone; past the widest, it's paper.
     const sepAt = (x: number, y: number) => {
       const t = toneAt(x, y);
@@ -5030,10 +5375,13 @@ function streamlines(tones: Tones, photo: Photo, w: number, h: number): PhotoMar
       const sep = share > 0 ? spacing / share : Infinity;
       return sep <= widest ? sep : Infinity;
     };
-    const turn = k === 1;
+    // How far each pass is turned from the flow: along it, across it, then between the two.
+    const turnDeg = [0, 90, 45][k];
+    const tc = Math.cos((turnDeg * Math.PI) / 180);
+    const ts = Math.sin((turnDeg * Math.PI) / 180);
+    const turned = ([ux, uy]: [number, number] | number[]): [number, number] => (turnDeg ? [ux * tc - uy * ts, ux * ts + uy * tc] : [ux, uy]);
     const dirAt = (x: number, y: number, fx: number, fy: number): [number, number] => {
-      let [ux, uy] = field(x, y);
-      if (turn) [ux, uy] = [-uy, ux];
+      const [ux, uy] = turned(field(x, y));
       return ux * fx + uy * fy < 0 ? [-ux, -uy] : [ux, uy];
     };
     // A line from a seed, both ways, stopping at the edge, in paper, or near another line. Its points
@@ -5041,8 +5389,7 @@ function streamlines(tones: Tones, photo: Photo, w: number, h: number): PhotoMar
     // are taken out again - the last filed in each square, so the list stays whole.
     const grow = (sx: number, sy: number): number[][] | null => {
       const line = lineCount;
-      const [u0x, u0y] = field(sx, sy);
-      const start = turn ? [-u0y, u0x] : [u0x, u0y];
+      const start = turned(field(sx, sy));
       const halves: number[][][] = [];
       let length = 0;
       file(sx, sy, line, 0);
@@ -5260,7 +5607,7 @@ export function simplified(pts: number[][], tolerance: number): number[][] {
 
 // Every style but hatching, which is what no style means: one list for writing and reading, so
 // none is written that isn't read back, or the other way round.
-const SAVED_STYLES = ["waves", "squiggle", "streamlines", "scribble", "oneline", "hilbert", "outlines", "centerlines", "silhouette", "edges", "paint"] as const;
+const SAVED_STYLES = ["waves", "squiggle", "streamlines", "scribble", "sketch", "oneline", "hilbert", "outlines", "centerlines", "silhouette", "edges", "paint"] as const;
 const isSavedStyle = (v: unknown): v is (typeof SAVED_STYLES)[number] => (SAVED_STYLES as readonly unknown[]).includes(v);
 
 /** A photo read back from a saved drawing: only a picture and numbers are kept, so check them on the way in. */
@@ -5381,6 +5728,7 @@ export function photoFromData(raw: Record<string, unknown>): Photo | null {
     ...(raw.squiggle_lift === true ? { squiggleLift: true } : {}),
     ...(Number.isFinite(Number(raw.squiggle_smooth)) && raw.squiggle_smooth !== undefined ? { squiggleSmooth: Number(raw.squiggle_smooth) } : {}),
     ...(raw.squiggle_draw && typeof raw.squiggle_draw === "object" ? { squiggleDraw: Object.fromEntries(Object.entries(raw.squiggle_draw as Record<string, unknown>).filter(([k, v]) => k in SQUIGGLE_DRAW && (k === "invert" ? typeof v === "boolean" : Number.isFinite(Number(v)))).map(([k, v]) => [k, k === "invert" ? v : Number(v)])) as Partial<SquiggleDraw> } : {}),
+    ...(raw.sketch_lines && typeof raw.sketch_lines === "object" ? { sketchLines: Object.fromEntries(Object.entries(raw.sketch_lines as Record<string, unknown>).filter(([k, v]) => k in SKETCH_LINES && (typeof SKETCH_LINES[k as keyof SketchLines] === "boolean" ? typeof v === "boolean" : Number.isFinite(Number(v)))).map(([k, v]) => [k, typeof v === "boolean" ? v : Number(v)])) as Partial<SketchLines> } : {}),
     ...(raw.squiggle_version === "inkscape" ? { squiggleVersion: "inkscape" as const } : {}),
     ...(Number.isFinite(Number(raw.squiggle_angle)) && raw.squiggle_angle !== undefined ? { squiggleAngle: Number(raw.squiggle_angle) } : {}),
     ...(raw.squiggle_inkscape && typeof raw.squiggle_inkscape === "object" ? { squiggleInkscape: Object.fromEntries(Object.entries(raw.squiggle_inkscape as Record<string, unknown>).filter(([k, v]) => k in SQUIGGLE_INKSCAPE && (k === "invert" ? typeof v === "boolean" : k === "path" ? v === "uni" || v === "bidi" || v === "join" : Number.isFinite(Number(v)))).map(([k, v]) => [k, k === "invert" || k === "path" ? v : Number(v)])) as Partial<SquiggleInkscape> } : {}),
@@ -5492,6 +5840,7 @@ export const photoData = (p: Photo) => ({
   ...(p.squiggleLift ? { squiggle_lift: true } : {}),
   ...(p.squiggleSmooth !== undefined ? { squiggle_smooth: p.squiggleSmooth } : {}),
   ...(p.squiggleDraw && Object.keys(p.squiggleDraw).length ? { squiggle_draw: p.squiggleDraw } : {}),
+  ...(p.sketchLines && Object.keys(p.sketchLines).length ? { sketch_lines: p.sketchLines } : {}),
   ...(p.squiggleVersion === "inkscape" ? { squiggle_version: "inkscape" } : {}),
   ...(p.squiggleAngle ? { squiggle_angle: p.squiggleAngle } : {}),
   ...(p.squiggleInkscape && Object.keys(p.squiggleInkscape).length ? { squiggle_inkscape: p.squiggleInkscape } : {}),

@@ -71,3 +71,19 @@ test("streamlines: a second pass crosses the first, only in the darker half", as
     assert.ok(Math.max(...xs) - Math.min(...xs) >= Math.max(...ys) - Math.min(...ys), "across the first pass");
   }
 });
+
+test("streamlines: a third pass runs on the diagonal, only in the darkest third", async () => {
+  await picture("data:across3", (x) => 1 - x / (W - 1));
+  const marks = photoMarks(photo("data:across3", { streamPasses: 3 }), 3, 3)!;
+  assert.equal(marks.passes.length, 3);
+  // Straight lines are kept as their ends: the long ones, by length.
+  const third = runs(marks.passes[2]).filter((pts) => Math.hypot(pts[pts.length - 1][0] - pts[0][0], pts[pts.length - 1][1] - pts[0][1]) > 0.3);
+  assert.ok(third.length > 3);
+  for (const pts of third) {
+    const xs = pts.map((p) => p[0]);
+    const ys = pts.map((p) => p[1]);
+    assert.ok(Math.min(...xs) > 1.9, "the darkest third only");
+    const [dx, dy] = [Math.max(...xs) - Math.min(...xs), Math.max(...ys) - Math.min(...ys)];
+    assert.ok(dx > dy * 0.4 && dy > dx * 0.4, `diagonal (${dx.toFixed(2)} by ${dy.toFixed(2)})`);
+  }
+});
