@@ -41,7 +41,7 @@ import { fontNames, loadFont, type StrokeFont } from "../shared/lib/drawing/font
 import { fitText } from "../shared/lib/drawing/text";
 import { type Repeat } from "../shared/lib/drawing/repeat";
 import { parseDrawing } from "../shared/lib/drawing/parse";
-import { PLATE_OFF, platesOf } from "../shared/lib/drawing/photo";
+import { PLATE_OFF, inkAtOf, inkSetOf, onePlate } from "../shared/lib/drawing/photo";
 import { useHistory } from "../shared/lib/useHistory";
 import { useDrawingFile, type Current } from "../shared/lib/drawing/useDrawingFile";
 import { lockBanner, useEditLock } from "../shared/lib/useEditLock";
@@ -68,6 +68,7 @@ import { areaPicker, silhouetteOf } from "../shared/lib/drawing/silhouette";
 import { buildSvg, svgForMarks } from "../shared/lib/drawing/svg";
 import { drawnMiddle, fitToPage, placeOnPaper, reshapeDrawing, runsOffPage } from "../shared/lib/drawing/whole";
 import { cropDrawing } from "../shared/lib/drawing/crop";
+import { isKnockoutLayer, withKnockout } from "../shared/lib/drawing/knockout";
 import { turnDrawingOnPaper } from "../shared/lib/drawing/turnPaper";
 import { useSharedPen } from "../shared/lib/useSharedPen";
 import styles from "./App.module.css";
@@ -377,10 +378,10 @@ export default function App() {
     const keyMember = members.find((x) => x.photo?.key);
     const keyInk = keyMember ? colourOf(keyMember) : undefined;
     const ink = colourOf(sh);
-    if (sh.photo.plate) {
-     // A CMYK plate: all four plates' pens, in plate order.
-     // Every plate of the photo's set - four, or six to eight with the extra inks.
-     const plates = platesOf(sh.photo.plates).map((p, i) => { const m = members.find((x) => x.photo?.plate === p); return sh.photo!.plates?.[i] === PLATE_OFF ? PLATE_OFF : m ? colourOf(m) : sh.photo!.plates?.[i] ?? "#000000"; });
+    if (onePlate(sh.photo)) {
+     // One ink of a set: every ink's pen, in the set's order - CMYK's four, an extended set's six to
+     // eight, or a set of your own.
+     const plates = inkSetOf(sh.photo).inks.map((_, i) => { const m = members.find((x) => x.photo && inkAtOf(x.photo) === i); return sh.photo!.plates?.[i] === PLATE_OFF ? PLATE_OFF : m ? colourOf(m) : sh.photo!.plates?.[i] ?? "#000000"; });
      if (ink === sh.photo.ink && plates.join() === (sh.photo.plates ?? []).join()) return sh;
      changed = true;
      return { ...sh, photo: { ...sh.photo, ink, plates } };
@@ -1519,13 +1520,40 @@ export default function App() {
   setMessage({ text: `${picked.length} ${picked.length === 1 ? "path" : "paths"} gone over on the ${VARNISH} layer: plotted last, over the ink`, ok: true });
  };
 
+ // A knockout loaded from the computer: an SVG of filled shapes, laid over the drawing on the Knockout
+ // layer, where it stays to be moved and sized like anything else. It's never plotted; the drawing is
+ // cut by it as it's written out (buildSvg), and the canvas shows that cut as it's moved.
+ const loadKnockout = async (file: File) => {
+  let opened;
+  try {
+   opened = parseDrawing(await file.text());
+  } catch (err) {
+   setMessage({ text: `Couldn’t read ${file.name}: ${(err as Error).message}`, ok: false });
+   return;
+  }
+  const drawn = shapes.filter((sh) => !isKnockoutLayer(layers.find((l) => l.id === sh.layerId)?.name ?? ""));
+  const around = drawn.length ? boxAround(drawn) : { x0: 0, y0: 0, x1: page.w, y1: page.h };
+  const name = file.name.replace(/\.svg$/i, "");
+  const next = withKnockout(shapes, layers, opened, name, around, fonts);
+  if ("error" in next) {
+   setMessage({ text: next.error, ok: false });
+   return;
+  }
+  record();
+  setShapes(next.shapes);
+  setLayers(next.layers);
+  setActiveLayer(next.layerId);
+  setSelected(next.ids);
+  setMessage({ text: `${name} is on the Knockout layer: drag it into place, size it by its corners. Hide the layer to see the drawing without it`, ok: true });
+ };
+
  // A silhouette - the outline round what's drawn, holes and paper inside filled in - as one mask
  // path on the Varnish layer, hatched with no outline: of the whole drawing (everything on the other
  // layers that shows), or of one layer's shapes alone. A start to tweak, not a final answer: the mask
  // is a path like any other, its points dragged on the page.
  const varnishWhole = () => varnishSilhouette(shapes.filter((sh) => {
   const layer = layers.find((l) => l.id === sh.layerId);
-  return layer && !layer.hidden && !isVarnishLayer(layer.name);
+  return layer && !layer.hidden && !isVarnishLayer(layer.name) && !isKnockoutLayer(layer.name);
  }), "Silhouette", "The drawing's silhouette");
  const varnishLayerSilhouette = (id: string) => {
   const layer = layers.find((l) => l.id === id);
@@ -2270,6 +2298,7 @@ export default function App() {
         onSort={sortLayersByLightness}
         onAdd={addLayer}
         onVarnish={varnishWhole}
+        onKnockout={(file) => void loadKnockout(file)}
         onSwitch={switchLayer}
         onVisible={(id, visible) => patchLayer(id, { hidden: !visible })}
         onUnlock={(id) => patchLayer(id, { locked: false })}

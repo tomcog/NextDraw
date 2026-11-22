@@ -77,6 +77,18 @@ export interface Margins {
 }
 export const MARGIN_SIDES = ["top", "bottom", "left", "right"] as const;
 export type MarginSide = (typeof MARGIN_SIDES)[number];
+/**
+ * The one side that gets the Paper card's extra margin, read from where the drawing is aligned: the
+ * side opposite it, so the drawing sits against one margin and the deeper one is across from it.
+ * Aligned into a corner, the paper decides which: landscape, opposite the left or right (a drawing
+ * turned onto its side has its foot there); portrait, opposite the top or bottom. Centred both
+ * ways, the bottom.
+ */
+export function extraMarginSide(align: FitAlign, landscape: boolean): MarginSide {
+  const across: MarginSide | null = align.x === 0 ? "right" : align.x === 1 ? "left" : null;
+  const down: MarginSide | null = align.y === 0 ? "bottom" : align.y === 1 ? "top" : null;
+  return (landscape ? across ?? down : down ?? across) ?? "bottom";
+}
 /** The same margin on every side. */
 export const marginsAll = (m: number): Margins => ({ top: m, right: m, bottom: m, left: m });
 /** Every side's margin times k: millimetres to inches, say. */

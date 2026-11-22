@@ -110,3 +110,35 @@ export function colorNamed(words: string[]): { name: string; color: string } | u
   const found = BY_LENGTH.find((n) => spaced.includes(` ${n} `));
   return found ? { name: found, color: COLOR_NAMES[found] } : undefined;
 }
+
+/** The CSS and everyday names in CIELAB, for finding the nearest to a colour. Riso's are left out:
+ *  they name an ink of a particular press, not a colour in general. */
+const NAMEABLE = Object.entries({ ...CSS, ...EVERYDAY }).map(([name, hex]) => ({ name, lab: labOf(hex) }));
+
+/** sRGB to CIELAB, enough to tell which of two names a colour is nearer. */
+function labOf(hex: string): [number, number, number] {
+  const n = parseInt(hex.replace("#", "").padEnd(6, "0").slice(0, 6), 16);
+  const lin = (v: number) => (v / 255 <= 0.04045 ? v / 255 / 12.92 : ((v / 255 + 0.055) / 1.055) ** 2.4);
+  const [R, G, B] = [(n >> 16) & 255, (n >> 8) & 255, n & 255].map(lin);
+  const f = (t: number) => (t > 0.008856 ? Math.cbrt(t) : 7.787 * t + 16 / 116);
+  const x = f((0.4124 * R + 0.3576 * G + 0.1805 * B) / 0.9505);
+  const y = f(0.2126 * R + 0.7152 * G + 0.0722 * B);
+  const z = f((0.0193 * R + 0.1192 * G + 0.9505 * B) / 1.089);
+  return [116 * y - 16, 500 * (x - y), 200 * (y - z)];
+}
+
+/**
+ * What to call a colour that has no pen to name it: the nearest everyday name, in the app's own
+ * capitals - "#0b3870" is Midnight Blue. For layers drawn in an image's own colours, where the name
+ * is all there is to tell one from another in the Layers card.
+ */
+export function nameOfColor(hex: string): string {
+  const want = labOf(hex);
+  let best = NAMEABLE[0];
+  let nearest = Infinity;
+  for (const c of NAMEABLE) {
+    const d = (want[0] - c.lab[0]) ** 2 + (want[1] - c.lab[1]) ** 2 + (want[2] - c.lab[2]) ** 2;
+    if (d < nearest) { nearest = d; best = c; }
+  }
+  return best.name.replace(/(^|\s)\w/g, (s) => s.toUpperCase());
+}

@@ -27,6 +27,7 @@ import { useHistory } from "../shared/lib/useHistory";
 import { loadFont, type StrokeFont } from "../shared/lib/drawing/font";
 import type { Fill } from "../shared/lib/drawing/hatch";
 import { parseDrawing } from "../shared/lib/drawing/parse";
+import { isKnockoutLayer, knockoutPaths, knockoutPlaced, knockoutShapes, withKnockout } from "../shared/lib/drawing/knockout";
 import { buildSvg, cleanFileName } from "../shared/lib/drawing/svg";
 import { joinedPicture, photoMode, photoScale, PLATE_AIMS, plateSetOf, stemWithoutPlate, type Photo } from "../shared/lib/drawing/photo";
 import { boxOf, drawnNodes, newLayerId, type Layer, type Page, type Shape } from "../shared/lib/drawing/shapes";
@@ -47,7 +48,7 @@ import { PanelToolbar, panelIcon } from "../shared/components/PanelToolbar";
 import { LayersSection } from "../shared/components/controls/LayersSection";
 import { PaletteMenu } from "../shared/components/controls/PaletteMenu";
 import { RowMenu } from "../shared/components/controls/RowMenu";
-import { Trash2 } from "lucide-react";
+import { Lock, LockOpen, Trash2 } from "lucide-react";
 import { lightness } from "../shared/lib/color";
 import { dropWork, loadWork, type Work } from "./lib/workInProgress";
 import { PhotoCard } from "./components/PhotoCard";
@@ -301,6 +302,9 @@ export default function App() {
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [Boolean(cropDraft)]); // eslint-disable-line react-hooks/exhaustive-deps
+  // The Knockout layer, picked in the list, is the one the list shows as set: it has no photo to
+  // follow. Only the list: everything that adds or sets an image keeps to the image's own layer.
+  const knockoutPicked = layers.find((l) => l.id === activeLayer && isKnockoutLayer(l.name));
   const active = (chosen ? layers.find((l) => l.id === chosen.layerId) : undefined) ?? layers.find((l) => l.id === activeLayer) ?? layers[0];
 
   // All of the photo's layers, bottom first, each in its pen: the lines it comes out as, together.
@@ -325,7 +329,7 @@ export default function App() {
   // Studio - drawn under the image's lines on the stage.
   const otherLayers = useMemo(
     () => layers
-      .filter((l) => !l.hidden)
+      .filter((l) => !l.hidden && !isKnockoutLayer(l.name))
       .map((l) => ({
         color: l.color,
         d: shapes.filter((sh) => sh.layerId === l.id && sh.kind === "path" && !sh.photo).map((sh) => pathData(drawnNodes(sh))),
@@ -354,6 +358,8 @@ export default function App() {
   // starts targeted, as settings went to every layer before.
   const [untargeted, setUntargeted] = useState<Set<string>>(() => new Set());
   const targets = useMemo(() => new Set(layers.map((l) => l.id).filter((id) => !untargeted.has(id))), [layers, untargeted]);
+  // Picked up and moved on the stage only when targeted and not locked (the row menu's Lock layer).
+  const movable = (id: string) => targets.has(id) && !layers.find((l) => l.id === id)?.locked;
   // The chosen photo's layers, bottom first.
   const photoLayerIds = chosen?.photo
     ? layers.filter((l) => shapes.some((sh) => sh.layerId === l.id && ofImage(sh))).map((l) => l.id)
@@ -366,7 +372,7 @@ export default function App() {
   }, [record, pick]);
 
   const {
-    addPhoto, addSeparations, switchPhotoMode, setKeyLayer, splitPhoto, splitPhotoBestFit,
+    addPhoto, addSeparations, switchPhotoMode, setKeyLayer, splitPhoto, splitPhotoBestFit, splitPhotoFlat, splitPhotoOwnInks, saveInkSet,
     placePhoto, scalePhoto, movePhoto, replacePhoto, reloadPhoto, joinSeparations, cropPhoto, bakeEffect, savePreset, applyPreset, deletePreset, setPhotoOf, addEdgeMask, chooseEdgeMask, deleteEdgeMask, setEdgeGen, saveEdgeGen, setAngles, photoStem, splitPhotoCmyk, setLayerColor,
     splitAroundPaper, setPaperTone, addPass, removePass, setChannelOf, splitPhotoProfile,
   } = photoActions({
@@ -377,7 +383,7 @@ export default function App() {
   });
   // A separation's channels joined into one picture, to be split the way that was asked once it's the
   // photo in hand: the split reads the joined picture, not a plate.
-  const [modeAfterJoin, setModeAfterJoin] = useState<"value" | "colour" | "cmyk" | "profile" | null>(null);
+  const [modeAfterJoin, setModeAfterJoin] = useState<"value" | "colour" | "flat" | "cmyk" | "profile" | null>(null);
   useEffect(() => {
     if (!modeAfterJoin || !chosen?.photo || photoMode(chosen.photo) === "separations") return;
     setModeAfterJoin(null);
@@ -608,11 +614,70 @@ export default function App() {
   const [colorMenu, setColorMenu] = useState<{ id: string; anchor: HTMLElement } | null>(null);
   // A layer's own menu, from the button at the end of its row, as in Studio: Delete.
   const [rowMenu, setRowMenu] = useState<{ id: string; anchor: HTMLElement } | null>(null);
+  const setLocked = (id: string, locked: boolean) => {
+    record();
+    setLayers((list) => list.map((l) => (l.id === id ? { ...l, locked } : l)));
+    setRowMenu(null);
+  };
   /**
    * Take a layer out of the image, with what it draws. The image keeps at least one layer: to be rid
    * of it all, start a new drawing. Whatever was being set on that layer moves to another of the
    * image's.
    */
+  // The Knockout layer: an SVG of filled shapes - a name in outlined letters - laid over the image.
+  // Every line under it is hidden here and left out of the file; it's never plotted, and stays to be
+  // dragged and sized on the stage. The same layer Studio shows, moved there like any other shape.
+  const knockoutLayer = layers.find((l) => isKnockoutLayer(l.name));
+  const knockoutOn = useMemo(() => knockoutShapes(shapes, layers), [shapes, layers]);
+  const knockoutOnStage = useMemo(() => {
+    if (!knockoutOn.length) return undefined;
+    const paths = knockoutPaths(knockoutOn, fonts);
+    if (!paths.length) return undefined;
+    const box = { x0: Infinity, y0: Infinity, x1: -Infinity, y1: -Infinity };
+    for (const sh of knockoutOn) {
+      const b = boxOf(sh);
+      box.x0 = Math.min(box.x0, b.x0); box.y0 = Math.min(box.y0, b.y0);
+      box.x1 = Math.max(box.x1, b.x1); box.y1 = Math.max(box.y1, b.y1);
+    }
+    return { paths, box };
+  }, [knockoutOn, fonts]);
+  const loadKnockout = async (file: File) => {
+    let opened;
+    try {
+      opened = parseDrawing(await file.text());
+    } catch (err) {
+      setMessage({ text: `Couldn’t read ${file.name}: ${(err as Error).message}`, ok: false });
+      return;
+    }
+    const around = convertBox ?? { x0: 0, y0: 0, x1: page.w, y1: page.h };
+    const name = file.name.replace(/\.svg$/i, "");
+    const next = withKnockout(shapes, layers, opened, name, around, fonts);
+    if ("error" in next) {
+      setMessage({ text: next.error, ok: false });
+      return;
+    }
+    record();
+    setShapes(next.shapes);
+    setLayers(next.layers);
+    setUntargeted((was) => {
+      const kept = new Set(was);
+      kept.delete(next.layerId);
+      return kept;
+    });
+    setMessage({ text: `${name} is on the Knockout layer: drag it into place and size it by its corners. Hide the layer to see the image without it`, ok: true });
+  };
+  const placeKnockout = (to: { x0: number; y0: number; x1: number; y1: number }) => {
+    if (!knockoutLayer) return;
+    record();
+    setShapes((list) => knockoutPlaced(list, knockoutLayer.id, to));
+  };
+  const removeKnockout = () => {
+    if (!knockoutLayer) return;
+    record();
+    setShapes((list) => list.filter((sh) => sh.layerId !== knockoutLayer.id));
+    setLayers((list) => list.filter((l) => l.id !== knockoutLayer.id));
+  };
+
   const removeLayer = (id: string) => {
     const rest = photoLayerIds.filter((l) => l !== id);
     if (!rest.length) return;
@@ -653,13 +718,15 @@ export default function App() {
           verb="Set"
           nameTitle="Click to target this layer alone; its target beside it turns it on or off with the others"
           layers={layers}
-          active={active}
+          active={knockoutPicked ?? active}
           targets={targets}
           tool={preset}
           busy={busy}
           colorMenuId={colorMenu?.id}
           rowMenuId={rowMenu?.id}
           onRowMenu={(id, anchor) => setRowMenu((open) => (open?.id === id ? null : { id, anchor }))}
+          onUnlock={(id) => setLocked(id, false)}
+          onKnockout={(file) => void loadKnockout(file)}
           onSort={() => {
             record();
             // Lightest at the bottom, drawn first, darker over it.
@@ -802,10 +869,13 @@ export default function App() {
         set: setPhotoOf,
         split: splitPhoto,
         splitBestFit: (count) => splitPhotoBestFit(count),
+        splitFlat: (count, own) => splitPhotoFlat(count, own),
         setPairs: (on) => splitPhotoBestFit(inks, {}, on),
         setKeyLayer,
         setAngles,
         splitCmyk: (set) => splitPhotoCmyk({}, set),
+        splitOwnInks: (set) => splitPhotoOwnInks(set),
+        saveInkSet: (taken) => saveInkSet(taken),
         setColor: setLayerColor,
         splitAround: (dark, light) => splitAroundPaper({ dark, light, paperTone: chosen.photo?.side && chosen.photo.paperToneSet ? chosen.photo.paperTone : undefined }),
         setPaperTone,
@@ -972,8 +1042,14 @@ export default function App() {
           anchor={rowMenu.anchor}
           onClose={() => setRowMenu(null)}
           actions={[
+            // Locked, nothing on it is picked up or moved on the stage; it still converts and plots.
+            layers.find((l) => l.id === rowMenu.id)?.locked
+              ? { label: "Unlock layer", icon: <LockOpen />, onSelect: () => setLocked(rowMenu.id, false) }
+              : { label: "Lock layer", icon: <Lock />, onSelect: () => setLocked(rowMenu.id, true) },
             // The image keeps one layer at least: a new drawing is the way to be rid of it.
-            { label: "Delete", icon: <Trash2 />, danger: true, disabled: photoLayerIds.length < 2, onSelect: () => removeLayer(rowMenu.id) },
+            rowMenu.id === knockoutLayer?.id
+              ? { label: "Delete", icon: <Trash2 />, danger: true, onSelect: removeKnockout }
+              : { label: "Delete", icon: <Trash2 />, danger: true, disabled: photoLayerIds.length < 2, onSelect: () => removeLayer(rowMenu.id) },
           ]}
         />
       )}
@@ -1068,10 +1144,21 @@ export default function App() {
               cropping={cropDraft ? { part: cropDraft, onPart: setCropDraft } : undefined}
               others={otherLayers}
               trim={trimOnStage}
+              knockout={knockoutOnStage && {
+                ...knockoutOnStage,
+                active: Boolean(knockoutLayer && activeLayer === knockoutLayer.id),
+                onActive: (on) => {
+                  if (!knockoutLayer) return;
+                  if (on) setActiveLayer(knockoutLayer.id);
+                  else setActiveLayer(chosen?.layerId ?? layers.find((l) => !isKnockoutLayer(l.name))?.id ?? "");
+                },
+                // Only what's on targeted layers is picked up, the knockout too.
+                onPlace: busy || !knockoutLayer || !movable(knockoutLayer.id) ? undefined : placeKnockout,
+              }}
               // Only what's on targeted layers is picked up: the trim on its own layer, the image -
               // which moves all of its layers together - when every one of them is targeted.
-              onTrimMove={busy || !trimLayer || !targets.has(trimLayer.id) ? undefined : (dx, dy) => editTrim((d) => withTrimMoved(d, dx, dy))}
-              onMove={busy || !photoLayerIds.length || !photoLayerIds.every((id) => targets.has(id)) ? undefined : movePhoto}
+              onTrimMove={busy || !trimLayer || !movable(trimLayer.id) ? undefined : (dx, dy) => editTrim((d) => withTrimMoved(d, dx, dy))}
+              onMove={busy || !photoLayerIds.length || !photoLayerIds.every(movable) ? undefined : movePhoto}
             />
           ) : (
             <>

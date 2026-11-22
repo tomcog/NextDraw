@@ -295,10 +295,6 @@
   gap: 0.5rem;
   margin-top: 0.5rem;
 }
-.extraSides {
-  display: flex;
-  gap: 0.375rem;
-}
 
 /* Fit to paper's alignment: across, then down. */
 .fitAlign {
@@ -307,6 +303,19 @@
   gap: 0.5rem;
   margin-top: 0.5rem;
 }
+
+/* Scale and the alignment, on one line: the toolbars level with the field's box, its label below.
+   The card leaves 220px; the two toolbars take 168 of it, so the field has what's left - room for
+   "100 %" - and never pushes the toolbars onto a line of their own. */
+.scaleAlignRow {
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: flex-start;
+  gap: 0.375rem;
+  margin-top: 0.5rem;
+}
+.scaleAlignRow > :first-child { flex: 1 1 0; min-width: 0; }
+.scaleAlignRow .fitAlign { flex: none; margin-top: 0; flex-wrap: nowrap; gap: 0.375rem; }
 
 /* Folded, the Paper heading's size and the dot in the paper's color, side by side. */
 .paperClosed {

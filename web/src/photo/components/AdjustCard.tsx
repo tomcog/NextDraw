@@ -4,7 +4,7 @@ import { Section } from "../../shared/components/controls/Section";
 import { NumberField } from "../../shared/components/controls/NumberField";
 import controls from "../../shared/components/controls/controls.module.css";
 import bar from "../../shared/components/PreviewToolbar.module.css";
-import { MOST_BLACK_POINT, type Photo } from "../../shared/lib/drawing/photo";
+import { FLATTEN_DEFAULT, FLATTEN_MOST, MOST_BLACK_POINT, type Photo } from "../../shared/lib/drawing/photo";
 import styles from "../App.module.css";
 import { ToolbarIcons } from "../../shared/components/ToolbarIcons";
 
@@ -60,14 +60,28 @@ export function AdjustCard({ photo, channels, set, setChannel }: Props) {
             {/* Separations: tones this dark or darker are full ink, so the shadows punch. */}
             {photo.separation && blackPoint(photo.blackPoint ?? 0, (v) => set({ blackPoint: v || undefined }))}
           </div>
-          {/* Black and white is Saturation all the way down: on sets it to -100, off back to the photo's own. */}
-          {(!photo.separation || photo.profile) && (
+          {/* Black and white is Saturation all the way down: on sets it to -100, off back to the photo's own.
+            Beside it, Flatten: the picture cut down to a few flat colours with hard borders between
+            them, before any effect or any ink set reads it. A poster barely changes; a photograph
+            becomes one. How many colours is the picture's to give, so it is asked for here. */}
+          <div className={`${styles.fillRow} ${styles.oneRow}`}>
+            {(!photo.separation || photo.profile) && (
+              <Checkbox size="md"
+                checked={photo.saturation === -100}
+                label="B&W"
+                onChange={(e) => set({ saturation: e.target.checked ? -100 : undefined })}
+              />
+            )}
             <Checkbox size="md"
-              checked={photo.saturation === -100}
-              label="B&W"
-              onChange={(e) => set({ saturation: e.target.checked ? -100 : undefined })}
+              checked={Boolean(photo.flatten)}
+              label="Flatten"
+              title="The image cut down to a few flat colors with hard borders, before anything draws it: a photograph as a poster. Every effect and every ink set then works from the flattened picture."
+              onChange={(e) => set({ flatten: e.target.checked ? FLATTEN_DEFAULT : undefined })}
             />
-          )}
+            {Boolean(photo.flatten) && (
+              <NumberField label="Colors" min={2} max={FLATTEN_MOST} step={1} value={photo.flatten ?? FLATTEN_DEFAULT} onChange={(flatten) => set({ flatten })} />
+            )}
+          </div>
           {/* Each plate's own, inside Adjustments: folding the card puts these away with it. */}
           {channels.length > 0 && (
           <Section title="Channels" collapsibleKey="photo-adjust-channels" defaultOpen={false}>

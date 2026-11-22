@@ -74,6 +74,16 @@ export interface Photo {
   profileInk?: number;
   /** -100 to 100: greyer or more vivid - -100 grey, 100 twice as colourful. The lightness stays. Absent, 0. */
   saturation?: number;
+  /**
+   * The picture cut down to this many flat colours before anything reads it, 2 to FLATTEN_MOST
+   * (2026-11-22). The whole picture's, like its brightness: every effect and every ink set then works
+   * from a picture of flat areas with hard borders, so hatching a flattened photograph hatches flat
+   * areas, and a split of one finds the colours it was flattened to.
+   *
+   * An adjustment, not a way of splitting: it says what the picture is, not which pens draw it. Art
+   * that is already flat barely changes under it; a photograph becomes a poster. Absent, as it is.
+   */
+  flatten?: number;
   /** Degrees: the direction of the first set of lines. The second crosses it at a right angle. */
   angle: number;
   /**
@@ -168,7 +178,7 @@ export interface Photo {
   /**
    * Paint: how far the borders between colors are smoothed, in mm; the smallest region kept, as the
    * side of a square in mm - a smaller one takes its biggest neighbor's color; and whether each
-   * region has a line round it (absent, it has). Absent, the defaults (PAINT_DEFAULTS).
+   * region has a line round it (absent, it has). Absent, the defaults (paintDefaultsOf).
    */
   paintSmoothMm?: number;
   paintSmallestMm?: number;
@@ -262,6 +272,25 @@ export interface Photo {
   regions?: string[];
   region?: number;
   /**
+   * Split by flat colour (2026-11-22): `regions` are the colours the picture is already drawn in,
+   * read from it by flatColours rather than gathered into a number of groups asked for. For art made
+   * of flat areas - a poster, a print, a logo - where the colours are a fact of the picture and the
+   * borders between them are meant to be hard. Everything else is the colour split: each layer draws
+   * its region's area in its pen, `ink`.
+   */
+  flat?: boolean;
+  /**
+   * Split by flat colour: how many colours to flatten the picture to, when that is not to be the
+   * picture's own number of them. The nearest colours are joined until this many are left.
+   */
+  flatCount?: number;
+  /**
+   * Split by flat colour: each layer keeps the colour read from the picture, rather than taking the
+   * palette's nearest pen. For a drawing whose inks aren't a tool's palette - mixed, or chosen later -
+   * and so that a flattened picture can be looked at in its own colours before any pen is picked.
+   */
+  flatOwn?: boolean;
+  /**
    * Split by best fit (NextDraw Photo, 2026-10-06): the pens were chosen for how they come out on
    * paper, and `regions` are those pens' colours on this paper, solid. Each point goes to the pen whose
    * colour, at the share of paper that matches best, comes nearest the photo's - mixed in linear light
@@ -285,7 +314,7 @@ export interface Photo {
    * How the photo was split the other way, kept for when it's split that way again: switching between
    * value and colour puts back the layers and settings it had, rather than starting over.
    */
-  modes?: Partial<Record<"value" | "colour" | "cmyk" | "separations", PhotoPart[]>>;
+  modes?: Partial<Record<"value" | "colour" | "flat" | "cmyk" | "separations", PhotoPart[]>>;
   /** Split by colour: every group's pen, by group, and the key's, so each layer can be worked out alongside the rest. */
   regionInks?: (string | null)[];
   keyInk?: string;
@@ -293,6 +322,14 @@ export interface Photo {
   keyStrength?: number;
   /** How dark, 0 to 1, a part of the photo is before the key shades it. The whole photo's. */
   keyFrom?: number;
+  /**
+   * Split into a set of inks of your own (2026-11-22): the set itself, kept with the drawing so it
+   * travels with it, and this layer's place in it. A built-in set needs neither - `plate` and the
+   * number of `plates` say which set and which ink - but a set of your own is yours, and a drawing
+   * that named it alone would open on another machine with nothing to look it up in.
+   */
+  inkSet?: InkSet;
+  inkAt?: number;
   /**
    * Split into CMYK: this layer is one of four plates - cyan, magenta, yellow, black - drawn across
    * the whole photo in its pen, `ink`, and blended on paper with the others. `plates` is all four
@@ -393,7 +430,9 @@ export interface Photo {
 }
 
 /** How a photo is split: by value, into colour groups, into CMYK plates, or already split into separations elsewhere. */
-export const photoMode = (p: Photo) => (p.profile ? "profile" : p.separation ? "separations" : p.plate ? "cmyk" : p.ink ? "colour" : "value");
+// "cmyk" is what this mode has always been called in a saved drawing's `modes`, so it stays the key
+// even though the mode is now any set of inks: renaming it would lose what every drawing kept.
+export const photoMode = (p: Photo) => (p.profile ? "profile" : p.separation ? "separations" : onePlate(p) ? "cmyk" : p.flat ? "flat" : p.ink ? "colour" : "value");
 
 /**
  * Where a photo goes to fit or fill a page, inside a margin on each side (inches): its box, and the
@@ -472,6 +511,52 @@ export const PLATE_AIMS: Record<Plate, { name: string; color: string; angle: num
   r: { name: "Red", color: "#e4002b", angle: 7.5 },
   v: { name: "Violet", color: "#5b2c8f", angle: 52.5 },
 };
+
+/**
+ * One ink of a set: what it is called, the colour it stands for, and the angle its hatching runs at.
+ *
+ * A built-in set's colour is an aim - the colour to find a tool's nearest pen to - so CMYK works with
+ * any pen in the drawer. A set of your own names pens you picked from a tool's palette, so its colour
+ * is that pen's own and nothing is matched or approximated.
+ */
+export interface SetInk { name: string; color: string; angle: number }
+
+/**
+ * A set of inks a picture is separated into, and the thing the app once called a colour mode. CMYK is
+ * one of these; so is CMYK with orange and green; so is a set of four pens of your own. What differs
+ * between them is only which inks, and whether they are aims or pens - not how the separating works,
+ * which is the same solve over whatever inks it is given (solveSeparation).
+ */
+export interface InkSet {
+  key: string;
+  label: string;
+  about?: string;
+  inks: SetInk[];
+  /** A set of your own: its inks are pens already chosen, used as they are rather than matched. */
+  own?: boolean;
+}
+
+/** The sets the app ships with: print's plates and the extended-gamut sets, as ink sets. */
+export const BUILT_IN_INK_SETS: InkSet[] = PLATE_SETS.map((set) => ({
+  key: set.key,
+  label: set.label,
+  about: set.about,
+  inks: set.plates.map((p) => ({ ...PLATE_AIMS[p] })),
+}));
+
+/** The set a photo is separated into: its own, kept with the drawing, or the built-in one its plates are. */
+export const inkSetOf = (p: Pick<Photo, "inkSet" | "plates">): InkSet =>
+  p.inkSet ?? BUILT_IN_INK_SETS.find((s) => s.key === plateSetOf(p.plates)) ?? BUILT_IN_INK_SETS[0];
+
+/** Where this layer's ink sits in its set: its own place, or its plate's place in the built-in set. */
+export const inkAtOf = (p: Pick<Photo, "inkAt" | "plate" | "plates">): number =>
+  p.inkAt ?? (p.plate ? platesOf(p.plates).indexOf(p.plate) : -1);
+
+/**
+ * Whether this layer is one ink of a separated set - a plate of CMYK, or of a set of your own. Asked
+ * wherever `photo.plate` used to be asked as a yes or no, since a set of your own has no plate letter.
+ */
+export const onePlate = (p: Pick<Photo, "plate" | "inkAt">): boolean => Boolean(p.plate) || p.inkAt !== undefined;
 
 /** A colour's hue round the colour wheel (0-360), saturation and value (0-1). */
 function hsv(hex: string): [number, number, number] {
@@ -666,7 +751,7 @@ export interface PhotoPart {
 /** The settings a layer of a photo keeps as its own, as opposed to the photo's: what a mode remembers. */
 export const LAYER_SETTINGS = [
   "style", "angle", "spacingMm", "levels", "hatchSmoothMm", "hatchShortestMm", "rowMm", "waveMm", "squiggleAmpMm", "squiggleHeight", "squiggleJoin", "squiggleLift", "squiggleSmooth", "squiggleDraw", "squiggleVersion", "squiggleInkscape", "squiggleAngle", "contours", "smoothMm", "centerFrom", "centerSmoothMm", "centerShortestMm", "centerMode", "centerStraightMm", "centerLongMm", "centerCornerDeg", "edgeFrom", "edgeSmoothMm", "edgeShortestMm", "silhouetteFrom", "silhouetteSmoothMm", "silhouetteSmallestMm", "streamWidestMm", "streamPasses", "streamFlowMm", "scribbleLengthMm", "scribbleMinMm", "scribbleWiggle", "scribbleSegmentMm", "scribbleSeed", "sketchLines", "paintSmoothMm", "paintSmallestMm", "paintOutline", "lineDots", "lineLiftMm", "lineCurve", "lineAngle", "lineBias", "lineGrain", "lineContrast", "hilbertCoarsestMm", "hilbertLift", "hilbertCurve", "hilbertRound", "hilbertBlend", "hilbertAngle", "offsetMm",
-  "band", "side", "paperTone", "ink", "regions", "region", "key", "regionInks", "keyInk", "plate", "plates", "fitPaper", "penMm", "fitPairs", "fitOpaque",
+  "band", "side", "paperTone", "ink", "regions", "region", "flat", "flatCount", "flatOwn", "key", "regionInks", "keyInk", "plate", "plates", "inkSet", "inkAt", "fitPaper", "penMm", "fitPairs", "fitOpaque",
 ] as const;
 
 /** The picture's tones a photo split around the paper leaves bare, as darkness from and to: unless set, the middle third. */
@@ -901,6 +986,8 @@ interface Tones {
   sat?: number;
   /** A copy faded to paper under an edge mask: which mask, and how it lay, kept in what's worked out from it likewise. */
   mask?: string;
+  /** A copy cut down to this many flat colours, kept in what's worked out from it likewise. */
+  flat?: number;
 }
 
 const saturatedCache = new Map<string, Tones>();
@@ -943,10 +1030,13 @@ function saturatedTones(src: string, tones: Tones, sat: number): Tones {
 export const saturatedOf = (src: string, saturation: number) => photoTones({ src, saturation });
 
 /** A photo as its layers read it: its pixels, with its saturation applied and its edge mask laid over. Undefined until both have been read. */
-const photoTones = (photo: Pick<Photo, "src" | "saturation" | "vignette" | "edgeMask" | "edgeMaskInvert" | "edgeMaskSides" | "edgeGen" | "crop" | "band" | "side" | "plate" | "ink" | "region" | "key" | "separation">) => {
+const photoTones = (photo: Pick<Photo, "src" | "saturation" | "flatten" | "vignette" | "edgeMask" | "edgeMaskInvert" | "edgeMaskSides" | "edgeGen" | "crop" | "band" | "side" | "plate" | "ink" | "region" | "key" | "separation">) => {
   const tones = tonesOf(photo.src);
   if (!tones) return undefined;
-  const saturated = vignettedTones(photo.src, saturatedTones(photo.src, tones, photo.saturation ?? 0), photo);
+  // Flattened after the saturation and the vignette, which change what colours there are to find,
+  // and before the edge mask, which fades a border to paper and isn't a colour of the picture.
+  const coloured = vignettedTones(photo.src, saturatedTones(photo.src, tones, photo.saturation ?? 0), photo);
+  const saturated = photo.flatten ? flattenedTones(photo.src, coloured, photo.flatten) : coloured;
   if (photo.edgeGen) return maskedTones(photo.src, saturated, null, photo);
   if (!photo.edgeMask) return saturated;
   const mask = tonesOf(photo.edgeMask);
@@ -1021,6 +1111,9 @@ const maskReading = new Set<string>();
  * colour group, the separation, the key. The same for a layer every time, so its varied edge is too.
  */
 const layerOf = (p: Partial<Photo>) =>
+  // Not the ink set or the place in it: this seeds the varied edge and the random sketch of a layer
+  // (see sketchLines and streamlines), so anything added here redraws every drawing ever made. The
+  // inks of a set are told apart by `ink`, their own colour, which is here already.
   JSON.stringify([p.band, p.side, p.plate, p.ink, p.region, p.key ? 1 : 0, p.separation ? `${p.separation.length}|${p.separation.slice(-24)}` : ""]);
 
 function maskedTones(src: string, tones: Tones, mask: Tones | null, photo: Pick<Photo, "edgeMask" | "edgeMaskInvert" | "edgeMaskSides" | "edgeGen" | "crop" | "band" | "side" | "plate" | "ink" | "region" | "key" | "separation">): Tones {
@@ -1068,7 +1161,7 @@ function maskedTones(src: string, tones: Tones, mask: Tones | null, photo: Pick<
     }
   }
   // Under a vignette as well: both kept in what's worked out from it.
-  const out = { w, h, light, rgba, sat: tones.sat, mask: tones.mask ? `${tones.mask}+${id}` : id };
+  const out = { w, h, light, rgba, sat: tones.sat, flat: tones.flat, mask: tones.mask ? `${tones.mask}+${id}` : id };
   if (maskedCache.size > 8) maskedCache.delete(maskedCache.keys().next().value!);
   maskedCache.set(key, out);
   return out;
@@ -1127,7 +1220,7 @@ const smoothCache = new Map<string, Tones>();
 function smoothedTones(src: string, tones: Tones, r: number): Tones {
   const k = Math.round(r * 2) / 2;
   if (k < 0.5) return tones;
-  const key = `${src.length}|${src.slice(-32)}|${tones.sat ?? 0}|${tones.mask ?? ""}|${k}`;
+  const key = `${src.length}|${src.slice(-32)}|${tones.sat ?? 0}|${tones.mask ?? ""}|${tones.flat ?? 0}|${k}`;
   const known = smoothCache.get(key);
   if (known) return known;
   const n = tones.w * tones.h;
@@ -1140,7 +1233,7 @@ function smoothedTones(src: string, tones: Tones, r: number): Tones {
     if (c < 3) blurGrid(channel, tones.w, tones.h, k);
     for (let i = 0; i < n; i++) rgba[i * 4 + c] = channel[i];
   }
-  const made = { w: tones.w, h: tones.h, light, rgba, blur: k, sat: tones.sat, mask: tones.mask };
+  const made = { w: tones.w, h: tones.h, light, rgba, blur: k, sat: tones.sat, mask: tones.mask, flat: tones.flat };
   if (smoothCache.size > 4) smoothCache.delete(smoothCache.keys().next().value!);
   smoothCache.set(key, made);
   return made;
@@ -1626,7 +1719,7 @@ export function photoMarks(photo: Photo, w: number, h: number): PhotoMarks | nul
 
 /** Everything a photo's lines depend on, as one string: the same key, the same lines. */
 function marksKey(photo: Photo, w: number, h: number) {
-  return [photo.src.length, photo.src.slice(-32), w.toFixed(4), h.toFixed(4), photo.brightness, photo.contrast, photo.saturation ?? 0, photo.angle, photo.spacingMm, photo.levels, photo.hatchSmoothMm ?? "", photo.hatchShortestMm ?? "", photo.band?.join(",") ?? "", photo.side ?? "", photo.paperTone?.join(",") ?? "", photo.crop?.join(",") ?? "", photo.bleed ?? 0, photo.style ?? "hatch", photo.rowMm ?? "", photo.waveMm ?? "", photo.squiggleAmpMm ?? "", photo.squiggleHeight ?? "", photo.squiggleJoin ? "join" : "", photo.squiggleLift ? "lift" : "", photo.squiggleSmooth ?? "", JSON.stringify(photo.squiggleDraw ?? {}), photo.squiggleVersion ?? "", JSON.stringify(photo.squiggleInkscape ?? {}), photo.squiggleAngle ?? "", photo.ink ?? "", photo.regions?.join(",") ?? "", photo.region ?? "", photo.contours ?? "", photo.smoothMm ?? "", photo.key ? "key" : "", photo.keyInk ?? "", photo.regionInks?.join(",") ?? "", photo.keyStrength ?? "", photo.keyFrom ?? "", photo.plate ?? "", photo.plates?.join(",") ?? "", photo.blackShare ?? "", photo.centerFrom ?? "", photo.centerSmoothMm ?? "", photo.centerShortestMm ?? "", photo.centerMode ?? "", photo.centerStraightMm ?? "", photo.centerLongMm ?? "", photo.centerCornerDeg ?? "", photo.edgeFrom ?? "", photo.edgeSmoothMm ?? "", photo.edgeShortestMm ?? "", photo.silhouetteFrom ?? "", photo.silhouetteSmoothMm ?? "", photo.silhouetteSmallestMm ?? "", photo.fitPaper ?? "", photo.penMm ?? "", photo.fitPairs ? "pairs" : "", photo.fitOpaque ? "opaque" : "", photo.streamWidestMm ?? "", photo.streamPasses ?? "", photo.streamFlowMm ?? "", photo.scribbleLengthMm ?? "", photo.scribbleMinMm ?? "", photo.scribbleWiggle ?? "", photo.scribbleSegmentMm ?? "", photo.scribbleSeed ?? "", JSON.stringify(photo.sketchLines ?? {}), photo.paintSmoothMm ?? "", photo.paintSmallestMm ?? "", photo.paintOutline ?? "", photo.profileInk ?? "", photo.lineDots ?? "", photo.lineLiftMm ?? "", photo.lineCurve ?? "", photo.lineAngle ?? "", photo.lineBias ?? "", photo.lineGrain ?? "", photo.lineContrast ?? "", photo.hilbertCoarsestMm ?? "", photo.hilbertLift ? "hlift" : "", photo.hilbertCurve ?? "", photo.hilbertRound ?? "", photo.hilbertBlend ?? "", photo.hilbertAngle ?? "", photo.edgeMask ? `${photo.edgeMask.length}|${photo.edgeMask.slice(-32)}` : "", photo.edgeMaskInvert ? "inv" : "", photo.edgeMaskSides?.join(",") ?? "", photo.edgeGen ? edgeGenKey(photo.edgeGen) : "", vignetteKey(photo.vignette)].join("|");
+  return [photo.src.length, photo.src.slice(-32), w.toFixed(4), h.toFixed(4), photo.brightness, photo.contrast, photo.saturation ?? 0, photo.flatten ?? 0, photo.angle, photo.spacingMm, photo.levels, photo.hatchSmoothMm ?? "", photo.hatchShortestMm ?? "", photo.band?.join(",") ?? "", photo.side ?? "", photo.paperTone?.join(",") ?? "", photo.crop?.join(",") ?? "", photo.bleed ?? 0, photo.style ?? "hatch", photo.rowMm ?? "", photo.waveMm ?? "", photo.squiggleAmpMm ?? "", photo.squiggleHeight ?? "", photo.squiggleJoin ? "join" : "", photo.squiggleLift ? "lift" : "", photo.squiggleSmooth ?? "", JSON.stringify(photo.squiggleDraw ?? {}), photo.squiggleVersion ?? "", JSON.stringify(photo.squiggleInkscape ?? {}), photo.squiggleAngle ?? "", photo.ink ?? "", photo.regions?.join(",") ?? "", photo.region ?? "", photo.contours ?? "", photo.smoothMm ?? "", photo.key ? "key" : "", photo.keyInk ?? "", photo.regionInks?.join(",") ?? "", photo.keyStrength ?? "", photo.keyFrom ?? "", photo.plate ?? "", photo.plates?.join(",") ?? "", photo.blackShare ?? "", photo.centerFrom ?? "", photo.centerSmoothMm ?? "", photo.centerShortestMm ?? "", photo.centerMode ?? "", photo.centerStraightMm ?? "", photo.centerLongMm ?? "", photo.centerCornerDeg ?? "", photo.edgeFrom ?? "", photo.edgeSmoothMm ?? "", photo.edgeShortestMm ?? "", photo.silhouetteFrom ?? "", photo.silhouetteSmoothMm ?? "", photo.silhouetteSmallestMm ?? "", photo.fitPaper ?? "", photo.penMm ?? "", photo.fitPairs ? "pairs" : "", photo.fitOpaque ? "opaque" : "", photo.streamWidestMm ?? "", photo.streamPasses ?? "", photo.streamFlowMm ?? "", photo.scribbleLengthMm ?? "", photo.scribbleMinMm ?? "", photo.scribbleWiggle ?? "", photo.scribbleSegmentMm ?? "", photo.scribbleSeed ?? "", JSON.stringify(photo.sketchLines ?? {}), photo.paintSmoothMm ?? "", photo.paintSmallestMm ?? "", photo.paintOutline ?? "", photo.profileInk ?? "", photo.lineDots ?? "", photo.lineLiftMm ?? "", photo.lineCurve ?? "", photo.lineAngle ?? "", photo.lineBias ?? "", photo.lineGrain ?? "", photo.lineContrast ?? "", photo.hilbertCoarsestMm ?? "", photo.hilbertLift ? "hlift" : "", photo.hilbertCurve ?? "", photo.hilbertRound ?? "", photo.hilbertBlend ?? "", photo.hilbertAngle ?? "", photo.edgeMask ? `${photo.edgeMask.length}|${photo.edgeMask.slice(-32)}` : "", photo.edgeMaskInvert ? "inv" : "", photo.edgeMaskSides?.join(",") ?? "", photo.edgeGen ? edgeGenKey(photo.edgeGen) : "", vignetteKey(photo.vignette)].join("|");
 }
 
 /**
@@ -1879,6 +1972,282 @@ export function colourGroups(src: string, count: number, brightness: number, con
   return inked.sort((a, b) => b.lab[0] - a.lab[0]).map((g) => g.hex);
 }
 
+/** The most colours a picture can be flattened to: past this it is no longer a flattening. */
+export const FLATTEN_MOST = 24;
+/** How many colours Flatten starts at: enough for a face to hold together, few enough to read as flat. */
+export const FLATTEN_DEFAULT = 6;
+/** With less of a picture inside flat areas than this, its colours are read from all of it instead. */
+const FLATTEN_LEAST_FLAT = 0.25;
+/** A colour holding less of what was gathered than this is noise, not a colour to flatten to. */
+const FLATTEN_LEAST = 0.001;
+/** The most pixels sampled when a picture has no flat insides to read: enough, and quick. */
+const FLATTEN_SAMPLE = 400_000;
+
+const flattenCache = new Map<string, Tones>();
+
+/**
+ * The colours a picture would be flattened to, `count` of them, lightest first. Read from the flat
+ * insides of the picture where it has them - which is what keeps a poster's five colours exactly -
+ * and from all of it where it hasn't, so a photograph still has a palette to be cut down to.
+ *
+ * Nothing here is adjusted for brightness or contrast: flattening changes the picture, and the
+ * picture's own brightness and contrast are applied to what comes out of it later. Flattening on the
+ * adjusted colours would apply them twice, and would also re-flatten the picture every time a slider
+ * moved.
+ */
+function flattenPalette(tones: Tones, count: number): string[] {
+  const inside = flatBuckets(tones);
+  const total = (tones.w - 2) * (tones.h - 2);
+  let sums = inside.sums;
+  if (inside.flat < total * FLATTEN_LEAST_FLAT) {
+    // Grain, dithering or a photograph: too little of it lies inside a flat area to read, so every
+    // pixel counts instead (every nth of them, where there are more than enough).
+    sums = new Map();
+    const step = Math.max(1, Math.ceil((tones.w * tones.h) / FLATTEN_SAMPLE));
+    for (let i = 0; i < tones.w * tones.h; i += step) {
+      const p = i * 4;
+      intoBucket(sums, tones.rgba[p], tones.rgba[p + 1], tones.rgba[p + 2]);
+    }
+  }
+  let held = 0;
+  for (const b of sums.values()) held += b.n;
+  if (!held) return [];
+  // The paper is a colour here, unlike a split: a flattened picture is still a picture, and white
+  // areas are white rather than missing.
+  const candidates = gatheredColours(sums, (v) => v)
+    .filter((k) => k.n >= held * FLATTEN_LEAST)
+    .sort((a, z) => z.n - a.n)
+    .slice(0, FLAT_MOST_CANDIDATES);
+  return toCount(candidates, Math.max(1, count))
+    .sort((a, z) => z.lab[0] - a.lab[0])
+    .map((k) => toHex([k.r / k.n, k.g / k.n, k.b / k.n]));
+}
+
+/**
+ * The colours a picture would be flattened to, lightest first: what Flatten makes of it, without
+ * making it. The picture must have been read already (readTones).
+ */
+export function flattenedColours(src: string, count: number): string[] {
+  const tones = tonesOf(src);
+  return tones ? flattenPalette(tones, Math.max(2, Math.min(FLATTEN_MOST, Math.round(count)))) : [];
+}
+
+/**
+ * The picture cut down to this many flat colours: every pixel taken to whichever of them it is
+ * nearest, so what comes out has hard borders and no shading inside an area.
+ *
+ * An adjustment rather than a way of splitting: it changes the picture every effect and every ink
+ * set then reads, so hatching a flattened photograph hatches flat areas, and a split of one finds
+ * the colours it was flattened to. Worked out once for each picture and number.
+ */
+function flattenedTones(src: string, tones: Tones, count: number): Tones {
+  const want = Math.max(2, Math.min(FLATTEN_MOST, Math.round(count)));
+  const key = [src.length, src.slice(-32), tones.w, tones.h, tones.sat ?? 0, tones.mask ?? "", tones.light[0], tones.light[tones.light.length >> 1], want].join("|");
+  const known = flattenCache.get(key);
+  if (known) return known;
+  const palette = flattenPalette(tones, want);
+  if (palette.length < 2) return tones;
+  // Which colour each eighth of each channel goes to, worked out once: then every pixel is a lookup
+  // rather than a search through the palette in Lab, which on a big picture is millions of them.
+  const labs = palette.map(hexLab);
+  const rgbs = palette.map((hex) => {
+    const v = parseInt(hex.slice(1), 16);
+    return [(v >> 16) & 255, (v >> 8) & 255, v & 255];
+  });
+  const table = new Uint8Array(32 * 32 * 32);
+  for (let r = 0; r < 32; r++) {
+    for (let g = 0; g < 32; g++) {
+      for (let b = 0; b < 32; b++) {
+        const at = lab(r * 8 + 4, g * 8 + 4, b * 8 + 4);
+        let best = 0;
+        let nearest = Infinity;
+        labs.forEach((c, i) => { const d = dist2(at, c); if (d < nearest) { nearest = d; best = i; } });
+        table[(r << 10) | (g << 5) | b] = best;
+      }
+    }
+  }
+  const rgba = new Uint8ClampedArray(tones.rgba.length);
+  const light = new Float32Array(tones.light.length);
+  for (let p = 0, i = 0; p < light.length; p++, i += 4) {
+    const [r, g, b] = rgbs[table[bucketAt(tones.rgba[i], tones.rgba[i + 1], tones.rgba[i + 2])]];
+    rgba[i] = r;
+    rgba[i + 1] = g;
+    rgba[i + 2] = b;
+    rgba[i + 3] = tones.rgba[i + 3];
+    light[p] = (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255;
+  }
+  const made: Tones = { w: tones.w, h: tones.h, light, rgba, sat: tones.sat, mask: tones.mask, flat: want };
+  if (flattenCache.size > 3) flattenCache.delete(flattenCache.keys().next().value!);
+  flattenCache.set(key, made);
+  return made;
+}
+
+/** A pixel whose four neighbours all match it this nearly, per channel, is inside a flat area rather
+ *  than on the antialiased border between two. An area carries a little noise; a border doesn't. */
+const FLAT_NEAR = 3;
+/** Two flat colours nearer than this in CIELAB are one colour read twice, through that noise. */
+const FLAT_MERGE = 8;
+/** A colour holding less of the flat area than this is a stray, not one the picture is drawn in. */
+const FLAT_LEAST = 0.01;
+/** Asked for a number of colours, a candidate this small isn't one: it is the smear round an edge. */
+const FLAT_LEAST_ASKED = 0.001;
+/** The most candidates merged down to a number asked for: plenty, and it bounds the work. */
+const FLAT_MOST_CANDIDATES = 64;
+/**
+ * Below this much of its flat area accounted for, a picture isn't drawn in flat colours and this isn't
+ * the way to read it. Not `share`: a photograph's gentle gradients change by less than a level from
+ * one pixel to the next, so nearly all of it counts as flat, and it is `covered` that gives it away -
+ * its colours are slices of a ramp, each with a little area, and together they account for nothing
+ * like the whole. Flat art covers almost all of itself with a handful of colours.
+ */
+export const FLAT_ENOUGH = 0.85;
+
+const flatCache = new Map<string, FlatColours>();
+export interface FlatColours {
+  /** The colours the picture is drawn in, lightest first: as many as it has, or as many as asked for. */
+  colours: string[];
+  /** How much of the picture is inside a flat area rather than on a border between two. */
+  share: number;
+  /** How much of that flat area the colours found account for, the paper counted. */
+  covered: number;
+}
+
+/** A colour gathered from the picture: where it sits, and how much of the flat area is it. */
+interface FlatColour { lab: [number, number, number]; r: number; g: number; b: number; n: number }
+
+/** A bucket of pixels that are nearly one colour: their colour summed, and how many. */
+interface Bucket { r: number; g: number; b: number; n: number }
+
+/** Where in the 32x32x32 buckets a colour falls: an eighth of each channel. */
+const bucketAt = (r: number, g: number, b: number) => ((r >> 3) << 10) | ((g >> 3) << 5) | (b >> 3);
+
+const intoBucket = (sums: Map<number, Bucket>, r: number, g: number, b: number) => {
+  const at = bucketAt(r, g, b);
+  const s = sums.get(at);
+  if (s) { s.r += r; s.g += g; s.b += b; s.n++; }
+  else sums.set(at, { r, g, b, n: 1 });
+};
+
+/**
+ * Every pixel inside a flat area, gathered by its colour: a bucket for each eighth of each channel,
+ * fine enough never to hold two colours the eye tells apart, coarse enough to hold a smear together.
+ * A pixel whose four neighbours all match it is inside an area; one whose don't is on a border, and
+ * a border is a blend of the two sides belonging to neither.
+ */
+function flatBuckets(tones: Tones): { sums: Map<number, Bucket>; flat: number } {
+  const { w, h, rgba } = tones;
+  const near = (p: number, q: number) => Math.abs(rgba[p] - rgba[q]) <= FLAT_NEAR
+    && Math.abs(rgba[p + 1] - rgba[q + 1]) <= FLAT_NEAR && Math.abs(rgba[p + 2] - rgba[q + 2]) <= FLAT_NEAR;
+  const sums = new Map<number, Bucket>();
+  const row = w * 4;
+  let flat = 0;
+  for (let y = 1; y < h - 1; y++) {
+    for (let x = 1; x < w - 1; x++) {
+      const p = (y * w + x) * 4;
+      if (!near(p, p - 4) || !near(p, p + 4) || !near(p, p - row) || !near(p, p + row)) continue;
+      intoBucket(sums, rgba[p], rgba[p + 1], rgba[p + 2]);
+      flat++;
+    }
+  }
+  return { sums, flat };
+}
+
+/**
+ * The buckets gathered into colours: biggest first, so a colour's own bucket is there to take the
+ * rest of its smear, and each bucket joins the colour it is near enough to be.
+ */
+function gatheredColours(sums: Map<number, Bucket>, adjust: (v: number) => number): FlatColour[] {
+  const kept: FlatColour[] = [];
+  for (const b of [...sums.values()].sort((a, z) => z.n - a.n)) {
+    const rgb = [adjust(b.r / b.n), adjust(b.g / b.n), adjust(b.b / b.n)];
+    const at = lab(rgb[0], rgb[1], rgb[2]);
+    const same = kept.find((k) => dist2(at, k.lab) <= FLAT_MERGE * FLAT_MERGE);
+    if (same) { same.r += rgb[0] * b.n; same.g += rgb[1] * b.n; same.b += rgb[2] * b.n; same.n += b.n; }
+    else kept.push({ lab: at, r: rgb[0] * b.n, g: rgb[1] * b.n, b: rgb[2] * b.n, n: b.n });
+  }
+  return kept;
+}
+
+/** These colours joined, nearest pair first, until `want` are left - each joined into the one it is
+ *  nearest, weighted by how much of the picture each holds. */
+function toCount(colours: FlatColour[], want: number): FlatColour[] {
+  const left = colours.slice();
+  while (left.length > want) {
+    let a = 0;
+    let b = 1;
+    let nearest = Infinity;
+    for (let i = 0; i < left.length; i++) {
+      for (let j = i + 1; j < left.length; j++) {
+        const d = dist2(left[i].lab, left[j].lab);
+        if (d < nearest) { nearest = d; a = i; b = j; }
+      }
+    }
+    const [one, two] = [left[a], left[b]];
+    const n = one.n + two.n;
+    left[a] = {
+      lab: [0, 1, 2].map((i) => (one.lab[i] * one.n + two.lab[i] * two.n) / n) as [number, number, number],
+      r: one.r + two.r, g: one.g + two.g, b: one.b + two.b, n,
+    };
+    left.splice(b, 1);
+  }
+  return left;
+}
+
+/**
+ * The colours a picture is already drawn in, read from it rather than gathered from it: for art made
+ * of flat areas with hard borders - a poster, a print, a logo.
+ *
+ * Such a picture rarely still holds its colours exactly. Saved and resaved on its way here, each area
+ * comes back smeared a level or two about its true colour, so counting colours finds tens of
+ * thousands where the eye sees five. What it does still hold is the difference between an area and a
+ * border: inside an area every neighbour matches, on a border none does. So keep only the pixels
+ * inside an area - borders are a blend of the two sides and belong to neither - gather those into
+ * their colours, and what stands with real area of its own is the picture's palette, counted by the
+ * picture.
+ *
+ * This is what colourGroups can't do. Gathering a scattering of pixels into a fixed number of groups
+ * spends groups on the borders' blends, and then makes two real colours share a group because a blend
+ * has taken one: a poster's blue and navy come back as a single wrong blue, and a muddy colour that
+ * is nowhere in the picture takes a pen. Here the borders are put aside before any colour is counted.
+ *
+ * `share` and `covered` are how well this reading suits the picture at all - how much of it lay in
+ * flat areas, and how much of that the colours found account for. They describe the picture, so they
+ * are the picture's own however many colours were asked for.
+ *
+ * `count` flattens it to that many colours instead of its own number of them: see toCount.
+ */
+export function flatColours(src: string, most: number, brightness: number, contrast: number, saturation = 0, count?: number): FlatColours {
+  const none: FlatColours = { colours: [], share: 0, covered: 0 };
+  const tones = photoTones({ src, saturation });
+  if (!tones || tones.w < 3 || tones.h < 3) return none;
+  const { w, h } = tones;
+  const key = [w, h, tones.blur ?? 0, tones.sat ?? 0, tones.mask ?? "", tones.flat ?? 0, tones.light[0], tones.light[tones.light.length >> 1], most, count ?? 0, brightness, contrast].join("|");
+  const known = flatCache.get(key);
+  if (known) return known;
+  const { sums, flat } = flatBuckets(tones);
+  if (!flat) return none;
+  const kept = gatheredColours(sums, adjuster(brightness, contrast));
+  // What has area of its own is a colour of the picture; the paper is one of them, and gets no layer.
+  const real = kept.filter((k) => k.n >= flat * FLAT_LEAST);
+  const want = count ? Math.max(1, Math.min(most, Math.round(count))) : 0;
+  // Asked for a number of colours rather than the picture's own: start from everything with any area
+  // at all, and join the two nearest colours over and over until that many are left. Each one joined
+  // takes the colour nearest it, so what goes is the distinction the eye would miss first - which is
+  // what flattening to fewer colours means. Keeping the biggest and dropping the rest would instead
+  // leave the dropped areas to no colour at all.
+  const inked = (want
+    ? toCount(kept.filter((k) => k.n >= flat * FLAT_LEAST_ASKED && !isPaper(k.lab)).sort((a, z) => z.n - a.n).slice(0, FLAT_MOST_CANDIDATES), want)
+    : real.filter((k) => !isPaper(k.lab)).sort((a, z) => z.n - a.n).slice(0, Math.max(1, most)));
+  const made: FlatColours = {
+    colours: inked.slice().sort((a, z) => z.lab[0] - a.lab[0]).map((k) => toHex([k.r / k.n, k.g / k.n, k.b / k.n])),
+    share: flat / ((w - 2) * (h - 2)),
+    covered: real.reduce((sum, k) => sum + k.n, 0) / flat,
+  };
+  if (flatCache.size > 4) flatCache.delete(flatCache.keys().next().value!);
+  flatCache.set(key, made);
+  return made;
+}
+
 /**
  * The pen of a palette nearest each colour group, each pen used once: the closest pairs are matched
  * first, so a group only settles for a further pen when a nearer group has taken its own.
@@ -2046,7 +2415,7 @@ export function coverSteps(penMm: number, spacingMm: number, levels: number): nu
  * photo there: a pen's area is wherever that colour uses it, and `menu` says how many passes.
  */
 function areasOf(tones: Tones, groups: string[], brightness: number, contrast: number, fit?: Fit): Areas {
-  const key = [tones.w, tones.h, tones.blur ?? 0, tones.sat ?? 0, tones.mask ?? "", tones.light[0], tones.light[tones.light.length >> 1], groups.join(","), brightness, contrast, fit ? JSON.stringify(fit) : ""].join("|");
+  const key = [tones.w, tones.h, tones.blur ?? 0, tones.sat ?? 0, tones.mask ?? "", tones.flat ?? 0, tones.light[0], tones.light[tones.light.length >> 1], groups.join(","), brightness, contrast, fit ? JSON.stringify(fit) : ""].join("|");
   const known = areasCache.get(key);
   if (known) return known;
   const adjust = adjuster(brightness, contrast);
@@ -2146,7 +2515,7 @@ function separationOf(tones: Tones, photo: Photo): Separation | null {
   const levels = Math.min(MOST_PASSES, Math.max(1, Math.round(photo.levels)));
   const penMm = photo.penMm ?? 0.5;
   const spacingMm = photo.spacingMm;
-  const key = [tones.w, tones.h, tones.blur ?? 0, tones.sat ?? 0, tones.mask ?? "", tones.light[0], tones.light[tones.light.length >> 1], plates.join(","), brightness, contrast, blackShare, levels, penMm, spacingMm].join("|");
+  const key = [tones.w, tones.h, tones.blur ?? 0, tones.sat ?? 0, tones.mask ?? "", tones.flat ?? 0, tones.light[0], tones.light[tones.light.length >> 1], plates.join(","), brightness, contrast, blackShare, levels, penMm, spacingMm].join("|");
   const known = separationCache.get(key);
   if (known) return known;
   const keep = (made: Separation) => {
@@ -2247,7 +2616,8 @@ export function solveSeparation({ rgb, w, h, plates, brightness, contrast, black
   const off = plates.map((p) => p === PLATE_OFF);
   const pens = plates.map((p) => (p === PLATE_OFF ? [1, 1, 1] : hexLinear(p)));
   const steps = coverSteps(penMm, spacingMm, levels);
-  const reach = withinReach(pens, steps, blackShare, off);
+  const ink = blackInk(pens, off);
+  const reach = withinReach(pens, steps, blackShare, off, ink);
   const maps = plates.map(() => new Float32Array(w * h));
   // Each colour solved once - shades an eighth of a step apart in each channel share an answer - but
   // reached from wherever its first point was, so the answer it keeps is a neighbour's.
@@ -2266,7 +2636,7 @@ export function solveSeparation({ rgb, w, h, plates, brightness, contrast, black
       let covers = solved.get(key);
       if (!covers) {
         const from: number[] | null = before && Math.hypot(want[0] - before.want[0], want[1] - before.want[1], want[2] - before.want[2]) < EDGE_DE ? before.covers : null;
-        covers = Float32Array.from(chooseCovers(want, pens, steps, blackShare, from, off));
+        covers = Float32Array.from(chooseCovers(want, pens, steps, blackShare, from, off, ink));
         solved.set(key, covers);
       }
       before = { want, covers: [...covers] };
@@ -2287,10 +2657,10 @@ export function solveSeparation({ rgb, w, h, plates, brightness, contrast, black
  * all of it, the black pen at its most on its own - so a black that is all black ink is the photo's
  * black, rather than a target only the colours stacked under it can reach. Returns the mapping, Lab to Lab.
  */
-function withinReach(pens: number[][], steps: number[], blackShare = BLACK_SHARE, off: boolean[] = []): (lab: number[]) => number[] {
+function withinReach(pens: number[][], steps: number[], blackShare = BLACK_SHARE, off: boolean[] = [], ink = blackInk(pens, off)): (lab: number[]) => number[] {
   const most = steps[steps.length - 1];
   const all = labOfLinear(mixOf([1, 1, 1], pens, pens.map((_, n) => (off[n] ? 0 : most)), false))[0];
-  const black = hasBlack(pens, off) ? labOfLinear(mixOf([1, 1, 1], pens, pens.map((_, n) => (n === BLACK ? most : 0)), false))[0] : all;
+  const black = ink >= 0 ? labOfLinear(mixOf([1, 1, 1], pens, pens.map((_, n) => (n === ink ? most : 0)), false))[0] : all;
   const share = Math.min(1, Math.max(0, blackShare));
   const darkest = all + (black - all) * share;
   // Only the lightness follows it: colour is scaled as every pen together can draw it, so turning the
@@ -2314,9 +2684,31 @@ function coverTone(cover: number, steps: number[]): number {
   return passes ? (passes + 0.5) / (most + 1) : 0;
 }
 
-/** Where the black plate is in every plate set: fourth, after cyan, magenta and yellow. */
-const BLACK = 3;
-const hasBlack = (pens: number[][], off: boolean[]) => pens.length > BLACK && !off[BLACK];
+/** Dark enough, and near enough to grey, for an ink to be the one black generation gives the greys to. */
+const BLACK_LIGHTEST = 45;
+const BLACK_CHROMA = 22;
+
+/**
+ * Which ink of a set is its black, or -1 where it has none: the darkest of those near enough to grey
+ * to stand for grey. Found rather than assumed, so a set that is not CMYK - an ink set of a pen's own
+ * colours, say, red, black, pink and lime - gives its greys to its actual black, and one with no
+ * black at all does no black generation rather than pouring its fourth ink into every grey.
+ *
+ * Near enough to grey matters as much as dark: a deep violet is darker than many blacks and would win
+ * on lightness alone, but grey drawn in violet is violet.
+ */
+function blackInk(pens: number[][], off: boolean[] = []): number {
+  let found = -1;
+  let darkest = Infinity;
+  pens.forEach((pen, n) => {
+    if (off[n]) return;
+    const [L, a, b] = labOfLinear(pen);
+    if (L > BLACK_LIGHTEST || Math.hypot(a, b) > BLACK_CHROMA || L >= darkest) return;
+    darkest = L;
+    found = n;
+  });
+  return found;
+}
 
 /**
  * How much paper each pen should cover (in plate order, black fourth) to come nearest a colour `want`
@@ -2327,11 +2719,11 @@ const hasBlack = (pens: number[][], off: boolean[]) => pens.length > BLACK && !o
  * give. So at all of it a grey or a black is black ink alone; at none the black is used only where it
  * comes cheaper than the colours over each other, as before.
  */
-function chooseCovers(want: number[], pens: number[][], steps: number[], blackShare: number, from: number[] | null, off: boolean[] = []): number[] {
+function chooseCovers(want: number[], pens: number[][], steps: number[], blackShare: number, from: number[] | null, off: boolean[] = [], ink = blackInk(pens, off)): number[] {
   const share = Math.min(1, Math.max(0, blackShare));
-  if (!hasBlack(pens, off) || share === 0) return fitCovers(want, pens, steps, share, from, off);
-  const floors = pens.map((_, n) => (n === BLACK ? blackFloor(want, pens[BLACK], steps, share) : 0));
-  return fitCovers(want, pens, steps, share, from, off, floors);
+  if (ink < 0 || share === 0) return fitCovers(want, pens, steps, share, from, off, undefined, ink);
+  const floors = pens.map((_, n) => (n === ink ? blackFloor(want, pens[ink], steps, share) : 0));
+  return fitCovers(want, pens, steps, share, from, off, floors, ink);
 }
 
 /**
@@ -2354,11 +2746,11 @@ function blackFloor(want: number[], black: number[], steps: number[], share: num
  * nothing, the first pens tried (cyan, magenta, yellow) settle an orange as yellow over magenta and the
  * orange pen is never reached.
  */
-function fitCovers(want: number[], pens: number[][], steps: number[], blackShare: number, from: number[] | null, off: boolean[] = [], floors: number[] = []): number[] {
+function fitCovers(want: number[], pens: number[][], steps: number[], blackShare: number, from: number[] | null, off: boolean[] = [], floors: number[] = [], ink = blackInk(pens, off)): number[] {
   const most = steps[steps.length - 1];
   const low = (n: number) => floors[n] ?? 0;
   const covers = from ? from.map((c, n) => (off[n] ? 0 : Math.max(low(n), c))) : pens.map((_, n) => low(n));
-  const weight = pens.map((_, n) => (n === BLACK ? 1 - blackShare : blackShare) * 2 * INK_COST);
+  const weight = pens.map((_, n) => (n === ink ? 1 - blackShare : blackShare) * 2 * INK_COST);
   const score = () => {
     const got = labOfLinear(mixOf([1, 1, 1], pens, covers, false));
     let sum = Math.hypot(got[0] - want[0], got[1] - want[1], got[2] - want[2]);
@@ -2428,7 +2820,7 @@ function plateSampler(tones: Tones, photo: Photo) {
   const sep = separationOf(tones, photo);
   // Still being separated off the page: nothing yet (photoMarks waits for it rather than keep this).
   if (!sep) return () => -1;
-  const map = sep.maps[platesOf(photo.plates).indexOf(photo.plate!)];
+  const map = sep.maps[inkAtOf(photo)];
   // A plate the separation doesn't have - its list of plates out of step - draws nothing rather than
   // stopping the whole app: a drawing opened with its extra plates dropped did once.
   if (!map) return () => -1;
@@ -2616,7 +3008,7 @@ const processingBlurCache = new Map<string, Tones>();
  * weighted (7 - distance) squared - across then down, the edges weighed by what's inside the picture.
  */
 function processingBlurred(src: string, tones: Tones): Tones {
-  const key = `${src.length}|${src.slice(-32)}|${tones.sat ?? 0}|${tones.mask ?? ""}|${tones.w}x${tones.h}`;
+  const key = `${src.length}|${src.slice(-32)}|${tones.sat ?? 0}|${tones.mask ?? ""}|${tones.flat ?? 0}|${tones.w}x${tones.h}`;
   const known = processingBlurCache.get(key);
   if (known) return known;
   const radius = 7;
@@ -3687,7 +4079,7 @@ function centerOn(tones: Tones, photo: Photo, w: number, h: number) {
   // Which points are line: past `centerFrom`; a colour layer's own area; a band's own tones.
   const from = Math.min(0.99, Math.max(0.01, photo.centerFrom ?? CENTER_DEFAULTS.from));
   const colourArea = photo.ink && photo.regions && photo.region !== undefined && !photo.key;
-  const toneBand = !photo.plate && !photo.ink && photo.band;
+  const toneBand = !onePlate(photo) && !photo.ink && photo.band;
   const lo = colourArea ? 0.5 : toneBand ? Math.max(from, photo.band![0]) : from;
   const hi = toneBand && photo.band![1] < 1 ? photo.band![1] : Infinity;
   const on = new Uint8Array(gw * gh);
@@ -4086,7 +4478,7 @@ function hatch(tones: Tones, photo: Photo, w: number, h: number): PhotoMarks {
   // sparse - the tones turned over at every edge between bands.
   // Split around the paper, each band is a pen of its own - black, a gray - and draws its own region
   // whole, graded across it, rather than taking a share of one ink's passes.
-  const band = photo.band && !photo.plate && !photo.ink && !photo.side ? photo.band : null;
+  const band = photo.band && !onePlate(photo) && !photo.ink && !photo.side ? photo.band : null;
   const { toneAt, fromWhite } = toneSampler(tones, band ? { ...photo, band: undefined } : photo, w, h);
 
   for (let k = 0; k < levels; k++) {
@@ -4142,6 +4534,17 @@ function hatch(tones: Tones, photo: Photo, w: number, h: number): PhotoMarks {
 /** What a painting starts from: borders smoothed over a millimetre, nothing smaller than a 3 mm square kept, a line round each region. */
 export const PAINT_DEFAULTS = { smoothMm: 1, smallestMm: 3, outline: true };
 
+/**
+ * What a painting of flat art starts from instead. A photo's colour areas have ragged borders and
+ * specks, which smoothing and a smallest region tidy away; flat art's borders are already clean and
+ * meant to be hard, and its small shapes - a star's points, a spike of hair, the catchlight in an eye
+ * - are drawn on purpose. So barely any smoothing, and nothing dropped that a pen can still draw.
+ */
+export const PAINT_FLAT_DEFAULTS = { smoothMm: 0.2, smallestMm: 0.8, outline: true };
+
+/** What a painting of this picture starts from: flat art's, or a photo's. */
+export const paintDefaultsOf = (photo: Pick<Photo, "flat">) => (photo.flat ? PAINT_FLAT_DEFAULTS : PAINT_DEFAULTS);
+
 interface PaintRegions { gw: number; gh: number; cell: number; cellY: number; labels: Uint8Array; mine: number }
 const paintCache = new Map<string, Omit<PaintRegions, "mine">>();
 
@@ -4157,11 +4560,12 @@ const paintCache = new Map<string, Omit<PaintRegions, "mine">>();
 function paintRegions(tones: Tones, photo: Photo, w: number, h: number): PaintRegions {
   const { gw, gh, cell, cellY } = pictureGrid(tones, photo, w, h);
   const [c0, c1, c2, c3] = photo.crop ?? [0, 0, 1, 1];
-  const smooth = Math.max(0, photo.paintSmoothMm ?? PAINT_DEFAULTS.smoothMm) / 25.4 / cell;
-  const smallest = Math.max(0, photo.paintSmallestMm ?? PAINT_DEFAULTS.smallestMm) / 25.4;
+  const paint = paintDefaultsOf(photo);
+  const smooth = Math.max(0, photo.paintSmoothMm ?? paint.smoothMm) / 25.4 / cell;
+  const smallest = Math.max(0, photo.paintSmallestMm ?? paint.smallestMm) / 25.4;
   const colour = Boolean(photo.ink && photo.regions && photo.region !== undefined && !photo.key);
   const key = colour
-    ? ["colour", tones.w, tones.h, tones.blur ?? 0, tones.sat ?? 0, tones.mask ?? "", tones.light[0], tones.light[tones.light.length >> 1], photo.crop?.join(",") ?? "", photo.regions!.join(","), photo.brightness, photo.contrast, gw, gh, smooth, smallest].join("|")
+    ? ["colour", tones.w, tones.h, tones.blur ?? 0, tones.sat ?? 0, tones.mask ?? "", tones.flat ?? 0, tones.light[0], tones.light[tones.light.length >> 1], photo.crop?.join(",") ?? "", photo.regions!.join(","), photo.brightness, photo.contrast, gw, gh, smooth, smallest].join("|")
     : ["layer", marksKey(photo, w, h)].join("|");
   const mine = colour ? photo.region! : 1;
   const known = paintCache.get(key);
@@ -4275,7 +4679,7 @@ function paint(tones: Tones, photo: Photo, w: number, h: number): PhotoMarks {
     return gx >= 0 && gx < gw && gy >= 0 && gy < gh ? labels[gy * gw + gx] : -1;
   };
   const isMine = (x: number, y: number) => labelAt(x, y) === mine;
-  const outline = photo.paintOutline ?? PAINT_DEFAULTS.outline;
+  const outline = photo.paintOutline ?? paintDefaultsOf(photo).outline;
   // The paper's label: the last of a split's colors; a single layer's is 0, and it has no other pen.
   const colour = Boolean(photo.ink && photo.regions && photo.region !== undefined && !photo.key);
   const paper = colour ? photo.regions!.length : 0;
@@ -5611,6 +6015,31 @@ const SAVED_STYLES = ["waves", "squiggle", "streamlines", "scribble", "sketch", 
 const isSavedStyle = (v: unknown): v is (typeof SAVED_STYLES)[number] => (SAVED_STYLES as readonly unknown[]).includes(v);
 
 /** A photo read back from a saved drawing: only a picture and numbers are kept, so check them on the way in. */
+/**
+ * An ink set as a drawing kept it, or null when it isn't one. Checked rather than trusted: a drawing
+ * is a file like any other, and a set with no inks - or inks with no colour - would separate into
+ * nothing at all.
+ */
+function inkSetFromData(raw: unknown): InkSet | null {
+  if (!raw || typeof raw !== "object") return null;
+  const set = raw as Record<string, unknown>;
+  const inks = Array.isArray(set.inks) ? set.inks : [];
+  const made: SetInk[] = inks.flatMap((ink) => {
+    const one = ink as Record<string, unknown>;
+    return typeof one?.color === "string" && /^#[0-9a-f]{6}$/i.test(one.color)
+      ? [{ name: typeof one.name === "string" ? one.name : "Ink", color: one.color, angle: Number.isFinite(Number(one.angle)) ? Number(one.angle) : 0 }]
+      : [];
+  });
+  if (made.length !== inks.length || made.length < 2) return null;
+  return {
+    key: typeof set.key === "string" && set.key ? set.key : "own",
+    label: typeof set.label === "string" && set.label ? set.label : "Inks",
+    ...(typeof set.about === "string" ? { about: set.about } : {}),
+    inks: made,
+    ...(set.own ? { own: true } : {}),
+  };
+}
+
 export function photoFromData(raw: Record<string, unknown>): Photo | null {
   const src = raw.src;
   if (typeof src !== "string" || !src.startsWith("data:image/")) return null;
@@ -5713,11 +6142,14 @@ export function photoFromData(raw: Record<string, unknown>): Photo | null {
     ...(typeof raw.separation === "string" ? { separation: raw.separation } : {}),
     ...(typeof raw.plate === "string" && "cmykogrv".includes(raw.plate) && raw.plate.length === 1 ? { plate: raw.plate as Plate } : {}),
     ...(Array.isArray(raw.plates) && raw.plates.every((v) => typeof v === "string") ? { plates: raw.plates as string[] } : {}),
+    ...(Number.isInteger(raw.ink_at) && Number(raw.ink_at) >= 0 ? { inkAt: Number(raw.ink_at) } : {}),
+    ...((() => { const set = inkSetFromData(raw.ink_set); return set ? { inkSet: set } : {}; })()),
     ...(Number.isFinite(Number(raw.black_share)) && raw.black_share !== undefined ? { blackShare: Number(raw.black_share) } : {}),
     ...(Array.isArray(raw.region_inks) ? { regionInks: raw.region_inks.map((c) => (typeof c === "string" ? c : null)) } : {}),
     ...(Number.isFinite(Number(raw.row_mm)) && raw.row_mm !== undefined ? { rowMm: Number(raw.row_mm) } : {}),
     ...(Number.isFinite(Number(raw.wave_mm)) && raw.wave_mm !== undefined ? { waveMm: Number(raw.wave_mm) } : {}),
     ...(Number.isFinite(Number(raw.saturation)) && raw.saturation !== undefined && Number(raw.saturation) !== 0 ? { saturation: Number(raw.saturation) } : {}),
+    ...(num(raw.flatten, 0) >= 2 ? { flatten: Math.min(FLATTEN_MOST, Math.round(num(raw.flatten, 0))) } : {}),
     ...(Number.isFinite(Number(raw.hatch_smooth_mm)) && raw.hatch_smooth_mm !== undefined ? { hatchSmoothMm: Number(raw.hatch_smooth_mm) } : {}),
     ...(Number.isFinite(Number(raw.hatch_shortest_mm)) && raw.hatch_shortest_mm !== undefined ? { hatchShortestMm: Math.max(0, Number(raw.hatch_shortest_mm)) } : {}),
     ...(Number.isFinite(Number(raw.squiggle_amp_mm)) && raw.squiggle_amp_mm !== undefined ? { squiggleAmpMm: Number(raw.squiggle_amp_mm) } : {}),
@@ -5816,13 +6248,19 @@ export const photoData = (p: Photo) => ({
   ...(p.ink ? { ink: p.ink, regions: p.regions, region: p.region } : {}),
   ...(p.fitPaper ? { fit_paper: p.fitPaper, pen_mm: p.penMm, ...(p.fitPairs ? { fit_pairs: true } : {}), ...(p.fitOpaque ? { fit_opaque: true } : {}) } : {}),
   // A plate's pen width: the separation works out its passes from it.
-  ...(p.plate && p.penMm !== undefined ? { pen_mm: p.penMm } : {}),
+  ...(onePlate(p) && p.penMm !== undefined ? { pen_mm: p.penMm } : {}),
   ...(p.key ? { key: true } : {}),
   ...(p.modes ? { modes: p.modes } : {}),
   ...(p.keyInk ? { key_ink: p.keyInk } : {}),
   ...(p.keyStrength !== undefined ? { key_strength: p.keyStrength } : {}),
   ...(p.keyFrom !== undefined ? { key_from: p.keyFrom } : {}),
-  ...(p.plate ? { plate: p.plate, plates: p.plates } : {}),
+  // A built-in set still writes its plate letter, so a drawing made here opens in an older build.
+  ...(onePlate(p) ? {
+    ...(p.plate ? { plate: p.plate } : {}),
+    plates: p.plates,
+    ...(p.inkAt !== undefined ? { ink_at: p.inkAt } : {}),
+    ...(p.inkSet ? { ink_set: p.inkSet } : {}),
+  } : {}),
   ...(p.separation ? { separation: p.separation } : {}),
   ...(p.blackShare !== undefined ? { black_share: p.blackShare } : {}),
   ...(p.regionInks ? { region_inks: p.regionInks } : {}),
@@ -5832,6 +6270,7 @@ export const photoData = (p: Photo) => ({
   ...(p.hatchSmoothMm ? { hatch_smooth_mm: p.hatchSmoothMm } : {}),
   ...(p.hatchShortestMm !== undefined ? { hatch_shortest_mm: p.hatchShortestMm } : {}),
   ...(p.saturation ? { saturation: p.saturation } : {}),
+  ...(p.flatten ? { flatten: p.flatten } : {}),
   ...(p.squiggleAmpMm !== undefined ? { squiggle_amp_mm: p.squiggleAmpMm } : {}),
   ...(p.squiggleHeight !== undefined ? { squiggle_height: p.squiggleHeight } : {}),
   ...(p.squiggleJoin ? { squiggle_join: true } : {}),

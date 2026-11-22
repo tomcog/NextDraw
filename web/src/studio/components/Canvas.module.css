@@ -47,6 +47,15 @@
 
 .wrap[data-tool="select"] .grab { pointer-events: all; cursor: grab; }
 
+/* A knockout shape is grabbed anywhere inside it, not only by its edge: it's a filled shape. */
+.grabArea {
+  fill: transparent;
+  stroke: none;
+  pointer-events: none;
+}
+
+.wrap[data-tool="select"] .grabArea { pointer-events: fill; cursor: grab; }
+
 .wrap[data-tool="select"][data-drag="move"] .grab { cursor: grabbing; }
 
 /* Which shape is chosen is said by its handles, not by recoloring it: a shape has to keep showing

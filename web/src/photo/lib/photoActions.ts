@@ -7,11 +7,12 @@ import type { Dispatch, SetStateAction } from "react";
 import { api, postJSON } from "../../shared/lib/api";
 import { EDGE_STYLES, edgeKeep, type EdgeGen } from "../../shared/lib/drawing/edgeMask";
 import { lightness } from "../../shared/lib/color";
+import { nameOfColor } from "../../shared/lib/colorNames";
 import type { FitAlign, Margins } from "../../shared/lib/geometry";
 import type { PenColor, Preset } from "../../shared/lib/types";
 import {
-  BAND_NAMES, LAYER_SETTINGS, MOST_SIDE_LAYERS, paperToneOf, mostColorsOf, MOST_LAYERS, PHOTO_DEFAULTS, PLATES, PLATE_AIMS, colourGroups, isColourful, matchPens, photoMode,
-  placeOnPage, placeAtOwnSize, photoScale, croppedCopy, joinedPicture, keptPlatesAlike, partOfPart, photoData, photoFromData, inkNamed, loadProfile, plateOfPhoto, platePens, presetAngle, readTones, hexLinear, linearHex, coverSteps, stemWithoutPlate, turnedCopy, workingCopy, MASK_EDGE_PX, MASK_SIDES, type AnglePreset, type Photo, type PhotoPart, type Plate, type PlateSet, PLATE_SETS, plateSetOf, platesOf,
+  BAND_NAMES, LAYER_SETTINGS, MOST_SIDE_LAYERS, paperToneOf, mostColorsOf, MOST_LAYERS, PHOTO_DEFAULTS, PLATES, PLATE_AIMS, colourGroups, flatColours, FLAT_ENOUGH, inkAtOf, inkSetOf, isColourful, matchPens, onePlate, photoMode, type InkSet, type SetInk,
+  placeOnPage, placeAtOwnSize, photoScale, croppedCopy, joinedPicture, keptPlatesAlike, partOfPart, photoData, photoFromData, inkNamed, loadProfile, plateOfPhoto, platePens, presetAngle, readTones, tonesOf, hexLinear, linearHex, coverSteps, stemWithoutPlate, turnedCopy, workingCopy, MASK_EDGE_PX, MASK_SIDES, type AnglePreset, type Photo, type PhotoPart, type Plate, type PlateSet, PLATE_SETS, plateSetOf,
 } from "../../shared/lib/drawing/photo";
 import { boxOf, newLayerId, newShapeId, type Layer, type Page, type Shape } from "../../shared/lib/drawing/shapes";
 import { snapshotShapes } from "../../shared/lib/drawing/snapshot";
@@ -383,7 +384,7 @@ export function photoActions(ctx: PhotoContext) {
     * Split the chosen photo the other way - by value or by colour - keeping how it was split this way
     * for when it comes back, and putting back how it was split that way before, if it has been.
     */
-  const switchPhotoMode = (to: "value" | "colour" | "cmyk" | "profile" | "separations") => {
+  const switchPhotoMode = (to: "value" | "colour" | "flat" | "cmyk" | "profile" | "separations") => {
     if (!chosen?.photo) return;
     const from = photoMode(chosen.photo);
     if (from === to) return;
@@ -418,7 +419,7 @@ export function photoActions(ctx: PhotoContext) {
       })();
       return;
     }
-    const back = modes[to as "value" | "colour" | "cmyk"];
+    const back = modes[to as "value" | "colour" | "flat" | "cmyk"];
     if (back?.length) {
       // How it was split is the mode's own; how the photo is drawn and adjusted is the whole photo's,
       // and stays as it is now. Brought back as it was saved, a split kept from before a change of
@@ -432,6 +433,8 @@ export function photoActions(ctx: PhotoContext) {
       );
     } else if (to === "colour") {
       splitPhotoBestFit(3, { modes });
+    } else if (to === "flat") {
+      splitPhotoFlat(undefined, undefined, { modes });
     } else if (to === "cmyk") {
       splitPhotoCmyk({ modes });
     } else {
@@ -479,7 +482,7 @@ export function photoActions(ctx: PhotoContext) {
         shapeName: `${stem} ${ink}`,
         photo: {
           band: undefined, side: undefined, paperTone: undefined, key: undefined, keyInk: undefined, regions: undefined, region: undefined, regionInks: undefined,
-          fitPaper: undefined, fitPairs: undefined, plate: undefined, plates: undefined, ink: undefined,
+          fitPaper: undefined, fitPairs: undefined, plate: undefined, plates: undefined, inkSet: undefined, inkAt: undefined, ink: undefined,
           profile: path, profileName: name, profileIntent: intent || undefined, profileBpc: bpc || undefined, profileInk: i, separation: ink,
           ...extra,
         } as Partial<Photo>,
@@ -507,18 +510,18 @@ export function photoActions(ctx: PhotoContext) {
     if (matched.some((p) => !p)) return;
     const plates = matched.map((p) => p!.color);
     const { name } = photoStem();
-    const parts = use.plates.map((plate, i) => ({ plate, pen: matched[i]! }))
+    const parts = use.plates.map((plate, i) => ({ plate, at: i, pen: matched[i]! }))
       .sort((a, b) => (lightness(b.pen.color) ?? 0) - (lightness(a.pen.color) ?? 0));
     rebuildPhoto(
-      parts.map(({ plate, pen }) => ({
+      parts.map(({ plate, at, pen }) => ({
         layerName: pen.name,
         layerColor: pen.color,
         shapeName: `${name} ${pen.name}`,
         photo: {
           band: undefined, side: undefined, paperTone: undefined, key: undefined, keyInk: undefined, regions: undefined, region: undefined, regionInks: undefined,
-          // Best fit's own options don't carry over.
-          fitPaper: undefined, fitPairs: undefined,
-          plate, plates, ink: pen.color, angle: PLATE_AIMS[plate].angle,
+          // Best fit's own options don't carry over, and neither does a set of your own.
+          fitPaper: undefined, fitPairs: undefined, inkSet: undefined,
+          plate, inkAt: at, plates, ink: pen.color, angle: PLATE_AIMS[plate].angle,
           // The pen's line width: with the spacing, how much paper each pass covers, which the
           // separation works out its passes from.
           penMm: penWidthOf(tool2),
@@ -528,6 +531,74 @@ export function photoActions(ctx: PhotoContext) {
       chosen.photo.group ?? newShapeId(),
       `Split into ${use.label}: ${use.plates.map((p, i) => `${PLATE_AIMS[p].name} in ${matched[i]!.name}`).join(", ")}`,
     );
+  };
+
+  /**
+    * Split the chosen image into a set of inks of your own: the pens you picked, each drawn across the
+    * whole image at the coverage that, laid over the others on paper, comes nearest its colour. That
+    * is the same solve CMYK gets - nothing in it is CMYK - over whatever inks the set names.
+    *
+    * A set of your own names pens outright, so nothing is matched by hue: the inks are the pens. The
+    * set is kept with each layer, so the drawing carries it to any machine that opens it.
+    */
+  const splitPhotoOwnInks = (set: InkSet, extra: Partial<Photo> = {}) => {
+    if (!chosen?.photo) return;
+    if (set.inks.length < 2) {
+      setMessage({ text: `${set.label} needs at least two inks to separate an image into`, ok: false });
+      return;
+    }
+    const plates = set.inks.map((ink) => ink.color);
+    const { name } = photoStem();
+    const parts = set.inks.map((ink, at) => ({ ink, at }))
+      .sort((a, b) => (lightness(b.ink.color) ?? 0) - (lightness(a.ink.color) ?? 0));
+    rebuildPhoto(
+      parts.map(({ ink, at }) => ({
+        layerName: ink.name,
+        layerColor: ink.color,
+        shapeName: `${name} ${ink.name}`,
+        photo: {
+          band: undefined, side: undefined, paperTone: undefined, key: undefined, keyInk: undefined, regions: undefined, region: undefined, regionInks: undefined,
+          fitPaper: undefined, fitPairs: undefined, plate: undefined,
+          inkSet: set, inkAt: at, plates, ink: ink.color, angle: ink.angle,
+          penMm: penWidthOf(tool2),
+          ...extra,
+        },
+      })),
+      chosen.photo.group ?? newShapeId(),
+      `Split into ${set.label}: ${set.inks.map((ink) => ink.name).join(", ")}`,
+    );
+  };
+
+  /**
+    * Keep the inks this image is separated into as a named set, to separate another image into later.
+    * The inks are the layers' pens as they stand - so the way to make a set is to separate an image
+    * any way at all, change each layer's pen to the one you want, and save what you see.
+    *
+    * Only the pens, their names and their angles are kept: not the picture, not the effect, not how
+    * dark anything is. The set goes beside the image presets, so every Mac has it.
+    */
+  const saveInkSet = async (taken: string[]) => {
+    if (!chosen?.photo || !onePlate(chosen.photo)) return;
+    const members = shapes.filter(sameImage);
+    const was = inkSetOf(chosen.photo);
+    const inks: SetInk[] = was.inks.map((ink, at) => {
+      const member = members.find((sh) => sh.photo && inkAtOf(sh.photo) === at);
+      const layer = member ? layers.find((l) => l.id === member.layerId) : undefined;
+      return {
+        name: (layer ? splitLayerName(layer.name, tool2?.palette ?? []).pen ?? layer.name : "") || ink.name,
+        color: member?.photo?.ink ?? ink.color,
+        angle: member?.photo?.angle ?? ink.angle,
+      };
+    });
+    const name = window.prompt("Save these inks as the set:", was.own ? was.label : "My inks")?.replace(/[/\\:]/g, "-").trim();
+    if (!name) return;
+    if (taken.includes(name) && !window.confirm(`Replace the ink set \u201c${name}\u201d?`)) return;
+    try {
+      await postJSON(`/api/ink-sets/${encodeURIComponent(name)}`, { set: { key: `own:${name}`, label: name, inks, own: true } }, "PUT");
+      setMessage({ text: `Saved the ink set ${name}`, ok: true });
+    } catch (err) {
+      setMessage({ text: (err as Error).message, ok: false });
+    }
   };
 
   /** The palette's darkest pen: what a photo's key layer starts in. */
@@ -609,7 +680,7 @@ export function photoActions(ctx: PhotoContext) {
         layerName: n > 1 ? `${ink} ${words[i]}` : ink,
         layerColor: color,
         shapeName: n > 1 ? `${name} ${words[i]}` : name,
-        photo: { band: n > 1 ? [i / n, (i + 1) / n] as [number, number] : undefined, side: undefined, paperTone: undefined, ink: undefined, regions: undefined, region: undefined, key: undefined, keyInk: undefined, regionInks: undefined, plate: undefined, plates: undefined, fitPaper: undefined, fitPairs: undefined, ...extra },
+        photo: { band: n > 1 ? [i / n, (i + 1) / n] as [number, number] : undefined, side: undefined, paperTone: undefined, ink: undefined, regions: undefined, region: undefined, key: undefined, keyInk: undefined, regionInks: undefined, plate: undefined, plates: undefined, inkSet: undefined, inkAt: undefined, fitPaper: undefined, fitPairs: undefined, ...extra },
       })),
       n > 1 ? chosen.photo.group ?? newShapeId() : undefined,
       n > 1 ? `Split into ${n} tone layers` : "One layer, by value",
@@ -657,7 +728,7 @@ export function photoActions(ctx: PhotoContext) {
           shapeName: `${name} ${pen.name}`,
           photo: {
             side, paperTone: tone, paperToneSet: paperTone ? true : undefined, band: n > 1 ? [i / n, (i + 1) / n] : undefined,
-            ink: undefined, regions: undefined, region: undefined, key: undefined, keyInk: undefined, regionInks: undefined, plate: undefined, plates: undefined, fitPaper: undefined, fitPairs: undefined, ...extra,
+            ink: undefined, regions: undefined, region: undefined, key: undefined, keyInk: undefined, regionInks: undefined, plate: undefined, plates: undefined, inkSet: undefined, inkAt: undefined, fitPaper: undefined, fitPairs: undefined, ...extra,
           },
         });
       }
@@ -768,7 +839,7 @@ export function photoActions(ctx: PhotoContext) {
         layerColor: pen.color,
         shapeName: `${name} ${pen.name}`,
         photo: {
-          band: undefined, side: undefined, paperTone: undefined, key: undefined, keyInk: undefined, plate: undefined, plates: undefined,
+          band: undefined, side: undefined, paperTone: undefined, key: undefined, keyInk: undefined, plate: undefined, plates: undefined, inkSet: undefined, inkAt: undefined,
           ink: pen.color, regions, region, regionInks, fitPaper: paper, penMm: penWidthOf(tool2),
           fitPairs: pairs || undefined, fitOpaque: tool2.settings.ink_opaque === true || undefined,
           ...extra,
@@ -777,6 +848,74 @@ export function photoActions(ctx: PhotoContext) {
       parts.length > 1 ? chosen.photo.group ?? newShapeId() : undefined,
       `Best ${parts.length === 1 ? "color" : `${parts.length} colors`} for this image on this paper${pairs ? ", in pairs where that comes nearer" : ""}: ${parts.map((p) => p.pen.name).join(", ")}`,
     );
+  };
+
+  /**
+    * Split the chosen image into the flat colors it is already drawn in: the picture read for its own
+    * colors - and its own number of them - and a layer for each, in the palette's nearest pen. For art
+    * made of flat areas with hard borders, where the colors are a fact of the picture rather than a
+    * number to choose: a poster, a print, a logo.
+    *
+    * Unlike the Image split, nothing here is mixed on paper and nothing is hatched to a share of it:
+    * one color, one pen, one area. Layers stack by their pens' lightness, lightest at the bottom.
+    */
+  const splitPhotoFlat = (count?: number, own?: boolean, extra: Partial<Photo> = {}) => {
+    if (!chosen?.photo) return;
+    const photo = chosen.photo;
+    // Its own colors, or the palette's nearest pens: as asked now, else as this photo is split already.
+    const keepOwn = own ?? Boolean(photo.flatOwn);
+    const asked = count ?? photo.flatCount;
+    const pens = tool2?.palette ?? [];
+    if (!keepOwn && !pens.length) {
+      setMessage({ text: `${tool2?.name ?? "This pen"} has no palette of colors to split an image into - or keep the image's own colors`, ok: false });
+      return;
+    }
+    // Without pens to take, only the effect's own limit applies: nothing has to be matched one to one.
+    const most = keepOwn ? mostColorsOf(photo) : Math.min(mostColorsOf(photo), pens.length);
+    const found = flatColours(photo.src, most, photo.brightness, photo.contrast, photo.saturation, asked);
+    if (!found.colours.length) {
+      setMessage({ text: tonesOf(photo.src) ? "No flat colors to read in this image" : "The image is still being read: try again in a moment", ok: false });
+      return;
+    }
+    const regions = found.colours;
+    const matched = keepOwn ? [] : matchPens(regions, pens);
+    // Drawn in the picture's own colors, a layer is named for the colour it is: there is no pen to
+    // name it, and in the Layers card the name is what tells one from another. A name already taken
+    // by a lighter colour falls back to the colour itself, so no two layers answer to one name.
+    const taken = new Set<string>();
+    const ownName = (colour: string) => {
+      const name = nameOfColor(colour);
+      if (!taken.has(name)) { taken.add(name); return name; }
+      return colour.toUpperCase();
+    };
+    const parts = regions
+      .map((colour, region) => ({ colour, region, pen: keepOwn ? undefined : matched[region] }))
+      .filter((p) => keepOwn || p.pen)
+      .map((p) => ({ ...p, drawn: p.pen?.color ?? p.colour }))
+      .sort((a, b) => (lightness(b.drawn) ?? 0) - (lightness(a.drawn) ?? 0));
+    const regionInks = regions.map((colour, region) => (keepOwn ? colour : matched[region]?.color ?? null));
+    const { name } = photoStem();
+    const named = parts.map((p) => (p.pen ? p.pen.name : ownName(p.drawn)));
+    rebuildPhoto(
+      parts.map((p, at) => ({
+        layerName: named[at],
+        layerColor: p.drawn,
+        shapeName: `${name} ${named[at]}`,
+        photo: {
+          band: undefined, side: undefined, paperTone: undefined, key: undefined, keyInk: undefined, plate: undefined, plates: undefined, inkSet: undefined, inkAt: undefined,
+          fitPaper: undefined, fitPairs: undefined, fitOpaque: undefined, penMm: undefined,
+          ink: p.drawn, regions, region: p.region, regionInks, flat: true,
+          flatCount: asked || undefined, flatOwn: keepOwn || undefined,
+          ...extra,
+        },
+      })),
+      parts.length > 1 ? photo.group ?? newShapeId() : undefined,
+      `${parts.length} flat ${parts.length === 1 ? "color" : "colors"}${asked ? "" : " read"} from this image${keepOwn ? ", in the image's own colors" : ""}: ${named.join(", ")}`,
+    );
+    // Said after the split, so it reads as a note about the picture rather than a reason it failed.
+    if (found.covered < FLAT_ENOUGH) {
+      setMessage({ text: `Only ${Math.round(found.covered * 100)}% of this image reads as flat color, so these are slices of its shading rather than colors it's drawn in: Image may suit it better`, ok: false });
+    }
   };
 
   /**
@@ -1110,11 +1249,12 @@ export function photoActions(ctx: PhotoContext) {
    * color at all, from the picker. Its layer keeps its name; its ink - a plate's color, a colour group's, the key's - becomes this one, so a
    * CMYK photo is separated again for it. A drag through the picker is one step to undo.
    */
-  const setLayerColor = (color: string, plate?: Plate, layerId?: string, name?: string) => {
+  const setLayerColor = (color: string, plate?: Plate, layerId?: string, name?: string, at?: number) => {
     // A CMYK plate's swatch colors that plate's layer, and the Layers card's any layer, whichever
     // layer is in hand. A palette pen picked there names the layer too.
     const ours = (sh: Shape) => sh.kind === "photo" && Boolean(sh.photo) && (chosen?.photo?.group ? sh.photo?.group === chosen.photo.group : sh.id === chosen?.id);
     const target = plate ? shapes.find((sh) => ours(sh) && sh.photo?.plate === plate) ?? chosen
+      : at !== undefined ? shapes.find((sh) => ours(sh) && sh.photo && inkAtOf(sh.photo) === at) ?? chosen
       : layerId ? shapes.find((sh) => ours(sh) && sh.layerId === layerId)
       : chosen;
     if (!target?.photo) {
@@ -1131,8 +1271,9 @@ export function photoActions(ctx: PhotoContext) {
     colorStep.layer = target.layerId;
     colorStep.at = now;
     const p = target.photo;
-    const was = (p.plate && p.plates ? p.plates[platesOf(p.plates).indexOf(p.plate)] : p.ink ?? p.keyInk)?.toLowerCase();
-    const plates = p.plate && p.plates ? p.plates.map((c, i) => (i === platesOf(p.plates!).indexOf(p.plate!) ? color : c)) : undefined;
+    const mine = onePlate(p) ? inkAtOf(p) : -1;
+    const was = (mine >= 0 && p.plates ? p.plates[mine] : p.ink ?? p.keyInk)?.toLowerCase();
+    const plates = mine >= 0 && p.plates ? p.plates.map((c, i) => (i === mine ? color : c)) : undefined;
     const group = p.group;
     setShapes((list) => list.map((sh) => {
       const own = sh.id === target.id;
@@ -1479,7 +1620,7 @@ export function photoActions(ctx: PhotoContext) {
 
   return {
     setChannelOf, splitPhotoProfile,
-    addPhoto, addSeparations, switchPhotoMode, setKeyLayer, splitPhoto, splitPhotoBestFit,
+    addPhoto, addSeparations, switchPhotoMode, setKeyLayer, splitPhoto, splitPhotoBestFit, splitPhotoFlat, splitPhotoOwnInks, saveInkSet,
     placePhoto, scalePhoto, movePhoto, replacePhoto, reloadPhoto, joinSeparations, cropPhoto, bakeEffect, savePreset, applyPreset, deletePreset, setPhotoOf, addEdgeMask, chooseEdgeMask, deleteEdgeMask, setEdgeGen, saveEdgeGen, setAngles, photoStem, splitPhotoCmyk, setLayerColor,
     splitAroundPaper, setPaperTone, addPass, removePass,
   };

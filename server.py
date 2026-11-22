@@ -5357,16 +5357,33 @@ def show_color_profiles():
 # layers), raw or run-length packed, 8 or 16 bits, from a PSD or a PSB. Image opens the channels as
 # separations, a layer each.
 PSD_MULTICHANNEL = 7
+PSD_CMYK = 4
+# A CMYK file's four plates, in the order Photoshop keeps them. The file names them nowhere - being
+# CMYK is what says what they are - so they are named here, in the inks and colours the app's own
+# plates use (PLATE_AIMS in photo.ts), which is how each one finds its pen by name.
+CMYK_CHANNELS = (("Cyan", "#00a3e0"), ("Magenta", "#d6007a"), ("Yellow", "#ffe500"), ("Black", "#1a1a1a"))
 
 
 def psd_channels(data):
-    """A Multichannel PSD or PSB as [{name, color, png}], or None when it's any other picture -
-    another mode, or not a Photoshop file - which the converter reads as usual."""
+    """A Multichannel or CMYK PSD or PSB as [{name, color, png}], or None when it's any other
+    picture - another mode, or not a Photoshop file - which the converter reads as usual.
+
+    Both modes keep a plane a channel, and keep it the way this app wants an ink: 0 is all of that
+    ink, 255 none of it. (Photoshop is often said to store CMYK inverted; that is inverted from ink
+    as a fraction, and it lands exactly on the app's own way round, so nothing is flipped here.)
+    What differs is that a Multichannel file names and colours its channels and a CMYK file doesn't -
+    they are the four plates, and nothing else in it is ink."""
     if len(data) < 26 or data[:4] != b"8BPS":
         return None
     version, = struct.unpack(">H", data[4:6])
     count, height, width, depth, mode = struct.unpack(">HIIHH", data[12:26])
-    if mode != PSD_MULTICHANNEL or version not in (1, 2) or depth not in (8, 16) or not count:
+    if version not in (1, 2) or depth not in (8, 16) or not count:
+        return None
+    # A CMYK file may carry alpha channels after its plates; those are masks, not ink, and are left.
+    if mode == PSD_CMYK:
+        if count < len(CMYK_CHANNELS):
+            return None
+    elif mode != PSD_MULTICHANNEL:
         return None
     big = version == 2
     at = 26
@@ -5400,6 +5417,12 @@ def psd_channels(data):
         return None
     if depth == 16:
         planes = [p[::2] for p in planes]  # the high byte of each: 8 bits is all a pen needs
+    if mode == PSD_CMYK:
+        return [{
+            "name": name,
+            "color": colour,
+            "png": gray_png(planes[i], width, height),
+        } for i, (name, colour) in enumerate(CMYK_CHANNELS) if len(planes[i]) >= width * height]
     return [{
         "name": names[i] if i < len(names) and names[i] else f"Channel {i + 1}",
         "color": colors[i] if i < len(colors) else None,
@@ -5503,7 +5526,7 @@ def gray_png(plane, width, height):
 
 
 def channels_response(data):
-    """A picture's channels, if it's a Multichannel Photoshop file, for Image to open as separations."""
+    """A picture's channels, if it's a Multichannel or CMYK Photoshop file, for Image to open as separations."""
     try:
         channels = psd_channels(data)
     except (struct.error, IndexError, ValueError):
@@ -5515,7 +5538,7 @@ def channels_response(data):
 
 @app.post("/api/image-channels")
 def image_channels_sent():
-    """The picture sent - the whole body - as its channels, or channels: null when it's not Multichannel."""
+    """The picture sent - the whole body - as its channels, or channels: null when it has none to read."""
     return channels_response(request.get_data())
 
 
@@ -5640,6 +5663,67 @@ def delete_image_preset(name):
     if path is not None and path.is_file():
         path.unlink()
     return list_image_presets()
+
+
+# ---- Ink sets ----
+# A named set of inks to separate an image into, kept beside the image presets so every Mac has the
+# same ones. CMYK and the extended sets are the app's own and aren't kept here; these are the sets
+# made from a pen's own colors - "Red, Black, Pink, Lime" - which belong to whoever made them.
+INK_SETS = (ICLOUD_DRIVE / "NextDraw Studio" / "Ink sets") if ICLOUD_DRIVE.is_dir() else (ROOT / "ink-sets")
+MAX_INK_SET = 64 * 1024
+
+
+def ink_set_file(name):
+    """The file a set of this name is kept in, or None for a name that isn't one."""
+    name = (name or "").strip()
+    if not name or len(name) > 120 or not re.fullmatch(r"[^/\\:\x00-\x1f]+", name) or name.startswith("."):
+        return None
+    return INK_SETS / f"{name}.json"
+
+
+def ink_sets_listed():
+    out = []
+    if INK_SETS.is_dir():
+        for f in sorted(INK_SETS.glob("*.json"), key=lambda p: p.stem.lower()):
+            try:
+                out.append({"name": f.stem, "set": json.loads(f.read_text())})
+            except (OSError, ValueError):
+                continue  # a set that can't be read is left out rather than breaking the list
+    return jsonify(sets=out)
+
+
+@app.get("/api/ink-sets")
+def list_ink_sets():
+    return ink_sets_listed()
+
+
+@app.put("/api/ink-sets/<name>")
+def save_ink_set(name):
+    path = ink_set_file(name)
+    if path is None:
+        return jsonify(error="That name can't be used for an ink set."), 400
+    made = (request.json or {}).get("set")
+    inks = made.get("inks") if isinstance(made, dict) else None
+    if not isinstance(inks, list) or len(inks) < 2:
+        return jsonify(error="An ink set needs at least two inks."), 400
+    if any(not isinstance(i, dict) or not isinstance(i.get("color"), str) for i in inks):
+        return jsonify(error="Every ink of a set needs a color."), 400
+    text = json.dumps(made)
+    if len(text) > MAX_INK_SET:
+        return jsonify(error="That ink set is too big to keep."), 400
+    INK_SETS.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_suffix(".tmp")
+    tmp.write_text(text)
+    os.replace(tmp, path)
+    return ink_sets_listed()
+
+
+@app.delete("/api/ink-sets/<name>")
+def delete_ink_set(name):
+    path = ink_set_file(name)
+    if path is not None and path.is_file():
+        path.unlink()
+    return ink_sets_listed()
 
 
 # ---- Ink colors by name, from Claude ----

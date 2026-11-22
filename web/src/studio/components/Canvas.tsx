@@ -1,4 +1,4 @@
-import { memo, useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
+import { memo, useEffect, useId, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
 import {
   allPoints, angleFromCenter, boxAround, boxOf, centerOf, clampToPage, dragHandleTurned, handlePoints, insertPoint, isDegenerate,
   drawnNodes, moveBy, newShapeId, pathRuns, removePoint, scaleInto, turnAround, turnAttr, turnGrip, turnPoint, CURSOR, POINT_HANDLE_LIMIT,
@@ -15,6 +15,8 @@ import type { Layer } from "../../shared/lib/drawing/shapes";
 import { type BedCanvasHandle, type Box } from "../../shared/components/BedCanvas";
 import { NextDrawCanvas } from "../../shared/components/NextDrawCanvas";
 import { TrimGuide } from "../../shared/components/TrimGuide";
+import { KnockoutMask, KnockoutShapes } from "../../shared/components/Knockout";
+import { isKnockoutLayer, knockoutGapIn, knockoutPaths, knockoutShapes } from "../../shared/lib/drawing/knockout";
 import { InkGroup, InkLayer } from "../../shared/components/Ink";
 import { isVarnishLayer, VARNISH_LINE_MM } from "../../shared/lib/ink";
 import type { PreviewToolbarProps, View } from "../../shared/components/PreviewToolbar";
@@ -421,6 +423,14 @@ export function Canvas({ bar, page, paperColor, shapes, fills, layers, activeLay
     [carriedIds, carriedWhole, fills], // eslint-disable-line react-hooks/exhaustive-deps
   );
   const shift = carrying ? `translate(${carrying.by.x} ${carrying.by.y})` : undefined;
+  // The Knockout layer: what every other layer is cut by when the drawing is written out, shown by
+  // hiding the lines under it the same way, and its shapes drawn as a guide rather than as ink.
+  const knockout = useMemo(() => knockoutShapes(shapes, layers), [shapes, layers]);
+  const knockoutD = useMemo(() => knockoutPaths(knockout, fonts), [knockout, fonts]);
+  const knockoutIds = useMemo(() => new Set(knockout.map((sh) => sh.id)), [knockout]);
+  const knockoutMoving = Boolean(carriedIds && knockout.some((sh) => carriedIds.has(sh.id)));
+  const knockoutAt = knockoutMoving ? shift : undefined;
+  const knockoutId = `knockout-${useId().replace(/[^\w-]/g, "")}`;
   // Layers too big for a grip on each mark (GRIP_LIMIT), counted over the whole drawing.
   const bigLayers = useMemo(() => {
     const count = new Map<string, number>();
@@ -800,8 +810,10 @@ export function Canvas({ bar, page, paperColor, shapes, fills, layers, activeLay
             )}
             {/* The ink, shared with Photo (Ink.tsx). Nothing in here is clickable - what you grab is
                 below, so how a mark is painted never changes what you can do to it. */}
+            {knockoutD.length > 0 && <KnockoutMask id={knockoutId} paths={knockoutD} gap={knockoutGapIn()} transform={knockoutAt} />}
+            <g mask={knockoutD.length ? `url(#${knockoutId})` : undefined}>
             <InkGroup sim={inkSim} penIn={penIn} build={inkBuild} className={styles.ink}>
-              {layers.map((layer) => {
+              {layers.filter((layer) => !isKnockoutLayer(layer.name)).map((layer) => {
                 const here = still.get(layer.id);
                 const moving = carried?.get(layer.id);
                 const marks = (
@@ -838,6 +850,12 @@ export function Canvas({ bar, page, paperColor, shapes, fills, layers, activeLay
                 );
               })}
             </InkGroup>
+            </g>
+            {/* Its guide: in Preview only while it's the layer being worked on - otherwise the paper
+                showing through is all there is to see, as it will print. */}
+            {knockoutD.length > 0 && (!inkSim || isKnockoutLayer(layers.find((l) => l.id === activeLayer)?.name ?? "")) && (
+              <KnockoutShapes paths={knockoutD} transform={knockoutAt} />
+            )}
             {/* The trim each set of trim marks is for, dashed: on screen only, as in Image and Plot.
                 It goes with the marks when they're carried, and away when their layer's hidden. */}
             {shapes.filter((sh) => sh.curve?.kind === "trim" && !layers.find((l) => l.id === sh.layerId)?.hidden).map((sh) => (
@@ -874,6 +892,14 @@ export function Canvas({ bar, page, paperColor, shapes, fills, layers, activeLay
                     {/* Filled but not outlined: shown thin and dashed, so it reads as a guide rather
                         than as a line the pen will make. You still have to see what the hatch came from. */}
                     {guide && element(sh, `${sh.id}-guide`, { className: styles.guide })}
+                    {knockoutIds.has(sh.id) && (
+                      <path
+                        className={styles.grabArea}
+                        fillRule="evenodd"
+                        d={knockoutPaths([sh], fonts)[0] ?? ""}
+                        onPointerDown={(e) => onShapeDown(e, sh)}
+                      />
+                    )}
                     {/* The grip. Transparent and generous, so grabbing a shape doesn't depend on
                         hitting a stroke that may be a fraction of a millimetre wide. */}
                     {element(sh, `${sh.id}-grab`, {

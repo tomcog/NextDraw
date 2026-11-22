@@ -73,7 +73,8 @@ export function clearSpot(map: InkMap | null, page: Page, inset: number, size: {
 export async function inkMap(svg: string, page: Page): Promise<InkMap | null> {
   try {
     const doc = new DOMParser().parseFromString(svg, "image/svg+xml");
-    doc.getElementById("studio-sources")?.remove();
+    // Nor do the knockout and what it cut, kept whole: none of them is plotted.
+    for (const id of ["studio-sources", "studio-knockout", "studio-knocked"]) doc.getElementById(id)?.remove();
     doc.querySelectorAll("g[stroke]").forEach((g) => g.setAttribute("stroke-width", String(1.5 / CELLS_PER_IN)));
     const text = new XMLSerializer().serializeToString(doc);
     const url = URL.createObjectURL(new Blob([text], { type: "image/svg+xml" }));

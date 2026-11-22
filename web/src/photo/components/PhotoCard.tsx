@@ -6,7 +6,7 @@ import { Section } from "../../shared/components/controls/Section";
 import { panelIcon } from "../../shared/components/PanelToolbar";
 import { NumberField } from "../../shared/components/controls/NumberField";
 import controls from "../../shared/components/controls/controls.module.css";
-import { BLACK_SHARE, CENTER_DEFAULTS, KEY_FROM, mostColorsOf, MOST_LAYERS, MOST_SIDE_LAYERS, MOST_PASSES, paperToneOf, OUTLINE_DEFAULTS, PAINT_DEFAULTS, SILHOUETTE_DEFAULTS, STREAM_DEFAULTS, ONE_LINE_DEFAULTS, ONE_LINE_MOST, SCRIBBLE_DEFAULTS, SKETCH_LINES, sketchLinesOf, type SketchLines, HILBERT_DEFAULTS, WAVE_DEFAULTS, ANGLE_PRESETS, centerModeOf, EDGE_DEFAULTS, hatchShortestOf, PLATE_SETS, SQUIGGLE_DRAW, SQUIGGLE_INKSCAPE, SQUIGGLE_INKSCAPE_RANGES, SQUIGGLE_RANGES, coverSteps, plateSetOf, squiggleDrawOf, squiggleInkscapeOf, type AnglePreset, type SquiggleDraw, type SquiggleInkscape, type PlateSet, photoMarks, photoMode, type Photo, type Plate } from "../../shared/lib/drawing/photo";
+import { BLACK_SHARE, CENTER_DEFAULTS, KEY_FROM, mostColorsOf, MOST_LAYERS, MOST_SIDE_LAYERS, MOST_PASSES, paperToneOf, OUTLINE_DEFAULTS, paintDefaultsOf, SILHOUETTE_DEFAULTS, STREAM_DEFAULTS, ONE_LINE_DEFAULTS, ONE_LINE_MOST, SCRIBBLE_DEFAULTS, SKETCH_LINES, sketchLinesOf, type SketchLines, HILBERT_DEFAULTS, WAVE_DEFAULTS, ANGLE_PRESETS, centerModeOf, EDGE_DEFAULTS, hatchShortestOf, BUILT_IN_INK_SETS, inkSetOf, type InkSet, SQUIGGLE_DRAW, SQUIGGLE_INKSCAPE, SQUIGGLE_INKSCAPE_RANGES, SQUIGGLE_RANGES, coverSteps, squiggleDrawOf, squiggleInkscapeOf, type AnglePreset, type SquiggleDraw, type SquiggleInkscape, type PlateSet, photoMarks, photoMode, type Photo, type Plate } from "../../shared/lib/drawing/photo";
 import type { EdgeGen } from "../../shared/lib/drawing/edgeMask";
 import { MaskCard } from "./MaskCard";
 import { boxOf, type Shape } from "../../shared/lib/drawing/shapes";
@@ -54,7 +54,7 @@ export interface PhotoActions {
   setEdgeGen: (gen: EdgeGen) => void;
   /** Keep the made edge in the library as a picture. */
   saveEdgeGen: (taken: string[]) => Promise<void>;
-  switchMode: (to: "value" | "colour" | "cmyk" | "profile" | "separations") => void;
+  switchMode: (to: "value" | "colour" | "flat" | "cmyk" | "profile" | "separations") => void;
   /** Split the image by a printer's color profile, by its path, at a rendering intent (0 to 3) and
    *  with or without black point compensation. */
   setProfile: (path: string, rendering: Rendering) => void;
@@ -63,6 +63,11 @@ export interface PhotoActions {
   split: (count: number) => void;
   /** Split by colour into the `count` pens that come nearest the photo as they really come out on paper. */
   splitBestFit: (count: number) => void;
+  /**
+    * Split the image into flat colors again: into this many (absent, as many as the picture has), and
+    * in the image's own colors or the palette's nearest pens (absent, however it is split now).
+    */
+  splitFlat: (count?: number, own?: boolean) => void;
   /** Split by best fit again, with or without two pens hatched across each other. */
   setPairs: (on: boolean) => void;
   setKeyLayer: (on: boolean) => void;
@@ -74,6 +79,10 @@ export interface PhotoActions {
   setColor: (color: string, plate?: Plate) => void;
   /** Split into a set of plates: CMYK, or CMYK with more inks. */
   splitCmyk: (set: PlateSet) => void;
+  /** Separate the image into a set of inks of your own, picked from the Inks menu. */
+  splitOwnInks: (set: InkSet) => void;
+  /** Keep the inks the image is separated into now as a named set. */
+  saveInkSet: (taken: string[]) => Promise<void>;
   /** Set the layers' angles: a preset newly chosen, or the whole set turned by so many degrees. */
   setAngles: (change: { preset?: AnglePreset; by?: number }) => void;
   /** Pick one of the photo's bands to set, and draw on its layer. */
@@ -125,15 +134,19 @@ export function PhotoCard({ shape, title, shapes, busy, targeted, layerCount, sh
   const readPresets = () => api<{ presets: string[] }>("/api/image-presets").then((r) => setPresets(r.presets)).catch(() => {});
   useEffect(() => { readPresets(); }, []);
   const [presetPicked, setPresetPicked] = useState("");
+  // The ink sets of your own, shared between Macs: read once, and again after one is saved or dropped.
+  const [inkSets, setInkSets] = useState<{ name: string; set: InkSet }[]>([]);
+  const readInkSets = () => api<{ sets: { name: string; set: InkSet }[] }>("/api/ink-sets").then((r) => setInkSets(r.sets)).catch(() => {});
+  useEffect(() => { readInkSets(); }, []);
   const photo = shape.photo;
+  // The set the image is separated into, when it is one of your own rather than a built-in.
+  const ownSet = inkSetOf(photo).own ? inkSetOf(photo) : undefined;
   const presetsBlocked = Boolean(photo.separation && !photo.profile);
   // The printer profiles in NextDraw's Color profiles folder: read once Profile is chosen, and again
   // after the folder is opened to add some.
   const [profiles, setProfiles] = useState<{ name: string; file: string; inks: number; black?: boolean }[]>([]);
   const readProfiles = () => api<{ profiles: typeof profiles }>("/api/color-profiles").then((r) => setProfiles(r.profiles)).catch(() => {});
-  useEffect(() => {
-    if (photo.profile && !profiles.length) void readProfiles();
-  }, [photo.profile, profiles.length]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { void readProfiles(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
   // Back from the Finder, having added profiles to the folder: the list again.
   useEffect(() => {
     if (!photo.profile) return;
@@ -166,6 +179,8 @@ export function PhotoCard({ shape, title, shapes, busy, targeted, layerCount, sh
     return () => window.removeEventListener("focus", again);
   }, [noProfiles]); // eslint-disable-line react-hooks/exhaustive-deps
   // A drawing from before the folder kept the profile's whole path: its file name is what's listed.
+  // The last option of the Inks menu: not an ink set but the way to the folder the profiles live in.
+  const PROFILES_OPTION = "__profiles__";
   const profileFile = photo.profile ? photo.profile.slice(photo.profile.lastIndexOf("/") + 1) : "";
   const rendering: Rendering = { intent: photo.profileIntent ?? 0, bpc: photo.profileBpc };
   // How many inks a photo split by colour is in: its layers, not counting the key.
@@ -239,9 +254,11 @@ export function PhotoCard({ shape, title, shapes, busy, targeted, layerCount, sh
       {/* A Multichannel file's own channels, a plate each: there to come back to once it's split another way. */}
       {channels && <Segment selected={noProfiles === null && photoMode(photo) === "separations"} title="Channels: the file's own separations, a layer for each of its channels in its ink" onClick={() => { setNoProfiles(null); actions.switchMode("separations"); }}>Channels</Segment>}
       <Segment selected={noProfiles === null && photoMode(photo) === "value"} title="B&W: the image as black and white, in one color or split into tone bands" onClick={() => { setNoProfiles(null); actions.switchMode("value"); }}>B&amp;W</Segment>
-      <Segment selected={noProfiles === null && photoMode(photo) === "cmyk"} title="CMYK: print's four plates - cyan, magenta, yellow and black - in the pen's nearest colors, blended on paper" onClick={() => { setNoProfiles(null); actions.switchMode("cmyk"); }}>CMYK</Segment>
-      <Segment selected={noProfiles === null && photoMode(photo) === "colour"} title="Image: as many colors as you choose from the pen's palette, the ones that best match the image" onClick={() => { setNoProfiles(null); actions.switchMode("colour"); }}>Image</Segment>
-      <Segment selected={noProfiles !== null || photoMode(photo) === "profile"} title="Multi: split by a printer's color profile in NextDraw's Color profiles folder - CMYK, a Riso set, extended gamut - a layer for each of its inks" onClick={chooseProfile}>Multi</Segment>
+      <Segment selected={noProfiles !== null || photoMode(photo) === "cmyk" || photoMode(photo) === "profile"} title="Inks: the image separated into a set of inks, each drawn across the whole image and blended on paper - print's CMYK, CMYK with the extended-gamut inks, a printer's color profile, or a set of your own" onClick={() => { setNoProfiles(null); if (photoMode(photo) !== "profile") actions.switchMode("cmyk"); }}>Inks</Segment>
+      {/* The image cut into areas, each drawn in one color - whether those colors are searched for in
+        the pen's palette or read from the image itself, which is a choice inside this mode rather
+        than a mode of its own: both cut the image up the same way. */}
+      <Segment selected={noProfiles === null && (photoMode(photo) === "colour" || photoMode(photo) === "flat")} title="Image: the image cut into areas of color, each drawn in one pen - the colors either searched for in the pen's palette or read from the image itself" onClick={() => { setNoProfiles(null); if (photoMode(photo) !== "flat") actions.switchMode("colour"); }}>Image</Segment>
     </SegmentedControl>
   );
   const colourMode = (
@@ -251,7 +268,7 @@ export function PhotoCard({ shape, title, shapes, busy, targeted, layerCount, sh
         // Which plate each is, and its pen, came from its file's name; its color is its swatch's.
         <>
           {modeControl}
-          <p className={styles.empty}>A separation: this layer draws its own grayscale picture, more of its color where it's darker. The Picture view shows every plate in its ink, together; a layer's eye takes it out. Click a layer's name in the Layers card to see its settings; the targeted layers are the ones the settings change. Each plate's brightness and contrast are in the Adjustments card. B&amp;W, CMYK, Image or Multi joins the plates into one picture in their inks and splits that; Channels brings the plates back. Replace with a Multichannel file swaps every plate for its own ink's channel; with any other picture, the shown plate alone.</p>
+          <p className={styles.empty}>A separation: this layer draws its own grayscale picture, more of its color where it's darker. The Picture view shows every plate in its ink, together; a layer's eye takes it out. Click a layer's name in the Layers card to see its settings; the targeted layers are the ones the settings change. Each plate's brightness and contrast are in the Adjustments card. B&amp;W, Inks, Image or Flat joins the plates into one picture in their inks and splits that; Channels brings the plates back. Replace with a Multichannel file swaps every plate for its own ink's channel; with any other picture, the shown plate alone.</p>
         </>
       ) : (
         <>
@@ -263,32 +280,75 @@ export function PhotoCard({ shape, title, shapes, busy, targeted, layerCount, sh
                 Show folder
               </Button>
             </>
-          ) : photoMode(photo) === "profile" ? (
+          ) : photoMode(photo) === "cmyk" || photoMode(photo) === "profile" ? (
             <>
-              {/* Which profile, and how it fits the photo's colors into its inks. Changing either splits again. */}
+              {/* Which inks the image is separated into. Print's four plates, those with the
+                extended-gamut inks, a printer's color profile, or a set of pens of your own: the
+                question is the same one - which inks - so they are one menu. What differs is who
+                works out how much of each ink goes where. A set of inks is solved here, against the
+                pens' own colors as they come out on paper; a profile is solved by the profile. */}
+              <div className={styles.menuRow}>
               <InputSelect
                 size="md"
-                label="Profile"
-                value={profileFile}
-                title={profileFile}
-                onChange={(e) => actions.setProfile(e.target.value, rendering)}
+                label="Inks"
+                value={photo.profile ? `icc:${profileFile}` : inkSetOf(photo).key}
+                title={photo.profile ? (photo.profileName ?? profileFile) : inkSetOf(photo).about ?? `${inkSetOf(photo).label}: inks of your own`}
+                onChange={(e) => {
+                  const picked = e.target.value;
+                  if (picked === PROFILES_OPTION) return chooseProfile();
+                  if (picked.startsWith("icc:")) return actions.setProfile(picked.slice(4), rendering);
+                  const built = BUILT_IN_INK_SETS.find((set) => set.key === picked);
+                  if (built) return actions.splitCmyk(built.key as PlateSet);
+                  const own = inkSets.find((saved) => saved.set.key === picked);
+                  if (own) actions.splitOwnInks(own.set);
+                }}
               >
-                {!profiles.some((p) => p.file === profileFile) && <option value={profileFile}>{photo.profileName ?? profileFile}</option>}
-                {profiles.map((p) => <option key={p.file} value={p.file}>{`${p.name} - ${p.inks} inks`}</option>)}
+                {BUILT_IN_INK_SETS.map((set) => <option key={set.key} value={set.key}>{set.label}</option>)}
+                {/* A set of your own that came with this drawing and isn't one of the saved ones:
+                  listed so the menu can show what the image is actually separated into. */}
+                {ownSet && !inkSets.some((saved) => saved.set.key === ownSet.key) && (
+                  <option value={ownSet.key}>{`${ownSet.label} (this drawing's own)`}</option>
+                )}
+                {inkSets.length > 0 && (
+                  <optgroup label="Your sets">
+                    {inkSets.map((saved) => <option key={saved.set.key} value={saved.set.key}>{saved.name}</option>)}
+                  </optgroup>
+                )}
+                {/* A profile this drawing uses that is no longer in the folder: still named, so the
+                  menu says what the image is split by rather than showing someone else's set. */}
+                {photo.profile && !profiles.some((p) => p.file === profileFile) && (
+                  <option value={`icc:${profileFile}`}>{photo.profileName ?? profileFile}</option>
+                )}
+                {profiles.length > 0 && (
+                  <optgroup label="Color profiles">
+                    {profiles.map((p) => <option key={p.file} value={`icc:${p.file}`}>{`${p.name} - ${p.inks} inks`}</option>)}
+                  </optgroup>
+                )}
+                <option value={PROFILES_OPTION}>Color profiles…</option>
               </InputSelect>
-              <InputSelect
-                size="md"
-                label="Intent"
-                value={String(photo.profileIntent ?? 0)}
-                title="How the photo's colors are fitted to the inks: Perceptual keeps how they relate, Relative colorimetric keeps the ones the inks can make exact, Saturation keeps them vivid"
-                onChange={(e) => actions.setProfile(photo.profile!, { ...rendering, intent: Number(e.target.value) })}
-              >
-                {INTENTS.map((name, i) => <option key={name} value={i}>{name}</option>)}
-              </InputSelect>
+              {/* A profile decides its own ink amounts, so there is no black share to set: what it
+                has instead is how the image's colors are fitted to its inks. */}
+              {photo.profile ? (
+                <InputSelect
+                  size="md"
+                  label="Intent"
+                  value={String(photo.profileIntent ?? 0)}
+                  title="How the photo's colors are fitted to the inks: Perceptual keeps how they relate, Relative colorimetric keeps the ones the inks can make exact, Saturation keeps them vivid"
+                  onChange={(e) => actions.setProfile(photo.profile!, { ...rendering, intent: Number(e.target.value) })}
+                >
+                  {INTENTS.map((name, i) => <option key={name} value={i}>{name}</option>)}
+                </InputSelect>
+              ) : (
+                /* How much of the colors' shared gray the black takes over, taken out of the rest: at
+                  100% a gray or a black is black ink alone; at 0% the darks are the other inks laid
+                  over each other, black only where they can't get dark enough. */
+                <NumberField label="Black" unit="%" min={0} max={100} step={5} value={Math.round((photo.blackShare ?? BLACK_SHARE) * 100)} onChange={(v) => actions.set({ blackShare: v / 100 })} />
+              )}
+              </div>
               {/* Only where it changes anything: Perceptual and Saturation bring the black down in
                 their own tables, Absolute keeps the paper's, and a profile that doesn't say where
                 its inks' black is (IA ECG B1C X) gives it nothing to work from. */}
-              {usesBpc(rendering.intent ?? 0) && profiles.find((p) => p.file === profileFile)?.black !== false && (
+              {photo.profile && usesBpc(rendering.intent ?? 0) && profiles.find((p) => p.file === profileFile)?.black !== false && (
                 <Checkbox
                   size="md"
                   checked={Boolean(rendering.bpc)}
@@ -297,27 +357,81 @@ export function PhotoCard({ shape, title, shapes, busy, targeted, layerCount, sh
                   onChange={(e) => actions.setProfile(photo.profile!, { ...rendering, bpc: e.target.checked })}
                 />
               )}
+              {/* The way to make a set of your own: separate the image any way at all, change each
+                layer's pen in the Layers card to the one you want, and keep what you see. A profile's
+                inks are the profile's, so there is nothing of yours to keep. */}
+              {!photo.profile && (
+                <div className={styles.fillRow}>
+                  <Button size="sm" variant="secondary" onClick={() => void actions.saveInkSet(inkSets.map((saved) => saved.name)).then(readInkSets)}>
+                    Save these inks as a set
+                  </Button>
+                  {ownSet && inkSets.some((saved) => saved.set.key === ownSet.key) && (
+                    <ButtonRound
+                      size="sm"
+                      icon={<Trash2 />}
+                      aria-label={`Delete the ink set ${ownSet.label}`}
+                      title={`Delete the ink set ${ownSet.label}. The image stays as it is; only the saved set goes.`}
+                      onClick={() => {
+                        if (!window.confirm(`Delete the ink set \u201c${ownSet.label}\u201d?`)) return;
+                        void api(`/api/ink-sets/${encodeURIComponent(ownSet.label)}`, { method: "DELETE" }).then(readInkSets);
+                      }}
+                    />
+                  )}
+                </div>
+              )}
             </>
-          ) : photoMode(photo) === "cmyk" ? (
+          ) : photoMode(photo) === "flat" || photo.ink ? (
             <>
-              {/* Which plates: print's four, or CMYK with more inks for truer, brighter color - and, beside
-                it, how much of the colors' shared gray the black plate takes over, taken out of cyan,
-                magenta and yellow: at 100% a gray or a black is black ink alone; at 0% the darks are
-                the other inks laid over each other, black only where they can't get dark enough. */}
-              <div className={styles.menuRow}>
-              <InputSelect
-                size="md"
-                label="Plates"
-                value={plateSetOf(photo.plates)}
-                title={PLATE_SETS.find((s) => s.key === plateSetOf(photo.plates))!.about}
-                onChange={(e) => actions.splitCmyk(e.target.value as PlateSet)}
-              >
-                {PLATE_SETS.map((s) => <option key={s.key} value={s.key}>{s.label}</option>)}
-              </InputSelect>
-              <NumberField label="Black" unit="%" min={0} max={100} step={5} value={Math.round((photo.blackShare ?? BLACK_SHARE) * 100)} onChange={(v) => actions.set({ blackShare: v / 100 })} />
+              {/* Both of these cut the image into areas and give each area one color; what differs is
+                where the colors come from. Best fit searches the pen's palette for the colors that
+                come nearest the image as they really come out on paper, mixing and hatching to get
+                there. The image is read for the colors it is actually drawn in, and each one takes
+                the nearest pen whole - one pen, one area, nothing mixed. Flatten, in Adjustments,
+                is what makes an image worth reading that way. */}
+              <SegmentedControl size="sm" variant="dark" aria-label="Colors from">
+                <Segment
+                  selected={!photo.flat}
+                  title="Best fit: the pens that come nearest the image as they come out on paper, hatched to the coverage that matches and crossed where two together come nearer"
+                  onClick={() => photo.flat && actions.splitBestFit(inks)}
+                >Best fit</Segment>
+                <Segment
+                  selected={Boolean(photo.flat)}
+                  title="The image: the colors the image is drawn in, read from it, each drawn whole in the nearest pen - nothing mixed, nothing approximated"
+                  onClick={() => !photo.flat && actions.splitFlat(0)}
+                >The image</Segment>
+              </SegmentedControl>
+              {photo.flat ? (
+            <>
+              {/* How many colors to flatten to. The picture has a number of its own, which is what it
+                is read for; setting one here joins its nearest colors until that many are left, and
+                reading them again goes back to the picture's own number. */}
+              <div className={styles.fillRow}>
+                <NumberField
+                  label="Colors"
+                  min={1}
+                  max={mostColorsOf(photo)}
+                  step={1}
+                  value={inks}
+                  onChange={(count) => actions.splitFlat(count)}
+                />
+                <Button size="sm" variant="secondary" onClick={() => actions.splitFlat(0)}>As many as it has</Button>
               </div>
+              {/* The colors the layers draw in: the palette's nearest pens, or the ones read from the
+                picture itself - for inks that aren't a tool's palette, or to see it flattened before
+                any pen is chosen. */}
+              <div className={styles.fillRow}>
+                <Checkbox size="md"
+                  checked={Boolean(photo.flatOwn)}
+                  label="Image's own colors"
+                  title="Each layer keeps the color read from the image, rather than taking the palette's nearest pen"
+                  onChange={(e) => actions.splitFlat(undefined, e.target.checked)}
+                />
+              </div>
+              <p className={styles.empty}>
+                {`${inks} flat ${inks === 1 ? "color" : "colors"}${photo.flatCount ? "" : " read"} from this image, drawn in ${photo.flatOwn ? `the image's own ${inks === 1 ? "color" : "colors"}` : `the ${inks === 1 ? "pen" : "pens"} nearest ${inks === 1 ? "it" : "them"}`}. Paint draws each as a solid area; the other effects fill it their own way.`}
+              </p>
             </>
-          ) : photo.ink ? (
+              ) : (
             <>
               {/* The pens are chosen by best fit: the ones that come nearest the photo as they really come out on paper. */}
               <div className={styles.fillRow}>
@@ -356,6 +470,8 @@ export function PhotoCard({ shape, title, shapes, busy, targeted, layerCount, sh
                   <NumberField label="Shading starts at" unit="%" min={0} max={95} step={5} value={Math.round((photo.keyFrom ?? KEY_FROM) * 100)} onChange={(v) => actions.set({ keyFrom: v / 100 })} />
                   <NumberField label="Key strength" unit="%" min={0} max={100} step={5} value={Math.round((photo.keyStrength ?? 1) * 100)} onChange={(v) => actions.set({ keyStrength: v / 100 })} />
                 </div>
+              )}
+            </>
               )}
             </>
           ) : (
@@ -699,12 +815,12 @@ export function PhotoCard({ shape, title, shapes, busy, targeted, layerCount, sh
                   <div className={`${styles.fillRow} ${styles.oneRow}`}>
                     <NumberField label="Spacing" min={0.1} max={5} step={0.05} value={photo.spacingMm} onChange={(spacingMm) => actions.set({ spacingMm })} />
                     {/* How rounded the borders between colors are, and how small a region may be: detailed to poster-like. Every color alike. */}
-                    <NumberField label="Smoothing" unit="mm" min={0} max={10} step={0.25} value={photo.paintSmoothMm ?? PAINT_DEFAULTS.smoothMm} onChange={(paintSmoothMm) => actions.set({ paintSmoothMm })} />
-                    <NumberField label="Smallest" unit="mm" min={0} max={50} step={0.5} value={photo.paintSmallestMm ?? PAINT_DEFAULTS.smallestMm} onChange={(paintSmallestMm) => actions.set({ paintSmallestMm })} />
+                    <NumberField label="Smoothing" unit="mm" min={0} max={10} step={0.25} value={photo.paintSmoothMm ?? paintDefaultsOf(photo).smoothMm} onChange={(paintSmoothMm) => actions.set({ paintSmoothMm })} />
+                    <NumberField label="Smallest" unit="mm" min={0} max={50} step={0.5} value={photo.paintSmallestMm ?? paintDefaultsOf(photo).smallestMm} onChange={(paintSmallestMm) => actions.set({ paintSmallestMm })} />
                   </div>
                   {/* A line round each region, in its own color: crisp edges, like the printed lines showing through. */}
                   <Checkbox size="md"
-                    checked={photo.paintOutline ?? PAINT_DEFAULTS.outline}
+                    checked={photo.paintOutline ?? paintDefaultsOf(photo).outline}
                     label="Outlines"
                     onChange={(e) => actions.set({ paintOutline: e.target.checked ? undefined : false })}
                   />

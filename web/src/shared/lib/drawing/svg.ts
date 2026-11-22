@@ -2,8 +2,9 @@ import { fillRuns, fillTarget, type Fill } from "./hatch";
 import { curveStrokes, pointsAttr, type Point } from "./parametric";
 import { textRuns, type StrokeFont } from "./text";
 import { placementAttr, placements } from "./repeat";
-import { hasCurves, pathData } from "./path";
-import { boxOf, drawnNodes, drawnRuns, groupsOf, pathRuns, pointsBox, turnAttr, type Layer, type Page, type Shape } from "./shapes";
+import { hasCurves, parsePath, pathData, type Node } from "./path";
+import { isKnockoutLayer, KNOCKOUT_FILE_LABEL, knockoutCutter, knockoutShapes, type KnockoutCutter } from "./knockout";
+import { boxOf, centerOf, drawnNodes, drawnRuns, groupsOf, pathRuns, pointsBox, turnAttr, turnPoint, type Layer, type Page, type Shape } from "./shapes";
 import { photoData, photoMarksNow, photoOrigin } from "./photo";
 
 // The drawing Studio writes out. Two things matter to Plot at the other end:
@@ -43,26 +44,33 @@ function allCopies(s: Shape, one: (copy: number) => string): string {
     .join("\n      ");
 }
 
-function shapeMarkup(s: Shape, fonts: Record<string, StrokeFont> = {}): string {
+function shapeMarkup(s: Shape, fonts: Record<string, StrokeFont> = {}, cutter?: KnockoutCutter | null): string {
   const b = boxOf(s);
   // Copies carry the shape's id with a number after it, which is how reading the drawing back knows
   // they are copies rather than shapes of their own. Copies before the turn: each copy is turned
   // about its own middle, inside its own placement, as Studio draws it and as a fill is written.
   // The other way round the turn wraps the whole set and swings every copy's offset with it, so
   // Plot drew the outlines somewhere the fills and Studio were not.
-  if (s.repeat) return allCopies(s, (i) => shapeMarkup({ ...s, repeat: undefined, id: i ? `${s.id}-r${i + 1}` : s.id }, fonts));
+  if (s.repeat) return allCopies(s, (i) => shapeMarkup({ ...s, repeat: undefined, id: i ? `${s.id}-r${i + 1}` : s.id }, fonts, cutter));
   // A turned shape is written as its own geometry inside one turn, which every SVG reader applies -
   // and Studio reads the angle back from the design block rather than from the transform.
   const turn = turnAttr(s);
-  if (turn) return `<g transform="${escapeAttr(turn)}">${shapeMarkup({ ...s, rotation: 0 }, fonts)}</g>`;
+  if (turn && s.kind === "photo" && cutter) return `<g transform="${escapeAttr(turn)}">${shapeMarkup({ ...s, rotation: 0 }, fonts, turnedCutter(cutter, s))}</g>`;
+  if (turn) return `<g transform="${escapeAttr(turn)}">${shapeMarkup({ ...s, rotation: 0 }, fonts, cutter)}</g>`;
   if (s.kind === "photo" && s.photo) {
     // The hatching, one path per pass of lines, in the photo's own corner moved to where it sits.
     // In a group named after the photo, so reading the drawing back leaves the lines to be made
     // again from the photo rather than listing tens of thousands of them as shapes.
     // Now, whatever the wait: a separation still being worked out off the page mustn't save as nothing.
     const marks = photoMarksNow(s.photo, b.x1 - b.x0, b.y1 - b.y0);
-    const paths = (marks?.passes ?? []).filter(Boolean).map((d) => `<path d="${escapeAttr(d)}"/>`).join("");
     const at = photoOrigin(s.photo, b.x0, b.y0);
+    // Under a knockout, each pass cut where it lies on the page and written back in the photo's corner.
+    const passes = (marks?.passes ?? []).filter(Boolean).map((d) => {
+      if (!cutter) return d;
+      const cut = cutter.local(parsePath(d), (p) => ({ x: p.x + at.x, y: p.y + at.y }), (p) => ({ x: p.x - at.x, y: p.y - at.y }));
+      return cut ? pathData(cut) : d;
+    }).filter(Boolean);
+    const paths = passes.map((d) => `<path d="${escapeAttr(d)}"/>`).join("");
     return `<g id="${PHOTO_GROUP_PREFIX}${escapeAttr(s.id)}" transform="translate(${num(at.x)} ${num(at.y)})">${paths}</g>`;
   }
   if (s.kind === "path") {
@@ -110,6 +118,28 @@ function shapeMarkup(s: Shape, fonts: Record<string, StrokeFont> = {}): string {
 // A photo's lines go in a group named after the photo, for the same reason as a fill's below.
 export const PHOTO_GROUP_PREFIX = "studio-photo-";
 
+// Under a knockout: a shape's lines as they plot, cut, in a group named after the shape - the shape
+// itself is kept whole on the KNOCKED_LAYER, which is never plotted, and read back from there. A
+// fill's cut lines are in a group named after the fill, not a FILL_GROUP_PREFIX one, so Plot doesn't
+// make them again whole at another spacing.
+export const KNOCKED_PREFIX = "studio-knocked-";
+export const KNOCKED_FILL_PREFIX = "studio-knocked-fill-";
+export const KNOCKED_LAYER = "%knocked out";
+export const KNOCKED_GROUP_SUFFIX = "--knocked";
+export const KNOCKOUT_LAYER_ID = "studio-knockout";
+
+/** A cutter for a turned photo's lines: they are written inside the turn, so cut where the turn puts them. */
+function turnedCutter(cutter: KnockoutCutter, s: Shape): KnockoutCutter {
+  const c = centerOf(s), deg = s.rotation ?? 0;
+  return {
+    ...cutter,
+    local: (runs, toPage, fromPage) => cutter.local(runs, (p) => turnPoint(toPage(p), c, deg), (p) => fromPage(turnPoint(p, c, -deg))),
+  };
+}
+
+/** Cut runs as one path, in inches on the page. */
+const knockedPath = (runs: Node[][]) => (runs.length ? `<path d="${escapeAttr(pathData(runs))}"/>` : "");
+
 // A shape made of several paths is a group of its own inside its layer, so other programs see it as
 // one thing too, and reading the drawing back puts it together again. Its paths on the unplotted
 // layer, if some of them aren't outlined, are in a second group whose id ends SOURCE_GROUP_SUFFIX.
@@ -148,12 +178,14 @@ export const FILL_GROUP_PREFIX = "studio-fill-";
 // docs/studio.md). So the shape survives to be edited without ever reaching the paper.
 export const SOURCE_LAYER = "%sources";
 
-function fillMarkup(shapes: Shape[], fills: Fill[]): string {
+function fillMarkup(shapes: Shape[], fills: Fill[], cutter?: KnockoutCutter | null): string {
   return fills
     .map((fill) => {
       // A fill on a shape made of several paths is made from all of them as one.
       const shape = fillTarget(shapes, fill.shapeId);
       if (!shape) return "";
+      const cut = cutter?.fill(shape, fill);
+      if (cut) return `      <g id="${KNOCKED_FILL_PREFIX}${escapeAttr(fill.id)}">${knockedPath(cut)}</g>`;
       const runs = fillRuns(shape, fill);
       if (!runs.length) return "";
       // A run of two points is a line, which says plainly what the pen does; anything longer is a
@@ -343,14 +375,36 @@ export function buildSvg(
   // on it - outlines and hatching alike - carries that one colour. Its id is its name too: Inkscape,
   // Plot and the driver name a layer by its label, but Illustrator names it by its id.
   const ids = layerIds(layers.map((l) => l.name));
+  // A knockout, if the drawing has one showing: every other layer is cut by it as it's written.
+  const cutter = knockoutCutter(knockoutShapes(shapes, layers), opts.fonts ?? {});
+  // The shapes it cut, kept whole for reading back.
+  const knocked: Shape[] = [];
+  const markup = (sh: Shape) => {
+    if (!cutter) return shapeMarkup(sh, opts.fonts);
+    if (sh.kind === "photo") return shapeMarkup(sh, opts.fonts, cutter);
+    const cut = cutter.shape(sh);
+    if (!cut) return shapeMarkup(sh, opts.fonts);
+    knocked.push(sh);
+    return `<g id="${KNOCKED_PREFIX}${escapeAttr(sh.id)}">${knockedPath(cut)}</g>`;
+  };
   const body = layers
     .map((layer, i) => {
       const mine = shapes.filter((sh) => sh.layerId === layer.id);
       const drawn = mine.filter((sh) => sh.outline !== false);
       const myFills = fills.filter((f) => mine.some((sh) => sh.id === f.shapeId || sh.group === f.shapeId));
+      // The knockout itself: kept, never plotted, never cut.
+      if (isKnockoutLayer(layer.name)) {
+        const own = withGroups(drawn, shapes, (sh) => shapeMarkup(sh, opts.fonts));
+        if (!own) return "";
+        return `  <g inkscape:groupmode="layer" inkscape:label="${escapeAttr(KNOCKOUT_FILE_LABEL)}" id="${KNOCKOUT_LAYER_ID}"
+     fill="none" stroke="${escapeAttr(layer.color)}" stroke-width="${STROKE_IN}"${layer.hidden ? ' nds:hidden="true"' : ""}>
+${own}
+  </g>
+`;
+      }
       const inner = [
-        withGroups(drawn, shapes, (sh) => shapeMarkup(sh, opts.fonts)),
-        fillMarkup(shapes, myFills),
+        withGroups(drawn, shapes, markup),
+        fillMarkup(shapes, myFills, cutter),
       ].filter(Boolean).join("\n");
       if (!inner) return "";
       return `  <g inkscape:groupmode="layer" inkscape:label="${escapeAttr(layer.name)}" id="${escapeAttr(ids[i])}"
@@ -370,7 +424,7 @@ ${inner}
      viewBox="0 0 ${num(page.w)} ${num(page.h)}">
 ${plotBlock(page, opts)}
 ${designBlock(fills, shapes, layers)}
-${body}${sourceLayer(sources, opts.fonts ?? {}, shapes)}</svg>
+${body}${sourceLayer(sources, opts.fonts ?? {}, shapes)}${knockedLayer(knocked, opts.fonts ?? {}, shapes)}</svg>
 `;
 }
 
@@ -379,6 +433,17 @@ function sourceLayer(sources: Shape[], fonts: Record<string, StrokeFont>, all: S
   if (!sources.length) return "";
   const body = withGroups(sources, all, (s) => shapeMarkup(s, fonts), SOURCE_GROUP_SUFFIX);
   return `  <g inkscape:groupmode="layer" inkscape:label="${escapeAttr(SOURCE_LAYER)}" id="studio-sources"
+     fill="none" stroke="#000000" stroke-width="${STROKE_IN}">
+${body}
+  </g>
+`;
+}
+
+/** The shapes a knockout cut, whole, on a layer that is never plotted: what the apps read back. */
+function knockedLayer(knocked: Shape[], fonts: Record<string, StrokeFont>, all: Shape[]): string {
+  if (!knocked.length) return "";
+  const body = withGroups(knocked, all, (s) => shapeMarkup(s, fonts), KNOCKED_GROUP_SUFFIX);
+  return `  <g inkscape:groupmode="layer" inkscape:label="${escapeAttr(KNOCKED_LAYER)}" id="studio-knocked"
      fill="none" stroke="#000000" stroke-width="${STROKE_IN}">
 ${body}
   </g>

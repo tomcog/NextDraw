@@ -3,6 +3,8 @@ import { Columns2, Image, Layers, Spline } from "lucide-react";
 import { useId, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
 import type { Box, Zoom } from "../../shared/components/BedCanvas";
 import { InkGroup, InkLayer } from "../../shared/components/Ink";
+import { boxTransform, KnockoutFrame, KnockoutMask, KnockoutShapes } from "../../shared/components/Knockout";
+import { knockoutGapIn } from "../../shared/lib/drawing/knockout";
 import { NextDrawCanvas } from "../../shared/components/NextDrawCanvas";
 import { TrimGrab, TrimGuide } from "../../shared/components/TrimGuide";
 import type { View } from "../../shared/components/PreviewToolbar";
@@ -101,6 +103,15 @@ interface Props {
   onTrimMove?: (dx: number, dy: number) => void;
   /** The image dragged on the stage this far, in inches: picked up anywhere on it, outside the trim. */
   onMove?: (dx: number, dy: number) => void;
+  /** The Knockout layer, if it's showing: its outlines as path data in inches on the page, and the box
+   *  round them. Every line under it is hidden, as it's left out of the file. `onPlace`, when it can be
+   *  moved: the box it's been dragged or sized to, once, when it's let go. */
+  knockout?: { paths: string[]; box: { x0: number; y0: number; x1: number; y1: number }; onPlace?: (box: { x0: number; y0: number; x1: number; y1: number }) => void;
+    /** Its layer is the one being set: its frame and corners show. Otherwise, in Preview, only the paper
+     *  showing through is shown - though it's still picked up by its letters. */
+    active?: boolean;
+    /** Picked up, or let go for the picture. */
+    onActive?: (active: boolean) => void };
   /** Cropping: the part of the whole picture kept - left, top, right, bottom, as fractions - set by dragging. */
   cropping?: { part: Part; onPart: (part: Part) => void };
 }
@@ -112,7 +123,7 @@ type Part = [number, number, number, number];
  * zooms and the loupe that Studio and Plot show a drawing on. Photo's own views go first in the bar, before
  * the shared ones; side by side, a second canvas follows the first's zoom.
  */
-export function ConvertStage({ photo, parts, box, page, paperColor, model, ink, view, onView, show, onShow, zoom, onZoom, loupe, onLoupe, cropping, others = [], trim, onTrimMove, onMove }: Props) {
+export function ConvertStage({ photo, parts, box, page, paperColor, model, ink, view, onView, show, onShow, zoom, onZoom, loupe, onLoupe, cropping, others = [], trim, onTrimMove, onMove, knockout }: Props) {
   const read = usePhotoRead(photo.src);
   const w = box.x1 - box.x0;
   const h = box.y1 - box.y0;
@@ -196,8 +207,31 @@ export function ConvertStage({ photo, parts, box, page, paperColor, model, ink, 
     </g>
   );
   const at = photoOrigin(photo, box.x0, box.y0);
+  // The knockout, while its frame is dragged: where it's going, which the mask and its guide follow.
+  const [knockoutDraft, setKnockoutDraft] = useState<{ x0: number; y0: number; x1: number; y1: number } | null>(null);
+  const knockoutAt = knockout && knockoutDraft ? boxTransform(knockout.box, knockoutDraft) : undefined;
+  const knockoutId = `knockout-${useId().replace(/[^\w-]/g, "")}`;
+  const knockoutGuide = (mark: number) => knockout && (
+    <>
+      {(view !== "preview" || knockout.active || knockoutDraft) && <KnockoutShapes paths={knockout.paths} transform={knockoutAt} />}
+      {knockout.onPlace && (
+        <KnockoutFrame
+          box={knockout.box}
+          paths={knockout.paths}
+          active={Boolean(knockout.active)}
+          onActivate={() => knockout.onActive?.(true)}
+          draft={knockoutDraft}
+          onDraft={setKnockoutDraft}
+          onPlace={knockout.onPlace}
+          r={(mark * 0.28) / UNITS}
+        />
+      )}
+    </>
+  );
   // The lines as ink, drawn the way Studio draws a drawing's layers: Outline or Preview.
   const lines = (
+    <g mask={knockout ? `url(#${knockoutId})` : undefined}>
+    {knockout && <KnockoutMask id={knockoutId} paths={knockout.paths} gap={knockoutGapIn()} transform={knockoutAt} />}
     <InkGroup sim={view === "preview"} penIn={ink.penWidthMm / 25.4} build={ink.build}>
       {/* What's under the image on the page: earlier effects baked into layers, and the rest. */}
       {others.map((o, k) => (
@@ -222,6 +256,7 @@ export function ConvertStage({ photo, parts, box, page, paperColor, model, ink, 
         ))}
       </g>
     </InkGroup>
+    </g>
   );
 
   // Photo's own views, first in the bar, ahead of the shared Outline and Preview.
@@ -249,7 +284,9 @@ export function ConvertStage({ photo, parts, box, page, paperColor, model, ink, 
   };
 
   // The image to pick up and drag, under the trim's own grip so the trim is still the one moved inside it.
-  const grab = onMove ? <PictureGrab box={box} by={by} onBy={setBy} onMove={onMove} /> : null;
+  // Pressing the picture lets go of the knockout, as picking any other layer does.
+  const leaveKnockout = knockout?.active ? () => knockout.onActive?.(false) : undefined;
+  const grab = onMove ? <PictureGrab box={box} by={by} onBy={setBy} onMove={onMove} onPress={leaveKnockout} /> : null;
 
   const pane = (body: ReactNode | ((mark: number) => ReactNode), first: boolean) => (
     <figure className={styles.pane}>
@@ -277,13 +314,13 @@ export function ConvertStage({ photo, parts, box, page, paperColor, model, ink, 
 
   return (
     <div className={styles.panes} data-view={show}>
-      {show === "picture" && pane(<>{picture()}{grab}{trimGuide(true)}</>, true)}
-      {show === "lines" && pane(<>{lines}{grab}{trimGuide(false)}</>, true)}
-      {show === "over" && pane(<>{picture(true)}{lines}{grab}{trimGuide(false)}</>, true)}
+      {show === "picture" && pane((mark) => <>{picture()}{grab}{trimGuide(true)}{knockoutGuide(mark)}</>, true)}
+      {show === "lines" && pane((mark) => <>{lines}{grab}{trimGuide(false)}{knockoutGuide(mark)}</>, true)}
+      {show === "over" && pane((mark) => <>{picture(true)}{lines}{grab}{trimGuide(false)}{knockoutGuide(mark)}</>, true)}
       {show === "side" && (
         <>
-          {pane(<>{picture()}{grab}{trimGuide(true)}</>, true)}
-          {pane(<>{lines}{grab}{trimGuide(false)}</>, false)}
+          {pane((mark) => <>{picture()}{grab}{trimGuide(true)}{knockoutGuide(mark)}</>, true)}
+          {pane((mark) => <>{lines}{grab}{trimGuide(false)}{knockoutGuide(mark)}</>, false)}
         </>
       )}
       {!read && <p className={styles.reading}>Reading the image…</p>}
@@ -295,7 +332,8 @@ export function ConvertStage({ photo, parts, box, page, paperColor, model, ink, 
  * The image's grip: its box, invisible, to pick it up by and drag. The way gone is shown as it's dragged
  * and the image moved there when it's let go - one change, as the trim's grip does it.
  */
-function PictureGrab({ box, by, onBy, onMove }: {
+function PictureGrab({ box, by, onBy, onMove, onPress }: {
+  onPress?: () => void;
   box: { x0: number; y0: number; x1: number; y1: number };
   by: { x: number; y: number } | null;
   onBy: (by: { x: number; y: number } | null) => void;
@@ -306,6 +344,7 @@ function PictureGrab({ box, by, onBy, onMove }: {
   const down = (e: ReactPointerEvent<SVGRectElement>) => {
     if (e.button !== 0) return;
     e.stopPropagation();
+    onPress?.();
     const ctm = e.currentTarget.getScreenCTM()?.inverse();
     if (!ctm) return;
     e.currentTarget.setPointerCapture(e.pointerId);

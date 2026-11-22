@@ -1,0 +1,38 @@
+/* The knockout's shapes: a light tint of the action color and a dashed edge - on screen only. */
+.shapes path {
+  fill: var(--ui-action);
+  fill-opacity: 0.12;
+  stroke: var(--ui-action);
+  stroke-width: 1;
+  stroke-dasharray: 4 3;
+  vector-effect: non-scaling-stroke;
+  pointer-events: none;
+}
+
+/* Its frame in Image: the box round it, to pick it up by. */
+.frame {
+  fill: transparent;
+  stroke: var(--ui-action);
+  stroke-width: 1;
+  stroke-opacity: 0.5;
+  vector-effect: non-scaling-stroke;
+  pointer-events: all;
+  cursor: grab;
+}
+
+.frame[data-dragging] { cursor: grabbing; }
+
+.grips circle {
+  fill: #ffffff;
+  stroke: var(--ui-action);
+  stroke-width: 1.5;
+  vector-effect: non-scaling-stroke;
+}
+
+/* Its letters, to pick it up by when it isn't the layer being worked on. */
+.pick path {
+  fill: transparent;
+  stroke: none;
+  pointer-events: fill;
+  cursor: grab;
+}

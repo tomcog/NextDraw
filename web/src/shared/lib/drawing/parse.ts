@@ -4,8 +4,9 @@ import { flattenRun, mapNode, parsePath, type Node } from "./path";
 import { apply, axisAligned, multiply, parseTransform, IDENTITY, type Matrix } from "./transform";
 import { repeatFromData } from "./repeat";
 import { newGroupId, newLayerId, newShapeId, pointsBox, type Layer, type Page, type Shape } from "./shapes";
-import { FILL_GROUP_PREFIX, GROUP_PREFIX, PHOTO_GROUP_PREFIX, SOURCE_GROUP_SUFFIX } from "./svg";
-import { PLATE_OFF, photoFromData, platesOf } from "./photo";
+import { FILL_GROUP_PREFIX, GROUP_PREFIX, KNOCKED_GROUP_SUFFIX, KNOCKED_LAYER, KNOCKED_PREFIX, PHOTO_GROUP_PREFIX, SOURCE_GROUP_SUFFIX } from "./svg";
+import { KNOCKOUT, KNOCKOUT_FILE_LABEL } from "./knockout";
+import { PLATE_OFF, inkAtOf, inkSetOf, onePlate, photoFromData } from "./photo";
 
 // Reading a drawing back in, so work can be picked up again after it's been handed to Plot.
 //
@@ -162,6 +163,8 @@ export function parseDrawing(text: string): Opened {
     (Array.isArray(design.fills) ? design.fills : []).map((f) => String((f as Record<string, unknown>).id)),
   );
   const generated = (el: Element) => {
+    // Lines a knockout cut: the shapes they were cut from are read whole from KNOCKED_LAYER instead.
+    if (el.closest(`[id^="${KNOCKED_PREFIX}"]`)) return true;
     const group = el.closest(`[id^="${FILL_GROUP_PREFIX}"], [id^="${PHOTO_GROUP_PREFIX}"]`);
     if (!group) return false;
     const id = group.getAttribute("id")!;
@@ -192,9 +195,14 @@ export function parseDrawing(text: string): Opened {
   // Which shapes are on a layer NextDraw skips. Read from the file rather than from the parameters,
   // because the layer is what actually decides whether a shape reaches the paper.
   const sources = new Set<string>();
+  // The knockout's own layer, and the shapes it cut kept whole, are skipped by NextDraw too, but what's
+  // on them is drawn as it is: neither is %sources.
+  const ownSkipped = (name: string) => name === KNOCKOUT_FILE_LABEL || name === KNOCKED_LAYER;
   const onSkippedLayer = (el: Element) => {
     for (let up = el.parentElement; up; up = up.parentElement) {
-      if (nameOf(up).startsWith("%")) return true;
+      const name = nameOf(up);
+      if (ownSkipped(name)) return false;
+      if (name.startsWith("%")) return true;
     }
     return false;
   };
@@ -260,11 +268,17 @@ export function parseDrawing(text: string): Opened {
   const lockedNames = new Set(Array.isArray(design.locked) ? design.locked.map(String) : []);
   const byGroup = new Map<Element, string>();
   groups.forEach((g, i) => {
-    const name = nameOf(g) || `Layer ${i + 1}`;
-    if (name.startsWith("%")) return;
+    let name = nameOf(g) || `Layer ${i + 1}`;
+    const knockout = name === KNOCKOUT_FILE_LABEL;
+    if (knockout) name = KNOCKOUT;
+    else if (name.startsWith("%")) return;
     const id = newLayerId();
     byGroup.set(g, id);
-    layers.push({ id, name, color: colorOf(g), ...(lockedNames.has(name) ? { locked: true } : {}) });
+    layers.push({
+      id, name, color: colorOf(g),
+      ...(lockedNames.has(name) ? { locked: true } : {}),
+      ...(knockout && g.getAttribute("nds:hidden") === "true" ? { hidden: true } : {}),
+    });
   });
   const layerOf = new Map<string, string>(); // shape id -> layer id
   const layerFor = (el: Element) => {
@@ -287,7 +301,7 @@ export function parseDrawing(text: string): Opened {
     for (let up = el.parentElement; up && up.parentElement && up.parentElement !== svg; up = up.parentElement) {
       if (up.nodeName.toLowerCase() !== "g") continue;
       const gid = up.getAttribute("id") ?? "";
-      if (gid.startsWith(FILL_GROUP_PREFIX) || gid.startsWith(PHOTO_GROUP_PREFIX)) return;
+      if (gid.startsWith(FILL_GROUP_PREFIX) || gid.startsWith(PHOTO_GROUP_PREFIX) || gid.startsWith(KNOCKED_PREFIX)) return;
       outer = up;
     }
     if (!outer) return;
@@ -295,7 +309,7 @@ export function parseDrawing(text: string): Opened {
     if (!id) {
       const own = outer.getAttribute("id") ?? "";
       id = own.startsWith(GROUP_PREFIX)
-        ? own.slice(GROUP_PREFIX.length).replace(new RegExp(`${SOURCE_GROUP_SUFFIX}$`), "")
+        ? own.slice(GROUP_PREFIX.length).replace(new RegExp(`(${SOURCE_GROUP_SUFFIX}|${KNOCKED_GROUP_SUFFIX})$`), "")
         : newGroupId();
       groupIdOf.set(outer, id);
       // Named by its label, or by its id where that is how Illustrator writes a name; an id an
@@ -627,8 +641,9 @@ export function parseDrawing(text: string): Opened {
         return m ? colourOf(m) : null;
       }),
       keyInk: keyMember ? colourOf(keyMember) : undefined,
-      // Every plate of its set - four, or six to eight with the extra inks - each its layer's colour.
-      ...(sh.photo.plate ? { plates: platesOf(sh.photo.plates).map((p, i) => { const m = members.find((x) => x.photo?.plate === p); return sh.photo!.plates?.[i] === PLATE_OFF ? PLATE_OFF : m ? colourOf(m) : sh.photo!.plates?.[i] ?? "#000000"; }) } : {}),
+      // Every ink of its set - CMYK's four, the extended sets' six to eight, or a set of your own -
+      // each in its layer's colour.
+      ...(onePlate(sh.photo) ? { plates: inkSetOf(sh.photo).inks.map((_, i) => { const m = members.find((x) => x.photo && inkAtOf(x.photo) === i); return sh.photo!.plates?.[i] === PLATE_OFF ? PLATE_OFF : m ? colourOf(m) : sh.photo!.plates?.[i] ?? "#000000"; }) } : {}),
     };
   }
 
