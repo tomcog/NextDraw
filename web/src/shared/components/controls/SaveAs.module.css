@@ -1,0 +1,18 @@
+/* The save button with another beside it - Delete, usually, and often a round one: the button takes
+   the width and the one beside it keeps its own, rather than the two sharing and stretching a
+   circle into a pill. */
+.row {
+  display: flex;
+  align-items: flex-end;
+  gap: 0.5rem;
+}
+.row > :first-child { flex: 1 1 auto; min-width: 0; }
+.row > :last-child { flex: none; }
+
+/* Keep and Cancel, a half each: neither is the lesser of the two. */
+.buttons {
+  display: flex;
+  align-items: flex-end;
+  gap: 0.5rem;
+}
+.buttons > * { flex: 1 1 4.5rem; min-width: 4.5rem; }

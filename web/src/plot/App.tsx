@@ -1710,10 +1710,27 @@ export default function App() {
     }
   };
 
+  /**
+   * Save under this name, asking in the band first where it would replace one. Returns whether the
+   * name was taken: the editor closes on a save, and must stay open while the question is up.
+   */
+  const savePresetAsked = async (name: string) => {
+    const want = name.trim();
+    if (!want) return false;
+    if (!presets.some((p) => p.name === want) || want === activePreset) return savePreset(want);
+    setConfirmation({
+      message: `There is already a preset called “${want}”.`,
+      confirmLabel: "Replace it",
+      onConfirm: () => { setConfirmation(null); void savePreset(want); },
+    });
+    return false;
+  };
+
   const savePreset = async (name: string) => {
     name = name.trim();
     if (!name) return false;
-    if (presets.some((p) => p.name === name) && name !== activePreset && !window.confirm(`Replace the preset “${name}”?`)) return false;
+    // Replacing one is asked in the band (see `confirmation`), not with window.confirm: this returns
+    // true once the save is under way, and the asking that may precede it is savePresetAsked's.
     try {
       const payload = Object.fromEntries(PRESET_FIELDS.map((k) => [k, settings[k]]));
       const res = await api<{ presets: Preset[] }>(`/api/presets/${encodeURIComponent(name)}?plotter=connected`, {
@@ -1731,13 +1748,19 @@ export default function App() {
     }
   };
 
+  /** Asked in the band first - an embedded browser shows no window.confirm - then deleted on a yes. */
+  const askToDeletePreset = () => {
+    const name = activePreset;
+    if (!name) return;
+    // None can't be deleted, only put back to EnerGel's settings.
+    setConfirmation(name === NONE_PEN
+      ? { message: "Put None back to EnerGel’s settings? What’s been changed on it is lost.", confirmLabel: "Put it back", danger: true, onConfirm: () => { setConfirmation(null); void deletePreset(); } }
+      : { message: `Delete the preset “${name}”? The first tool in the list will be chosen instead.`, confirmLabel: "Delete it", danger: true, onConfirm: () => { setConfirmation(null); void deletePreset(); } });
+  };
+
   const deletePreset = async () => {
     const name = activePreset;
-    // None can't be deleted, only put back to EnerGel's settings.
-    const ask = name === NONE_PEN
-      ? "Put None back to EnerGel’s settings? What’s been changed on it is lost."
-      : `Delete the preset “${name}”? The first tool in the list will be chosen instead.`;
-    if (!name || !window.confirm(ask)) return;
+    if (!name) return;
     try {
       const res = await api<{ presets: Preset[] }>(`/api/presets/${encodeURIComponent(name)}`, { method: "DELETE" });
       setPresets(res.presets);
@@ -2080,8 +2103,8 @@ export default function App() {
                   changed={presetChanged}
                   disabled={plotting}
                   onApply={applyPreset}
-                  onSave={savePreset}
-                  onDelete={deletePreset}
+                  onSave={savePresetAsked}
+                  onDelete={askToDeletePreset}
                 />
             </div>
           </Card>

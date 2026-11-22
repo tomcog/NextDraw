@@ -3,6 +3,7 @@ import { api, postJSON } from "../../shared/lib/api";
 import { Button, ButtonRound, Card, Checkbox, InputSelect, Segment, SegmentedControl } from "@tomcoggia/ui";
 import { ChevronRight, Plus, Stamp, Trash2 } from "lucide-react";
 import { Section } from "../../shared/components/controls/Section";
+import { SaveAs } from "../../shared/components/controls/SaveAs";
 import { panelIcon } from "../../shared/components/PanelToolbar";
 import { NumberField } from "../../shared/components/controls/NumberField";
 import controls from "../../shared/components/controls/controls.module.css";
@@ -34,7 +35,8 @@ export interface PhotoActions {
   cropDone: () => void;
   cropCancel: () => void;
   /** Keep how the image is drawn - layers, passes, settings, pens, edge - as a preset; `taken` are the names in use. */
-  savePreset: (taken: string[]) => Promise<void>;
+  /** Keep how the image is drawn under this name. True once it is saved. */
+  savePreset: (name: string) => Promise<boolean>;
   /** Draw the image as a saved preset says, keeping its picture and place. */
   applyPreset: (name: string) => Promise<void>;
   deletePreset: (name: string) => Promise<void>;
@@ -50,10 +52,16 @@ export interface PhotoActions {
   chooseEdgeMask: (name: string | undefined) => Promise<void>;
   /** Take a mask out of the library; drawings that use it keep their copy. */
   deleteEdgeMask: (name: string) => Promise<void>;
+  /**
+   * Ask before doing something, in the band at the top. Not window.confirm, which an embedded
+   * browser answers "no" to without showing anything. Naming is the cards' own (SaveAs).
+   */
+  ask: (q: { text: string; confirmLabel: string; onYes: () => void }) => void;
   /** Lay a made edge over the whole image. */
   setEdgeGen: (gen: EdgeGen) => void;
   /** Keep the made edge in the library as a picture. */
-  saveEdgeGen: (taken: string[]) => Promise<void>;
+  /** Keep the made edge in the mask library under this name. True once it is saved. */
+  saveEdgeGen: (name: string) => Promise<boolean>;
   switchMode: (to: "value" | "colour" | "flat" | "cmyk" | "profile" | "separations") => void;
   /** Split the image by a printer's color profile, by its path, at a rendering intent (0 to 3) and
    *  with or without black point compensation. */
@@ -82,7 +90,8 @@ export interface PhotoActions {
   /** Separate the image into a set of inks of your own, picked from the Inks menu. */
   splitOwnInks: (set: InkSet) => void;
   /** Keep the inks the image is separated into now as a named set. */
-  saveInkSet: (taken: string[]) => Promise<void>;
+  /** Keep the inks the image is separated into under this name. True once it is saved. */
+  saveInkSet: (name: string, folder?: string) => Promise<boolean>;
   /** Set the layers' angles: a preset newly chosen, or the whole set turned by so many degrees. */
   setAngles: (change: { preset?: AnglePreset; by?: number }) => void;
   /** Pick one of the photo's bands to set, and draw on its layer. */
@@ -92,6 +101,8 @@ export interface PhotoActions {
 interface Props {
   /** The chosen shape, which is a photo. */
   shape: Shape & { photo: Photo };
+  /** The pens have been changed by hand and are no longer the ink set's own. */
+  inksChanged: boolean;
   title: string;
   shapes: Shape[];
   busy: boolean;
@@ -126,7 +137,7 @@ interface Props {
  * The chosen photo's card - in the drawing's rail, and in image conversion's under its own: how it is
  * split into layers, sized to the page, and what each layer's lines are drawn as.
  */
-export function PhotoCard({ shape, title, shapes, busy, targeted, layerCount, shownName, actions, cropping = false, penWidthMm = 0.5, infoCard = true, effectCards = true, layersCard, adjustCard, vignetteCard, trimCard, maskCard = false }: Props) {
+export function PhotoCard({ shape, inksChanged, title, shapes, busy, targeted, layerCount, shownName, actions, cropping = false, penWidthMm = 0.5, infoCard = true, effectCards = true, layersCard, adjustCard, vignetteCard, trimCard, maskCard = false }: Props) {
   // The presets, shared between Macs; and the one last picked here, for Delete.
   const [presets, setPresets] = useState<string[]>([]);
   // Randomize pressed, its new scribble not yet drawn.
@@ -136,7 +147,10 @@ export function PhotoCard({ shape, title, shapes, busy, targeted, layerCount, sh
   const [presetPicked, setPresetPicked] = useState("");
   // The ink sets of your own, shared between Macs: read once, and again after one is saved or dropped.
   const [inkSets, setInkSets] = useState<{ name: string; set: InkSet }[]>([]);
-  const readInkSets = () => api<{ sets: { name: string; set: InkSet }[] }>("/api/ink-sets").then((r) => setInkSets(r.sets)).catch(() => {});
+  const [inkSetsFolder, setInkSetsFolder] = useState("");
+  const readInkSets = () => api<{ sets: { name: string; set: InkSet }[]; folder: string }>("/api/ink-sets")
+    .then((r) => { setInkSets(r.sets); setInkSetsFolder(r.folder ?? ""); })
+    .catch(() => {});
   useEffect(() => { readInkSets(); }, []);
   const photo = shape.photo;
   // The set the image is separated into, when it is one of your own rather than a built-in.
@@ -181,6 +195,9 @@ export function PhotoCard({ shape, title, shapes, busy, targeted, layerCount, sh
   // A drawing from before the folder kept the profile's whole path: its file name is what's listed.
   // The last option of the Inks menu: not an ink set but the way to the folder the profiles live in.
   const PROFILES_OPTION = "__profiles__";
+  // What the Inks menu shows once the pens have been changed by hand: not a set to choose, a state
+  // to report, so it is there only while it applies and can't be picked.
+  const MODIFIED_OPTION = "__modified__";
   const profileFile = photo.profile ? photo.profile.slice(photo.profile.lastIndexOf("/") + 1) : "";
   const rendering: Rendering = { intent: photo.profileIntent ?? 0, bpc: photo.profileBpc };
   // How many inks a photo split by colour is in: its layers, not counting the key.
@@ -291,8 +308,10 @@ export function PhotoCard({ shape, title, shapes, busy, targeted, layerCount, sh
               <InputSelect
                 size="md"
                 label="Inks"
-                value={photo.profile ? `icc:${profileFile}` : inkSetOf(photo).key}
-                title={photo.profile ? (photo.profileName ?? profileFile) : inkSetOf(photo).about ?? `${inkSetOf(photo).label}: inks of your own`}
+                value={photo.profile ? `icc:${profileFile}` : inksChanged ? MODIFIED_OPTION : inkSetOf(photo).key}
+                title={photo.profile ? (photo.profileName ?? profileFile)
+                  : inksChanged ? `The pens have been changed since ${inkSetOf(photo).label} chose them. Save them as a set of your own, or pick a set again to go back to its.`
+                  : inkSetOf(photo).about ?? `${inkSetOf(photo).label}: inks of your own`}
                 onChange={(e) => {
                   const picked = e.target.value;
                   if (picked === PROFILES_OPTION) return chooseProfile();
@@ -303,6 +322,11 @@ export function PhotoCard({ shape, title, shapes, busy, targeted, layerCount, sh
                   if (own) actions.splitOwnInks(own.set);
                 }}
               >
+                {/* Only while it applies, and never choosable: picking "Modified" would mean nothing,
+                  since the pens already are what it describes. */}
+                {inksChanged && !photo.profile && (
+                  <option value={MODIFIED_OPTION} disabled>{`Modified (was ${inkSetOf(photo).label})`}</option>
+                )}
                 {BUILT_IN_INK_SETS.map((set) => <option key={set.key} value={set.key}>{set.label}</option>)}
                 {/* A set of your own that came with this drawing and isn't one of the saved ones:
                   listed so the menu can show what the image is actually separated into. */}
@@ -361,23 +385,29 @@ export function PhotoCard({ shape, title, shapes, busy, targeted, layerCount, sh
                 layer's pen in the Layers card to the one you want, and keep what you see. A profile's
                 inks are the profile's, so there is nothing of yours to keep. */}
               {!photo.profile && (
-                <div className={styles.fillRow}>
-                  <Button size="sm" variant="secondary" onClick={() => void actions.saveInkSet(inkSets.map((saved) => saved.name)).then(readInkSets)}>
-                    Save these inks as a set
-                  </Button>
-                  {ownSet && inkSets.some((saved) => saved.set.key === ownSet.key) && (
+                <SaveAs
+                  label="Save ink set"
+                  what="ink set"
+                  suggest={ownSet?.label ?? "My inks"}
+                  taken={inkSets.map((saved) => saved.name)}
+                  title={inkSetsFolder ? `Keep these inks as a named set, in ${inkSetsFolder} - every Mac sees the same ones` : undefined}
+                  onSave={(name) => actions.saveInkSet(name, inkSetsFolder).then((saved) => { if (saved) void readInkSets(); return saved; })}
+                  beside={ownSet && inkSets.some((saved) => saved.set.key === ownSet.key) ? (
                     <ButtonRound
                       size="sm"
                       icon={<Trash2 />}
                       aria-label={`Delete the ink set ${ownSet.label}`}
                       title={`Delete the ink set ${ownSet.label}. The image stays as it is; only the saved set goes.`}
                       onClick={() => {
-                        if (!window.confirm(`Delete the ink set \u201c${ownSet.label}\u201d?`)) return;
-                        void api(`/api/ink-sets/${encodeURIComponent(ownSet.label)}`, { method: "DELETE" }).then(readInkSets);
+                        actions.ask({
+                          text: `Delete the ink set ${ownSet.label}? The image stays as it is.`,
+                          confirmLabel: "Delete it",
+                          onYes: () => void api(`/api/ink-sets/${encodeURIComponent(ownSet.label)}`, { method: "DELETE" }).then(readInkSets),
+                        });
                       }}
                     />
-                  )}
-                </div>
+                  ) : undefined}
+                />
               )}
             </>
           ) : photoMode(photo) === "flat" || photo.ink ? (
@@ -699,24 +729,29 @@ export function PhotoCard({ shape, title, shapes, busy, targeted, layerCount, sh
                 <option value="">{presets.length ? "Choose a preset" : "No presets yet"}</option>
                 {presets.map((name) => <option key={name} value={name}>{name}</option>)}
               </InputSelect>
-              <div className={styles.fillRow}>
-                <Button size="sm" variant="secondary" disabled={busy || presetsBlocked}
-                  title={presetsBlocked ? "Separations can't use presets: each plate draws a picture of its own" : "Keep how this image is drawn - its layers, passes, settings, pens and edge - as a preset, to use on another picture"}
-                  onClick={() => actions.savePreset(presets).then(readPresets)}>
-                  Save preset…
-                </Button>
-                {presets.includes(presetPicked) && (
-                  <Button size="sm" variant="secondary" disabled={busy}
+              <SaveAs
+                label="Save preset"
+                what="preset"
+                suggest={title}
+                taken={presets}
+                disabled={busy || presetsBlocked}
+                title={presetsBlocked ? "Separations can't use presets: each plate draws a picture of its own" : "Keep how this image is drawn - its layers, passes, settings, pens and edge - as a preset, to use on another picture"}
+                onSave={(name) => actions.savePreset(name).then((saved) => { if (saved) void readPresets(); return saved; })}
+                beside={presets.includes(presetPicked) ? (
+                  <ButtonRound
+                    size="sm"
+                    icon={<Trash2 />}
+                    disabled={busy}
+                    aria-label={`Delete the preset ${presetPicked}`}
                     title={`Take ${presetPicked} out of the presets. Drawings made with it stay as they are`}
-                    onClick={() => {
-                      if (window.confirm(`Take “${presetPicked}” out of the presets? Drawings made with it stay as they are.`)) {
-                        void actions.deletePreset(presetPicked).then(readPresets);
-                      }
-                    }}>
-                    Delete
-                  </Button>
-                )}
-              </div>
+                    onClick={() => actions.ask({
+                      text: `Take ${presetPicked} out of the presets? Drawings made with it stay as they are.`,
+                      confirmLabel: "Take it out",
+                      onYes: () => void actions.deletePreset(presetPicked).then(readPresets),
+                    })}
+                  />
+                ) : undefined}
+              />
               </>
               )}
             </Section>

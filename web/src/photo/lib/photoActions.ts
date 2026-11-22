@@ -5,7 +5,7 @@
 
 import type { Dispatch, SetStateAction } from "react";
 import { api, postJSON } from "../../shared/lib/api";
-import { EDGE_STYLES, edgeKeep, type EdgeGen } from "../../shared/lib/drawing/edgeMask";
+import { edgeKeep, type EdgeGen } from "../../shared/lib/drawing/edgeMask";
 import { lightness } from "../../shared/lib/color";
 import { nameOfColor } from "../../shared/lib/colorNames";
 import type { FitAlign, Margins } from "../../shared/lib/geometry";
@@ -577,8 +577,8 @@ export function photoActions(ctx: PhotoContext) {
     * Only the pens, their names and their angles are kept: not the picture, not the effect, not how
     * dark anything is. The set goes beside the image presets, so every Mac has it.
     */
-  const saveInkSet = async (taken: string[]) => {
-    if (!chosen?.photo || !onePlate(chosen.photo)) return;
+  const saveInkSet = async (name: string, folder?: string) => {
+    if (!chosen?.photo || !onePlate(chosen.photo) || !name) return false;
     const members = shapes.filter(sameImage);
     const was = inkSetOf(chosen.photo);
     const inks: SetInk[] = was.inks.map((ink, at) => {
@@ -590,14 +590,15 @@ export function photoActions(ctx: PhotoContext) {
         angle: member?.photo?.angle ?? ink.angle,
       };
     });
-    const name = window.prompt("Save these inks as the set:", was.own ? was.label : "My inks")?.replace(/[/\\:]/g, "-").trim();
-    if (!name) return;
-    if (taken.includes(name) && !window.confirm(`Replace the ink set \u201c${name}\u201d?`)) return;
+    // The name is asked for in the card, under the button, so this is handed one: see PhotoCard.
     try {
       await postJSON(`/api/ink-sets/${encodeURIComponent(name)}`, { set: { key: `own:${name}`, label: name, inks, own: true } }, "PUT");
-      setMessage({ text: `Saved the ink set ${name}`, ok: true });
+      // Where it went, not just that it went: the folder is new, and nothing else on the page names it.
+      setMessage({ text: folder ? `Saved the ink set ${name} in ${folder}` : `Saved the ink set ${name}`, ok: true });
+      return true;
     } catch (err) {
       setMessage({ text: (err as Error).message, ok: false });
+      return false;
     }
   };
 
@@ -1344,21 +1345,16 @@ export function photoActions(ctx: PhotoContext) {
    * Keep the chosen photo's made edge in the library, as a picture like any other mask: all four
    * sides, at the shape of the part of the image that shows.
    */
-  const saveEdgeGen = async (taken: string[]) => {
+  const saveEdgeGen = async (name: string) => {
     const photo = chosen?.photo;
-    if (!photo?.edgeGen) return;
-    const label = EDGE_STYLES.find((s) => s.key === photo.edgeGen!.style)?.label ?? "Edge";
-    let suggest = label;
-    for (let n = 2; taken.includes(suggest); n++) suggest = `${label} ${n}`;
-    const name = window.prompt("Save this edge to the edge masks as:", suggest)?.replace(/[/\\:]/g, "-").trim();
-    if (!name) return;
-    if (taken.includes(name) && !window.confirm(`Replace the edge mask “${name}”?`)) return;
+    if (!photo?.edgeGen || !name) return false;
+    const gen = photo.edgeGen;
     try {
       const [c0, c1, c2, c3] = photo.crop ?? [0, 0, 1, 1];
       const aspect = (photo.width * (c2 - c0)) / Math.max(1e-6, photo.height * (c3 - c1));
       const w = Math.round(aspect >= 1 ? MASK_EDGE_PX : MASK_EDGE_PX * aspect);
       const h = Math.round(aspect >= 1 ? MASK_EDGE_PX / aspect : MASK_EDGE_PX);
-      const keep = edgeKeep(photo.edgeGen, MASK_SIDES, w, h);
+      const keep = edgeKeep(gen, MASK_SIDES, w, h);
       const canvas = document.createElement("canvas");
       canvas.width = w;
       canvas.height = h;
@@ -1371,8 +1367,10 @@ export function photoActions(ctx: PhotoContext) {
       ctx.putImageData(img, 0, 0);
       await postJSON(`/api/edge-masks/${encodeURIComponent(name)}`, { src: canvas.toDataURL("image/jpeg", 0.85) }, "PUT");
       setMessage({ text: `This edge saved to the edge masks as ${name}`, ok: true });
+      return true;
     } catch (err) {
       setMessage({ text: (err as Error).message, ok: false });
+      return false;
     }
   };
 
@@ -1392,12 +1390,9 @@ export function photoActions(ctx: PhotoContext) {
    * later. Separations can't have one: each plate draws a picture of its own.
    */
   const presetBlocked = () => Boolean(chosen?.photo?.separation && !chosen.photo.profile);
-  const savePreset = async (taken: string[]) => {
-    if (!chosen?.photo || presetBlocked()) return;
+  const savePreset = async (name: string) => {
+    if (!chosen?.photo || presetBlocked() || !name) return false;
     const { name: stem } = photoStem();
-    const name = window.prompt("Save how this image is drawn as the preset:", stem)?.replace(/[/\\:]/g, "-").trim();
-    if (!name) return;
-    if (taken.includes(name) && !window.confirm(`Replace the preset “${name}”?`)) return;
     const members = shapes.filter(sameImage);
     // Bottom first, as the layers stack. A shape named after the image keeps only what follows its
     // name, so it's named after the next picture instead.
@@ -1412,8 +1407,10 @@ export function photoActions(ctx: PhotoContext) {
     try {
       await postJSON(`/api/image-presets/${encodeURIComponent(name)}`, { preset: { layers: presetLayers } }, "PUT");
       setMessage({ text: `Saved as the preset ${name}`, ok: true });
+      return true;
     } catch (err) {
       setMessage({ text: (err as Error).message, ok: false });
+      return false;
     }
   };
   /**

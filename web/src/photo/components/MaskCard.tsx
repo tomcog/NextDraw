@@ -3,6 +3,7 @@ import { Button, Card, Checkbox, InputSelect } from "@tomcoggia/ui";
 import { SquareDashed } from "lucide-react";
 import { api } from "../../shared/lib/api";
 import { Section } from "../../shared/components/controls/Section";
+import { SaveAs } from "../../shared/components/controls/SaveAs";
 import { NumberField } from "../../shared/components/controls/NumberField";
 import controls from "../../shared/components/controls/controls.module.css";
 import { MASK_SIDES, type Photo } from "../../shared/lib/drawing/photo";
@@ -86,9 +87,21 @@ export function MaskCard({ photo, busy, layerCount, actions }: Props) {
                       <Button size="sm" variant="secondary" disabled={busy} title={`Put the numbers back to ${EDGE_STYLES.find((st) => st.key === gen.style)?.label}'s, keeping this edge`} onClick={() => actions.setEdgeGen({ ...newEdge(gen.style), seed: gen.seed, vary: gen.vary })}>
                         Reset
                       </Button>
-                      <Button size="sm" variant="secondary" disabled={busy} title="Keep this edge in the edge masks, as a picture to use again" onClick={() => actions.saveEdgeGen(masks).then(readMasks)}>
-                        Save…
-                      </Button>
+                      <SaveAs
+                        label="Save…"
+                        what="edge mask"
+                        suggest={(() => {
+                          // The style's name, numbered where one of that name is already kept.
+                          const label = EDGE_STYLES.find((st) => st.key === gen.style)?.label ?? "Edge";
+                          let name = label;
+                          for (let n = 2; masks.includes(name); n++) name = `${label} ${n}`;
+                          return name;
+                        })()}
+                        taken={masks}
+                        disabled={busy}
+                        title="Keep this edge in the edge masks, as a picture to use again"
+                        onSave={(name) => actions.saveEdgeGen(name).then((saved) => { if (saved) void readMasks(); return saved; })}
+                      />
                     </div>
                     <div className={styles.fillRow}>
                       {EDGE_FIELDS.map((f) => (
@@ -127,7 +140,11 @@ export function MaskCard({ photo, busy, layerCount, actions }: Props) {
                     title="Take this mask out of the edge masks. Drawings that use it keep it"
                     onClick={() => {
                       const name = photo.edgeMaskName!;
-                      if (window.confirm(`Take “${name}” out of the edge masks? Drawings that use it keep it.`)) actions.deleteEdgeMask(name).then(readMasks);
+                      actions.ask({
+                        text: `Take ${name} out of the edge masks? Drawings that use it keep it.`,
+                        confirmLabel: "Take it out",
+                        onYes: () => void actions.deleteEdgeMask(name).then(readMasks),
+                      });
                     }}
                   >
                     Delete

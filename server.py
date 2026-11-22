@@ -5683,13 +5683,14 @@ def ink_set_file(name):
 
 def ink_sets_listed():
     out = []
+    where = display_path(INK_SETS)
     if INK_SETS.is_dir():
         for f in sorted(INK_SETS.glob("*.json"), key=lambda p: p.stem.lower()):
             try:
                 out.append({"name": f.stem, "set": json.loads(f.read_text())})
             except (OSError, ValueError):
                 continue  # a set that can't be read is left out rather than breaking the list
-    return jsonify(sets=out)
+    return jsonify(sets=out, folder=where)
 
 
 @app.get("/api/ink-sets")

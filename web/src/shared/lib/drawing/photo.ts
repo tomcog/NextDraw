@@ -553,6 +553,30 @@ export const inkAtOf = (p: Pick<Photo, "inkAt" | "plate" | "plates">): number =>
   p.inkAt ?? (p.plate ? platesOf(p.plates).indexOf(p.plate) : -1);
 
 /**
+ * Whether a photo's pens are still the ones its ink set chose. False once any has been changed by
+ * hand in the Layers card: the menu then names a set these are no longer the inks of, which is worse
+ * than saying nothing - it was what made "Save ink set" look as though it would save CMYK + OGV.
+ *
+ * Judged against what the set would choose for THIS photo's hatching, not the hatching as it stands:
+ * a pen is picked partly by how it covers at a spacing, so comparing against the current spacing
+ * would call a set modified merely because the spacing had been turned.
+ *
+ * A plate turned off is not a change of ink - the set is still the set, with one of it silenced.
+ */
+export function inksAreTheSet(photo: Pick<Photo, "inkSet" | "plates" | "plate" | "inkAt" | "penMm" | "spacingMm" | "levels">, palette: { color: string }[]): boolean {
+  const have = photo.plates;
+  if (!have?.length) return true;
+  const set = inkSetOf(photo);
+  const want = set.own
+    ? set.inks.map((ink) => ink.color)
+    : platePens(palette, PLATE_SETS.find((s) => s.key === set.key)?.plates ?? PLATES, {
+      penMm: photo.penMm ?? 0.5, spacingMm: photo.spacingMm, levels: photo.levels,
+    }).map((pen) => pen?.color ?? "");
+  if (have.length !== want.length) return false;
+  return have.every((colour, i) => colour === PLATE_OFF || (colour ?? "").toLowerCase() === (want[i] ?? "").toLowerCase());
+}
+
+/**
  * Whether this layer is one ink of a separated set - a plate of CMYK, or of a set of your own. Asked
  * wherever `photo.plate` used to be asked as a yes or no, since a set of your own has no plate letter.
  */

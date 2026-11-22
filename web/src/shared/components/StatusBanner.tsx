@@ -19,7 +19,11 @@ export interface BannerMessage {
   working?: boolean;
   /** One thing to do about it, as a button beside the text. */
   action?: { label: string; onClick: () => void };
-  /** Several things to do about it, a button each, after `action`. */
+  /**
+   * Several things to do about it, a button each, after `action`. Deciding something happens here
+   * rather than in `window.confirm`, which an embedded browser - the Claude app's Browser pane among
+   * them - answers "no" to without showing anything. Naming something is the cards' own (SaveAs).
+   */
   actions?: { label: string; onClick: () => void }[];
 }
 

@@ -14,7 +14,7 @@ import { HistoryToolbar, type View } from "../shared/components/PreviewToolbar";
 import { AppSwitch } from "../shared/components/AppSwitch";
 import { ToolbarSeparator } from "../shared/components/ToolbarSeparator";
 import { UnsavedChangesModal } from "../shared/components/UnsavedChangesModal";
-import { StatusBanner } from "../shared/components/StatusBanner";
+import { StatusBanner, type BannerMessage } from "../shared/components/StatusBanner";
 import { api, postJSON } from "../shared/lib/api";
 import { isSvgFile, useFileDrop } from "../shared/lib/useFileDrop";
 import { PAPER_SIZES } from "../shared/lib/constants";
@@ -29,7 +29,7 @@ import type { Fill } from "../shared/lib/drawing/hatch";
 import { parseDrawing } from "../shared/lib/drawing/parse";
 import { isKnockoutLayer, knockoutPaths, knockoutPlaced, knockoutShapes, withKnockout } from "../shared/lib/drawing/knockout";
 import { buildSvg, cleanFileName } from "../shared/lib/drawing/svg";
-import { joinedPicture, photoMode, photoScale, PLATE_AIMS, plateSetOf, stemWithoutPlate, type Photo } from "../shared/lib/drawing/photo";
+import { inksAreTheSet, joinedPicture, photoMode, photoScale, PLATE_AIMS, plateSetOf, stemWithoutPlate, type Photo } from "../shared/lib/drawing/photo";
 import { boxOf, drawnNodes, newLayerId, type Layer, type Page, type Shape } from "../shared/lib/drawing/shapes";
 import { pathData } from "../shared/lib/drawing/path";
 import { useDrawingFile, type Current } from "../shared/lib/drawing/useDrawingFile";
@@ -107,8 +107,27 @@ export default function App() {
   // A snapshot just saved: said at the top, with the ways on from it, until something else is said.
   const [snapped, setSnapped] = useState<{ name: string; path: string } | null>(null);
   useEffect(() => setSnapped(null), [message]);
+  /**
+   * Something to decide before it happens - a name to give, a thing to delete - asked in the band at
+   * the top rather than in window.prompt or window.confirm. An embedded browser refuses both: in the
+   * Claude app's Browser pane prompt() throws and confirm() answers no, neither of them showing
+   * anything, so a save would simply never happen and say nothing about it.
+   */
+  const [asking, setAsking] = useState<BannerMessage | null>(null);
+  useEffect(() => setAsking(null), [message]);
+  const askFor = (q: { text: string; confirmLabel: string; onYes: () => void }) => {
+    setAsking({
+      text: q.text,
+      brand: true,
+      actions: [
+        { label: q.confirmLabel, onClick: () => { setAsking(null); q.onYes(); } },
+        { label: "Cancel", onClick: () => setAsking(null) },
+      ],
+    });
+  };
   const banner = useMemo(
-    () => (message.text && (!message.ok || message.progress)
+    () => (asking ? asking
+      : message.text && (!message.ok || message.progress)
       ? { text: message.text, error: !message.ok, working: message.progress }
       : snapped
         ? {
@@ -121,7 +140,7 @@ export default function App() {
           ],
         }
         : null),
-    [message, snapped], // eslint-disable-line react-hooks/exhaustive-deps
+    [message, snapped, asking], // eslint-disable-line react-hooks/exhaustive-deps
   );
 
   // Whether a plotter is on USB, for the header and the tool list - asked now and then, as Studio does.
@@ -825,6 +844,9 @@ export default function App() {
   const photoCard = chosen?.photo ? (
     <PhotoCard
       shape={chosen as Shape & { photo: Photo }}
+      // Whether the pens are still the ones the ink set chose: changed by hand, the menu says so
+      // rather than going on naming a set these are no longer the inks of.
+      inksChanged={Boolean(chosen?.photo) && !inksAreTheSet(chosen!.photo!, tool?.palette ?? [])}
       // The photo's own name, without the band or color a layer of it adds.
       title={photoStem().name}
       shapes={shapes}
@@ -865,6 +887,7 @@ export default function App() {
             void joinSeparations().then((joined) => joined && setModeAfterJoin(to));
           } else switchPhotoMode(to);
         },
+        ask: askFor,
         setProfile: (path, rendering) => void splitPhotoProfile(path, rendering),
         set: setPhotoOf,
         split: splitPhoto,
@@ -875,7 +898,7 @@ export default function App() {
         setAngles,
         splitCmyk: (set) => splitPhotoCmyk({}, set),
         splitOwnInks: (set) => splitPhotoOwnInks(set),
-        saveInkSet: (taken) => saveInkSet(taken),
+        saveInkSet: (name, folder) => saveInkSet(name, folder),
         setColor: setLayerColor,
         splitAround: (dark, light) => splitAroundPaper({ dark, light, paperTone: chosen.photo?.side && chosen.photo.paperToneSet ? chosen.photo.paperTone : undefined }),
         setPaperTone,
