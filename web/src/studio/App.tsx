@@ -3,7 +3,6 @@ import { DrawingToolSection } from "../shared/components/controls/DrawingToolSec
 // Separations into many plates are solved off the artboard (importing this turns it on).
 import "../shared/lib/drawing/separationWorker";
 import { ArtboardSection } from "../shared/components/controls/ArtboardSection";
-import { paperMarginMm } from "../shared/components/controls/PaperSection";
 import { ArtworkSection } from "../shared/components/controls/ArtworkSection";
 import { PanelToolbar, panelIcon } from "../shared/components/PanelToolbar";
 import { Button, Card } from "@tomcoggia/ui";
@@ -29,10 +28,7 @@ import type { Zoom } from "../shared/components/BedCanvas";
 import { Canvas, isStrokeTool, type Tool } from "./components/Canvas";
 import { strokeKey, withoutStrokes } from "./lib/strokePick";
 import { mergeLines } from "./lib/mergeLines";
-import { SIGNATURE_FONT, SIGNATURE_LABEL, signatureShapes, signatureSize } from "./lib/signature";
 import { TRIM_LABEL } from "../shared/lib/drawing/trimMarks";
-import { isRegistrationBlock, registrationLayers, registrationShapes, registrationSize } from "./lib/registration";
-import { clearSpot, inkMap } from "./lib/clearSpot";
 import { SizePopover } from "./components/SizePopover";
 import { StudioHeader } from "./components/StudioHeader";
 import { canFill, newFillId, shapeAsOne, type Fill } from "../shared/lib/drawing/hatch";
@@ -131,15 +127,6 @@ function uniqueName(wanted: string, taken: string[]): string {
  return `${base} ${n}`;
 }
 
-/**
- * Shapes made upright in a box of `size`, turned a quarter to the left so the turned box's top-left
- * lands at `at`: made about the turned box's middle, then turned about it, each shape's own turn
- * taking up the angle as the Turn handle's would.
- */
-function quarterLeft(at: { x: number; y: number }, size: { w: number; h: number }, make: (topLeft: { x: number; y: number }) => Shape[]): Shape[] {
- const mid = { x: at.x + size.h / 2, y: at.y + size.w / 2 };
- return turnAround(make({ x: mid.x - size.w / 2, y: mid.y - size.h / 2 }), mid, -90);
-}
 
 /**
  * A photo split into tone bands is one photo on the artboard: whatever moved, sized or turned one band
@@ -1164,71 +1151,7 @@ export default function App() {
   setTool("select");
  };
 
- const addSignature = async (turned = false) => {
-  let font = fonts[SIGNATURE_FONT];
-  if (!font) {
-   try {
-    font = await loadFont(SIGNATURE_FONT);
-    const loaded = font;
-    setFonts((all) => ({ ...all, [SIGNATURE_FONT]: loaded }));
-   } catch (err) {
-    setMessage({ text: `Couldn't add the signature: ${(err as Error).message}`, ok: false });
-    return;
-   }
-  }
-  record();
-  let layer = layers.find((l) => splitLayerName(l.name, palette).label.trim().toLowerCase() === SIGNATURE_LABEL.toLowerCase());
-  if (!layer) {
-   const pen = palette.find((p) => p.name.toLowerCase() === "black")
-    ?? [...palette].sort((a, b) => (lightness(a.color) ?? 1) - (lightness(b.color) ?? 1))[0];
-   const made: Layer = { id: newLayerId(), name: uniqueName(joinLayerName(pen.name, SIGNATURE_LABEL), layers.map((l) => l.name)), color: pen.color };
-   layer = made;
-   setLayers((list) => {
-    const varnish = list.findIndex((l) => isVarnishLayer(l.name));
-    return varnish >= 0 ? [...list.slice(0, varnish), made, ...list.slice(varnish)] : [...list, made];
-   });
-  }
-  const year = new Date().getFullYear();
-  const size = signatureSize(year, font);
-  const inset = paperMarginMm() / 25.4;
-  const map = await inkMap(buildSvg(shapes, fills, layers, artboard, { paperSizeId: sizeId, toolName, paperColor, fonts, margins }), artboard);
-  const { at, clear } = clearSpot(map, artboard, inset, turned ? { w: size.h, h: size.w } : size, "br");
-  if (!clear) setMessage({ text: "The drawing reaches the artboard edge here - the signature is on it", ok: false });
-  const made = turned
-   ? quarterLeft(at, size, (from) => signatureShapes(year, font, layer.id, from))
-   : signatureShapes(year, font, layer.id, at);
-  const on = layer.id;
-  setShapes((list) => [...list, ...made]);
-  setTargets((list) => (list.includes(on) ? list : [...list, on]));
-  setSelected(made.map((s) => s.id));
-  setTool("select");
- };
 
- /**
-  * Registration blocks (registration.ts): one for each shown layer but the trim marks' and the
-  * signature's, butted with no gap for a hidden
-  * one, in the page's lower left corner inside the Paper card's margin - moved down into the margin
-  * if the drawing is there (clearSpot.ts) - left to right in plotting order. Any already there go first, so pressing it again after the layers change makes them afresh
-  * rather than piling up. `turned`: the row turned a quarter to the left, a column from the bottom up.
-  */
- const addRegistration = async (turned = false) => {
-  const blocked = registrationLayers(layers, palette);
-  if (!blocked.length) return;
-  const gone = new Set(shapes.filter(isRegistrationBlock).map((s) => s.id));
-  const inset = paperMarginMm() / 25.4;
-  const size = registrationSize(blocked);
-  const rest = shapes.filter((s) => !gone.has(s.id));
-  const map = await inkMap(buildSvg(rest, fills, layers, artboard, { paperSizeId: sizeId, toolName, paperColor, fonts, margins }), artboard);
-  const { at, clear } = clearSpot(map, artboard, inset, turned ? { w: size.h, h: size.w } : size, "bl");
-  if (!clear) setMessage({ text: "The drawing reaches the artboard edge here - the registration blocks are on it", ok: false });
-  record();
-  const row = (from: { x: number; y: number }) => registrationShapes(blocked, { x: from.x, y: from.y + size.h });
-  const made = turned ? quarterLeft(at, size, row) : row(at);
-  setShapes((list) => [...list.filter((s) => !gone.has(s.id)), ...made]);
-  setFills((list) => list.filter((f) => !gone.has(f.shapeId)));
-  setSelected((ids) => ids.filter((id) => !gone.has(id)));
-  setTool("select");
- };
 
  /** Bake a shape's copies into shapes of their own (see bakedCopies), each with the fills it had. */
  const bakeRepeat = (id: string) => {
@@ -2175,8 +2098,6 @@ export default function App() {
       onLayers={() => setLayersCard((on) => !on)}
       simplifying={simplifierCard}
       jiggling={jiggleCard}
-      onSignature={(turned) => void addSignature(turned)}
-      onRegistration={(turned) => void addRegistration(turned)}
       // Picked, the artboard picks shapes as Select does; picked again, it's put down for Select.
       onSimplify={() => {
        setTool("select");

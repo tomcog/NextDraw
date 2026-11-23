@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Segment, SegmentedControl, Toolbar, ToolbarExpander } from "@tomcoggia/ui";
-import { LassoSelect, MousePointer2, PenTool, Pentagon, Rainbow, Signal, Spline, SwatchBook, SquareDashedMousePointer, Star, Type, Layers, Vibrate } from "lucide-react";
-import { EllipseIcon, LineIcon, RectangleIcon, SignatureIcon, SpiralIcon, SpirographIcon, WaveIcon } from "./toolIcons";
+import { LassoSelect, MousePointer2, PenTool, Pentagon, Rainbow, Signal, Spline, SquareDashedMousePointer, Star, Type, Layers, Vibrate } from "lucide-react";
+import { EllipseIcon, LineIcon, RectangleIcon, SpiralIcon, SpirographIcon, WaveIcon } from "./toolIcons";
 import bar from "../../../shared/components/PreviewToolbar.module.css";
 import { load, save } from "../../../shared/lib/storage";
 import type { Tool } from "../Canvas";
@@ -11,9 +11,6 @@ import { panelIcon } from "../../../shared/components/PanelToolbar";
 
 /** The tools that pick rather than draw: a group of their own at the head of the Tools bar. */
 const PICKERS: Tool[] = ["select", "strokes", "lasso"];
-
-/** A button's glyph turned a quarter to the left, for the add that comes out turned the same way. */
-const LEFT = { transform: "rotate(-90deg)" };
 
 const TOOLS: { kind: Tool; label: string; hint: string; icon: JSX.Element }[] = [
   { kind: "select", label: "Select", hint: "Select (V): drag a shape to move it, its corners to resize", icon: <MousePointer2 /> },
@@ -55,10 +52,6 @@ interface Props {
   /** The Layers card - and the card of the layer being drawn on - is out; its switch heads the tools. */
   layersOut: boolean;
   onLayers: () => void;
-  /** Put the signature on the page: TC and this year, on its own layer, ready to move - `turned` a quarter to the left. */
-  onSignature: (turned: boolean) => void;
-  /** Put a registration block for each layer in the page's lower left corner, in plotting order - `turned` a quarter to the left, a column from the bottom up. */
-  onRegistration: (turned: boolean) => void;
 }
 
 /**
@@ -67,7 +60,7 @@ interface Props {
  * one pressed is what a drag on the page makes. Last, on its own, the Simplifier, which works on
  * what's drawn from its card. One tool in hand at a time across all of them. The names are in the tooltips.
  */
-export function ToolPicker({ tool, onTool, simplifying, onSimplify, jiggling, onJiggle, layersOut, onLayers, onSignature, onRegistration }: Props) {
+export function ToolPicker({ tool, onTool, simplifying, onSimplify, jiggling, onJiggle, layersOut, onLayers }: Props) {
   // The drawing tools fold away behind their Tool button, open or shut as it was last left.
   const [drawerOpen, setDrawerOpen] = useState(() => load<boolean>("studio-tools-drawer") ?? true);
   const toggleDrawer = (open: boolean) => {
@@ -111,9 +104,9 @@ export function ToolPicker({ tool, onTool, simplifying, onSimplify, jiggling, on
           {TOOLS.filter((t) => !PICKERS.includes(t.kind)).map(segment)}
         </ToolbarExpander>
       </Toolbar></ToolbarIcons>
-      {/* What works on what's drawn: the Simplifier and Jiggle, from their cards; then what's added at
-          once, so actions - the signature and the registration blocks, placed to be moved from there,
-          each upright or turned a quarter to the left, a group of their own. */}
+      {/* What works on what's drawn: the Simplifier and Jiggle, from their cards. The signature and
+          the registration blocks used to be added here; they are Plot's now, generated as the last
+          step before plotting, where they can follow the artboard and the inks being laid down. */}
       <ToolbarIcons><Toolbar tone="white" orientation="vertical" aria-label="Work on the drawing">
         <SegmentedControl size="sm" aria-label="Work on what's drawn">
           <Segment selected={simplifying} icon={<Spline />} title="Simplifier: fewer points in the drawing's paths, set from its card" onClick={onSimplify}>
@@ -121,22 +114,6 @@ export function ToolPicker({ tool, onTool, simplifying, onSimplify, jiggling, on
           </Segment>
           <Segment selected={jiggling} icon={<Vibrate />} title="Jiggle: the targeted layers' strokes moved a little, set from its card - on a copy, for another pass" onClick={onJiggle}>
             Jiggle
-          </Segment>
-        </SegmentedControl>
-        <SegmentedControl size="sm" variant="dark" actions aria-label="Signature">
-          <Segment icon={<SignatureIcon />} title="Signature: TC and this year, in the page's bottom right corner on its own Signature layer - drag it where it goes" onClick={() => onSignature(false)}>
-            Signature
-          </Segment>
-          <Segment icon={<SignatureIcon style={LEFT} />} title="Signature, turned left: the same, turned a quarter to the left, reading up the page" onClick={() => onSignature(true)}>
-            Signature turned
-          </Segment>
-        </SegmentedControl>
-        <SegmentedControl size="sm" variant="dark" actions aria-label="Registration">
-          <Segment icon={<SwatchBook />} title="Registration: a solid block for each layer in the page's lower left corner, left to right in the order they're plotted - again to make them afresh after the layers change" onClick={() => onRegistration(false)}>
-            Registration
-          </Segment>
-          <Segment icon={<SwatchBook style={LEFT} />} title="Registration, turned left: the blocks turned a quarter to the left, a column in the lower left corner, bottom to top in the order they're plotted" onClick={() => onRegistration(true)}>
-            Registration turned
           </Segment>
         </SegmentedControl>
       </Toolbar></ToolbarIcons>
