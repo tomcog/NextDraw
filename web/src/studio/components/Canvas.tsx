@@ -172,7 +172,6 @@ const sameItems = <T,>(a: T[], b: T[]) => a.length === b.length && a.every((x, i
 type LayerLists = Map<string, { shapes: Shape[]; fills: Fill[] }>;
 
 /** The Photo view: whether it's on, and the one shape of each photo that draws it. */
-interface PhotoView { on: boolean; leads: Set<string> }
 
 /**
  * The shapes and fills on each layer, keeping last time's list for a layer where nothing on it
@@ -249,12 +248,12 @@ function PhotoLines({ shape }: { shape: Shape }) {
   );
 }
 
-function shapeElement(s: Shape, key: string, props: Record<string, unknown>, fonts: Record<string, StrokeFont>, photos?: PhotoView) {
-  // A photo's ink is its lines - or, in the Photo view, the photo itself, drawn once however many
-  // layers it's split into. What you grab it by is the box it sits in, as for a rectangle.
+function shapeElement(s: Shape, key: string, props: Record<string, unknown>, fonts: Record<string, StrokeFont>) {
+  // A photo's ink is its lines, and here that is all it ever is: the picture belongs to Image, where
+  // the conversion is made and judged; in Studio what sits on the page is the object's lines
+  // (Tom, 2026-11-23). What you grab it by is the box it sits in, as for a rectangle.
   if (s.kind === "photo" && s.photo && props.className !== styles.grab) {
-    if (photos?.on && !photos.leads.has(s.id)) return null;
-    return <PhotoInk key={key} shape={s} asPhoto={photos?.on} />;
+    return <PhotoInk key={key} shape={s} />;
   }
   const b = boxOf(s);
   // A turned shape is drawn turned about the middle of its box; the box itself stays square.
@@ -315,7 +314,7 @@ function shapeElement(s: Shape, key: string, props: Record<string, unknown>, fon
  * Kept apart and memoised so a layer is only drawn again when its own list changes: moving a shape
  * on one layer leaves every other layer's thousands of marks exactly where they were on screen.
  */
-const LayerMarks = memo(function LayerMarks({ shapes, fills, fonts, photos }: { shapes: Shape[]; fills: Fill[]; fonts: Record<string, StrokeFont>; photos: PhotoView }) {
+const LayerMarks = memo(function LayerMarks({ shapes, fills, fonts }: { shapes: Shape[]; fills: Fill[]; fonts: Record<string, StrokeFont> }) {
   const byId = new Map(shapes.map((sh) => [sh.id, sh]));
   // A fill on a shape made of several paths is drawn from all of them as one.
   const membersOf = new Map<string, Shape[]>();
@@ -337,7 +336,7 @@ const LayerMarks = memo(function LayerMarks({ shapes, fills, fonts, photos }: { 
       : what(`${sh.id}-0`);
   return (
     <>
-      {shapes.filter((sh) => sh.outline !== false).map((sh) => copies(sh, (key) => shapeElement(sh, key, {}, fonts, photos)))}
+      {shapes.filter((sh) => sh.outline !== false).map((sh) => copies(sh, (key) => shapeElement(sh, key, {}, fonts)))}
       {fills.map((fill) => {
         const members = membersOf.get(fill.shapeId);
         const shape = byId.get(fill.shapeId) ?? (members && members.length > 1 ? shapeAsOne(members, fill.shapeId) : undefined);
@@ -385,18 +384,6 @@ export function Canvas({ bar, page, artboard, paperColor, shapes, fills, layers,
   // The pen's real width in inches, so the line on screen is the line on paper.
   const penIn = penWidthMm / 25.4;
   const inkSim = view === "preview";
-  // The Photo view draws each photo once, from the first of its layers; the rest draws as in Outline.
-  const photoLeads = useMemo(() => {
-    const seen = new Set<string>();
-    const leads = new Set<string>();
-    for (const sh of shapes) {
-      if (sh.kind !== "photo") continue;
-      const key = sh.photo?.group ?? sh.id;
-      if (!seen.has(key)) { seen.add(key); leads.add(sh.id); }
-    }
-    return leads;
-  }, [shapes]);
-  const photos = useMemo<PhotoView>(() => ({ on: view === "photo", leads: photoLeads }), [view, photoLeads]);
   const hiddenLayers = new Set(layers.filter((l) => l.hidden).map((l) => l.id));
   // Nothing on a locked layer is picked, banded, cleaned up or dragged.
   const lockedLayers = new Set(layers.filter((l) => l.locked).map((l) => l.id));
@@ -829,11 +816,11 @@ export function Canvas({ bar, page, artboard, paperColor, shapes, fills, layers,
                     {/* Always inside this group, shifted or not, so picking a whole layer up doesn't
                         move its marks to another place in the page and draw them all again. */}
                     <g transform={carriedWhole?.has(layer.id) ? shift : undefined}>
-                      {here && <LayerMarks shapes={here.shapes} fills={here.fills} fonts={fonts} photos={photos} />}
+                      {here && <LayerMarks shapes={here.shapes} fills={here.fills} fonts={fonts} />}
                     </g>
                     {moving && (
                       <g transform={shift}>
-                        <LayerMarks shapes={moving.shapes} fills={moving.fills} fonts={fonts} photos={photos} />
+                        <LayerMarks shapes={moving.shapes} fills={moving.fills} fonts={fonts} />
                       </g>
                     )}
                   </>

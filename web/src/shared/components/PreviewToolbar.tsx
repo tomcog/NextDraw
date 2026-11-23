@@ -1,23 +1,27 @@
 import { Segment, SegmentedControl, Spinner, Toolbar } from "@tomcoggia/ui";
-import { Camera, Eye, EyeDashed, Frame, Grid3x3, ImageIcon, Redo2, Route, Search, Settings, StickyNote, Undo2 } from "lucide-react";
+import { Eye, EyeDashed, Frame, Grid3x3, ImageIcon, Redo2, Route, Search, Settings, StickyNote, Undo2 } from "lucide-react";
 import type { ReactNode } from "react";
 import type { Zoom } from "./Bed";
 import styles from "./PreviewToolbar.module.css";
+import { panelIcon } from "./PanelToolbar";
 import { ToolbarIcons } from "./ToolbarIcons";
 
 /**
  * How the drawing is drawn: its paths as thin lines, the ink they will make, or - in Plot, while
  * there is a plot to show - how far the plot has got.
+ *
+ * Not the pictures behind them: a converted image is an object made in Image, and by the time a
+ * drawing is in Studio its picture is beside the point - what is there is the lines it made
+ * (Tom, 2026-11-23). Image keeps its own picture / lines / side-by-side views, where the conversion
+ * is actually being judged.
  */
-export type View = "outline" | "preview" | "progress" | "photo";
+export type View = "outline" | "preview" | "progress";
 
 export interface PreviewToolbarProps {
   view: View;
   onView: (view: View) => void;
   /** Plot only: offer the plot in progress as a third way to draw the drawing. Left out, it isn't offered. */
   canProgress?: boolean;
-  /** Studio only: offer the photos the drawing's lines are made from, as pictures. Left out, it isn't offered. */
-  canPhoto?: boolean;
   zoom: Zoom;
   onZoom: (zoom: Zoom) => void;
   canPaper?: boolean;
@@ -46,7 +50,7 @@ export interface PreviewToolbarProps {
  * the white bar. Nothing here overrides the components. Icons only: what each does is in its
  * tooltip and read out by name, and the bar leaves more of the line for the measurement.
  */
-export function PreviewToolbar({ view, onView, canProgress, canPhoto, zoom, onZoom, ground, canPaper = true, canDrawing, working, loupe, onLoupe, extras }: PreviewToolbarProps) {
+export function PreviewToolbar({ view, onView, canProgress, zoom, onZoom, ground, canPaper = true, canDrawing, working, loupe, onLoupe, extras }: PreviewToolbarProps) {
   return (
     <span className={styles.row}>
       {/* What an app shows beyond the shared views, in a bar of its own ahead of the shared one -
@@ -72,15 +76,6 @@ export function PreviewToolbar({ view, onView, canProgress, canPhoto, zoom, onZo
             title="Preview: the ink - each pen's real width, how solid it is and how it darkens where strokes cross. Slow on a very large drawing"
             aria-label="Preview"
           />
-          {canPhoto && (
-            <Segment
-              selected={view === "photo"}
-              onClick={() => onView("photo")}
-              icon={<Camera />}
-              aria-label="Image"
-              title="Image: the images themselves, where their lines are, to compare the drawing against"
-            />
-          )}
           {canProgress !== undefined && (
             <Segment
               selected={view === "progress"}
@@ -155,7 +150,15 @@ export function ZoomControls({ zoom, onZoom, ground = "bed", canPaper = true, ca
           { key: "plotter", icon: <Grid3x3 />, title: "Zoom out to the plotter's full drawing area", label: "Plotter" },
           { key: "paper", icon: <StickyNote />, title: "Zoom to the paper", label: "Paper", disabled: !canPaper },
         ];
-  zooms.push({ key: "drawing", icon: <ImageIcon />, title: "Zoom to the drawing", label: "Drawing", disabled: !canDrawing });
+  // On the artboard's own page what you zoom to is the artwork, so it wears the Artwork card's own
+  // glyph (Tom, 2026-11-23); on the bed it is still a drawing placed on a sheet.
+  zooms.push({
+    key: "drawing",
+    icon: ground === "artboard" ? panelIcon("artwork") : <ImageIcon />,
+    title: "Zoom to the drawing",
+    label: "Drawing",
+    disabled: !canDrawing,
+  });
   return (
     <>
       <SegmentedControl size="sm" variant="dark" aria-label="Zoom the preview">

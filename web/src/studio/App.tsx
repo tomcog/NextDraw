@@ -870,11 +870,6 @@ export default function App() {
  // painted - the drawing is the same either way. Not remembered: a drawing always opens in
  // Outline, which is quick whatever its size, and Preview is asked for when it is wanted.
  const [view, setView] = useState<View>("outline");
- // No photo left to show: back to the lines.
- const hasPhoto = shapes.some((sh) => sh.kind === "photo");
- useEffect(() => {
-  if (!hasPhoto && view === "photo") setView("outline");
- }, [hasPhoto, view]);
 
  const tool2 = presets.find((t) => t.name === toolName) ?? null;
 
@@ -2213,7 +2208,6 @@ export default function App() {
         onZoom: setZoom,
         ground: "artboard",
         canDrawing: shapes.length > 0,
-        canPhoto: shapes.some((sh) => sh.kind === "photo"),
         loupe,
         onLoupe: setLoupe,
       }}
