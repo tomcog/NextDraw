@@ -120,6 +120,16 @@ root, _ = made(trim=MARKS, stored=True)
 check("the stored marks are gone", root.findall(".//*[@id='old']"), [])
 check("their layer with them, and the generated ones in its place",
       [g.get("id") for g in server.layer_groups(root)], ["layer-art", server.TRIM_LAYER_ID])
+# Studio reads a drawing made before this as plain lines on a layer still named for the marks, so the
+# layer's own name is the other way to know them - the design block no longer says what they are.
+import re
+text, gone = re.subn(r', "curves": \[[^]]*\]', "", fixture(trim=MARKS, stored=True))
+assert gone == 1, "the fixture should have had a curves entry to take out"
+plain = etree.fromstring(text.encode())
+server.add_trim_marks(plain, server.clean_trim(MARKS))
+check("a drawing Studio has saved since, with only the layer's name to go by",
+      [g.get("id") for g in server.layer_groups(plain)], ["layer-art", server.TRIM_LAYER_ID])
+
 root, pad = made(stored=True)
 near("with marks off, the drawing is left exactly as it is", pad, 0.0)
 check("its own marks still plot, as they always did",

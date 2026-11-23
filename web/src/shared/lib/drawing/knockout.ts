@@ -291,8 +291,6 @@ export function knockOutRun(run: Node[], area: KnockoutArea, work = scratch(area
   return out.filter((r) => r.length > 1 && runLength(r) >= STUB);
 }
 
-const isTrim = (s: Shape) => s.curve?.kind === "trim";
-
 /** A path shape drawing these runs, in the place of `from`: its layer, group and name. */
 function pathShape(from: Shape, runs: Node[][], id: string): Shape {
   const b = pointsBox(runs.flatMap((run) => flattenRun(run)));
@@ -321,8 +319,8 @@ function cutAll(runs: Node[][], area: KnockoutArea, work: ReturnType<typeof scra
 /**
  * The drawing with the mask knocked out of it. A shape the mask doesn't touch stays as it is; one it
  * does becomes a path of what's left of its lines, its fills beside it as a path of their own, cut the
- * same way. Pictures still to be made into lines are left alone - turn them into lines first - and so
- * are trim marks, which sit round the drawing. `cut` is how many shapes were cut.
+ * same way. Pictures still to be made into lines are left alone - turn them into lines first.
+ * `cut` is how many shapes were cut.
  */
 export function knockOutDrawing(shapes: Shape[], fills: Fill[], area: KnockoutArea, fonts: Record<string, StrokeFont>): { shapes: Shape[]; fills: Fill[]; cut: number } {
   const work = scratch(area);
@@ -332,7 +330,7 @@ export function knockOutDrawing(shapes: Shape[], fills: Fill[], area: KnockoutAr
   const groups = groupsOf(shapes);
   let cut = 0;
   for (const s of shapes) {
-    if (s.kind === "photo" || isTrim(s)) {
+    if (s.kind === "photo") {
       out.push(s);
       continue;
     }

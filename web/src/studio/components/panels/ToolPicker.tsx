@@ -7,7 +7,6 @@ import { load, save } from "../../../shared/lib/storage";
 import type { Tool } from "../Canvas";
 import type { Shape } from "../../../shared/lib/drawing/shapes";
 import { ToolbarIcons } from "../../../shared/components/ToolbarIcons";
-import { panelIcon } from "../../../shared/components/PanelToolbar";
 
 /** The tools that pick rather than draw: a group of their own at the head of the Tools bar. */
 const PICKERS: Tool[] = ["select", "strokes", "lasso"];
@@ -34,8 +33,6 @@ const TOOLS: { kind: Tool; label: string; hint: string; icon: JSX.Element }[] = 
 /** A shape's glyph, for its card: the tool that draws its kind, or for a path, which none does, a curve. */
 export function shapeIcon(shape: Shape): JSX.Element | undefined {
   if (shape.kind === "path") return <Spline />;
-  // Trim marks are set from their card rather than drawn with a tool: its glyph.
-  if (shape.curve?.kind === "trim") return panelIcon("trim");
   const kind = shape.curve?.kind ?? shape.kind;
   return TOOLS.find((t) => t.kind === kind)?.icon;
 }

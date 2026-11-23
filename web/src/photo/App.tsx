@@ -40,8 +40,6 @@ import { photoActions, pictureSources } from "./lib/photoActions";
 import { ConvertStage, type ConvertView } from "./components/ConvertStage";
 import { AdjustCard, AdjustToolbar } from "./components/AdjustCard";
 import { VignetteCard } from "./components/VignetteCard";
-import { curveStrokes } from "../shared/lib/drawing/parametric";
-import { trimShapeOf, withTrimMoved, type TrimDrawing } from "../shared/lib/drawing/trimMarks";
 import { EFFECTS, EffectToolbar, effectOf, type Effect } from "./components/EffectToolbar";
 import { PanelToolbar, panelIcon } from "../shared/components/PanelToolbar";
 import { LayersSection } from "../shared/components/controls/LayersSection";
@@ -197,7 +195,6 @@ export default function App() {
   // And the Mask card, under Vignette: the image's edges left as paper.
   const [maskCard, setMaskCard] = useState(() => load<boolean>("photo-mask-card") ?? false);
   useEffect(() => remember("photo-mask-card", maskCard), [maskCard]);
-  // And the Trim marks card, under the Image card as its switch is under Image's in the panels toolbar: the size the print is cut to, and the image placed in it.
 
   // None until a pen is picked: the server's None pen, first in the list (once "", before it was one).
   const [toolName, setToolName] = useState<string>(() => load<string>(TOOL_KEY) || NONE_PEN);
@@ -818,23 +815,6 @@ export default function App() {
 
   const vignetteSection = chosen?.photo && vignetteCard ? <VignetteCard photo={chosen.photo} set={setPhotoOf} /> : null;
 
-  // The trim marks: a live layer of their own, redrawn from the trim's box and the marks' two numbers
-  // whenever either changes - the same card and the same edits as Studio's and Plot's.
-  const trim = trimShapeOf(shapes);
-  const trimLayer = trim ? layers.find((l) => l.id === trim.layerId) : undefined;
-  const editTrim = (edit: (d: TrimDrawing) => TrimDrawing) => {
-    const next = edit({ shapes, layers, page: artboard });
-    if (next.shapes === shapes && next.layers === layers) return;
-    record();
-    setShapes(next.shapes);
-    setLayers(next.layers);
-  };
-  // The marks as the stage draws them, in every view - the picture's too, so the image can be placed
-  // in the trim before there are any lines. A hidden layer drops out, as from the lines.
-  const trimOnStage = trim && trimLayer && !trimLayer.hidden
-    ? { color: trimLayer.color, d: curveStrokes(trim).map((run) => `M ${run.map((p) => `${p.x} ${p.y}`).join(" L ")}`), box: boxOf(trim) }
-    : undefined;
-
   // The chosen photo's card: how it's turned into lines.
   const photoCard = chosen?.photo ? (
     <PhotoCard
@@ -1166,7 +1146,6 @@ export default function App() {
               onShow={setConvertView}
               cropping={cropDraft ? { part: cropDraft, onPart: setCropDraft } : undefined}
               others={otherLayers}
-              trim={trimOnStage}
               knockout={knockoutOnStage && {
                 ...knockoutOnStage,
                 active: Boolean(knockoutLayer && activeLayer === knockoutLayer.id),
@@ -1178,9 +1157,8 @@ export default function App() {
                 // Only what's on targeted layers is picked up, the knockout too.
                 onPlace: busy || !knockoutLayer || !movable(knockoutLayer.id) ? undefined : placeKnockout,
               }}
-              // Only what's on targeted layers is picked up: the trim on its own layer, the image -
-              // which moves all of its layers together - when every one of them is targeted.
-              onTrimMove={busy || !trimLayer || !movable(trimLayer.id) ? undefined : (dx, dy) => editTrim((d) => withTrimMoved(d, dx, dy))}
+              // Only what's on targeted layers is picked up: the image, which moves all of its
+              // layers together, when every one of them is targeted.
               onMove={busy || !photoLayerIds.length || !photoLayerIds.every(movable) ? undefined : movePhoto}
             />
           ) : (

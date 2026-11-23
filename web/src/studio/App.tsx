@@ -28,7 +28,6 @@ import type { Zoom } from "../shared/components/BedCanvas";
 import { Canvas, isStrokeTool, type Tool } from "./components/Canvas";
 import { strokeKey, withoutStrokes } from "./lib/strokePick";
 import { mergeLines } from "./lib/mergeLines";
-import { TRIM_LABEL } from "../shared/lib/drawing/trimMarks";
 import { SizePopover } from "./components/SizePopover";
 import { StudioHeader } from "./components/StudioHeader";
 import { canFill, newFillId, shapeAsOne, type Fill } from "../shared/lib/drawing/hatch";
@@ -310,7 +309,6 @@ export default function App() {
  useEffect(() => remember("studio-pen-card", penCard), [penCard]);
  const [gridCard, setGridCard] = useState(() => load<boolean>("studio-grid-card") ?? true);
  useEffect(() => remember("studio-grid-card", gridCard), [gridCard]);
- // The Trim marks card, from its switch last in the panels toolbar: the same card as Image's and Plot's.
  // The Simplifier as the tool in hand, its card out. Put down each time the artboard opens, as a tool is.
  const [simplifierCard, setSimplifierCard] = useState(false);
  // Jiggle the same way: a tool in hand with its card out, put down when another is taken up. Its
@@ -1126,33 +1124,7 @@ export default function App() {
   * is one, else a new one in Black (or the darkest pen) - kept under Varnish, so it's plotted last
   * and can be any pen. `turned`: the same, turned a quarter to the left (placed by its turned box).
   */
- /**
-  * Trim marks drawn with their tool: on the drawing's Trim marks layer - made, in the darkest pen and
-  * under any Varnish, if there isn't one yet - whatever layer is in hand, so they plot as their own pen
-  * and Image's Trim marks card finds them.
-  */
- const addTrimMarks = (shape: Shape) => {
-  // One undo step for the layer and the marks on it.
-  record();
-  let layer = layers.find((l) => splitLayerName(l.name, palette).label.trim().toLowerCase() === TRIM_LABEL.toLowerCase());
-  if (!layer) {
-   const pen = [...palette].sort((a, b) => (lightness(a.color) ?? 1) - (lightness(b.color) ?? 1))[0];
-   const made: Layer = { id: newLayerId(), name: uniqueName(joinLayerName(pen.name, TRIM_LABEL), layers.map((l) => l.name)), color: pen.color };
-   layer = made;
-   setLayers((list) => {
-    const varnish = list.findIndex((l) => isVarnishLayer(l.name));
-    return varnish >= 0 ? [...list.slice(0, varnish), made, ...list.slice(varnish)] : [...list, made];
-   });
-  }
-  const on = layer.id;
-  setShapes((list) => [...list, { ...shape, layerId: on }]);
-  setTargets((list) => (list.includes(on) ? list : [...list, on]));
-  pick(shape.id);
-  setTool("select");
- };
-
-
-
+ 
  /** Bake a shape's copies into shapes of their own (see bakedCopies), each with the fills it had. */
  const bakeRepeat = (id: string) => {
   const shape = shapes.find((s) => s.id === id);
@@ -2147,7 +2119,7 @@ export default function App() {
       selected={selected}
       onSelect={selectOnCanvas}
       onUpdateMany={previewing ? keepAsIs : updateShapes}
-      onAdd={previewing ? keepAsIs : (shape) => (shape.curve?.kind === "trim" ? addTrimMarks(shape) : addShape(shape))}
+      onAdd={previewing ? keepAsIs : addShape}
       onUpdate={previewing ? keepAsIs : updateShape}
       onEditStart={previewing ? keepAsIs : record}
       onPick={pickingLayer ? pickArea : undefined}

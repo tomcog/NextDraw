@@ -51,14 +51,6 @@
   vector-effect: non-scaling-stroke;
 }
 
-/* The trim marks over the picture, before there are lines: thin, in their layer's ink. */
-.trimMarks {
-  fill: none;
-  stroke-width: 1.25;
-  vector-effect: non-scaling-stroke;
-  pointer-events: none;
-}
-
 /* The image's grip: its whole box, invisible, to pick it up by and drag (PictureGrab). */
 .grab {
   fill: transparent;

@@ -8,10 +8,9 @@ import { PAPER_SIZES } from "../constants";
 import { loadFont, type StrokeFont } from "./font";
 import { parseDrawing } from "./parse";
 import { buildSvg } from "./svg";
-import type { Page } from "./shapes";
+import type { Layer, Page, Shape } from "./shapes";
 import type { Fill } from "./hatch";
 import type { Margins } from "../geometry";
-import type { TrimDrawing } from "./trimMarks";
 import type { Current } from "./useDrawingFile";
 
 const sizeIdOf = (page: Page) =>
@@ -31,7 +30,11 @@ export async function readCurrent(wanted?: (svg: string) => boolean): Promise<{ 
 }
 
 /** What an edit is given and gives back: the shapes, layers and page, and the fills on the shapes. */
-export interface EditableDrawing extends TrimDrawing {
+export interface EditableDrawing {
+  shapes: Shape[];
+  layers: Layer[];
+  /** The artboard: the drawing's own page. */
+  page: Page;
   fills?: Fill[];
   /** The artboard's margins. Given as the file has them; give them back changed to change them. */
   margins?: Margins;

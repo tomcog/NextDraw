@@ -125,6 +125,9 @@ export const penNameAt = (color: string | null, palette: PenColor[]) =>
  */
 export const LABEL_SEPARATOR = " - ";
 
+/** What a layer of trim marks is labelled after its pen: "Black - Trim marks". Plot writes it. */
+export const TRIM_LABEL = "Trim marks";
+
 /**
  * The Varnish layer: a drawing's last layer, gone over in a clear glitter gel (Gelly Roll Stardust)
  * once everything else is down, so what's under it sparkles. Not a pen of any preset - it goes on top

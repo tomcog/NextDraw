@@ -6,7 +6,6 @@ import { InkGroup, InkLayer } from "../../shared/components/Ink";
 import { boxTransform, KnockoutFrame, KnockoutMask, KnockoutShapes } from "../../shared/components/Knockout";
 import { knockoutGapIn } from "../../shared/lib/drawing/knockout";
 import { NextDrawCanvas } from "../../shared/components/NextDrawCanvas";
-import { TrimGrab, TrimGuide } from "../../shared/components/TrimGuide";
 import type { View } from "../../shared/components/PreviewToolbar";
 import { DEFAULT_SETTINGS, UNITS } from "../../shared/lib/constants";
 import { channelAdjusted, photoMarks, photoOrigin, pictureOf, type Photo } from "../../shared/lib/drawing/photo";
@@ -97,12 +96,7 @@ interface Props {
   /** The drawing's other layers - an effect baked before, paths drawn in Studio - bottom first, each its
    *  paths' data in inches on the artboard and its ink: drawn under the image's lines. */
   others?: { color: string; d: string[] }[];
-  /** The drawing's trim marks, if it has them: their ink, their paths in inches on the artboard, and the
-   *  trim itself, shown as a guide that's never drawn. */
-  trim?: { color: string; d: string[]; box: { x0: number; y0: number; x1: number; y1: number } };
-  /** The trim dragged on the stage this far, in inches. */
-  onTrimMove?: (dx: number, dy: number) => void;
-  /** The image dragged on the stage this far, in inches: picked up anywhere on it, outside the trim. */
+  /** The image dragged on the stage this far, in inches: picked up anywhere on it. */
   onMove?: (dx: number, dy: number) => void;
   /** The Knockout layer, if it's showing: its outlines as path data in inches on the artboard, and the box
    *  round them. Every line under it is hidden, as it's left out of the file. `onPlace`, when it can be
@@ -124,7 +118,7 @@ type Part = [number, number, number, number];
  * zooms and the loupe that Studio and Plot show a drawing on. Photo's own views go first in the bar, before
  * the shared ones; side by side, a second canvas follows the first's zoom.
  */
-export function ConvertStage({ photo, parts, box, artboard, paperColor, model, ink, view, onView, show, onShow, zoom, onZoom, loupe, onLoupe, cropping, others = [], trim, onTrimMove, onMove, knockout }: Props) {
+export function ConvertStage({ photo, parts, box, artboard, paperColor, model, ink, view, onView, show, onShow, zoom, onZoom, loupe, onLoupe, cropping, others = [], onMove, knockout }: Props) {
   const read = usePhotoRead(photo.src);
   const w = box.x1 - box.x0;
   const h = box.y1 - box.y0;
@@ -240,11 +234,6 @@ export function ConvertStage({ photo, parts, box, artboard, paperColor, model, i
           {o.d.map((d, i) => <path key={i} d={d} fill="none" />)}
         </InkLayer>
       ))}
-      {trim && (
-        <InkLayer color={trim.color} sim={view === "preview"} opacity={ink.opacity} build={ink.build} builds={ink.builds} opaque={ink.opaque}>
-          {trim.d.map((d, i) => <path key={i} d={d} fill="none" />)}
-        </InkLayer>
-      )}
       <g transform={`${moved ?? ""} translate(${at.x} ${at.y})`}>
         {read && parts.map((part, k) => (
           // Ink is see-through unless the pen's preset says it's opaque (Tom, 2026-10-11): laid on the
@@ -271,21 +260,8 @@ export function ConvertStage({ photo, parts, box, artboard, paperColor, model, i
   );
   const bar = { view, onView, zoom, onZoom, ground: "artboard" as const, canDrawing: true, loupe, onLoupe, extras };
 
-  // The trim as a guide on every view; over the picture alone, its marks too, since there are no lines there.
-  // Picked up anywhere inside and dragged, to move it over the picture.
-  const trimGuide = (marks: boolean) => {
-    if (!trim) return null;
-    const shown = (
-      <>
-        <TrimGuide box={trim.box} />
-        {marks && trim.d.map((d, i) => <path key={i} className={styles.trimMarks} stroke={trim.color} d={d} />)}
-      </>
-    );
-    return onTrimMove ? <TrimGrab box={trim.box} onMove={onTrimMove}>{shown}</TrimGrab> : shown;
-  };
-
-  // The image to pick up and drag, under the trim's own grip so the trim is still the one moved inside it.
-  // Pressing the picture lets go of the knockout, as picking any other layer does.
+  // The image to pick up and drag. Pressing the picture lets go of the knockout, as picking any
+  // other layer does.
   const leaveKnockout = knockout?.active ? () => knockout.onActive?.(false) : undefined;
   const grab = onMove ? <PictureGrab box={box} by={by} onBy={setBy} onMove={onMove} onPress={leaveKnockout} /> : null;
 
@@ -315,13 +291,13 @@ export function ConvertStage({ photo, parts, box, artboard, paperColor, model, i
 
   return (
     <div className={styles.panes} data-view={show}>
-      {show === "picture" && pane((mark) => <>{picture()}{grab}{trimGuide(true)}{knockoutGuide(mark)}</>, true)}
-      {show === "lines" && pane((mark) => <>{lines}{grab}{trimGuide(false)}{knockoutGuide(mark)}</>, true)}
-      {show === "over" && pane((mark) => <>{picture(true)}{lines}{grab}{trimGuide(false)}{knockoutGuide(mark)}</>, true)}
+      {show === "picture" && pane((mark) => <>{picture()}{grab}{knockoutGuide(mark)}</>, true)}
+      {show === "lines" && pane((mark) => <>{lines}{grab}{knockoutGuide(mark)}</>, true)}
+      {show === "over" && pane((mark) => <>{picture(true)}{lines}{grab}{knockoutGuide(mark)}</>, true)}
       {show === "side" && (
         <>
-          {pane((mark) => <>{picture()}{grab}{trimGuide(true)}{knockoutGuide(mark)}</>, true)}
-          {pane((mark) => <>{lines}{grab}{trimGuide(false)}{knockoutGuide(mark)}</>, false)}
+          {pane((mark) => <>{picture()}{grab}{knockoutGuide(mark)}</>, true)}
+          {pane((mark) => <>{lines}{grab}{knockoutGuide(mark)}</>, false)}
         </>
       )}
       {!read && <p className={styles.reading}>Reading the image…</p>}
@@ -331,7 +307,7 @@ export function ConvertStage({ photo, parts, box, artboard, paperColor, model, i
 
 /**
  * The image's grip: its box, invisible, to pick it up by and drag. The way gone is shown as it's dragged
- * and the image moved there when it's let go - one change, as the trim's grip does it.
+ * and the image moved there when it's let go - one change.
  */
 function PictureGrab({ box, by, onBy, onMove, onPress }: {
   onPress?: () => void;

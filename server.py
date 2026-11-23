@@ -1056,6 +1056,8 @@ def with_delay(layer, ms):
 # The geometry is a port of trimPoints in web/src/shared/lib/drawing/parametric.ts.
 TRIM_LABEL = "Trim marks"
 TRIM_LAYER_ID = "plot-trim-marks"
+# A layer of marks is labelled after its pen, "Black - Trim marks" - the apps' own naming (ink.ts).
+TRIM_LABEL_END = re.compile(r"(?:^|\s-\s)%s$" % re.escape(TRIM_LABEL), re.I)
 TRIM_LINE_MM = 0.25  # what the marks are drawn with in the preview; the pen's own width is the plot's
 
 
@@ -1116,16 +1118,22 @@ def trim_shape_ids(root):
 
 def drop_stored_trim(root):
     """Take out the marks a drawing carries, so the generated ones don't plot on top of them. A layer
-    left with nothing to draw goes with them - it is no longer a layer (see layer_groups)."""
+    left with nothing to draw goes with them - it is no longer a layer (see layer_groups).
+
+    Two ways to know them: the design block names them while they are still a curve, and the layer
+    they are on is labelled after the pen and "Trim marks". The label is what is left once a drawing
+    has been through Studio since the curve went (2026-11-23), which reads them back as plain lines."""
     ids = trim_shape_ids(root)
-    if not ids:
-        return
-    for el in [el for el in root.iter() if el is not root and el.get("id") in ids]:
+    for el in [el for el in root.iter() if el is not root and el.get("id") in ids] if ids else []:
         parent = el.getparent()
         if parent is not None:
             parent.remove(el)
-    for group in [g for g in root if isinstance(g.tag, str) and g.tag == SVG_NS + "g" and not has_art(g)]:
-        root.remove(group)
+    for group in list(root):
+        if not isinstance(group.tag, str) or group.tag != SVG_NS + "g":
+            continue
+        label = (group.get(INKSCAPE_NS + "label") or "").strip()
+        if TRIM_LABEL_END.search(label) or not has_art(group):
+            root.remove(group)
 
 
 def add_trim_marks(root, trim):

@@ -14,7 +14,6 @@ import { textRuns, type StrokeFont } from "../../shared/lib/drawing/text";
 import type { Layer } from "../../shared/lib/drawing/shapes";
 import { type BedCanvasHandle, type Box } from "../../shared/components/BedCanvas";
 import { NextDrawCanvas } from "../../shared/components/NextDrawCanvas";
-import { TrimGuide } from "../../shared/components/TrimGuide";
 import { KnockoutMask, KnockoutShapes } from "../../shared/components/Knockout";
 import { isKnockoutLayer, knockoutGapIn, knockoutPaths, knockoutShapes } from "../../shared/lib/drawing/knockout";
 import { InkGroup, InkLayer } from "../../shared/components/Ink";
@@ -848,30 +847,10 @@ export function Canvas({ bar, artboard, paperColor, shapes, fills, layers, activ
             {knockoutD.length > 0 && (!inkSim || isKnockoutLayer(layers.find((l) => l.id === activeLayer)?.name ?? "")) && (
               <KnockoutShapes paths={knockoutD} transform={knockoutAt} />
             )}
-            {/* The trim each set of trim marks is for, dashed: on screen only, as in Image and Plot.
-                It goes with the marks when they're carried, and away when their layer's hidden. */}
-            {shapes.filter((sh) => sh.curve?.kind === "trim" && !layers.find((l) => l.id === sh.layerId)?.hidden).map((sh) => (
-              <TrimGuide key={`trim-${sh.id}`} box={boxOf(sh)} transform={[carriedIds?.has(sh.id) ? shift : "", turnAttr(sh) ?? ""].join(" ").trim() || undefined} />
-            ))}
-
             {/* Interface: what you can see and grab that the pen will never draw. Outside the ink
                 group on purpose - the preview rules paint everything under them as ink, so a dashed
                 guide or a transparent grip would come out as a stroke the plotter appears to make. */}
             <g className={styles.chrome}>
-              {/* The trim marks are picked up anywhere in their trim, when their layer is targeted - as
-                  any shape is. First, so the drawing's own grips inside the trim still come before it. */}
-              {shown.filter((sh) => sh.curve?.kind === "trim" && targetLayers.has(sh.layerId) && !lockedLayers.has(sh.layerId)).map((sh) => (
-                <rect
-                  key={`${sh.id}-trim-grab`}
-                  className={styles.grab}
-                  transform={[carriedIds?.has(sh.id) ? shift : "", turnAttr(sh) ?? ""].join(" ").trim() || undefined}
-                  x={boxOf(sh).x0}
-                  y={boxOf(sh).y0}
-                  width={boxOf(sh).x1 - boxOf(sh).x0}
-                  height={boxOf(sh).y1 - boxOf(sh).y0}
-                  onPointerDown={(e) => onShapeDown(e, sh)}
-                />
-              ))}
               {shown.map((sh) => {
                 if (bigLayers.has(sh.layerId)) return null; // picked up with the rest of their layer
                 // Only the targeted layers' shapes can be picked: a press on another layer's goes

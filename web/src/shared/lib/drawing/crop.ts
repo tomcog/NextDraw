@@ -126,8 +126,6 @@ export function cropRun(run: Node[], b: CropBox): Node[][] {
   return out.filter((r) => r.length > 1);
 }
 
-const isTrim = (s: Shape) => s.curve?.kind === "trim";
-
 /** A path shape drawing these runs, in the place of `from`: its layer, group and name. */
 function pathShape(from: Shape, runs: Node[][], id: string): Shape {
   const b = pointsBox(runs.flatMap((run) => flattenRun(run)));
@@ -142,14 +140,14 @@ function pathShape(from: Shape, runs: Node[][], id: string): Shape {
 /**
  * The drawing cut at the box: whatever is wholly inside stays as it is, whatever is wholly outside
  * goes, and a shape that crosses the edge becomes a path of the parts of it inside - its fills, if it
- * has any, a path of their own beside it, cut the same way. Trim marks and pictures are left alone:
- * the marks are meant to sit round the drawing, and a picture is cropped by its own Fill.
+ * has any, a path of their own beside it, cut the same way. A picture is left alone: it is cropped
+ * by its own Fill.
  */
 export function cropDrawing(shapes: Shape[], fills: Fill[], box: CropBox, fonts: Record<string, StrokeFont>): { shapes: Shape[]; fills: Fill[] } {
   const outShapes: Shape[] = [];
   const gone = new Set<string>();
   for (const s of shapes) {
-    if (s.kind === "photo" || isTrim(s)) {
+    if (s.kind === "photo") {
       outShapes.push(s);
       continue;
     }

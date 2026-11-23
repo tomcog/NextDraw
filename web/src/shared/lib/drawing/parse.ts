@@ -199,7 +199,12 @@ export function parseDrawing(text: string): Opened {
     const inside = new Set(Array.from(el.querySelectorAll("*"), (c) => c.getAttribute("id")));
     return turnedIds.some(([id, deg]) => inside.has(id) && Math.abs(Number(turn[1]) - Number(deg)) < 1e-3);
   };
-  const savedCurves = (Array.isArray(design.curves) ? design.curves : []) as Record<string, unknown>[];
+  // Trim marks were a curve once. They are Plot's now, generated round the artboard when the drawing
+  // is plotted, so a drawing that carries a set is read as what is actually in the file - the lines
+  // themselves, on their own layer, to move or throw away like any other art. Nothing is lost; they
+  // simply stop being a shape with numbers behind them.
+  const savedCurves = (Array.isArray(design.curves) ? design.curves : [])
+    .filter((c) => (c as Record<string, unknown>).kind !== "trim") as Record<string, unknown>[];
   const curveIds = new Set(savedCurves.map((c) => String(c.shape)));
   const fromCurve = (id: string) => curveIds.has(id) || [...curveIds].some((c) => id.startsWith(`${c}-`));
   // A text's letters are in the file as paths; the words come from the design block instead.

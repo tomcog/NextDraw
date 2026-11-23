@@ -3,7 +3,7 @@ import { Frame, Grid3x3, Image, Layers2, ListOrdered, Move, Pen, Save, Shapes, S
 import bar from "./PreviewToolbar.module.css";
 import { ToolbarIcons } from "./ToolbarIcons";
 
-/** The rail's cards the toolbar shows and hides, in the order they stack. Artboard and Artwork are Studio's and Image's; Grid is Studio's; Image, and Layers and Adjustments (a toolbar of their own), Image's; Queue, and Drawing position, Plot options and Utilities (a toolbar of their own), Plot's (Studio's Layers switch is with its tools). Trim marks is every app's, last. */
+/** The rail's cards the toolbar shows and hides, in the order they stack. Artboard and Artwork are Studio's and Image's; Grid is Studio's; Image, and Layers and Adjustments (a toolbar of their own), Image's; Queue, Trim marks, and Drawing position, Plot options and Utilities (a toolbar of their own), Plot's (Studio's Layers switch is with its tools). */
 const PANELS = {
   file: { label: "File", icon: <Save />, what: "the File card" },
   pen: { label: "Pen", icon: <Pen />, what: "the Pen card: what the drawing is plotted with" },
@@ -18,7 +18,7 @@ const PANELS = {
   position: { label: "Drawing position", icon: <Move />, what: "the Drawing position card: where the drawing sits on the plotter" },
   options: { label: "Plot options", icon: <SlidersHorizontal />, what: "the Plot options card: how the drawing is plotted" },
   utilities: { label: "Utilities", icon: <Wrench />, what: "the Utilities card: moving the pen and carriage by hand" },
-  // Plot's alone: the marks are drawn round the artboard when the drawing is plotted, not kept in it.
+  // Plot's alone, last: the marks are drawn round the artboard when the drawing is plotted.
   trim: { label: "Trim marks", icon: <Slice />, what: "the Trim marks card: where the print is cut, round the artboard" },
 };
 

@@ -121,13 +121,12 @@ interface Props {
   penWidthMm?: number;
   /** Whether the effect's cards - its own and Split - are out. */
   effectCards?: boolean;
-  /** The Layers card, the app's: under the Image and Trim marks cards, above the effect's. */
+  /** The Layers card, the app's: under the Image card, above the effect's. */
   layersCard?: ReactNode;
   /** The Adjustments card, when it's out: under the Layers card. */
   adjustCard?: ReactNode;
   /** The Vignette card, when it's out: under the Adjustments card. */
   vignetteCard?: ReactNode;
-  /** The Trim marks card, under the Image card - its switch's place in the panels toolbar. */
   /** Whether the Mask card is out: under the Vignette card. */
   maskCard?: boolean;
 }
@@ -757,7 +756,6 @@ export function PhotoCard({ shape, inksChanged, title, shapes, busy, targeted, l
           </div>
         </Card>
       )}
-      {/* Trim marks next, as its switch follows Image's in the panels toolbar. */}
       {layersCard}
       {adjustCard}
       {vignetteCard}

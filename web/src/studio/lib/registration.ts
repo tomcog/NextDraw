@@ -4,8 +4,7 @@
 // in (Desktop/registration blocks.svg): each square one path, a zigzag of 21 strokes up and down with
 // round turns, close enough together to lay the ink down solid.
 import { newShapeId, type Layer, type Shape } from "../../shared/lib/drawing/shapes";
-import { TRIM_LABEL } from "../../shared/lib/drawing/trimMarks";
-import { splitLayerName } from "../../shared/lib/ink";
+import { splitLayerName, TRIM_LABEL } from "../../shared/lib/ink";
 import type { PenColor } from "../../shared/lib/types";
 import { SIGNATURE_LABEL } from "./signature";
 import type { Node } from "../../shared/lib/drawing/path";
