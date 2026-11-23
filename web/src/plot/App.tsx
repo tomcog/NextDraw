@@ -28,7 +28,7 @@ import { cropDrawing } from "../shared/lib/drawing/crop";
 import { fitText } from "../shared/lib/drawing/text";
 import { buildSvg, cleanFileName } from "../shared/lib/drawing/svg";
 import type { Current } from "../shared/lib/drawing/useDrawingFile";
-import { parseDrawing } from "../shared/lib/drawing/parse";
+import { drawingSizes, parseDrawing } from "../shared/lib/drawing/parse";
 import { goToApp } from "../shared/lib/apps";
 import { FileBrowser, type OpenResult } from "../shared/components/FileBrowser";
 import { MachinePanel } from "./components/MachinePanel";
@@ -47,10 +47,11 @@ import { LayersSection } from "./components/controls/LayersSection";
 import { PositionSection } from "./components/controls/PositionSection";
 import { PresetSection } from "./components/controls/PresetSection";
 import { PaperSection, paperMarginMm } from "../shared/components/controls/PaperSection";
+import { ArtboardSection } from "../shared/components/controls/ArtboardSection";
 import { TrimMarksSection } from "../shared/components/controls/TrimMarksSection";
-import { editCurrent, readCurrent } from "../shared/lib/drawing/editCurrent";
+import { editCurrent, readCurrent, type EditableDrawing } from "../shared/lib/drawing/editCurrent";
 import type { Opened } from "../shared/lib/drawing/parse";
-import { boxOf } from "../shared/lib/drawing/shapes";
+import { boxOf, type Page } from "../shared/lib/drawing/shapes";
 import { drawingBoxOf, trimShapeOf, withDrawingMoved, withTrimBox, withTrimMarks, withTrimMoved, withTrimOff, withTrimOn, type TrimDrawing } from "../shared/lib/drawing/trimMarks";
 import { PanelToolbar, panelIcon } from "../shared/components/PanelToolbar";
 import { PenSection } from "./components/controls/PenSection";
@@ -419,6 +420,8 @@ export default function App() {
   // Which of the rail's cards are out, from the toolbar at the left, as in Photo and Studio.
   const [fileCard, setFileCard] = useState(() => load<boolean>(STORAGE.fileCard) ?? true);
   useEffect(() => save(STORAGE.fileCard, fileCard), [fileCard]);
+  const [artboardCard, setArtboardCard] = useState(() => load<boolean>(STORAGE.artboardCard) ?? true);
+  useEffect(() => save(STORAGE.artboardCard, artboardCard), [artboardCard]);
   const [paperCard, setPaperCard] = useState(() => load<boolean>(STORAGE.paperCard) ?? true);
   useEffect(() => save(STORAGE.paperCard, paperCard), [paperCard]);
   const [penCard, setPenCard] = useState(() => load<boolean>(STORAGE.penCard) ?? true);
@@ -598,6 +601,29 @@ export default function App() {
   // Plot doesn't parse drawings otherwise (trimDrawing, below) - and each change made with the same
   // edits as theirs, then sent back as the current drawing, a change not saved. One at a time.
   const [trimming, setTrimming] = useState(false);
+  /**
+   * The artboard, changed from Plot and written into the drawing - the same path every other edit
+   * made here takes (editCurrent). The artwork is not touched: **Plot never scales**, so a bigger
+   * artboard is more room round the art, not bigger art. The sheet is untouched too; where the
+   * artboard sits on it is the Drawing position card's.
+   */
+  const editArtboard = async (change: (d: EditableDrawing) => EditableDrawing, shown: { artboard?: Page; margins?: Margins }) => {
+    if (busy || trimming) return;
+    setTrimming(true);
+    try {
+      const res = await editCurrent(change);
+      refs.current.edited = res.edited; // our own change: nothing for the poll to catch up on
+      setSizes((was) => (was ? { artboard: shown.artboard ?? was.artboard, margins: shown.margins ?? was.margins } : was));
+      setDrawingVersion((v) => v + 1);
+    } catch (err) {
+      setLocalMessage({ text: (err as Error).message, tone: "error" });
+    } finally {
+      setTrimming(false);
+    }
+  };
+  const setArtboardSize = (artboard: Page) => editArtboard((d) => ({ ...d, page: artboard }), { artboard });
+  const setArtboardMargins = (margins: Margins) => editArtboard((d) => ({ ...d, margins }), { margins });
+
   const editTrim = async (edit: (d: TrimDrawing) => TrimDrawing) => {
     if (busy || trimming) return;
     setTrimming(true);
@@ -1039,6 +1065,28 @@ export default function App() {
   // The drawing as shapes, for the Trim marks card (see editTrim) and the trim's dashed outline on the
   // preview: read again whenever it changes. Only a drawing with trim marks is read into shapes - the
   // rest only while the card is out, to be given some.
+  // The drawing's own size and its margins, for the Artboard card. Read from the file's attributes
+  // and its design block alone (drawingSizes), never through its shapes: a separation of fifty
+  // thousand strokes should not be parsed to learn two numbers.
+  const [sizes, setSizes] = useState<{ artboard: Page; margins: Margins } | null>(null);
+  useEffect(() => {
+    if (!fileName) {
+      setSizes(null);
+      return;
+    }
+    let stale = false;
+    api<Current>("/api/current")
+      .then((current) => {
+        if (stale || current.empty) return;
+        const { artboard, margins } = drawingSizes(current.svg);
+        setSizes({ artboard, margins });
+      })
+      .catch(() => !stale && setSizes(null));
+    return () => {
+      stale = true;
+    };
+  }, [fileName, drawingVersion]);
+
   const [trimDrawing, setTrimDrawing] = useState<Opened | null>(null);
   useEffect(() => {
     if (!fileName) {
@@ -1894,6 +1942,7 @@ export default function App() {
           <PanelToolbar
             cards={[
               { key: "file", on: fileCard, toggle: () => setFileCard((on) => !on) },
+              { key: "artboard", on: artboardCard, toggle: () => setArtboardCard((on) => !on), disabled: !sizes, why: "open a drawing first" },
               { key: "paper", on: paperCard, toggle: () => setPaperCard((on) => !on) },
               { key: "pen", on: penCard, toggle: () => setPenCard((on) => !on) },
               { key: "queue", on: queueCard, toggle: () => setQueueCard((on) => !on) },
@@ -2057,6 +2106,29 @@ export default function App() {
             </div>
           </Card>
           )}
+          {/* The Artboard card, as Studio and Image show it: the drawing's own size and the margins
+              the artwork sits inside, read from the drawing and written back into it. The surface's
+              colour lives here too, in all three apps - it is the ground the art is made on, not a
+              fact about the sheet (2026-11-23). Changing the size here does not scale the artwork:
+              Plot never scales. */}
+          {fileName && artboardCard && sizes && (
+          <Card variant="flat" className={styles.controls}>
+            <div className={`${styles.cardBody} ${controls.cardSections}`}>
+                <ArtboardSection
+                  w={sizes.artboard.w * 25.4}
+                  h={sizes.artboard.h * 25.4}
+                  margins={marginsTimes(sizes.margins, 25.4)}
+                  units={settings.units}
+                  color={settings.paper_color}
+                  collapsibleKey="plot-artboard"
+                  disabled={plotting || busy}
+                  onSize={(w, h) => void setArtboardSize({ w: w / 25.4, h: h / 25.4 })}
+                  onMargins={(next) => void setArtboardMargins(marginsTimes(next, 1 / 25.4))}
+                  onColor={(paper_color) => updateSettings({ paper_color })}
+                />
+            </div>
+          </Card>
+          )}
           {/* The same Paper and Pen cards as Studio's; the units, and the plotting-only rows of the
               pen card, are Plot's alone. */}
           {/* Out with no drawing open too while Setup is, to choose what a sheet is made on and with. */}
@@ -2068,13 +2140,11 @@ export default function App() {
                   h={settings.paper_h}
                   sizeId={paperSizeId}
                   units={settings.units}
-                  color={settings.paper_color}
                   collapsibleKey="plot-paper"
                   disabled={plotting}
                   onSize={pickPaperSize}
                   // Turned or typed, the paper is named by its size: Custom, unless it is one of the list's.
                   onDimensions={(paper_w, paper_h) => updateSettings({ paper_size: "custom", paper_w, paper_h })}
-                  onColor={(paper_color) => updateSettings({ paper_color })}
                   onUnits={(units) => updateSettings({ units })}
                   onTurnDrawing={fileName ? turnDrawing : undefined}
                   onFit={fitToPaper ? (margins, align) => void fitToPaper(margins, align) : undefined}

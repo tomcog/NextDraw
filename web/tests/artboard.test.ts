@@ -3,7 +3,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { DOMParser } from "linkedom";
 import { buildSvg } from "../src/shared/lib/drawing/svg";
-import { parseDrawing } from "../src/shared/lib/drawing/parse";
+import { drawingSizes, parseDrawing } from "../src/shared/lib/drawing/parse";
 import { marginsAll } from "../src/shared/lib/geometry";
 import type { Layer, Page, Shape } from "../src/shared/lib/drawing/shapes";
 
@@ -103,4 +103,25 @@ test("artboard: margins the drawing kept win over the picture's old ones", () =>
   };
   const margins = { top: 2, right: 2, bottom: 3, left: 2 };
   assert.deepEqual(parseDrawing(buildSvg([pic], [], layers, artboard, { ...bare, margins })).margins, margins);
+});
+
+test("sizes: the light read agrees with the full one, shapes or no shapes", () => {
+  const margins = { top: 1, right: 1.5, bottom: 2, left: 1.5 };
+  const paper: Page = { w: 18, h: 24 };
+  const svg = save(artboard, { ...bare, margins, paper });
+  const full = parseDrawing(svg);
+  const light = drawingSizes(svg);
+  assert.deepEqual(light.artboard, full.artboard, "same artboard");
+  assert.deepEqual(light.margins, full.margins, "same margins");
+  assert.ok(light.paper && full.paper && Math.abs(light.paper.w - full.paper.w) < 1e-9, "same paper");
+});
+
+test("sizes: a drawing with neither block read lightly is its own size, flush, no sheet", () => {
+  const bareSvg = save(artboard, bare)
+    .replace(/<metadata id="nextdraw-plot">.*?<\/metadata>/s, "")
+    .replace(/<metadata id="nextdraw-studio">.*?<\/metadata>/s, "");
+  const light = drawingSizes(bareSvg);
+  assert.deepEqual(light.artboard, artboard);
+  assert.equal(light.paper, null);
+  assert.deepEqual(light.margins, marginsAll(0));
 });

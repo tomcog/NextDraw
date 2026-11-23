@@ -76,6 +76,43 @@ const attr = (el: Element, name: string) => Number(el.getAttribute(name) ?? "0")
 const isIllustrator = (text: string) =>
   /Adobe Illustrator/.test(text) || /\sdata-name=/.test(text) || /\.cls-\d+\s*\{/.test(text);
 
+/**
+ * A drawing's sizes alone - its artboard, the sheet it is for, and its margins - read from the
+ * attributes and the two metadata blocks without touching a single shape (2026-11-23). Plot wants
+ * these to show the artboard, and reading a separation of fifty thousand strokes into shapes to
+ * learn two numbers is a cost nobody should pay.
+ */
+export function drawingSizes(text: string): { artboard: Page; paper: Page | null; margins: Margins } {
+  const doc = new DOMParser().parseFromString(text, "image/svg+xml");
+  const svg = doc.documentElement;
+  if (doc.querySelector("parsererror") || svg.nodeName.toLowerCase() !== "svg") {
+    throw new Error("That file isn't an SVG this can read.");
+  }
+  const box = numbers(svg.getAttribute("viewBox"));
+  const hasBox = box.length === 4 && box[2] > 0 && box[3] > 0;
+  const perUnit = isIllustrator(text) ? 72 : 96;
+  const artboard: Page = {
+    w: lengthIn(svg.getAttribute("width")) ?? (hasBox ? box[2] / perUnit : 11),
+    h: lengthIn(svg.getAttribute("height")) ?? (hasBox ? box[3] / perUnit : 8.5),
+  };
+  let paper: Page | null = null;
+  try {
+    const plot = JSON.parse(svg.getElementsByTagName("nds:plot")[0]?.textContent || "null");
+    const p = plot?.paper;
+    if (!plot?.original_page && p?.paper_w > 0 && p?.paper_h > 0) paper = { w: p.paper_w / 25.4, h: p.paper_h / 25.4 };
+  } catch { /* an unreadable block: the drawing still has its own size */ }
+  let margins = marginsAll(0);
+  try {
+    const design = JSON.parse(svg.getElementsByTagName("nds:design")[0]?.textContent || "null");
+    const kept = design?.margins;
+    if (kept && typeof kept === "object") {
+      const side = (v: unknown) => (Number.isFinite(Number(v)) && Number(v) >= 0 ? Number(v) : 0);
+      margins = { top: side(kept.top), right: side(kept.right), bottom: side(kept.bottom), left: side(kept.left) };
+    }
+  } catch { /* as above: flush */ }
+  return { artboard, paper, margins };
+}
+
 export function parseDrawing(text: string): Opened {
   const doc = new DOMParser().parseFromString(text, "image/svg+xml");
   const svg = doc.documentElement;

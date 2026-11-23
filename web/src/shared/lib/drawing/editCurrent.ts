@@ -10,6 +10,7 @@ import { parseDrawing } from "./parse";
 import { buildSvg } from "./svg";
 import type { Page } from "./shapes";
 import type { Fill } from "./hatch";
+import type { Margins } from "../geometry";
 import type { TrimDrawing } from "./trimMarks";
 import type { Current } from "./useDrawingFile";
 
@@ -32,6 +33,8 @@ export async function readCurrent(wanted?: (svg: string) => boolean): Promise<{ 
 /** What an edit is given and gives back: the shapes, layers and page, and the fills on the shapes. */
 export interface EditableDrawing extends TrimDrawing {
   fills?: Fill[];
+  /** The artboard's margins. Given as the file has them; give them back changed to change them. */
+  margins?: Margins;
 }
 
 /**
@@ -45,7 +48,7 @@ export async function editCurrent(edit: (d: EditableDrawing) => EditableDrawing 
   if (drawing.unsupported) {
     throw new Error(`${drawing.unsupported} ${drawing.unsupported === 1 ? "mark" : "marks"} in ${current.name} can’t be redrawn, and changing the drawing here would drop ${drawing.unsupported === 1 ? "it" : "them"}.`);
   }
-  const next = await edit({ shapes: drawing.shapes, layers: drawing.layers, page: drawing.page, fills: drawing.fills });
+  const next = await edit({ shapes: drawing.shapes, layers: drawing.layers, page: drawing.page, fills: drawing.fills, margins: drawing.margins });
   const kept = new Set(next.shapes.map((s) => s.id));
   // Words are written out as the strokes of their font, so each font in use is read first.
   const fonts: Record<string, StrokeFont> = {};
@@ -59,7 +62,7 @@ export async function editCurrent(edit: (d: EditableDrawing) => EditableDrawing 
     paperColor: drawing.paperColor ?? undefined,
     // The artboard's margins as the file has them: this writes the whole drawing back, so leaving
     // them out would quietly drop them every time Plot edited it (trim marks, Fit, Fill).
-    margins: drawing.margins,
+    margins: next.margins ?? drawing.margins,
     fonts,
   });
   return postJSON<{ edited: string }>("/api/current", {

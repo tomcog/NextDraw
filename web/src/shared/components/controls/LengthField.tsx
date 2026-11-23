@@ -18,12 +18,18 @@ interface Props {
    * says nothing and takes the room the number needs.
    */
   unitInLabel?: boolean;
+  /**
+   * Draw no label under the field. For the margins set on the sheet, where each field's place -
+   * left edge, top edge - says which it is better than a word would (2026-11-23). The label is
+   * still the field's name for a screen reader.
+   */
+  hideLabel?: boolean;
   onChange: (mm: number) => void;
 }
 
 // A length stored in mm, shown and typed in the chosen unit. Commits on blur or Enter; the up and
 // down arrow keys step it one unit (1 in or 1 mm, ×10 with Shift) and apply straight away.
-export function LengthField({ label, mm, units, min, disabled, suffix, unitInLabel = true, onChange }: Props) {
+export function LengthField({ label, mm, units, min, disabled, suffix, unitInLabel = true, hideLabel, onChange }: Props) {
   const show = (v: number) => (units === "in" ? trimNum(v / 25.4, 3) : trimNum(v, 1));
   const [draft, setDraft] = useState(show(mm));
   useEffect(() => setDraft(show(mm)), [mm, units]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -42,7 +48,7 @@ export function LengthField({ label, mm, units, min, disabled, suffix, unitInLab
     <InputText
       size="md"
       label={unitInLabel ? `${label} (${units})` : label}
-      hideLabel={Boolean(suffix)}
+      hideLabel={Boolean(suffix) || hideLabel}
       style={suffix ? { paddingRight: "4rem" } : undefined}
       type="number"
       inputMode="decimal"

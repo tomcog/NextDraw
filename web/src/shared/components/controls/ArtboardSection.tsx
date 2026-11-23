@@ -22,6 +22,14 @@ import styles from "./controls.module.css";
  * which number is which needs no reading and the unit is said once, in the heading. The sheet is a
  * picture, not a preview: it keeps its size whatever the artboard measures.
  */
+/** The four margins, each at the edge of the sheet it insets - which is what says which it is. */
+const MARGIN_EDGES = [
+  { edge: "top", label: "Top" },
+  { edge: "bottom", label: "Bottom" },
+  { edge: "left", label: "Left" },
+  { edge: "right", label: "Right" },
+] as const;
+
 export function ArtboardSection({ w, h, margins, units, color, collapsibleKey, disabled, onSize, onMargins, onColor }: {
   /** The artboard in mm, as it lies. */
   w: number;
@@ -60,23 +68,27 @@ export function ArtboardSection({ w, h, margins, units, color, collapsibleKey, d
         <LieSwitch w={w} h={h} what="artboard" disabled={disabled} onSwap={() => onSize(h, w)} />
       </div>
       {/* The live area the artwork sits in. A bigger bottom is the usual print convention, and is
-        where the colour blocks and the signature go. The heading carries the unit for all four. */}
+        where the colour blocks and the signature go. The heading carries the unit for all four, and
+        each field sits on the edge it insets, which is label enough (Figma 165:1111). */}
       <div className={styles.cardGroup}>
       <p className={styles.subheading}>{`Margins (${units === "in" ? "inches" : "mm"})`}</p>
       <div className={styles.marginsAround}>
-        <div className={styles.marginSide}>
-          <LengthField label="Left" mm={margins.left} units={units} min={0} disabled={disabled} unitInLabel={false} onChange={side("left")} />
-        </div>
-        {/* The sheet: top and bottom sit on it, at the edges they inset, inside the dashed frame
-          that stands for the live area the artwork is fitted and aligned within. */}
-        <div className={styles.marginSheet}>
-          <span className={styles.marginSheetArea} aria-hidden="true" />
-          <LengthField label="Top" mm={margins.top} units={units} min={0} disabled={disabled} unitInLabel={false} onChange={side("top")} />
-          <LengthField label="Bottom" mm={margins.bottom} units={units} min={0} disabled={disabled} unitInLabel={false} onChange={side("bottom")} />
-        </div>
-        <div className={styles.marginSide}>
-          <LengthField label="Right" mm={margins.right} units={units} min={0} disabled={disabled} unitInLabel={false} onChange={side("right")} />
-        </div>
+        {/* The live area the margins leave, between the four fields. */}
+        <span className={styles.marginSheetArea} aria-hidden="true" />
+        {MARGIN_EDGES.map(({ edge, label }) => (
+          <div key={edge} className={styles.marginAt} data-edge={edge}>
+            <LengthField
+              label={label}
+              mm={margins[edge]}
+              units={units}
+              min={0}
+              disabled={disabled}
+              unitInLabel={false}
+              hideLabel
+              onChange={side(edge)}
+            />
+          </div>
+        ))}
       </div>
       </div>
       {/* The surface the artwork is made on: the colours out in the open, the one chosen ringed, and

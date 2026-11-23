@@ -296,54 +296,56 @@
 
 .sizeRow > :last-child { flex: none; }
 
-/* The artboard's margins, set around a sheet instead of listed: left and right beside it, top and
-   bottom on it, each at the edge it insets. The sheet is a picture, not a preview - it keeps its
-   size whatever the artboard measures, so the four fields never move. The unit is said once, in the
-   heading above, which is what leaves the narrow fields room for the number. */
+/* The artboard's margins, set ON a sheet rather than listed: the sheet is the card's full width,
+   and each field sits at the edge it insets - left on the left, top at the top - which says which
+   it is better than a label would, so they carry none (Figma 165:1111, 2026-11-23). The sheet is a
+   picture, not a preview: it keeps its size whatever the artboard measures. */
 .marginsAround {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 1rem;
-}
-
-/* The two outside it share what the sheet leaves, so all four fields come out the same width. */
-.marginSide {
-  flex: 1 0 0;
-  min-width: 0;
-}
-
-.marginSheet {
   position: relative;
-  flex: none;
   box-sizing: border-box;
-  width: 120px;
-  /* 96, four less than the spec's 100 (Tom, 2026-11-23). */
+  width: 100%;
   height: 96px;
-  padding: 0.5rem;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: space-between;
   border-radius: 4px;
-  background: var(--ui-surface-raised);
+  background: var(--ui-white);
   box-shadow: var(--ui-shadow-float-1);
 }
 
-/* The live area on the sheet: the dashed frame the margins inset to, as the artboard is drawn
-   dashed over the paper on the canvas. A picture of the idea, not the margins to scale. */
+/* The live area the margins leave: the box between the four fields. */
 .marginSheetArea {
   position: absolute;
-  inset: 5px;
+  inset: 29px 32px;
   border: 1px dashed color-mix(in srgb, var(--ui-action) 50%, var(--ui-surface-raised));
   pointer-events: none;
 }
 
-/* On the sheet, a field is as wide as the two beside it, not as wide as the sheet. */
-.marginSheet > :not(.marginSheetArea) {
-  position: relative;
-  width: 34px;
+/* Each field on the edge it belongs to, as wide as a number needs. */
+.marginAt {
+  position: absolute;
+  width: 24px;
 }
+
+.marginAt[data-edge="left"] { left: 4px; top: 50%; transform: translateY(-50%); }
+.marginAt[data-edge="right"] { right: 4px; top: 50%; transform: translateY(-50%); }
+.marginAt[data-edge="top"] { top: 4px; left: 50%; transform: translateX(-50%); }
+.marginAt[data-edge="bottom"] { bottom: 4px; left: 50%; transform: translateX(-50%); }
+
+/* The artboard's size: the two fields sharing what the way-it-lies control leaves, which sits level
+   with their boxes while their labels hang below. */
+.sizeRow {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
+  /* The way-it-lies switch sits in a card rather than in a Toolbar, so its track would fall back to
+     Surface/Pale. Sunken, as Tom asked (2026-11-23): the library's own variable, not an override. */
+  --ui-segmented-track-bg: var(--ui-surface-sunken);
+}
+
+.sizeRow > :not(:last-child) {
+  flex: 1 1 0;
+  min-width: 0;
+}
+
+.sizeRow > :last-child { flex: none; }
 
 /* A custom paper's width and height, side by side, sharing the card's width. Each may shrink below
    a number box's natural width (about 134px), which on its own pushed the pair out of the card. */

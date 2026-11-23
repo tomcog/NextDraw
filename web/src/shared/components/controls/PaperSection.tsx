@@ -6,7 +6,6 @@ import { LengthField } from "./LengthField";
 import { NumberField } from "./NumberField";
 import { UnitSwitch } from "./UnitSwitch";
 import { LieSwitch } from "./LieSwitch";
-import { PaperColorRow, PaperDot } from "./PaperColor";
 import { Section } from "./Section";
 import { panelIcon } from "../PanelToolbar";
 import { PAPER_SIZES } from "../../lib/constants";
@@ -35,15 +34,12 @@ interface Props {
   sizeId: string;
   /** What the sizes are named in. */
   units: Units;
-  /** The paper's colour, which the preview is drawn on and the inks are blended with. */
-  color: string;
   collapsibleKey: string;
   disabled?: boolean;
   /** A size from the menu. The app keeps the way the paper lies. */
   onSize: (id: string) => void;
   /** A new width and height, in mm: the paper turned, or a custom size typed in. */
   onDimensions: (w: number, h: number) => void;
-  onColor: (color: string) => void;
   /** Measure in inches or millimetres: one choice for all three apps (useUnits, and Plot's settings). */
   onUnits: (units: Units) => void;
   /** Turn the paper and everything on it a quarter turn, 1 right or -1 left: landscape to portrait, as a
@@ -88,19 +84,18 @@ export function paperMarginMm(): number {
 }
 
 /**
- * Shared: the paper, the same card in every app - its size, the way it lies and its colour, and the
- * drawing on it: its turn, and fitting it to the paper. Each app does those to the drawing
- * itself, so all three show the same. Every app passes all of it: the card is the same everywhere.
+ * Plot's paper: the sheet a drawing is plotted on - its size, the way it lies - and what is done to
+ * the drawing on it: its turn, and fitting it to the sheet. Studio and Image have no paper at all
+ * since 2026-11-23, and the ground's colour moved to the Artboard card, which all three apps show:
+ * the colour is what the art is made on, not a fact about the sheet.
  */
-export function PaperSection({ w, h, sizeId, units, color, collapsibleKey, disabled, onSize, onDimensions, onColor, onUnits, onTurnDrawing, onFit, onFill, scale, onScale }: Props) {
+export function PaperSection({ w, h, sizeId, units, collapsibleKey, disabled, onSize, onDimensions, onUnits, onTurnDrawing, onFit, onFill, scale, onScale }: Props) {
   const landscape = w >= h;
   // Custom chosen by hand stays chosen while its width and height are typed, even through a size
   // that happens to be one of the list's on the way. The size belongs to this drawing alone: it is
   // never added to the list.
   const [typing, setTyping] = useState(false);
   const custom = typing || sizeId === "custom";
-  // Paper colour rarely changes, so its swatches stay tucked behind the dot in its colour.
-  const [colorsOpen, setColorsOpen] = useState(false);
   // Kept between visits, so the margin a sheet is usually given is the one the button fits to.
   const [margin, setMargin] = useState(paperMarginMm);
   // Scaling by a percent of the size now: the field starts again at 100 once it's done.
@@ -165,15 +160,6 @@ export function PaperSection({ w, h, sizeId, units, color, collapsibleKey, disab
       icon={panelIcon("paper")}
       collapsibleKey={collapsibleKey}
       actionWhenOpen
-      // Folded, the row says what size paper the drawing is on, as the Drawing tool row names the
-      // tool. Its color only shows open.
-      closedAction={
-        <span className={styles.paperClosed}>
-          <span className={styles.toolInTitle}>{`${fmtLen(w, units, false)} × ${fmtLen(h, units)}`}</span>
-        </span>
-      }
-      // Open, the dot is the paper's color, and opens the colors to choose another.
-      action={<PaperDot color={color} open={colorsOpen} disabled={disabled} onToggle={() => setColorsOpen((open) => !open)} />}
     >
       <div className={styles.paperRow}>
         <InputSelect
@@ -293,7 +279,6 @@ export function PaperSection({ w, h, sizeId, units, color, collapsibleKey, disab
         )}
       </Section>
 
-      {colorsOpen && <PaperColorRow color={color} disabled={disabled} onColor={onColor} />}
     </Section>
   );
 }

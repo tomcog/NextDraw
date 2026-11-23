@@ -101,6 +101,7 @@ export const STORAGE = {
   hudOffset: "nextdraw-plot-hud-offset",
   hudOpen: "nextdraw-plot-hud-open",
   fileCard: "nextdraw-plot-file-card",
+  artboardCard: "nextdraw-plot-artboard-card",
   paperCard: "nextdraw-plot-paper-card",
   penCard: "nextdraw-plot-pen-card",
   queueCard: "nextdraw-plot-queue-card",
