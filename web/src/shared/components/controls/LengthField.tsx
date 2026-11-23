@@ -12,12 +12,18 @@ interface Props {
   disabled?: boolean;
   /** Short word shown inside the field after the value (e.g. "across"). Hides the label below. */
   suffix?: string;
+  /**
+   * Leave the unit off the label. For a group of fields whose own heading already says what they
+   * are measured in - the artboard's margins, set around a sheet - where repeating it four times
+   * says nothing and takes the room the number needs.
+   */
+  unitInLabel?: boolean;
   onChange: (mm: number) => void;
 }
 
 // A length stored in mm, shown and typed in the chosen unit. Commits on blur or Enter; the up and
 // down arrow keys step it one unit (1 in or 1 mm, ×10 with Shift) and apply straight away.
-export function LengthField({ label, mm, units, min, disabled, suffix, onChange }: Props) {
+export function LengthField({ label, mm, units, min, disabled, suffix, unitInLabel = true, onChange }: Props) {
   const show = (v: number) => (units === "in" ? trimNum(v / 25.4, 3) : trimNum(v, 1));
   const [draft, setDraft] = useState(show(mm));
   useEffect(() => setDraft(show(mm)), [mm, units]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -35,7 +41,7 @@ export function LengthField({ label, mm, units, min, disabled, suffix, onChange 
   const input = (
     <InputText
       size="md"
-      label={`${label} (${units})`}
+      label={unitInLabel ? `${label} (${units})` : label}
       hideLabel={Boolean(suffix)}
       style={suffix ? { paddingRight: "4rem" } : undefined}
       type="number"

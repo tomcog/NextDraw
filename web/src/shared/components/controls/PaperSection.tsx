@@ -1,10 +1,12 @@
 import { useState } from "react";
 import { Button, ButtonRound, Checkbox, InputSelect, Segment, SegmentedControl } from "@tomcoggia/ui";
-import { Pipette, RotateCcwSquare, RotateCwSquare } from "lucide-react";
+import { RotateCcwSquare, RotateCwSquare } from "lucide-react";
 import styles from "./controls.module.css";
 import { LengthField } from "./LengthField";
 import { NumberField } from "./NumberField";
 import { UnitSwitch } from "./UnitSwitch";
+import { LieSwitch } from "./LieSwitch";
+import { PaperColorRow, PaperDot } from "./PaperColor";
 import { Section } from "./Section";
 import { panelIcon } from "../PanelToolbar";
 import { PAPER_SIZES } from "../../lib/constants";
@@ -21,26 +23,6 @@ function FitIcon({ centered = false, turn = 0 }: { centered?: boolean; turn?: nu
         <rect x={centered ? 5 : 0.5} y="2.51" width="6" height="11" rx="0.5" stroke="currentColor" strokeWidth="1" />
         <rect x={centered ? 7.5 : 8.5} y="0.01" width="1" height="16" rx="0.5" fill="currentColor" />
       </g>
-    </svg>
-  );
-}
-
-/** The paper-orientation icons from the NextDraw Figma file (Frame 5): a page with its
- *  corner folded at the top right, standing up or lying on its side. */
-function SheetIcon({ wide = false }: { wide?: boolean }) {
-  return (
-    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1" aria-hidden="true">
-      {wide ? (
-        <>
-          <path d="M1 12.7V3C1 2.7239 1.2239 2.5 1.5 2.5H10.6535C10.919 2.5 11.1735 2.6056 11.3611 2.7934L14.7076 6.1449C14.8948 6.3324 15 6.5865 15 6.8515V12.7C15 12.9762 14.7761 13.2 14.4999 13.2H1.5001C1.2239 13.2 1 12.9762 1 12.7Z" />
-          <path d="M10.7633 2.7253V6.25C10.7633 6.5261 10.8839 6.6536 11.16 6.6536H14.7392" />
-        </>
-      ) : (
-        <>
-          <path d="M3.3 15H13C13.2761 15 13.5 14.7761 13.5 14.5V5.3465C13.5 5.081 13.3944 4.8265 13.2066 4.6389L9.8551 1.2924C9.6676 1.1052 9.4135 1 9.1485 1H3.3C3.0239 1 2.8 1.2239 2.8 1.5001V14.4999C2.8 14.7761 3.0239 15 3.3 15Z" />
-          <path d="M13.2747 5.2367H9.75C9.4738 5.2367 9.3464 5.1162 9.3464 4.84V1.2608" />
-        </>
-      )}
     </svg>
   );
 }
@@ -105,14 +87,6 @@ export function paperMarginMm(): number {
   }
 }
 
-const PAPER_COLORS = [
-  { name: "White", color: "#ffffff" },
-  { name: "Cream", color: "#f4ecd8" },
-  { name: "Kraft", color: "#c6a57a" },
-  { name: "Gray", color: "#8e9196" },
-  { name: "Black", color: "#1d1d1f" },
-];
-
 /**
  * Shared: the paper, the same card in every app - its size, the way it lies and its colour, and the
  * drawing on it: its turn, and fitting it to the paper. Each app does those to the drawing
@@ -125,7 +99,6 @@ export function PaperSection({ w, h, sizeId, units, color, collapsibleKey, disab
   // never added to the list.
   const [typing, setTyping] = useState(false);
   const custom = typing || sizeId === "custom";
-  const colorName = PAPER_COLORS.find((c) => c.color === color)?.name ?? color;
   // Paper colour rarely changes, so its swatches stay tucked behind the dot in its colour.
   const [colorsOpen, setColorsOpen] = useState(false);
   // Kept between visits, so the margin a sheet is usually given is the one the button fits to.
@@ -200,17 +173,7 @@ export function PaperSection({ w, h, sizeId, units, color, collapsibleKey, disab
         </span>
       }
       // Open, the dot is the paper's color, and opens the colors to choose another.
-      action={
-        <button
-          type="button"
-          className={styles.paperSwatch}
-          style={{ background: color }}
-          aria-label={`Paper color: ${colorName}`}
-          aria-expanded={colorsOpen}
-          title={colorsOpen ? "Hide paper colors" : `${colorName} paper: click for another color`}
-          onClick={() => setColorsOpen((open) => !open)}
-        />
-      }
+      action={<PaperDot color={color} open={colorsOpen} disabled={disabled} onToggle={() => setColorsOpen((open) => !open)} />}
     >
       <div className={styles.paperRow}>
         <InputSelect
@@ -230,31 +193,9 @@ export function PaperSection({ w, h, sizeId, units, color, collapsibleKey, disab
           <option value="custom">{custom ? "Custom" : "Custom size…"}</option>
         </InputSelect>
         <UnitSwitch units={units} disabled={disabled} onChange={onUnits} />
-        {/* The paper lies one way or the other, never both: a choice of two, like the toolbar's.
-            A square sheet lies neither way, so neither is chosen. */}
-        <SegmentedControl size="sm" variant="dark" aria-label="Which way the paper lies">
-          {[
-            { wide: true, icon: <SheetIcon wide />, label: "Landscape", hint: "Landscape: the paper lies on its side" },
-            { wide: false, icon: <SheetIcon />, label: "Portrait", hint: "Portrait: the paper stands up" },
-          ].map(({ wide, icon, label, hint }) => {
-            const on = landscape === wide && w !== h;
-            return (
-              <Segment
-                key={label}
-                selected={on}
-                icon={icon}
-                aria-label={label}
-                title={hint}
-                disabled={disabled}
-                onClick={() => {
-                  // Only the paper turns, as it lies on the plotter: the drawing stays as it is. The
-                  // Drawing transform's turn buttons turn the drawing alone, never the paper.
-                  if (!on) onDimensions(h, w); // already lying that way otherwise
-                }}
-              />
-            );
-          })}
-        </SegmentedControl>
+        {/* Only the paper turns, as it lies on the plotter: the drawing stays as it is. The Drawing
+            transform's turn buttons turn the drawing alone, never the paper. */}
+        <LieSwitch w={w} h={h} what="paper" disabled={disabled} onSwap={() => onDimensions(h, w)} />
       </div>
 
       {custom && (
@@ -352,40 +293,7 @@ export function PaperSection({ w, h, sizeId, units, color, collapsibleKey, disab
         )}
       </Section>
 
-      {colorsOpen && (
-        <div className={styles.paperColors} role="radiogroup" aria-label="Paper color">
-          {PAPER_COLORS.map((c) => (
-            <button
-              key={c.color}
-              type="button"
-              role="radio"
-              aria-checked={color === c.color}
-              aria-label={`${c.name} paper`}
-              title={`${c.name} paper`}
-              className={styles.paperSwatch}
-              style={{ background: c.color }}
-              disabled={disabled}
-              onClick={() => onColor(c.color)}
-            />
-          ))}
-          {(() => {
-            const customColor = !PAPER_COLORS.some((c) => c.color === color);
-            return (
-              <label
-                className={styles.paperSwatch}
-                data-custom
-                role="radio"
-                aria-checked={customColor}
-                title="Pick any paper color"
-                style={customColor ? { background: color } : undefined}
-              >
-                {!customColor && <Pipette aria-hidden />}
-                <input type="color" aria-label="Custom paper color" value={color} disabled={disabled} onChange={(e) => onColor(e.target.value)} />
-              </label>
-            );
-          })()}
-        </div>
-      )}
+      {colorsOpen && <PaperColorRow color={color} disabled={disabled} onColor={onColor} />}
     </Section>
   );
 }

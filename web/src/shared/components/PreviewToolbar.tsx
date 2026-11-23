@@ -1,5 +1,5 @@
 import { Segment, SegmentedControl, Spinner, Toolbar } from "@tomcoggia/ui";
-import { Camera, Eye, EyeDashed, Grid3x3, ImageIcon, Redo2, Route, Search, Settings, StickyNote, Undo2 } from "lucide-react";
+import { Camera, Eye, EyeDashed, Frame, Grid3x3, ImageIcon, Redo2, Route, Search, Settings, StickyNote, Undo2 } from "lucide-react";
 import type { ReactNode } from "react";
 import type { Zoom } from "./Bed";
 import styles from "./PreviewToolbar.module.css";
@@ -21,6 +21,8 @@ export interface PreviewToolbarProps {
   zoom: Zoom;
   onZoom: (zoom: Zoom) => void;
   canPaper?: boolean;
+  /** What the canvas is of: "artboard" in Studio and Image, "bed" (the default) in Plot. */
+  ground?: "bed" | "artboard";
   canDrawing: boolean;
   /** The loupe: a lens that follows the pointer over the drawing, magnified. */
   loupe?: boolean;
@@ -44,7 +46,7 @@ export interface PreviewToolbarProps {
  * the white bar. Nothing here overrides the components. Icons only: what each does is in its
  * tooltip and read out by name, and the bar leaves more of the line for the measurement.
  */
-export function PreviewToolbar({ view, onView, canProgress, canPhoto, zoom, onZoom, canPaper = true, canDrawing, working, loupe, onLoupe, extras }: PreviewToolbarProps) {
+export function PreviewToolbar({ view, onView, canProgress, canPhoto, zoom, onZoom, ground, canPaper = true, canDrawing, working, loupe, onLoupe, extras }: PreviewToolbarProps) {
   return (
     <span className={styles.row}>
       {/* What an app shows beyond the shared views, in a bar of its own ahead of the shared one -
@@ -92,7 +94,7 @@ export function PreviewToolbar({ view, onView, canProgress, canPhoto, zoom, onZo
         </SegmentedControl>
 
 
-        <ZoomControls zoom={zoom} onZoom={onZoom} canPaper={canPaper} canDrawing={canDrawing} loupe={loupe} onLoupe={onLoupe} />
+        <ZoomControls zoom={zoom} onZoom={onZoom} ground={ground} canPaper={canPaper} canDrawing={canDrawing} loupe={loupe} onLoupe={onLoupe} />
       </Toolbar></ToolbarIcons>
       {working ? (
         <span className={styles.status} role="status">
@@ -130,45 +132,44 @@ export function SetupToolbar({ open, onToggle, orientation }: { open: boolean; o
 }
 
 /**
- * How close the view sits - the plotter's whole drawing area, the paper, or the drawing - and the
- * loupe beside it, as a switch of its own. Shared by every app that looks at a drawing on the bed, in
- * whatever bar it has: Studio's and Plot's here, Photo's over its conversion panes. Its loupe switch
- * takes its red from the bar's row, so it goes inside a `.row` (ZOOM_ROW).
+ * How close the view sits, and the loupe beside it as a switch of its own. On the bed that is the
+ * plotter's whole drawing area, the paper, or the drawing; on the artboard's own page - Studio's
+ * view and Image's, where no plotter and no sheet are drawn - it is the artboard or the drawing.
+ * Shared by every app that looks at a drawing, in whatever bar it has. Its loupe switch takes its
+ * red from the bar's row, so it goes inside a `.row` (ZOOM_ROW).
  */
-export function ZoomControls({ zoom, onZoom, canPaper = true, canDrawing, loupe, onLoupe }: {
+export function ZoomControls({ zoom, onZoom, ground = "bed", canPaper = true, canDrawing, loupe, onLoupe }: {
   zoom: Zoom;
   onZoom: (zoom: Zoom) => void;
+  /** What the canvas is of, so the zooms are the ones that view has. */
+  ground?: "bed" | "artboard";
   canPaper?: boolean;
   canDrawing: boolean;
   loupe?: boolean;
   onLoupe?: (on: boolean) => void;
 }) {
+  const zooms: { key: Zoom; icon: ReactNode; title: string; label: string; disabled?: boolean }[] =
+    ground === "artboard"
+      ? [{ key: "artboard", icon: <Frame />, title: "Zoom out to the whole artboard", label: "Artboard" }]
+      : [
+          { key: "plotter", icon: <Grid3x3 />, title: "Zoom out to the plotter's full drawing area", label: "Plotter" },
+          { key: "paper", icon: <StickyNote />, title: "Zoom to the paper", label: "Paper", disabled: !canPaper },
+        ];
+  zooms.push({ key: "drawing", icon: <ImageIcon />, title: "Zoom to the drawing", label: "Drawing", disabled: !canDrawing });
   return (
     <>
       <SegmentedControl size="sm" variant="dark" aria-label="Zoom the preview">
-        <Segment
-          selected={zoom === "plotter"}
-          onClick={() => onZoom("plotter")}
-          icon={<Grid3x3 />}
-          title="Zoom out to the plotter's full drawing area"
-          aria-label="Plotter"
-        />
-        <Segment
-          selected={zoom === "paper"}
-          disabled={!canPaper}
-          onClick={() => onZoom("paper")}
-          icon={<StickyNote />}
-          title="Zoom to the paper"
-          aria-label="Paper"
-        />
-        <Segment
-          selected={zoom === "drawing"}
-          disabled={!canDrawing}
-          onClick={() => onZoom("drawing")}
-          icon={<ImageIcon />}
-          title="Zoom to the drawing"
-          aria-label="Drawing"
-        />
+        {zooms.map(({ key, icon, title, label, disabled }) => (
+          <Segment
+            key={key}
+            selected={zoom === key}
+            disabled={disabled}
+            onClick={() => onZoom(key)}
+            icon={icon}
+            title={title}
+            aria-label={label}
+          />
+        ))}
       </SegmentedControl>
 
       {onLoupe && (

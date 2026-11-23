@@ -54,6 +54,8 @@ interface Props {
   /** The shared bar over the page: how the drawing is drawn, the zooms and the loupe. */
   bar: PreviewToolbarProps;
   page: Page;
+  /** The drawing's own size, drawn dashed over the paper. Absent, nothing is drawn for it. */
+  artboard?: Page;
   /** The paper's colour, as Plot draws it: the page is this colour and the inks blend with it. */
   paperColor: string;
   shapes: Shape[];
@@ -356,7 +358,9 @@ const LayerMarks = memo(function LayerMarks({ shapes, fills, fonts, photos }: { 
 // The page at true proportions, with a one-inch grid. It keeps the page's own proportions and is
 // sized to them (--canvas-aspect), so the drawing gets as large as the space allows - the same way
 // Plot's preview fills its column.
-export function Canvas({ bar, page, paperColor, shapes, fills, layers, activeLayer, targetLayers, model, toolbar, fonts, font, snap, penWidthMm, inkOpacity, inkBuilds, inkOpaque = false, inkBuild, view, tool, selected, onSelect, onAdd, onUpdate, onUpdateMany, onEditStart, onPick, strokePick, onStrokePick }: Props) {
+export function Canvas({ bar, page, artboard, paperColor, shapes, fills, layers, activeLayer, targetLayers, model, toolbar, fonts, font, snap, penWidthMm, inkOpacity, inkBuilds, inkOpaque = false, inkBuild, view, tool, selected, onSelect, onAdd, onUpdate, onUpdateMany, onEditStart, onPick, strokePick, onStrokePick }: Props) {
+  // What the drawing is made on: the artboard, which is what this canvas shows.
+  const over = artboard ?? page;
   const bed = useRef<BedCanvasHandle>(null);
   const [drag, setDrag] = useState<Drag | null>(null);
   const pointer = useRef<number | null>(null);
@@ -604,14 +608,14 @@ export function Canvas({ bar, page, paperColor, shapes, fills, layers, activeLay
       const last = drag.loop[drag.loop.length - 1];
       if (Math.hypot(p.x - last.x, p.y - last.y) * drag.px >= 2) setDrag({ ...drag, loop: [...drag.loop, p] });
     } else if (drag.mode === "move") {
-      // The whole selection moves as one: the limit is the box round all of it, so a group slides
-      // along the page's edge instead of collapsing against it.
-      const { x0, y0, x1, y1 } = drag.box;
+      // The whole selection moves as one, from the box round all of it.
+      const { x0, y0 } = drag.box;
       // Snapping moves the corner of what's being carried onto the grid, not the pointer: the shape
       // lands on a line, wherever it was picked up.
       const dx = snap > 0 ? grid(x0 + p.x - drag.from.x) - x0 : p.x - drag.from.x;
       const dy = snap > 0 ? grid(y0 + p.y - drag.from.y) - y0 : p.y - drag.from.y;
-      const by = { x: Math.max(-x0, Math.min(page.w - x1, dx)), y: Math.max(-y0, Math.min(page.h - y1, dy)) };
+      // Free of the page: artwork may hang past the artboard - that is a bleed - and nothing clips it.
+      const by = { x: dx, y: dy };
       if (by.x !== drag.by.x || by.y !== drag.by.y) setDrag({ ...drag, by });
     } else if (drag.mode === "groupScale") {
       // The corner opposite the one being dragged stays where it is, as it does for one shape.
@@ -628,8 +632,8 @@ export function Canvas({ bar, page, paperColor, shapes, fills, layers, activeLay
       const to = {
         x0: drag.handle === "nw" || drag.handle === "sw" ? Math.max(0, Math.min(g.x, b.x1 - 0.02)) : b.x0,
         y0: drag.handle === "nw" || drag.handle === "ne" ? Math.max(0, Math.min(g.y, b.y1 - 0.02)) : b.y0,
-        x1: drag.handle === "ne" || drag.handle === "se" ? Math.min(page.w, Math.max(g.x, b.x0 + 0.02)) : b.x1,
-        y1: drag.handle === "sw" || drag.handle === "se" ? Math.min(page.h, Math.max(g.y, b.y0 + 0.02)) : b.y1,
+        x1: drag.handle === "ne" || drag.handle === "se" ? Math.max(g.x, b.x0 + 0.02) : b.x1,
+        y1: drag.handle === "sw" || drag.handle === "se" ? Math.max(g.y, b.y0 + 0.02) : b.y1,
       };
       onUpdateMany(scaleInto(drag.origins, b, to));
     } else if (drag.mode === "groupTurn") {
@@ -775,6 +779,10 @@ export function Canvas({ bar, page, paperColor, shapes, fills, layers, activeLay
       model={model}
       settings={settings}
       drawingBox={drawingBox}
+      artboard={artboard}
+      // Studio draws the artboard alone: what the plotter can reach, and what sheet it ends up on,
+      // are Plot's business and only matter at plot time.
+      ground="artboard"
       handle={bed}
       toolbar={toolbar}
       wrapClassName={styles.wrap}
@@ -798,13 +806,13 @@ export function Canvas({ bar, page, paperColor, shapes, fills, layers, activeLay
             {/* The grid a drag lands on, under everything else and in the faintest line there is.
                 Only while snapping is on, and only while the lines are far enough apart to read as
                 a grid rather than as a wash. */}
-            {snap > 0 && page.w / snap + page.h / snap <= 400 && (
+            {snap > 0 && over.w / snap + over.h / snap <= 400 && (
               <g className={styles.grid}>
-                {Array.from({ length: Math.floor(page.w / snap) }, (_, i) => (i + 1) * snap).map((x) => (
-                  <line key={`v${x}`} x1={x} y1={0} x2={x} y2={page.h} />
+                {Array.from({ length: Math.floor(over.w / snap) }, (_, i) => (i + 1) * snap).map((x) => (
+                  <line key={`v${x}`} x1={x} y1={0} x2={x} y2={over.h} />
                 ))}
-                {Array.from({ length: Math.floor(page.h / snap) }, (_, i) => (i + 1) * snap).map((y) => (
-                  <line key={`h${y}`} x1={0} y1={y} x2={page.w} y2={y} />
+                {Array.from({ length: Math.floor(over.h / snap) }, (_, i) => (i + 1) * snap).map((y) => (
+                  <line key={`h${y}`} x1={0} y1={y} x2={over.w} y2={y} />
                 ))}
               </g>
             )}

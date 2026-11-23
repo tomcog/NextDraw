@@ -5,7 +5,8 @@ import "../shared/lib/drawing/separationWorker";
 import { DrawingToolSection } from "../shared/components/controls/DrawingToolSection";
 import { FileSection } from "../shared/components/controls/FileSection";
 import { useUnits } from "../shared/lib/useUnits";
-import { PaperSection } from "../shared/components/controls/PaperSection";
+import { ArtboardSection } from "../shared/components/controls/ArtboardSection";
+import { ArtworkSection } from "../shared/components/controls/ArtworkSection";
 import { Section } from "../shared/components/controls/Section";
 import { Hints } from "../shared/components/controls/Hints";
 import controls from "../shared/components/controls/controls.module.css";
@@ -18,7 +19,7 @@ import { StatusBanner, type BannerMessage } from "../shared/components/StatusBan
 import { api, postJSON } from "../shared/lib/api";
 import { isSvgFile, useFileDrop } from "../shared/lib/useFileDrop";
 import { PAPER_SIZES } from "../shared/lib/constants";
-import { marginsTimes } from "../shared/lib/geometry";
+import { marginsAll, marginsTimes, type Margins } from "../shared/lib/geometry";
 import { load, save as remember } from "../shared/lib/storage";
 import type { Info, PlotterModel, Preset } from "../shared/lib/types";
 import type { Zoom } from "../shared/components/BedCanvas";
@@ -87,9 +88,14 @@ type Next = { kind: "new" } | { kind: "photos"; files: File[]; skipped?: string[
 
 export default function App() {
   const [page, setPage] = useState<Page>({ w: 11, h: 8.5 });
+  // The artboard and its margins travel with the drawing. Image has no card for them yet - that is
+  // the next slice - but it must keep them, or opening a drawing here and saving it would drop them.
+  const [artboard, setArtboard] = useState<Page>({ w: 11, h: 8.5 });
+  const [margins, setMargins] = useState<Margins>(marginsAll(0));
   const [paperColor, setPaperColor] = useState(() => load<string>(PAPER_COLOR_KEY) ?? "#ffffff");
   // Inches or millimetres for the Paper card: one choice for all three apps.
-  const [units, setUnits] = useUnits();
+  // Inches or millimetres: one choice for all three apps, set in Plot's Paper card.
+  const [units] = useUnits();
   // A paper color chosen by hand, as opposed to one a drawing opens with (see the effect that follows it).
   const paperPicked = useRef(false);
   // Kept in the drawing, like its size, so all three apps show the same paper: picking one is a change.
@@ -169,8 +175,10 @@ export default function App() {
   const [fileCard, setFileCard] = useState(() => load<boolean>("photo-file-card") ?? true);
   useEffect(() => remember("photo-file-card", fileCard), [fileCard]);
   // The Paper and Pen cards under it: what the drawing is made on, and with.
-  const [paperCard, setPaperCard] = useState(() => load<boolean>("photo-paper-card") ?? true);
-  useEffect(() => remember("photo-paper-card", paperCard), [paperCard]);
+  const [artboardCard, setArtboardCard] = useState(() => load<boolean>("photo-artboard-card") ?? true);
+  useEffect(() => remember("photo-artboard-card", artboardCard), [artboardCard]);
+  const [artworkCard, setArtworkCard] = useState(() => load<boolean>("photo-artwork-card") ?? true);
+  useEffect(() => remember("photo-artwork-card", artworkCard), [artworkCard]);
   const [penCard, setPenCard] = useState(() => load<boolean>("photo-pen-card") ?? true);
   useEffect(() => remember("photo-pen-card", penCard), [penCard]);
   // And the photo's own card, under it: turning, brightness and contrast, size on the page.
@@ -239,12 +247,15 @@ export default function App() {
   const pick = useCallback((id: string | null) => setSelected(id), []);
 
   // Undo over whole copies of the drawing, as in Studio.
-  const snapshot = useMemo(() => ({ shapes, fills, layers, page }), [shapes, fills, layers, page]);
+  // The artboard and its margins are in here too, so changing either undoes like anything else.
+  const snapshot = useMemo(() => ({ shapes, fills, layers, page, artboard, margins }), [shapes, fills, layers, page, artboard, margins]);
   const restore = useCallback((next: typeof snapshot) => {
     setShapes(next.shapes);
     setFills(next.fills);
     setLayers(next.layers);
     setPage(next.page);
+    setArtboard(next.artboard);
+    setMargins(next.margins);
   }, []);
   const { record, undo, redo, clear: clearHistory, canUndo, canRedo } = useHistory(snapshot, restore);
 
@@ -264,22 +275,13 @@ export default function App() {
   // when it's changed or replaced in another app or window (showCurrent, below). Work kept in this
   // browser from before there was one is put back first, once (resumeKept).
   const file = useDrawingFile({
-    shapes, fills, layers, page, sizeId, toolName, paperColor, fonts, setBusy, setMessage,
+    shapes, fills, layers, page, sizeId, toolName, paperColor, fonts, margins, setBusy, setMessage,
     onCurrent: (current) => showCurrent(current),
     beforeStart: () => resumeKept(),
   });
   // Plot drawing this, or waiting to resume it: looked at, not changed (useEditLock).
   const mainRef = useRef<HTMLElement>(null);
   useEditLock(file.lock, mainRef);
-
-  const setSize = (id: string) => {
-    const size = SIZES.find((s) => s.id === id);
-    if (!size) return;
-    record();
-    // Keep the way the paper lies, so choosing a size doesn't also turn it.
-    const landscape = page.w >= page.h;
-    setPage(landscape ? { w: Math.max(size.w, size.h), h: Math.min(size.w, size.h) } : { w: Math.min(size.w, size.h), h: Math.max(size.w, size.h) });
-  };
 
   // The photo being converted: the one picked, or the first in the drawing.
   const firstPhoto = shapes.find((s) => s.kind === "photo" && s.photo) ?? null;
@@ -369,7 +371,8 @@ export default function App() {
   }, []);
   // How the lines are drawn - Outline or Preview, as in Studio and Plot - and how close the view sits.
   const [view, setView] = useState<View>("outline");
-  const [zoom, setZoom] = useState<Zoom>("paper");
+  // The view is of the artboard, as Studio's is: no bed, no sheet.
+  const [zoom, setZoom] = useState<Zoom>("artboard");
   const [loupe, setLoupe] = useState(false);
 
   // Which layers are targeted in the Layers card: where a layer's settings go. Each target toggles on
@@ -392,10 +395,10 @@ export default function App() {
 
   const {
     addPhoto, addSeparations, switchPhotoMode, setKeyLayer, splitPhoto, splitPhotoBestFit, splitPhotoFlat, splitPhotoOwnInks, saveInkSet,
-    placePhoto, scalePhoto, movePhoto, replacePhoto, reloadPhoto, joinSeparations, cropPhoto, bakeEffect, savePreset, applyPreset, deletePreset, setPhotoOf, addEdgeMask, chooseEdgeMask, deleteEdgeMask, setEdgeGen, saveEdgeGen, setAngles, photoStem, splitPhotoCmyk, setLayerColor,
+    placePhoto, alignPhoto, scalePhoto, movePhoto, replacePhoto, reloadPhoto, joinSeparations, cropPhoto, bakeEffect, savePreset, applyPreset, deletePreset, setPhotoOf, addEdgeMask, chooseEdgeMask, deleteEdgeMask, setEdgeGen, saveEdgeGen, setAngles, photoStem, splitPhotoCmyk, setLayerColor,
     splitAroundPaper, setPaperTone, addPass, removePass, setChannelOf, splitPhotoProfile,
   } = photoActions({
-    chosen, shapes, setShapes, layers, setLayers, active, setActiveLayer, page, tool,
+    chosen, shapes, setShapes, layers, setLayers, active, setActiveLayer, page, artboard, tool,
     // Hatching starts at half a millimetre between lines, whatever the pen: a pen preset's hatch
     // spacing is for Studio's solid fills, not a picture's tones.
     spacingMm: 0.5, targets, paper: paperColor, record, addShape, pick, setMessage, setBusy,
@@ -449,6 +452,8 @@ export default function App() {
     }
     const drawing = parseDrawing(current.svg);
     setPage(drawing.page);
+    setArtboard(drawing.artboard);
+    setMargins(drawing.margins);
     setShapes(drawing.shapes);
     setFills(drawing.fills);
     setLayers(drawing.layers);
@@ -485,7 +490,7 @@ export default function App() {
       const folder = saved ? saved.path.slice(0, saved.path.lastIndexOf("/")) : saveTo;
       const res = await postJSON<{ name: string; folder: string }>("/api/studio/save", {
         name: cleanFileName(name),
-        svg: buildSvg(work.shapes, work.fills, work.layers, work.page, { paperSizeId: sizeIdOf(work.page), toolName, paperColor, fonts }),
+        svg: buildSvg(work.shapes, work.fills, work.layers, work.page, { paperSizeId: sizeIdOf(work.page), toolName, paperColor, fonts, margins }),
         ...(folder ? { folder } : {}),
       });
       await dropWork();
@@ -562,30 +567,43 @@ export default function App() {
   // What the file browser is for: a drawing to open, or a picture to put in place of the image.
   const [browsing, setBrowsing] = useState<"drawing" | "replace" | null>(null);
 
-  const paperSection = (
-    <PaperSection
-      w={page.w * 25.4}
-      h={page.h * 25.4}
-      sizeId={sizeId}
+  // The Artboard card: the drawing's own size and its margins, which travel with the drawing. Its
+  // own card, and own switch, above Paper; the paper is on its way out of this app.
+  const artboardSection = (
+    <ArtboardSection
+      w={artboard.w * 25.4}
+      h={artboard.h * 25.4}
+      margins={marginsTimes(margins, 25.4)}
       units={units}
-      onUnits={setUnits}
       color={paperColor}
-      collapsibleKey="photo-paper"
-      disabled={busy}
-      onSize={setSize}
-      onDimensions={(w, h) => {
-        record();
-        setPage({ w: w / 25.4, h: h / 25.4 });
-      }}
       onColor={pickPaperColor}
-      // The paper turned with everything on it, as in every app; Fit and Fill with the Paper card's
-      // margin and alignment, once, when pressed; and the picture's size as a percent of its file's.
-      // Nothing here sizes the picture when the paper changes: its size is the user's.
-      onTurnDrawing={shapes.length ? (dir) => void turnAll(dir) : undefined}
+      collapsibleKey="artboard"
+      onSize={(w, h) => {
+        record();
+        setArtboard({ w: w / 25.4, h: h / 25.4 });
+      }}
+      onMargins={(next) => {
+        record();
+        setMargins(marginsTimes(next, 1 / 25.4));
+      }}
+    />
+  );
+
+  // The Artwork card: the picture turned, fitted inside the artboard's margins, and its size as a
+  // percent of its file's. These were the Paper card's "Drawing transform" until the paper left.
+  const artworkSection = (
+    <ArtworkSection
+      artboard={{ w: artboard.w * 25.4, h: artboard.h * 25.4 }}
+      margins={marginsTimes(margins, 25.4)}
+      units={units}
+      collapsibleKey="photo-artwork"
+      disabled={busy}
+      onTurn={shapes.length ? (dir) => void turnAll(dir) : undefined}
       onFit={chosen?.photo ? (marginsMm, align) => placePhoto("fit", marginsTimes(marginsMm, 1 / 25.4), align) : undefined}
       onFill={chosen?.photo ? (marginsMm, align) => placePhoto("fill", marginsTimes(marginsMm, 1 / 25.4), align) : undefined}
       scale={chosen?.photo ? Math.round(photoScale(chosen) * 10) / 10 : undefined}
       onScale={chosen?.photo ? scalePhoto : undefined}
+      onAlign={chosen?.photo ? (marginsMm, align) => alignPhoto(marginsTimes(marginsMm, 1 / 25.4), align) : undefined}
     />
   );
   // A pen chosen by hand: the photo's colors are chosen again from its palette - each plate, or each
@@ -932,10 +950,16 @@ export default function App() {
           </div>
         </Card>
       )}
-      {/* What the drawing is made on, and with: each its own card, shown or hidden from the toolbar. */}
-      {paperCard && (
+      {/* What the drawing is made on, and with: each its own card, shown or hidden from the toolbar.
+        The artboard - the drawing's own size - is a card and a switch of its own, before the paper. */}
+      {artboardCard && (
         <Card variant="flat" className={styles.controls}>
-          <div className={`${styles.cardBody} ${controls.cardSections}`}>{paperSection}</div>
+          <div className={`${styles.cardBody} ${controls.cardSections}`}>{artboardSection}</div>
+        </Card>
+      )}
+      {artworkCard && (
+        <Card variant="flat" className={styles.controls}>
+          <div className={`${styles.cardBody} ${controls.cardSections}`}>{artworkSection}</div>
         </Card>
       )}
       {penCard && (
@@ -963,7 +987,7 @@ export default function App() {
   // The toolbar's effect is the whole photo's. Silhouette has no tones or colours to split by, so a
   // split photo comes back together as one layer drawn that way; separations keep a plate each.
   // Whether the rail has any card to show; with none, the stage takes its width.
-  const railOut = Boolean(fileCard || paperCard || penCard || infoCard || (chosen?.photo && (effectCards || layersCard || adjustCard || vignetteCard || maskCard || trimCard)));
+  const railOut = Boolean(fileCard || artboardCard || artworkCard || penCard || infoCard || (chosen?.photo && (effectCards || layersCard || adjustCard || vignetteCard || maskCard || trimCard)));
 
   const setEffect = (effect: Effect) => {
     setEffectCards(true);
@@ -1121,7 +1145,8 @@ export default function App() {
           <PanelToolbar
             cards={[
               { key: "file", on: fileCard, toggle: () => setFileCard((on) => !on) },
-              { key: "paper", on: paperCard, toggle: () => setPaperCard((on) => !on) },
+              { key: "artboard", on: artboardCard, toggle: () => setArtboardCard((on) => !on) },
+              { key: "artwork", on: artworkCard, toggle: () => setArtworkCard((on) => !on) },
               { key: "pen", on: penCard, toggle: () => setPenCard((on) => !on) },
               { key: "image", on: infoCard, toggle: () => setInfoCard((on) => !on) },
               { key: "trim", on: trimCard, toggle: () => setTrimCard((on) => !on), disabled: !chosen?.photo, why: "open an image first" },
@@ -1143,6 +1168,7 @@ export default function App() {
           {chosen?.photo && convertBox ? (
             <ConvertStage
               photo={chosen.photo}
+              artboard={artboard}
               box={convertBox}
               page={page}
               paperColor={paperColor}

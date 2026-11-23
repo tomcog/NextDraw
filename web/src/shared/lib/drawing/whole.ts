@@ -185,6 +185,25 @@ export function fitToPage(shapes: Shape[], page: Page, margins: Margins, align: 
  * centred, or against an edge, whose side of the drawing Fill then keeps. The paper is where it lies
  * on the page, in inches - the page itself in Studio and Image; in Plot, the sheet under it.
  */
+/**
+ * Where the artwork sits in the live area at this alignment, at the size it already is: the shift
+ * alone, nothing scaled (2026-11-23). The alignment buttons are live - pressing Top moves the
+ * artwork up against the top margin there and then - so this is what they apply; Fit and Fill, which
+ * scale as well, go through placeOnPaper.
+ */
+export function alignOnPage(shapes: Shape[], page: { w: number; h: number }, margins: Margins, align: FitAlign): Point | null {
+  if (!shapes.length) return null;
+  const d = drawnBox(shapes);
+  const room = { w: page.w - margins.left - margins.right, h: page.h - margins.top - margins.bottom };
+  if (room.w <= 0 || room.h <= 0) return null;
+  // Its own slack in the live area, shared out as the alignment says. Artwork larger than the live
+  // area has slack to spare - a negative share - which is how a bleed stays put rather than jumping.
+  return {
+    x: margins.left + (room.w - (d.x1 - d.x0)) * align.x - d.x0,
+    y: margins.top + (room.h - (d.y1 - d.y0)) * align.y - d.y0,
+  };
+}
+
 export function placeOnPaper(shapes: Shape[], paper: { x: number; y: number; w: number; h: number }, margins: Margins, align: FitAlign, how: "fit" | "fill"): { k: number; about: Point; by: Point; box: Box } | null {
   if (!shapes.length) return null;
   const d = drawnBox(shapes);

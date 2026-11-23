@@ -1,11 +1,13 @@
 import { Segment, SegmentedControl, Toolbar } from "@tomcoggia/ui";
-import { Grid3x3, Image, Layers2, ListOrdered, Move, Pen, Save, Scissors, SlidersHorizontal, StickyNote, Wrench } from "lucide-react";
+import { Frame, Grid3x3, Image, Layers2, ListOrdered, Move, Pen, Save, Shapes, Slice, SlidersHorizontal, StickyNote, Wrench } from "lucide-react";
 import bar from "./PreviewToolbar.module.css";
 import { ToolbarIcons } from "./ToolbarIcons";
 
-/** The rail's cards the toolbar shows and hides, in the order they stack. Grid is Studio's; Image, and Layers and Adjustments (a toolbar of their own), Image's; Queue, and Drawing position, Plot options and Utilities (a toolbar of their own), Plot's (Studio's Layers switch is with its tools). Trim marks is every app's, last. */
+/** The rail's cards the toolbar shows and hides, in the order they stack. Artboard and Artwork are Studio's and Image's; Grid is Studio's; Image, and Layers and Adjustments (a toolbar of their own), Image's; Queue, and Drawing position, Plot options and Utilities (a toolbar of their own), Plot's (Studio's Layers switch is with its tools). Trim marks is every app's, last. */
 const PANELS = {
   file: { label: "File", icon: <Save />, what: "the File card" },
+  artboard: { label: "Artboard", icon: <Frame />, what: "the Artboard card: the drawing's own size, and the margins the artwork sits inside" },
+  artwork: { label: "Artwork", icon: <Shapes />, what: "the Artwork card: turning the artwork, fitting it inside the margins, and its scale" },
   paper: { label: "Paper", icon: <StickyNote />, what: "the Paper card: what the drawing is plotted on" },
   pen: { label: "Pen", icon: <Pen />, what: "the Pen card: what the drawing is plotted with" },
   grid: { label: "Grid", icon: <Grid3x3 />, what: "the Grid card: what shapes snap to" },
@@ -17,7 +19,7 @@ const PANELS = {
   options: { label: "Plot options", icon: <SlidersHorizontal />, what: "the Plot options card: how the drawing is plotted" },
   utilities: { label: "Utilities", icon: <Wrench />, what: "the Utilities card: moving the pen and carriage by hand" },
   // Every app's: the last switch in the toolbar with File.
-  trim: { label: "Trim marks", icon: <Scissors />, what: "the Trim marks card: where the print is cut, for the size it's finished at, and the drawing placed in it" },
+  trim: { label: "Trim marks", icon: <Slice />, what: "the Trim marks card: where the print is cut, for the size it's finished at, and the drawing placed in it" },
 };
 
 export type Panel = keyof typeof PANELS;

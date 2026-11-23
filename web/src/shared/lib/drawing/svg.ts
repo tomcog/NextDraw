@@ -1,3 +1,4 @@
+import { type Margins } from "../geometry";
 import { fillRuns, fillTarget, type Fill } from "./hatch";
 import { curveStrokes, pointsAttr, type Point } from "./parametric";
 import { textRuns, type StrokeFont } from "./text";
@@ -257,7 +258,7 @@ function plotBlock(page: Page, opts: SaveOptions): string {
  * skips. The layer still wins when there is one; this is what covers the shapes that have no layer
  * of their own to be named by.
  */
-function designBlock(fills: Fill[], shapes: Shape[], layers: Layer[]): string {
+function designBlock(fills: Fill[], shapes: Shape[], layers: Layer[], margins?: Margins): string {
   // Which layer each shape belongs to, by NAME. The SVG layer it sits in says this already, except
   // for the ones on %sources - that layer has to keep the name NextDraw skips, so it can't be the
   // pen's. Names, not Studio's internal ids: the ids mean nothing once the file is reopened, and
@@ -274,6 +275,11 @@ function designBlock(fills: Fill[], shapes: Shape[], layers: Layer[]): string {
   const locked = layers.filter((l) => l.locked);
   const data = {
     on: Object.fromEntries(shapes.map((s) => [s.id, nameOf.get(s.layerId) ?? ""])),
+    // The artboard's margins. Here rather than in the block Plot reads because they are the
+    // drawing's own - what the artwork is fitted and aligned inside - not anything about the sheet.
+    ...(margins && (margins.top || margins.right || margins.bottom || margins.left)
+      ? { margins: { top: trim(margins.top), right: trim(margins.right), bottom: trim(margins.bottom), left: trim(margins.left) } }
+      : {}),
     // How far each turned shape is turned. The file already draws it turned; this is what lets it be
     // picked up again as a square box with an angle, rather than as geometry nobody can resize.
     ...(turned.length ? { turned: Object.fromEntries(turned.map((s) => [s.id, s.rotation])) } : {}),
@@ -344,6 +350,11 @@ export interface SaveOptions {
   toolName: string;
   /** The paper's color, so every app shows the drawing on the same paper. */
   paperColor?: string;
+  /**
+   * The artboard's margins, in inches (2026-11-22). Written only when one of them is set, so a
+   * drawing with none is written exactly as it was before they existed.
+   */
+  margins?: Margins;
 }
 
 /**
@@ -423,7 +434,7 @@ ${inner}
      width="${num(page.w)}in" height="${num(page.h)}in"
      viewBox="0 0 ${num(page.w)} ${num(page.h)}">
 ${plotBlock(page, opts)}
-${designBlock(fills, shapes, layers)}
+${designBlock(fills, shapes, layers, opts.margins)}
 ${body}${sourceLayer(sources, opts.fonts ?? {}, shapes)}${knockedLayer(knocked, opts.fonts ?? {}, shapes)}</svg>
 `;
 }

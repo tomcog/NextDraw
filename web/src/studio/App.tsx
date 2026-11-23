@@ -2,7 +2,9 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { DrawingToolSection } from "../shared/components/controls/DrawingToolSection";
 // Separations into many plates are solved off the page (importing this turns it on).
 import "../shared/lib/drawing/separationWorker";
-import { PaperSection, paperMarginMm } from "../shared/components/controls/PaperSection";
+import { ArtboardSection } from "../shared/components/controls/ArtboardSection";
+import { paperMarginMm } from "../shared/components/controls/PaperSection";
+import { ArtworkSection } from "../shared/components/controls/ArtworkSection";
 import { PanelToolbar, panelIcon } from "../shared/components/PanelToolbar";
 import { Button, Card } from "@tomcoggia/ui";
 import { ArrowDownToLine, ClipboardCopy, ClipboardPaste, Copy, Layers, Layers2, LayersArrowDown, Lock, LockOpen, MousePointer2, PenLine, Sparkles, Spline, SquareDimensions, Trash2, Ungroup } from "lucide-react";
@@ -11,7 +13,7 @@ import { Section } from "../shared/components/controls/Section";
 import controls from "../shared/components/controls/controls.module.css";
 import { api } from "../shared/lib/api";
 import { isSvgFile, useFileDrop } from "../shared/lib/useFileDrop";
-import { marginsTimes, type FitAlign, type Margins } from "../shared/lib/geometry";
+import { marginsAll, marginsTimes, type FitAlign, type Margins } from "../shared/lib/geometry";
 import { load, save as remember } from "../shared/lib/storage";
 import { DEFAULT_SETTINGS, PAPER_SIZES, penWidthOf } from "../shared/lib/constants";
 import type { Info, PenColor, PlotterModel, Preset } from "../shared/lib/types";
@@ -66,7 +68,7 @@ import { shapeIcon } from "./components/panels/ToolPicker";
 import { addPointOnLongest, boxAround, boxOf, clampToPage, groupLabel, groupsOf, moveBy, newGroupId, newLayerId, newShapeId, pointsBox, resizeTo, scaleInto, shapeName, turnAround, withWholeGroups, type Layer, type Page, type Shape } from "../shared/lib/drawing/shapes";
 import { areaPicker, silhouetteOf } from "../shared/lib/drawing/silhouette";
 import { buildSvg, svgForMarks } from "../shared/lib/drawing/svg";
-import { drawnMiddle, fitToPage, placeOnPaper, reshapeDrawing, runsOffPage } from "../shared/lib/drawing/whole";
+import { alignOnPage, drawnMiddle, fitToPage, placeOnPaper, reshapeDrawing, runsOffPage } from "../shared/lib/drawing/whole";
 import { cropDrawing } from "../shared/lib/drawing/crop";
 import { isKnockoutLayer, withKnockout } from "../shared/lib/drawing/knockout";
 import { turnDrawingOnPaper } from "../shared/lib/drawing/turnPaper";
@@ -114,6 +116,9 @@ interface Snapshot {
  fills: Fill[];
  layers: Layer[];
  page: Page;
+ /** The artboard and its margins, so changing either can be undone like anything else. */
+ artboard: Page;
+ margins: Margins;
 }
 
 /**
@@ -170,6 +175,11 @@ function unfitIfMoved(before: Shape | undefined, after: Shape): Shape {
 
 export default function App() {
  const [page, setPage] = useState<Page>({ w: 11, h: 8.5 });
+ // The artboard - the drawing's own size - and the margins that inset it to the live area. Kept
+ // with the drawing, unlike the paper, which is the sheet Plot puts it on. A drawing made before
+ // the two were told apart opens with its artboard the size it was saved at.
+ const [artboard, setArtboard] = useState<Page>({ w: 11, h: 8.5 });
+ const [margins, setMargins] = useState<Margins>(marginsAll(0));
  // How big the drawing is now, as a percent of its size when it was opened or started: the Paper
  // card's scale, which rescales the drawing as it changes. Back to 100 with each drawing.
  const [shapes, setShapes] = useState<Shape[]>([]);
@@ -225,7 +235,8 @@ export default function App() {
   setPanel((open) => (open === which ? null : which));
  const [model, setModel] = useState<PlotterModel | undefined>();
  // Paper to begin with: the page is what's being drawn on, and the bed is context around it.
- const [zoom, setZoom] = useState<Zoom>("paper");
+ // The view is of the artboard, not of a plotter: no bed and no sheet are drawn here.
+ const [zoom, setZoom] = useState<Zoom>("artboard");
  // The loupe over the page, for a close look at the lines. The same switch as Plot's.
  const [loupe, setLoupe] = useState(false);
  const [toolName, setToolName] = useState<string>(() => load<string>(TOOL_KEY) ?? "");
@@ -300,14 +311,17 @@ export default function App() {
  // in the drawing, like its size, so all three apps show the same paper; this browser remembers the
  // last one for a new drawing.
  const [paperColor, setPaperColor] = useState(() => load<string>(PAPER_COLOR_KEY) ?? "#ffffff");
- // Inches or millimetres for the Paper card: one choice for all three apps.
- const [units, setUnits] = useUnits();
+ // Inches or millimetres: one choice for all three apps, set in Plot's Paper card. Only read
+ // here - this app has no paper, and no switch of its own since the paper left (2026-11-23).
+ const [units] = useUnits();
  useEffect(() => remember(PAPER_COLOR_KEY, paperColor), [paperColor]);
  // Which of the rail's cards are out, from the toolbar at the left, as in Photo and Plot.
  const [fileCard, setFileCard] = useState(() => load<boolean>("studio-file-card") ?? true);
  useEffect(() => remember("studio-file-card", fileCard), [fileCard]);
- const [paperCard, setPaperCard] = useState(() => load<boolean>("studio-paper-card") ?? true);
- useEffect(() => remember("studio-paper-card", paperCard), [paperCard]);
+ const [artboardCard, setArtboardCard] = useState(() => load<boolean>("studio-artboard-card") ?? true);
+ useEffect(() => remember("studio-artboard-card", artboardCard), [artboardCard]);
+ const [artworkCard, setArtworkCard] = useState(() => load<boolean>("studio-artwork-card") ?? true);
+ useEffect(() => remember("studio-artwork-card", artworkCard), [artworkCard]);
  const [penCard, setPenCard] = useState(() => load<boolean>("studio-pen-card") ?? true);
  useEffect(() => remember("studio-pen-card", penCard), [penCard]);
  const [gridCard, setGridCard] = useState(() => load<boolean>("studio-grid-card") ?? true);
@@ -342,7 +356,7 @@ export default function App() {
  // The drawing is the current drawing, shared by the three apps: picked up on starting, and again
  // when it's changed or replaced in another app or window (showCurrent, below).
  const { name, setName, saved, dirty, lock, touch, loaded, combined, started, save, snapshot: takeSnapshot, open, openDropped, goTo, openIn } = useDrawingFile({
-  shapes, fills, layers, page, sizeId, toolName, paperColor, fonts, setBusy, setMessage, onCurrent: (current) => showCurrent(current),
+  shapes, fills, layers, page, sizeId, toolName, paperColor, fonts, margins, setBusy, setMessage, onCurrent: (current) => showCurrent(current),
  });
 
  // The drawing tool is written into the file too, so picking one is a change - but only when it's
@@ -394,12 +408,14 @@ export default function App() {
   });
  }, [layers, shapes]);
 
- const snapshot = useMemo<Snapshot>(() => ({ shapes, fills, layers, page }), [shapes, fills, layers, page]);
+ const snapshot = useMemo<Snapshot>(() => ({ shapes, fills, layers, page, artboard, margins }), [shapes, fills, layers, page, artboard, margins]);
  const restore = useCallback((next: Snapshot) => {
   setShapes(next.shapes);
   setFills(next.fills);
   setLayers(next.layers);
   setPage(next.page);
+  setArtboard(next.artboard);
+  setMargins(next.margins);
   // A shape that isn't there any more can't stay selected, or its handles would hang in the air.
   const still = new Set(next.shapes.map((s) => s.id));
   setSelected((ids) => ids.filter((id) => still.has(id)));
@@ -744,6 +760,8 @@ export default function App() {
   }
   const drawing = parseDrawing(current.svg);
   setPage(drawing.page);
+  setArtboard(drawing.artboard);
+  setMargins(drawing.margins);
   setShapes(drawing.shapes);
   setFills(drawing.fills);
   setLayers(drawing.layers);
@@ -777,6 +795,8 @@ export default function App() {
   else clearHistory();
   combined(res, drawing.unsupported);
   setPage(drawing.page);
+  setArtboard(drawing.artboard);
+  setMargins(drawing.margins);
   setShapes(drawing.shapes);
   setFills(drawing.fills);
   setLayers(drawing.layers);
@@ -1073,15 +1093,22 @@ export default function App() {
  };
 
 
- /** Scale the drawing as big as the paper allows inside the margins (mm, a side each), placed as `align` says. */
+ /** Scale the artwork as large as the artboard allows inside its margins (mm, a side each), placed as `align` says. */
  const fitDrawing = (marginsMm: Margins, align: FitAlign) => {
-  const fit = fitToPage(shapes, page, marginsTimes(marginsMm, 1 / 25.4), align);
+  const fit = fitToPage(shapes, artboard, marginsTimes(marginsMm, 1 / 25.4), align);
   if (fit) reshape(fit.k, fit.about, fit.by);
  };
 
- /** Scale the drawing to cover the paper inside the margins, placed as `align` says, and cut off the lines past them. */
+ /** The artwork moved to an alignment, at the size it is: the live alignment buttons (Tom, 2026-11-23). */
+ const alignDrawing = (marginsMm: Margins, align: FitAlign) => {
+  const by = alignOnPage(shapes, artboard, marginsTimes(marginsMm, 1 / 25.4), align);
+  if (!by || (Math.abs(by.x) < 1e-9 && Math.abs(by.y) < 1e-9)) return;
+  reshape(1, { x: 0, y: 0 }, by);
+ };
+
+ /** Scale the artwork to cover the artboard inside the margins, placed as `align` says, and cut off the lines past them. */
  const fillDrawing = (marginsMm: Margins, align: FitAlign) => {
-  const place = placeOnPaper(shapes, { x: 0, y: 0, w: page.w, h: page.h }, marginsTimes(marginsMm, 1 / 25.4), align, "fill");
+  const place = placeOnPaper(shapes, { x: 0, y: 0, w: artboard.w, h: artboard.h }, marginsTimes(marginsMm, 1 / 25.4), align, "fill");
   if (!place) return;
   const cut = cropDrawing(reshapeDrawing(shapes, place.k, place.about, place.by), fills, place.box, fonts);
   record();
@@ -1182,7 +1209,7 @@ export default function App() {
   const year = new Date().getFullYear();
   const size = signatureSize(year, font);
   const inset = paperMarginMm() / 25.4;
-  const map = await inkMap(buildSvg(shapes, fills, layers, page, { paperSizeId: sizeId, toolName, paperColor, fonts }), page);
+  const map = await inkMap(buildSvg(shapes, fills, layers, page, { paperSizeId: sizeId, toolName, paperColor, fonts, margins }), page);
   const { at, clear } = clearSpot(map, page, inset, turned ? { w: size.h, h: size.w } : size, "br");
   if (!clear) setMessage({ text: "The drawing reaches the page edge here - the signature is on it", ok: false });
   const made = turned
@@ -1209,7 +1236,7 @@ export default function App() {
   const inset = paperMarginMm() / 25.4;
   const size = registrationSize(blocked);
   const rest = shapes.filter((s) => !gone.has(s.id));
-  const map = await inkMap(buildSvg(rest, fills, layers, page, { paperSizeId: sizeId, toolName, paperColor, fonts }), page);
+  const map = await inkMap(buildSvg(rest, fills, layers, page, { paperSizeId: sizeId, toolName, paperColor, fonts, margins }), page);
   const { at, clear } = clearSpot(map, page, inset, turned ? { w: size.h, h: size.w } : size, "bl");
   if (!clear) setMessage({ text: "The drawing reaches the page edge here - the registration blocks are on it", ok: false });
   record();
@@ -1781,15 +1808,6 @@ export default function App() {
   setSelected((current) => current.filter((id) => !gone.includes(id)));
  };
 
- const setSize = (id: string) => {
-  const size = SIZES.find((s) => s.id === id);
-  if (!size) return;
-  record();
-  // Keep the orientation the page is already in, so choosing a size doesn't also turn it.
-  const landscape = page.w >= page.h;
-  setPage(landscape ? { w: Math.max(size.w, size.h), h: Math.min(size.w, size.h) } : { w: Math.min(size.w, size.h), h: Math.max(size.w, size.h) });
- };
-
  // Asked in the library's Modal, over everything: Setup starts new drawings too.
  const confirmModal = (
   <UnsavedChangesModal
@@ -1810,29 +1828,46 @@ export default function App() {
   />
  );
 
- // The Paper card, in the drawing's rail and image conversion's.
- const paperSection = (
-  <PaperSection
-   w={page.w * 25.4}
-   h={page.h * 25.4}
-   sizeId={sizeId}
+ // The Artboard card: the drawing's own size and its margins, which travel with the drawing. Its
+ // own card, and own switch, above Paper; the paper is on its way out of this app (see the sizes
+ // design).
+ const artboardSection = (
+  <ArtboardSection
+   w={artboard.w * 25.4}
+   h={artboard.h * 25.4}
+   margins={marginsTimes(margins, 25.4)}
    units={units}
-   onUnits={setUnits}
    color={paperColor}
-   collapsibleKey="paper"
-   onSize={setSize}
-   onDimensions={(w, h) => {
-    record();
-    setPage({ w: w / 25.4, h: h / 25.4 });
-   }}
    onColor={pickPaperColor}
-   // The paper turns with the drawing: landscape to portrait with everything on it, as a sheet is turned.
-   onTurnDrawing={(dir) => void turnAll(dir)}
+   collapsibleKey="artboard"
+   onSize={(w, h) => {
+    record();
+    setArtboard({ w: w / 25.4, h: h / 25.4 });
+   }}
+   onMargins={(next) => {
+    record();
+    setMargins(marginsTimes(next, 1 / 25.4));
+   }}
+  />
+ );
+
+ // The Artwork card: the art itself - turned, fitted inside the artboard's margins, scaled. These
+ // were the Paper card's "Drawing transform", and came away with it when the paper left this app.
+ const artworkSection = (
+  <ArtworkSection
+   artboard={{ w: artboard.w * 25.4, h: artboard.h * 25.4 }}
+   margins={marginsTimes(margins, 25.4)}
+   units={units}
+   collapsibleKey="artwork"
+   onTurn={(dir) => void turnAll(dir)}
    onFit={shapes.length ? fitDrawing : undefined}
    onFill={shapes.length ? fillDrawing : undefined}
    onScale={shapes.length ? scaleDrawing : undefined}
+   onAlign={shapes.length ? alignDrawing : undefined}
   />
  );
+
+ // The Paper card, in the drawing's rail and image conversion's.
 
 
  /** The copied fill onto the chosen shape, or every fillable shape selected, in place of their own. */
@@ -1941,7 +1976,7 @@ export default function App() {
      endpoint: "/api/studio/combine",
      canAdd: shapes.length > 0,
      // This drawing as it would be saved, for the files to go on top of.
-     base: () => buildSvg(shapes, fills, layers, page, { paperSizeId: sizeId, toolName, paperColor, fonts }),
+     base: () => buildSvg(shapes, fills, layers, page, { paperSizeId: sizeId, toolName, paperColor, fonts, margins }),
      onCombined: openCombined,
     }}
    />
@@ -2141,7 +2176,8 @@ export default function App() {
      <PanelToolbar
       cards={[
        { key: "file", on: fileCard, toggle: () => setFileCard((on) => !on) },
-       { key: "paper", on: paperCard, toggle: () => setPaperCard((on) => !on) },
+       { key: "artboard", on: artboardCard, toggle: () => setArtboardCard((on) => !on) },
+       { key: "artwork", on: artworkCard, toggle: () => setArtworkCard((on) => !on) },
        { key: "pen", on: penCard, toggle: () => setPenCard((on) => !on) },
        { key: "grid", on: gridCard, toggle: () => setGridCard((on) => !on) },
        { key: "trim", on: trimCard, toggle: () => setTrimCard((on) => !on) },
@@ -2177,6 +2213,7 @@ export default function App() {
     <section className={styles.stage} aria-label="Drawing page" data-dragging-file={draggingFile || undefined}>
      <Canvas
       page={page}
+      artboard={artboard}
       paperColor={paperColor}
       shapes={canvasShapes}
       fills={fills}
@@ -2188,6 +2225,7 @@ export default function App() {
         onView: setView,
         zoom,
         onZoom: setZoom,
+        ground: "artboard",
         canDrawing: shapes.length > 0,
         canPhoto: shapes.some((sh) => sh.kind === "photo"),
         loupe,
@@ -2241,10 +2279,17 @@ export default function App() {
      )}
 
      {/* What the drawing is made on and with, and the grid, which is Studio's alone: a card each,
-       shown or hidden from the toolbar, the same Paper and Pen cards as Photo's and Plot's. */}
-     {paperCard && (
+       shown or hidden from the toolbar, the same Artboard, Paper and Pen cards as Photo's and
+       Plot's. The artboard is the drawing's own size, which travels with it; the paper is the sheet
+       it ends up on - so they are two cards, each with its own switch. */}
+     {artboardCard && (
      <Card variant="flat" className={styles.controls}>
-      <div className={`${styles.cardBody} ${controls.cardSections}`}>{paperSection}</div>
+      <div className={`${styles.cardBody} ${controls.cardSections}`}>{artboardSection}</div>
+     </Card>
+     )}
+     {artworkCard && (
+     <Card variant="flat" className={styles.controls}>
+      <div className={`${styles.cardBody} ${controls.cardSections}`}>{artworkSection}</div>
      </Card>
      )}
      {penCard && (

@@ -141,3 +141,15 @@
   stroke-width: 3px;
   vector-effect: non-scaling-stroke;
 }
+
+/* The artboard - the drawing's own size, as against the sheet it sits on (BedCanvas). Dashed, drawn
+   over the artwork rather than under it, so a drawing that bleeds past it can still be read against
+   it. On screen only, never plotted. */
+.artboard {
+  fill: none;
+  stroke: var(--ui-text-muted);
+  stroke-width: 1;
+  stroke-dasharray: 4 3;
+  vector-effect: non-scaling-stroke;
+  pointer-events: none;
+}

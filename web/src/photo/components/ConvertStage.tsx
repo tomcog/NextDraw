@@ -80,6 +80,8 @@ interface Props {
   /** The photo's box on the page, in inches from the page's corner: its lines are worked out at its size. */
   box: { x0: number; y0: number; x1: number; y1: number };
   page: Page;
+  /** The drawing's own size, drawn dashed over the paper. Absent, nothing is drawn for it. */
+  artboard?: Page;
   paperColor: string;
   model: PlotterModel | undefined;
   ink: Ink;
@@ -123,7 +125,7 @@ type Part = [number, number, number, number];
  * zooms and the loupe that Studio and Plot show a drawing on. Photo's own views go first in the bar, before
  * the shared ones; side by side, a second canvas follows the first's zoom.
  */
-export function ConvertStage({ photo, parts, box, page, paperColor, model, ink, view, onView, show, onShow, zoom, onZoom, loupe, onLoupe, cropping, others = [], trim, onTrimMove, onMove, knockout }: Props) {
+export function ConvertStage({ photo, parts, box, page, artboard, paperColor, model, ink, view, onView, show, onShow, zoom, onZoom, loupe, onLoupe, cropping, others = [], trim, onTrimMove, onMove, knockout }: Props) {
   const read = usePhotoRead(photo.src);
   const w = box.x1 - box.x0;
   const h = box.y1 - box.y0;
@@ -268,7 +270,7 @@ export function ConvertStage({ photo, parts, box, page, paperColor, model, ink, 
       <Segment selected={show === "side"} onClick={() => onShow("side")} icon={<Columns2 />} aria-label="Side by side" title="Side by side: the picture on the left, the drawing on the right" />
     </SegmentedControl>
   );
-  const bar = { view, onView, zoom, onZoom, canDrawing: true, loupe, onLoupe, extras };
+  const bar = { view, onView, zoom, onZoom, ground: "artboard" as const, canDrawing: true, loupe, onLoupe, extras };
 
   // The trim as a guide on every view; over the picture alone, its marks too, since there are no lines there.
   // Picked up anywhere inside and dragged, to move it over the picture.
@@ -290,7 +292,7 @@ export function ConvertStage({ photo, parts, box, page, paperColor, model, ink, 
 
   const pane = (body: ReactNode | ((mark: number) => ReactNode), first: boolean) => (
     <figure className={styles.pane}>
-      <NextDrawCanvas bar={first ? bar : undefined} zoom={zoom} loupe={loupe} model={model} settings={settings} drawingBox={drawingBox}>
+      <NextDrawCanvas bar={first ? bar : undefined} zoom={zoom} loupe={loupe} model={model} settings={settings} drawingBox={drawingBox} artboard={artboard} ground="artboard">
         {/* Everything here is in the page's inches; the bed counts in UNITS per inch. */}
         {({ mark }) => <g transform={`scale(${UNITS})`}>{typeof body === "function" ? body(mark) : body}</g>}
       </NextDrawCanvas>

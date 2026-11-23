@@ -54,6 +54,9 @@ export async function editCurrent(edit: (d: EditableDrawing) => EditableDrawing 
     paperSizeId: sizeIdOf(next.page),
     toolName: drawing.tool ?? "",
     paperColor: drawing.paperColor ?? undefined,
+    // The artboard's margins as the file has them: this writes the whole drawing back, so leaving
+    // them out would quietly drop them every time Plot edited it (trim marks, Fit, Fill).
+    margins: drawing.margins,
     fonts,
   });
   return postJSON<{ edited: string }>("/api/current", {

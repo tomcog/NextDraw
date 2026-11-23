@@ -1,3 +1,4 @@
+import { marginsAll, type Margins } from "../geometry";
 import { newFillId, type Fill } from "./hatch";
 import { curveFromData } from "./parametric";
 import { flattenRun, mapNode, parsePath, type Node } from "./path";
@@ -16,7 +17,25 @@ import { PLATE_OFF, inkAtOf, inkSetOf, onePlate, photoFromData } from "./photo";
 // goes to the caller so it can say so out loud before anything is overwritten.
 
 export interface Opened {
+  /**
+   * The paper the drawing was last made for. Kept as it was while the artboard is built out: the
+   * three apps still size themselves by this. See `artboard` and `paper` for what replaces it.
+   */
   page: Page;
+  /**
+   * The drawing's own size - the artboard (2026-11-22). This is the SVG's own width and height,
+   * which is what the piece measures, as against `paper`, which is the sheet it goes on. They are
+   * the same for every drawing made before the two were told apart.
+   */
+  artboard: Page;
+  /** The sheet it was last placed on, from the block Plot reads, or null for a file that doesn't say. */
+  paper: Page | null;
+  /**
+   * The artboard's margins, in inches, which inset it to the live area the artwork is fitted and
+   * aligned within. A drawing made before they were kept takes them from the picture it was fitted
+   * with, where it had one, and is otherwise flush.
+   */
+  margins: Margins;
   shapes: Shape[];
   layers: Layer[];
   fills: Fill[];
@@ -124,7 +143,7 @@ export function parseDrawing(text: string): Opened {
   let design: {
     fills?: unknown; on?: Record<string, string>; curves?: unknown; photos?: unknown;
     turned?: Record<string, unknown>; scaled?: Record<string, unknown>; repeats?: Record<string, unknown>; smoothed?: Record<string, unknown>;
-    names?: Record<string, unknown>; locked?: unknown;
+    names?: Record<string, unknown>; locked?: unknown; margins?: unknown;
     texts?: Record<string, { text?: unknown; font?: unknown; box?: unknown; tracking?: unknown; leading?: unknown }>;
   } = {};
   try {
@@ -664,5 +683,16 @@ export function parseDrawing(text: string): Opened {
   } catch {
     tool = null; // an unreadable block: the drawing still opens, in whatever tool is chosen
   }
-  return { page: paperPage ?? page, shapes, layers, fills, unsupported, tool, paperColor };
+  // Margins as the drawing kept them; failing that, as the picture was last fitted - photo.margin
+  // and photo.marginBottom are where they lived when they belonged to each photo rather than to the
+  // drawing. Failing both, flush.
+  const kept = design.margins as Partial<Margins> | undefined;
+  const side = (v: unknown, fallback: number) => (Number.isFinite(Number(v)) && Number(v) >= 0 ? Number(v) : fallback);
+  const fitted = shapes.find((sh) => sh.photo?.margin !== undefined)?.photo;
+  const was = fitted ? marginsAll(fitted.margin ?? 0) : marginsAll(0);
+  if (fitted?.marginBottom !== undefined) was.bottom = fitted.marginBottom;
+  const margins: Margins = kept && typeof kept === "object"
+    ? { top: side(kept.top, was.top), right: side(kept.right, was.right), bottom: side(kept.bottom, was.bottom), left: side(kept.left, was.left) }
+    : was;
+  return { page: paperPage ?? page, artboard: page, paper: paperPage, margins, shapes, layers, fills, unsupported, tool, paperColor };
 }

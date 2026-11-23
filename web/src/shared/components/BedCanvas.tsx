@@ -11,7 +11,7 @@ import type { PlotterModel, Settings } from "../lib/types";
 // Sharing this is what keeps the two from drifting: one set of margins, one text size, one set of
 // zooms, so a page looks the same whichever app is showing it.
 
-export type Zoom = "plotter" | "paper" | "drawing";
+export type Zoom = "plotter" | "paper" | "drawing" | "artboard";
 
 /** x0, y0, x1, y1 in bed units (UNITS per inch), from the plotter's home corner. */
 export type Box = [number, number, number, number];
@@ -24,10 +24,25 @@ export interface BedCanvasHandle {
 
 export interface BedCanvasProps {
   zoom: Zoom;
+  /**
+   * What the view is of (2026-11-23). "bed" is the plotter with the paper on it, which is Plot's:
+   * where the drawing is going. "artboard" is the drawing's own page alone - no plotter, no sheet -
+   * which is Studio's and Image's: neither the bed nor the paper matters until it is time to plot,
+   * and drawing them tied the view to whichever plotter happened to be picked. The ground is then
+   * the artboard itself, in the paper's colour, since that is what the artwork is made on.
+   */
+  ground?: "bed" | "artboard";
   model: PlotterModel | undefined;
   settings: Settings;
   /** What the "drawing" zoom frames, and what's included when the view is zoomed out. */
   drawingBox: Box | null;
+  /**
+   * The artboard - the drawing's own size in inches, as against the sheet it sits on - drawn dashed
+   * over everything else. Its x and y are inches from the paper's own corner, so a drawing that has
+   * not been placed anywhere sits at the paper's origin. Absent, nothing is drawn: a drawing with no
+   * artboard of its own is just the paper, as it was before the two were told apart.
+   */
+  artboard?: { x?: number; y?: number; w: number; h: number } | null;
   /** Sits on the width dimension line, at its right end. */
   toolbar?: ReactNode;
   /** The same line, at its left end. */
@@ -221,14 +236,26 @@ export function BedCanvas(props: BedCanvasProps) {
     // measurement taken then left the label placed as if the bar weren't there.
   }, [Boolean(model), Boolean(props.toolbarLeft)]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  if (!model) return <div className={styles.wrap} />;
+  // The artboard, when there is one worth drawing.
+  const art = props.artboard && props.artboard.w > 0 && props.artboard.h > 0 ? props.artboard : null;
+  // The artboard alone: no plotter needed, and none drawn.
+  const onlyArt = props.ground === "artboard";
+  if (onlyArt ? !art : !model) return <div className={styles.wrap} />;
 
-  const [tx, ty] = model.travel_in;
+  const [tx, ty] = onlyArt && art ? [art.w, art.h] : model ? model.travel_in : [0, 0];
   const W = tx * UNITS;
   const H = ty * UNITS;
-  const hasPaper = s.paper_w > 0 && s.paper_h > 0;
+  const hasPaper = !onlyArt && s.paper_w > 0 && s.paper_h > 0;
 
   const travelBox: Box = [0, 0, W, H];
+  // Where the artboard is drawn: on its own page it sits at the origin, since where it lands on a
+  // sheet is Plot's business; on the bed it is placed from the paper's corner.
+  const artBox: Box | null = art
+    ? onlyArt
+      ? [0, 0, art.w * UNITS, art.h * UNITS]
+      : [s.paper_x * MM + (art.x ?? 0) * UNITS, s.paper_y * MM + (art.y ?? 0) * UNITS,
+         s.paper_x * MM + ((art.x ?? 0) + art.w) * UNITS, s.paper_y * MM + ((art.y ?? 0) + art.h) * UNITS]
+    : null;
   const paperBox: Box | null = hasPaper
     ? [s.paper_x * MM, s.paper_y * MM, (s.paper_x + s.paper_w) * MM, (s.paper_y + s.paper_h) * MM]
     : null;
@@ -238,18 +265,20 @@ export function BedCanvas(props: BedCanvasProps) {
 
   // What to frame: the whole plotter (plus the paper and drawing, if they stick out), the paper, or
   // the drawing. The dimension lines measure the same thing.
-  const zoomBox = zoom === "paper" ? paperBox : zoom === "drawing" ? drawingBox : null;
-  const frame: Box = zoomBox ?? ([travelBox, paperBox, drawingBox]
+  const zoomBox = zoom === "paper" ? paperBox : zoom === "drawing" ? drawingBox : zoom === "artboard" ? artBox : null;
+  // The view the rest is measured against: the plotter, or the artboard where that is all there is.
+  const baseBox: Box = onlyArt && artBox ? artBox : travelBox;
+  const frame: Box = zoomBox ?? ([baseBox, onlyArt ? null : paperBox, drawingBox]
     .filter((b): b is Box => Boolean(b))
     .reduce((a, b) => [Math.min(a[0], b[0]), Math.min(a[1], b[1]), Math.max(a[2], b[2]), Math.max(a[3], b[3])]) as Box);
-  const dimBox = zoomBox ?? travelBox;
+  const dimBox = zoomBox ?? baseBox;
 
   const span = Math.max(frame[2] - frame[0], frame[3] - frame[1]);
   const font = span * 0.024; // sizes the home dot and the paper's shadow
 
   // The plotter view. The dimension lines, their labels and the toolbar are measured against it, so
   // they stay the same size and sit in the same place whichever zoom is showing.
-  const base = fit(travelBox);
+  const base = fit(baseBox);
   // The canvas fills the room it has, whatever the zoom, so it holds its size and place and only what's
   // in it changes (Tom, 2026-10-10: a tall drawing zoomed to had shrunk the canvas and moved it; then,
   // it should use the height as well as the width). What's framed is as large as the room allows; a
@@ -314,7 +343,9 @@ export function BedCanvas(props: BedCanvasProps) {
         className={styles.bed}
         viewBox={viewBox}
         role="img"
-        aria-label={`Drawing area of the ${model.name}: ${fmtIn(tx)} by ${fmtIn(ty)}`}
+        aria-label={onlyArt
+          ? `Artboard: ${fmtIn(tx)} by ${fmtIn(ty)}`
+          : `Drawing area of the ${model?.name}: ${fmtIn(tx)} by ${fmtIn(ty)}`}
         data-loupe={loupe || undefined}
         data-pinned={(loupe && pinned) || undefined}
         // Caught on the way down, before the shapes on the page: while the loupe is out, a click is
@@ -347,11 +378,25 @@ export function BedCanvas(props: BedCanvasProps) {
       >
         {/* Everything on the bed, as the loupe draws it again: not the dimension lines around it. */}
         <g id={contentId}>
-        <rect className={styles.travel} x={0} y={0} width={W} height={H} />
-        <g className={styles.grid}>
-          {gridLines(tx, "x")}
-          {gridLines(ty, "y")}
-        </g>
+        {onlyArt ? (
+          // The artboard is the page here, so it is the ground: the paper's colour, which is what
+          // the artwork is made on and what the inks are blended with, with the same lifted shadow
+          // the sheet has on the bed.
+          <>
+            <rect className={styles.paperShadow} x={font * 0.18} y={font * 0.18} width={W} height={H} />
+            <rect className={styles.paper} style={{ fill: s.paper_color || "#ffffff" }} x={0} y={0} width={W} height={H} />
+          </>
+        ) : (
+          <rect className={styles.travel} x={0} y={0} width={W} height={H} />
+        )}
+        {/* The one-inch grid is the bed's: it reads the plotter's travel. The artboard's own page
+          is the ground the art is made on, and is left clean. */}
+        {!onlyArt && (
+          <g className={styles.grid}>
+            {gridLines(tx, "x")}
+            {gridLines(ty, "y")}
+          </g>
+        )}
 
         {hasPaper && (
           <>
@@ -371,6 +416,13 @@ export function BedCanvas(props: BedCanvasProps) {
               height={s.paper_h * MM}
             />
           </>
+        )}
+        {/* The artboard on the bed, from the paper's corner: where the piece falls on the sheet.
+          Drawn after the paper and before the drawing itself, since the drawing is a layer of its
+          own above this group. On its own page there is nothing to tell apart - the ground's edge
+          is the artboard, and nothing is drawn for it. */}
+        {!onlyArt && artBox && (
+          <rect className={styles.artboard} x={artBox[0]} y={artBox[1]} width={artBox[2] - artBox[0]} height={artBox[3] - artBox[1]} />
         )}
 
         </g>
@@ -392,7 +444,8 @@ export function BedCanvas(props: BedCanvasProps) {
 
         {pastReach && <rect className={styles.reach} x={0} y={0} width={W} height={H} aria-hidden />}
 
-        <circle className={styles.home} cx={0} cy={0} r={font * 0.28} />
+        {/* Home is the plotter's corner: there is no such thing on the artboard's own page. */}
+        {!onlyArt && <circle className={styles.home} cx={0} cy={0} r={font * 0.28} />}
 
         {loupe && lens && (() => {
           // The lens is a fixed size on screen whatever the zoom, so its radius is found from how many

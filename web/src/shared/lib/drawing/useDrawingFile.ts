@@ -8,6 +8,7 @@ import type { StrokeFont } from "./font";
 import type { Fill } from "./hatch";
 import type { Layer, Page, Shape } from "./shapes";
 import { buildSvg, cleanFileName } from "./svg";
+import type { Margins } from "../geometry";
 import { snapshotName, snapshotShapes } from "./snapshot";
 
 /** Where the drawing was last saved, or read from: the file, and its folder as the File card says it. */
@@ -59,6 +60,8 @@ interface Options {
   /** The paper's color, kept in the drawing so every app shows the same paper. */
   paperColor: string;
   fonts: Record<string, StrokeFont>;
+  /** The artboard's margins, kept with the drawing. Absent for an app that has none of its own yet. */
+  margins?: Margins;
   setBusy: (busy: boolean) => void;
   setMessage: (message: Message) => void;
   /**
@@ -96,7 +99,7 @@ const same = (a: Snapshot | null, b: Snapshot) =>
  * - in Plot, the other editor, another window - come back through onCurrent while nothing here is
  * waiting to be sent.
  */
-export function useDrawingFile({ shapes, fills, layers, page, sizeId, toolName, paperColor, fonts, setBusy, setMessage, onCurrent, beforeStart }: Options) {
+export function useDrawingFile({ shapes, fills, layers, page, sizeId, toolName, paperColor, fonts, margins, setBusy, setMessage, onCurrent, beforeStart }: Options) {
   const [name, setName] = useState("Untitled");
   const [saved, setSaved] = useState<Saved>(null);
   // Where a drawing that has never been saved will be: files stacked into one are saved next to the
@@ -167,7 +170,7 @@ export function useDrawingFile({ shapes, fills, layers, page, sizeId, toolName, 
   // What a send needs that changes with every render.
   const latest = useRef<{ svg: () => string; file: FileState }>({ svg: () => "", file: {} as FileState });
   latest.current = {
-    svg: () => buildSvg(shapes, fills, layers, page, { paperSizeId: sizeId, toolName, paperColor, fonts }),
+    svg: () => buildSvg(shapes, fills, layers, page, { paperSizeId: sizeId, toolName, paperColor, fonts, margins }),
     file: { name, saved, saveTo, foreign, openedAs },
   };
   // Whether the drawing differs from its file, asked at the moment: the dirty state lags a render
@@ -500,7 +503,7 @@ export function useDrawingFile({ shapes, fills, layers, page, sizeId, toolName, 
       const apart = conflict.current;
       if (!apart) await flush();
       const drawing = now();
-      const svg = buildSvg(shapes, fills, layers, page, { paperSizeId: sizeId, toolName, paperColor, fonts });
+      const svg = buildSvg(shapes, fills, layers, page, { paperSizeId: sizeId, toolName, paperColor, fonts, margins });
       // Only the drawing's own file is written over. A drawing never saved, or saved under a new name,
       // that lands on a name already taken is numbered by the server instead - a new drawing is named
       // after its picture, and two pictures can share a name.
@@ -562,7 +565,7 @@ export function useDrawingFile({ shapes, fills, layers, page, sizeId, toolName, 
     }
     setBusy(true);
     try {
-      const svg = buildSvg(snapshotShapes(shapes), fills, layers, page, { paperSizeId: sizeId, toolName, paperColor, fonts });
+      const svg = buildSvg(snapshotShapes(shapes), fills, layers, page, { paperSizeId: sizeId, toolName, paperColor, fonts, margins });
       return await postJSON<{ name: string; path: string; folder: string }>("/api/studio/save", {
         name: cleanFileName(snapshotName(name)),
         svg,

@@ -40,6 +40,8 @@ export interface PhotoContext {
   active: Layer | undefined;
   setActiveLayer: (id: string) => void;
   page: Page;
+  /** The drawing's own size, which the picture is fitted and aligned inside (2026-11-23). */
+  artboard: Page;
   /** The drawing tool, whose palette a photo's layers are matched to. */
   tool: Preset | null;
   /** The fill spacing the tool solid-fills at, which a photo's closest lines start from. */
@@ -80,7 +82,7 @@ export function autoPaperTone(paper: string, dark: number, light: number): [numb
 export { pictureSources } from "./separationFolder";
 
 export function photoActions(ctx: PhotoContext) {
-  const { chosen, shapes, setShapes, layers, setLayers, active, setActiveLayer, page, tool: tool2, targets, paper, record, addShape, pick, setMessage, setBusy } = ctx;
+  const { chosen, shapes, setShapes, layers, setLayers, active, setActiveLayer, page, artboard, tool: tool2, targets, paper, record, addShape, pick, setMessage, setBusy } = ctx;
   /**
    * Whether a shape is part of the chosen image: the chosen layer, its pass's other layers, and the
    * other passes over the same picture. What moves, sizes, crops, turns and changes picture together.
@@ -920,8 +922,8 @@ export function photoActions(ctx: PhotoContext) {
   };
 
   /**
-    * Size the chosen photo - all its bands - to the page: all of it as large as it fits, or filling the
-    * page and cropped, inside a margin. Square to the page again, whatever it was turned to. Once, when
+    * Size the chosen photo - all its bands - to the artboard: all of it as large as it fits, or filling
+    * the artboard and cropped, inside the margins. Square to the page again, whatever it was turned to. Once, when
     * Fit or Fill is pressed: nothing is kept that would size it again when the paper changes.
     */
   const placePhoto = (how: "fit" | "fill", margins: Margins, align?: FitAlign) => {
@@ -929,7 +931,7 @@ export function photoActions(ctx: PhotoContext) {
     record();
     // Fitted against an edge stays against it - as Fit to paper chose, or as it was last fitted.
     const at = align ?? chosen.photo.align;
-    const { crop, ...box } = placeOnPage(chosen.photo.width / chosen.photo.height, page, how, margins, at);
+    const { crop, ...box } = placeOnPage(chosen.photo.width / chosen.photo.height, artboard, how, margins, at);
     setShapes((list) => list.map((sh) => (sameImage(sh)
       ? { ...sh, ...box, rotation: undefined, photo: { ...sh.photo!, crop, fit: undefined, margin: undefined, marginBottom: undefined, align: at } }
       : sh)));
@@ -958,6 +960,24 @@ export function photoActions(ctx: PhotoContext) {
       const at = (v: number, c: number) => c + (v - c) * k;
       return { ...sh, x: at(sh.x, cx), y: at(sh.y, cy), x2: at(sh.x2, cx), y2: at(sh.y2, cy), photo: { ...p, ppi, fit: undefined } };
     }));
+  };
+
+  /**
+   * The chosen image moved to an alignment inside the artboard's margins, at the size it is: the
+   * alignment buttons act as they are pressed (Tom, 2026-11-23), rather than waiting for Fit.
+   */
+  const alignPhoto = (margins: Margins, align: FitAlign) => {
+    if (!chosen?.photo) return;
+    const b = boxOf(chosen);
+    const room = { w: artboard.w - margins.left - margins.right, h: artboard.h - margins.top - margins.bottom };
+    if (room.w <= 0 || room.h <= 0) return;
+    const dx = margins.left + (room.w - (b.x1 - b.x0)) * align.x - b.x0;
+    const dy = margins.top + (room.h - (b.y1 - b.y0)) * align.y - b.y0;
+    if (Math.abs(dx) < 1e-9 && Math.abs(dy) < 1e-9) return;
+    record();
+    setShapes((list) => list.map((sh) => (sameImage(sh)
+      ? { ...sh, x: sh.x + dx, y: sh.y + dy, x2: sh.x2 + dx, y2: sh.y2 + dy, photo: { ...sh.photo!, fit: undefined, align } }
+      : sh)));
   };
 
   /** Move the chosen image - all its layers - this far on the page, in inches: dragged on the stage. */
@@ -1618,7 +1638,7 @@ export function photoActions(ctx: PhotoContext) {
   return {
     setChannelOf, splitPhotoProfile,
     addPhoto, addSeparations, switchPhotoMode, setKeyLayer, splitPhoto, splitPhotoBestFit, splitPhotoFlat, splitPhotoOwnInks, saveInkSet,
-    placePhoto, scalePhoto, movePhoto, replacePhoto, reloadPhoto, joinSeparations, cropPhoto, bakeEffect, savePreset, applyPreset, deletePreset, setPhotoOf, addEdgeMask, chooseEdgeMask, deleteEdgeMask, setEdgeGen, saveEdgeGen, setAngles, photoStem, splitPhotoCmyk, setLayerColor,
+    placePhoto, alignPhoto, scalePhoto, movePhoto, replacePhoto, reloadPhoto, joinSeparations, cropPhoto, bakeEffect, savePreset, applyPreset, deletePreset, setPhotoOf, addEdgeMask, chooseEdgeMask, deleteEdgeMask, setEdgeGen, saveEdgeGen, setAngles, photoStem, splitPhotoCmyk, setLayerColor,
     splitAroundPaper, setPaperTone, addPass, removePass,
   };
 }
