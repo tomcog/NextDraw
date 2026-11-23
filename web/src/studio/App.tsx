@@ -2176,9 +2176,9 @@ export default function App() {
      <PanelToolbar
       cards={[
        { key: "file", on: fileCard, toggle: () => setFileCard((on) => !on) },
+       { key: "pen", on: penCard, toggle: () => setPenCard((on) => !on) },
        { key: "artboard", on: artboardCard, toggle: () => setArtboardCard((on) => !on) },
        { key: "artwork", on: artworkCard, toggle: () => setArtworkCard((on) => !on) },
-       { key: "pen", on: penCard, toggle: () => setPenCard((on) => !on) },
        { key: "grid", on: gridCard, toggle: () => setGridCard((on) => !on) },
        { key: "trim", on: trimCard, toggle: () => setTrimCard((on) => !on) },
       ]}
@@ -2278,10 +2278,16 @@ export default function App() {
      </Card>
      )}
 
-     {/* What the drawing is made on and with, and the grid, which is Studio's alone: a card each,
-       shown or hidden from the toolbar, the same Artboard, Paper and Pen cards as Photo's and
-       Plot's. The artboard is the drawing's own size, which travels with it; the paper is the sheet
-       it ends up on - so they are two cards, each with its own switch. */}
+     {/* What the drawing is drawn with and made on, and the grid, which is Studio's alone: a card
+       each, shown or hidden from the toolbar. The pen leads (Tom, 2026-11-23), then the artboard -
+       the drawing's own size, which travels with it - and what is done to the artwork on it. */}
+     {penCard && (
+     <Card variant="flat" className={styles.controls}>
+      <div className={`${styles.cardBody} ${controls.cardSections}`}>
+       <DrawingToolSection tools={presets} value={toolName} onPick={pickTool} collapsibleKey="pen" disabled={busy} />
+      </div>
+     </Card>
+     )}
      {artboardCard && (
      <Card variant="flat" className={styles.controls}>
       <div className={`${styles.cardBody} ${controls.cardSections}`}>{artboardSection}</div>
@@ -2290,13 +2296,6 @@ export default function App() {
      {artworkCard && (
      <Card variant="flat" className={styles.controls}>
       <div className={`${styles.cardBody} ${controls.cardSections}`}>{artworkSection}</div>
-     </Card>
-     )}
-     {penCard && (
-     <Card variant="flat" className={styles.controls}>
-      <div className={`${styles.cardBody} ${controls.cardSections}`}>
-       <DrawingToolSection tools={presets} value={toolName} onPick={pickTool} collapsibleKey="pen" disabled={busy} />
-      </div>
      </Card>
      )}
      {gridCard && (

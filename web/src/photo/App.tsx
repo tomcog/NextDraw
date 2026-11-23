@@ -950,8 +950,13 @@ export default function App() {
           </div>
         </Card>
       )}
-      {/* What the drawing is made on, and with: each its own card, shown or hidden from the toolbar.
-        The artboard - the drawing's own size - is a card and a switch of its own, before the paper. */}
+      {/* What the drawing is drawn with and made on: each its own card, shown or hidden from the
+        toolbar, the pen leading as in Studio (Tom, 2026-11-23). */}
+      {penCard && (
+        <Card variant="flat" className={styles.controls}>
+          <div className={`${styles.cardBody} ${controls.cardSections}`}>{toolSection}</div>
+        </Card>
+      )}
       {artboardCard && (
         <Card variant="flat" className={styles.controls}>
           <div className={`${styles.cardBody} ${controls.cardSections}`}>{artboardSection}</div>
@@ -960,11 +965,6 @@ export default function App() {
       {artworkCard && (
         <Card variant="flat" className={styles.controls}>
           <div className={`${styles.cardBody} ${controls.cardSections}`}>{artworkSection}</div>
-        </Card>
-      )}
-      {penCard && (
-        <Card variant="flat" className={styles.controls}>
-          <div className={`${styles.cardBody} ${controls.cardSections}`}>{toolSection}</div>
         </Card>
       )}
       {photoCard}
@@ -1145,9 +1145,9 @@ export default function App() {
           <PanelToolbar
             cards={[
               { key: "file", on: fileCard, toggle: () => setFileCard((on) => !on) },
+              { key: "pen", on: penCard, toggle: () => setPenCard((on) => !on) },
               { key: "artboard", on: artboardCard, toggle: () => setArtboardCard((on) => !on) },
               { key: "artwork", on: artworkCard, toggle: () => setArtworkCard((on) => !on) },
-              { key: "pen", on: penCard, toggle: () => setPenCard((on) => !on) },
               { key: "image", on: infoCard, toggle: () => setInfoCard((on) => !on) },
               { key: "trim", on: trimCard, toggle: () => setTrimCard((on) => !on), disabled: !chosen?.photo, why: "open an image first" },
             ]}

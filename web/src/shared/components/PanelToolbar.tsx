@@ -6,10 +6,10 @@ import { ToolbarIcons } from "./ToolbarIcons";
 /** The rail's cards the toolbar shows and hides, in the order they stack. Artboard and Artwork are Studio's and Image's; Grid is Studio's; Image, and Layers and Adjustments (a toolbar of their own), Image's; Queue, and Drawing position, Plot options and Utilities (a toolbar of their own), Plot's (Studio's Layers switch is with its tools). Trim marks is every app's, last. */
 const PANELS = {
   file: { label: "File", icon: <Save />, what: "the File card" },
+  pen: { label: "Pen", icon: <Pen />, what: "the Pen card: what the drawing is plotted with" },
   artboard: { label: "Artboard", icon: <Frame />, what: "the Artboard card: the drawing's own size, and the margins the artwork sits inside" },
   artwork: { label: "Artwork", icon: <Shapes />, what: "the Artwork card: turning the artwork, fitting it inside the margins, and its scale" },
   paper: { label: "Paper", icon: <StickyNote />, what: "the Paper card: what the drawing is plotted on" },
-  pen: { label: "Pen", icon: <Pen />, what: "the Pen card: what the drawing is plotted with" },
   grid: { label: "Grid", icon: <Grid3x3 />, what: "the Grid card: what shapes snap to" },
   image: { label: "Image", icon: <Image />, what: "the image's card" },
   layers: { label: "Layers", icon: <Layers2 />, what: "the Layers card: the image's layers, their colors and order" },
