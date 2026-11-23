@@ -128,7 +128,6 @@ interface Props {
   /** The Vignette card, when it's out: under the Adjustments card. */
   vignetteCard?: ReactNode;
   /** The Trim marks card, under the Image card - its switch's place in the panels toolbar. */
-  trimCard?: ReactNode;
   /** Whether the Mask card is out: under the Vignette card. */
   maskCard?: boolean;
 }
@@ -137,7 +136,7 @@ interface Props {
  * The chosen photo's card - in the drawing's rail, and in image conversion's under its own: how it is
  * split into layers, sized to the page, and what each layer's lines are drawn as.
  */
-export function PhotoCard({ shape, inksChanged, title, shapes, busy, targeted, layerCount, shownName, actions, cropping = false, penWidthMm = 0.5, infoCard = true, effectCards = true, layersCard, adjustCard, vignetteCard, trimCard, maskCard = false }: Props) {
+export function PhotoCard({ shape, inksChanged, title, shapes, busy, targeted, layerCount, shownName, actions, cropping = false, penWidthMm = 0.5, infoCard = true, effectCards = true, layersCard, adjustCard, vignetteCard, maskCard = false }: Props) {
   // The presets, shared between Macs; and the one last picked here, for Delete.
   const [presets, setPresets] = useState<string[]>([]);
   // Randomize pressed, its new scribble not yet drawn.
@@ -759,7 +758,6 @@ export function PhotoCard({ shape, inksChanged, title, shapes, busy, targeted, l
         </Card>
       )}
       {/* Trim marks next, as its switch follows Image's in the panels toolbar. */}
-      {trimCard}
       {layersCard}
       {adjustCard}
       {vignetteCard}

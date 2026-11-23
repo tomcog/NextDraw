@@ -40,10 +40,8 @@ import { photoActions, pictureSources } from "./lib/photoActions";
 import { ConvertStage, type ConvertView } from "./components/ConvertStage";
 import { AdjustCard, AdjustToolbar } from "./components/AdjustCard";
 import { VignetteCard } from "./components/VignetteCard";
-import { TrimMarksSection } from "../shared/components/controls/TrimMarksSection";
-import { paperMarginMm } from "../shared/components/controls/PaperSection";
 import { curveStrokes } from "../shared/lib/drawing/parametric";
-import { drawingBoxOf, trimShapeOf, withDrawingMoved, withTrimBox, withTrimMarks, withTrimMoved, withTrimOff, withTrimOn, type TrimDrawing } from "../shared/lib/drawing/trimMarks";
+import { trimShapeOf, withTrimMoved, type TrimDrawing } from "../shared/lib/drawing/trimMarks";
 import { EFFECTS, EffectToolbar, effectOf, type Effect } from "./components/EffectToolbar";
 import { PanelToolbar, panelIcon } from "../shared/components/PanelToolbar";
 import { LayersSection } from "../shared/components/controls/LayersSection";
@@ -200,8 +198,6 @@ export default function App() {
   const [maskCard, setMaskCard] = useState(() => load<boolean>("photo-mask-card") ?? false);
   useEffect(() => remember("photo-mask-card", maskCard), [maskCard]);
   // And the Trim marks card, under the Image card as its switch is under Image's in the panels toolbar: the size the print is cut to, and the image placed in it.
-  const [trimCard, setTrimCard] = useState(() => load<boolean>("photo-trim-card") ?? false);
-  useEffect(() => remember("photo-trim-card", trimCard), [trimCard]);
 
   // None until a pen is picked: the server's None pen, first in the list (once "", before it was one).
   const [toolName, setToolName] = useState<string>(() => load<string>(TOOL_KEY) || NONE_PEN);
@@ -834,24 +830,6 @@ export default function App() {
     setShapes(next.shapes);
     setLayers(next.layers);
   };
-  const trimSection = chosen?.photo && trimCard ? (
-    <Card variant="flat" className={styles.controls}>
-      <div className={`${styles.cardBody} ${controls.cardSections}`}>
-        <TrimMarksSection
-          collapsibleKey="photo-trim"
-          trim={trim}
-          drawing={drawingBoxOf(shapes)}
-          page={page}
-          units={units}
-          busy={busy}
-          onOn={(on) => editTrim((d) => (on ? withTrimOn(d, tool.palette ?? [], paperMarginMm() / 25.4) : withTrimOff(d)))}
-          setBox={(box) => editTrim((d) => withTrimBox(d, box))}
-          setMarks={(curve) => editTrim((d) => withTrimMarks(d, curve))}
-          moveDrawing={(dx, dy) => editTrim((d) => withDrawingMoved(d, dx, dy))}
-        />
-      </div>
-    </Card>
-  ) : null;
   // The marks as the stage draws them, in every view - the picture's too, so the image can be placed
   // in the trim before there are any lines. A hidden layer drops out, as from the lines.
   const trimOnStage = trim && trimLayer && !trimLayer.hidden
@@ -879,7 +857,6 @@ export default function App() {
       layersCard={layersSection}
       adjustCard={adjustSection}
       vignetteCard={vignetteSection}
-      trimCard={trimSection}
       maskCard={maskCard}
       actions={{
         replace: () => setBrowsing("replace"),
@@ -987,7 +964,7 @@ export default function App() {
   // The toolbar's effect is the whole photo's. Silhouette has no tones or colours to split by, so a
   // split photo comes back together as one layer drawn that way; separations keep a plate each.
   // Whether the rail has any card to show; with none, the stage takes its width.
-  const railOut = Boolean(fileCard || artboardCard || artworkCard || penCard || infoCard || (chosen?.photo && (effectCards || layersCard || adjustCard || vignetteCard || maskCard || trimCard)));
+  const railOut = Boolean(fileCard || artboardCard || artworkCard || penCard || infoCard || (chosen?.photo && (effectCards || layersCard || adjustCard || vignetteCard || maskCard)));
 
   const setEffect = (effect: Effect) => {
     setEffectCards(true);
@@ -1149,7 +1126,6 @@ export default function App() {
               { key: "artboard", on: artboardCard, toggle: () => setArtboardCard((on) => !on) },
               { key: "artwork", on: artworkCard, toggle: () => setArtworkCard((on) => !on) },
               { key: "image", on: infoCard, toggle: () => setInfoCard((on) => !on) },
-              { key: "trim", on: trimCard, toggle: () => setTrimCard((on) => !on), disabled: !chosen?.photo, why: "open an image first" },
             ]}
           />
           {/* The image's layers and its adjustments, a toolbar of their own. */}
