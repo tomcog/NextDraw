@@ -1,5 +1,5 @@
 // What is done to a photo in Photo (moved from Studio, 2026-10-06): putting one in, splitting it into layers by value, by colour or
-// into CMYK plates, sizing it to the page, turning it, replacing its picture, and its settings. Each
+// into CMYK plates, sizing it to the artboard, turning it, replacing its picture, and its settings. Each
 // acts on the chosen photo - and on all its layers where it should - through the app's own state,
 // which it is handed, so App.tsx keeps the state and this keeps what is done with it.
 
@@ -39,8 +39,7 @@ export interface PhotoContext {
   /** The layer being drawn on, which a photo put in goes on or just above. */
   active: Layer | undefined;
   setActiveLayer: (id: string) => void;
-  page: Page;
-  /** The drawing's own size, which the picture is fitted and aligned inside (2026-11-23). */
+  /** The artboard: the drawing's own size, which is the artboard the picture sits on (2026-11-23). */
   artboard: Page;
   /** The drawing tool, whose palette a photo's layers are matched to. */
   tool: Preset | null;
@@ -82,7 +81,7 @@ export function autoPaperTone(paper: string, dark: number, light: number): [numb
 export { pictureSources } from "./separationFolder";
 
 export function photoActions(ctx: PhotoContext) {
-  const { chosen, shapes, setShapes, layers, setLayers, active, setActiveLayer, page, artboard, tool: tool2, targets, paper, record, addShape, pick, setMessage, setBusy } = ctx;
+  const { chosen, shapes, setShapes, layers, setLayers, active, setActiveLayer, artboard, tool: tool2, targets, paper, record, addShape, pick, setMessage, setBusy } = ctx;
   /**
    * Whether a shape is part of the chosen image: the chosen layer, its pass's other layers, and the
    * other passes over the same picture. What moves, sizes, crops, turns and changes picture together.
@@ -95,14 +94,14 @@ export function photoActions(ctx: PhotoContext) {
   const defaults = { spacingMm: ctx.spacingMm };
 
   // A photo, from a file on this Mac: made into a working copy, at the size its file says it is in the
-  // middle of the page, and put on the layer being drawn on - whose ink it is hatched in. Never sized
+  // middle of the artboard, and put on the layer being drawn on - whose ink it is hatched in. Never sized
   // to the paper: how big it's drawn is the user's to say.
   const addPhoto = async (file: File | undefined) => {
     if (!file || !active) return;
     try {
       const copy = await workingCopy(file);
       await readTones(copy.src);
-      const box = placeAtOwnSize(copy, page);
+      const box = placeAtOwnSize(copy, artboard);
       const stem = file.name.replace(/\.[^.]+$/, "");
       const photo: Photo = { ...copy, ...PHOTO_DEFAULTS, spacingMm: defaults.spacingMm, source: pictureSources.get(file) };
       const pens = tool2?.palette ?? [];
@@ -137,7 +136,7 @@ export function photoActions(ctx: PhotoContext) {
       }
       if (!parts.length) {
         addShape({ id: newShapeId(), layerId: active.id, kind: "photo", name: stem, ...box, photo });
-        setMessage({ text: "", ok: true }); // added: it's there on the page and in Layers, nothing to say
+        setMessage({ text: "", ok: true }); // added: it's there on the artboard and in Layers, nothing to say
         return;
       }
       // New layers for it, just above the one being drawn on - unless that one is empty, as a new
@@ -165,7 +164,7 @@ export function photoActions(ctx: PhotoContext) {
       setShapes((list) => [...list, ...made]);
       setActiveLayer(newLayers[0].id);
       pick(made[0].id);
-      setMessage({ text: "", ok: true }); // added: it's there on the page and in Layers, nothing to say
+      setMessage({ text: "", ok: true }); // added: it's there on the artboard and in Layers, nothing to say
     } catch (err) {
       setMessage({ text: (err as Error).message, ok: false });
     }
@@ -173,7 +172,7 @@ export function photoActions(ctx: PhotoContext) {
 
   /**
     * Separations made elsewhere - a photo already split into greyscale plates, one file each - put in
-    * as one photo on the page with a layer per plate, each drawing its own picture: darker where more
+    * as one photo on the artboard with a layer per plate, each drawing its own picture: darker where more
     * of its pen goes. A file whose name says its ink (see inkNamed: "_C", "cyan", "PortraitMagenta",
     * "orange", or a pen's own name) gets that plate's screen angle and the palette's pen nearest it -
     * each plate's pen used once - or that pen; four files that don't say are taken as C, M, Y and K in
@@ -207,7 +206,7 @@ export function photoActions(ctx: PhotoContext) {
       const darkest = darkestPen(pens);
       const [first] = copies;
       // At the size the first file says it is: the plates are one picture, so they lie on one another.
-      const box = placeAtOwnSize(first.copy, page);
+      const box = placeAtOwnSize(first.copy, artboard);
       const stem = stemWithoutPlate(first.file.name, pens, folderOf(first.file));
       const group = copies.length > 1 ? newShapeId() : undefined;
       const parts = copies.map(({ file, copy }, i) => {
@@ -595,7 +594,7 @@ export function photoActions(ctx: PhotoContext) {
     // The name is asked for in the card, under the button, so this is handed one: see PhotoCard.
     try {
       await postJSON(`/api/ink-sets/${encodeURIComponent(name)}`, { set: { key: `own:${name}`, label: name, inks, own: true } }, "PUT");
-      // Where it went, not just that it went: the folder is new, and nothing else on the page names it.
+      // Where it went, not just that it went: the folder is new, and nothing else on the artboard names it.
       setMessage({ text: folder ? `Saved the ink set ${name} in ${folder}` : `Saved the ink set ${name}`, ok: true });
       return true;
     } catch (err) {
@@ -783,7 +782,7 @@ export function photoActions(ctx: PhotoContext) {
 
   /**
    * The best `count` pens for the chosen photo on this paper, and how near the photo each count comes:
-   * worked out off the page. Null while the photo hasn't been read.
+   * worked out off the artboard. Null while the photo hasn't been read.
    */
   const bestPens = async (count: number, pairs: boolean) => {
     if (!chosen?.photo) return null;
@@ -801,7 +800,7 @@ export function photoActions(ctx: PhotoContext) {
    * other where together they come nearer. Layers stack by their pens' lightness, lightest at the
    * bottom. Paired pens' lines have to cross rather than lie along each other for their colours to mix
    * as worked out, so each layer is hatched at its own angle, spread across the quarter turn. The pens
-   * are searched for off the page; the controls are held meanwhile, so the photo is still as it was
+   * are searched for off the artboard; the controls are held meanwhile, so the photo is still as it was
    * when the answer comes.
    */
   const splitPhotoBestFit = async (
@@ -923,7 +922,7 @@ export function photoActions(ctx: PhotoContext) {
 
   /**
     * Size the chosen photo - all its bands - to the artboard: all of it as large as it fits, or filling
-    * the artboard and cropped, inside the margins. Square to the page again, whatever it was turned to. Once, when
+    * the artboard and cropped, inside the margins. Square to the artboard again, whatever it was turned to. Once, when
     * Fit or Fill is pressed: nothing is kept that would size it again when the paper changes.
     */
   const placePhoto = (how: "fit" | "fill", margins: Margins, align?: FitAlign) => {
@@ -980,7 +979,7 @@ export function photoActions(ctx: PhotoContext) {
       : sh)));
   };
 
-  /** Move the chosen image - all its layers - this far on the page, in inches: dragged on the stage. */
+  /** Move the chosen image - all its layers - this far on the artboard, in inches: dragged on the stage. */
   const movePhoto = (dx: number, dy: number) => {
     if (!chosen?.photo || (!dx && !dy)) return;
     record();
@@ -1207,7 +1206,7 @@ export function photoActions(ctx: PhotoContext) {
     * fractions of the whole picture. The picture itself is cut, so Fit, Fill and the lines all see only
     * what's kept; a separation's plates are each cut alike, so they stay in register. Kept with the
     * photo too, so Reload cuts its file again the same way. What's kept stays where it was on the
-    * page, at the size it was drawn.
+    * artboard, at the size it was drawn.
     */
   const cropPhoto = async (part: [number, number, number, number]) => {
     if (!chosen?.photo) return;

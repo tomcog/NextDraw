@@ -232,15 +232,17 @@ export function svgForMarks(runs: Point[][], strokeIn = STROKE_IN): string {
 }
 
 /** What Plot reads out of a drawing: the paper it was made for, at home, at full size. */
-function plotBlock(page: Page, opts: SaveOptions): string {
+function plotBlock(artboard: Page, opts: SaveOptions): string {
+  // The sheet, which is the drawing's own size until someone chooses otherwise.
+  const paper = opts.paper ?? artboard;
   const settings = {
     placement: { x: 0, y: 0 },
     scale: 100,
     rotation: 0,
     tool: opts.toolName,
     paper: {
-      paper_w: Number((page.w * 25.4).toFixed(2)),
-      paper_h: Number((page.h * 25.4).toFixed(2)),
+      paper_w: Number((paper.w * 25.4).toFixed(2)),
+      paper_h: Number((paper.h * 25.4).toFixed(2)),
       paper_x: 0,
       paper_y: 0,
       paper_size: opts.paperSizeId || "custom",
@@ -344,6 +346,12 @@ function designBlock(fills: Fill[], shapes: Shape[], layers: Layer[], margins?: 
 
 export interface SaveOptions {
   paperSizeId: string;
+  /**
+   * The sheet the drawing is for, in inches, written into the block Plot reads (2026-11-23). Left
+   * out, the artboard is written as the paper too - a drawing nobody has chosen a sheet for is
+   * taken to be for a sheet its own size, which is what every drawing was before the two parted.
+   */
+  paper?: Page;
   /** The fonts in use, so text can be written out as the paths the pen will draw. */
   fonts?: Record<string, StrokeFont>;
   /** The drawing tool, so Plot opens the drawing with the same one chosen. */
@@ -379,6 +387,11 @@ export function buildSvg(
   shapes: Shape[],
   fills: Fill[],
   layers: Layer[],
+  /**
+   * The ARTBOARD - the drawing's own size, which is what the SVG is written at (2026-11-23). The
+   * sheet it will be plotted on is `opts.paper`, in the block Plot reads: the two were one number
+   * until now, which is why a drawing could not be a different size from its paper.
+   */
   page: Page,
   opts: SaveOptions,
 ): string {

@@ -41,8 +41,28 @@ test("artboard: the artboard is the drawing's own size, the paper the sheet it s
   const back = parseDrawing(svg);
   assert.deepEqual(back.artboard, artboard, "8 x 10 artboard");
   assert.ok(back.paper && Math.abs(back.paper.w - 18) < 0.01 && Math.abs(back.paper.h - 24) < 0.01, `18 x 24 paper, got ${JSON.stringify(back.paper)}`);
-  // Until the apps are moved over, `page` still means what it always did: the paper.
-  assert.ok(Math.abs(back.page.w - 18) < 0.01, "page is still the paper for now");
+  // Since 2026-11-23 the page IS the artboard: the paper no longer stands in for it.
+  assert.deepEqual(back.page, artboard, "the page is the artboard, not the sheet");
+});
+
+test("artboard: a sheet of its own survives a round trip, and the artboard is not resized to it", () => {
+  const paper: Page = { w: 18, h: 24 };
+  const once = save(artboard, { ...bare, paper });
+  // Written at the artboard...
+  assert.ok(once.includes('width="8in"') && once.includes('height="10in"'), "the SVG is the artboard's size");
+  const back = parseDrawing(once);
+  assert.deepEqual(back.artboard, artboard);
+  assert.ok(back.paper && Math.abs(back.paper.w - 18) < 0.01 && Math.abs(back.paper.h - 24) < 0.01, "the sheet came back");
+  // ...and writing it again from what was read keeps both, which is what a Plot-side edit does.
+  const again = parseDrawing(save(back.artboard, { ...bare, paper: back.paper! }));
+  assert.deepEqual(again.artboard, artboard, "the artboard is still the artboard");
+  assert.ok(again.paper && Math.abs(again.paper.w - 18) < 0.01, "the sheet is still the sheet");
+});
+
+test("artboard: with no sheet chosen, the drawing is for a sheet its own size", () => {
+  const back = parseDrawing(save(artboard, bare));
+  assert.deepEqual(back.artboard, artboard);
+  assert.ok(back.paper && Math.abs(back.paper.w - 8) < 0.01 && Math.abs(back.paper.h - 10) < 0.01, "the artboard is written as the paper too");
 });
 
 test("artboard: a drawing with no plot block has an artboard and no paper", () => {

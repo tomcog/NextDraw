@@ -18,10 +18,10 @@ export type Saved = { path: string; folder: string } | null;
  * The drawing as it was last read from or written to somewhere: what "no changes" means. Touches
  * count the changes the file holds that aren't in its shapes - its tool.
  */
-type Snapshot = { shapes: Shape[]; fills: Fill[]; layers: Layer[]; page: Page; name: string; touches: number };
+type Snapshot = { shapes: Shape[]; fills: Fill[]; layers: Layer[]; artboard: Page; name: string; touches: number };
 
 /** What an app hands over of a drawing it has just put on screen. */
-type Drawing = { shapes: Shape[]; fills: Fill[]; layers: Layer[]; page: Page };
+type Drawing = { shapes: Shape[]; fills: Fill[]; layers: Layer[]; artboard: Page };
 
 type Message = { text: string; ok: boolean; progress?: boolean };
 
@@ -53,7 +53,10 @@ interface Options {
   shapes: Shape[];
   fills: Fill[];
   layers: Layer[];
-  page: Page;
+  /** The artboard: the drawing's own size, which is the page it is written at (2026-11-23). */
+  artboard: Page;
+  /** The sheet it is for, carried through to the block Plot reads. Null: its own size. */
+  paper?: Page | null;
   /** What goes into the file besides the drawing: its paper size and color, its tool, and the fonts its text is in. */
   sizeId: string;
   toolName: string;
@@ -87,7 +90,7 @@ const folderPathOf = (path: string) => path.slice(0, path.lastIndexOf("/"));
 export type Lock = "plotting" | "paused" | null;
 
 const same = (a: Snapshot | null, b: Snapshot) =>
-  a !== null && a.shapes === b.shapes && a.fills === b.fills && a.layers === b.layers && a.page === b.page && a.name === b.name && a.touches === b.touches;
+  a !== null && a.shapes === b.shapes && a.fills === b.fills && a.layers === b.layers && a.artboard === b.artboard && a.name === b.name && a.touches === b.touches;
 
 /**
  * The file a drawing lives in, and the one current drawing all three apps share. Whoever opens or
@@ -99,7 +102,7 @@ const same = (a: Snapshot | null, b: Snapshot) =>
  * - in Plot, the other editor, another window - come back through onCurrent while nothing here is
  * waiting to be sent.
  */
-export function useDrawingFile({ shapes, fills, layers, page, sizeId, toolName, paperColor, fonts, margins, setBusy, setMessage, onCurrent, beforeStart }: Options) {
+export function useDrawingFile({ shapes, fills, layers, artboard, paper, sizeId, toolName, paperColor, fonts, margins, setBusy, setMessage, onCurrent, beforeStart }: Options) {
   const [name, setName] = useState("Untitled");
   const [saved, setSaved] = useState<Saved>(null);
   // Where a drawing that has never been saved will be: files stacked into one are saved next to the
@@ -119,7 +122,7 @@ export function useDrawingFile({ shapes, fills, layers, page, sizeId, toolName, 
   // rest alone, so comparing them by identity answers "is there anything to save" in a few pointer
   // comparisons - no deep compare of every path on every drag.
   const onDisk = useRef<Snapshot | null>(null);
-  const now = (): Snapshot => ({ shapes, fills, layers, page, name, touches });
+  const now = (): Snapshot => ({ shapes, fills, layers, artboard, name, touches });
   const nowRef = useRef(now);
   nowRef.current = now;
 
@@ -128,7 +131,7 @@ export function useDrawingFile({ shapes, fills, layers, page, sizeId, toolName, 
   // good time, and this doesn't care which order any of that happens in.
   useEffect(() => {
     setDirty(!same(onDisk.current, now()));
-  }, [shapes, fills, layers, page, name, touches]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [shapes, fills, layers, artboard, name, touches]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Called by whoever just read or wrote the file, with the very values that went to disk.
   const markClean = useCallback((written: Snapshot) => {
@@ -170,7 +173,7 @@ export function useDrawingFile({ shapes, fills, layers, page, sizeId, toolName, 
   // What a send needs that changes with every render.
   const latest = useRef<{ svg: () => string; file: FileState }>({ svg: () => "", file: {} as FileState });
   latest.current = {
-    svg: () => buildSvg(shapes, fills, layers, page, { paperSizeId: sizeId, toolName, paperColor, fonts, margins }),
+    svg: () => buildSvg(shapes, fills, layers, artboard, { paperSizeId: sizeId, toolName, paperColor, fonts, margins, ...(paper ? { paper } : {}) }),
     file: { name, saved, saveTo, foreign, openedAs },
   };
   // Whether the drawing differs from its file, asked at the moment: the dirty state lags a render
@@ -252,7 +255,7 @@ export function useDrawingFile({ shapes, fills, layers, page, sizeId, toolName, 
       timer.current = undefined;
       void sendNow();
     }, 500);
-  }, [ready, shapes, fills, layers, page, name, touches]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [ready, shapes, fills, layers, artboard, name, touches]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Leaving with changes not sent - a reload, a closed tab - asks first, in the browser's own words.
   // Asked of the ref at that moment, so going to another app straight after sending doesn't ask.
@@ -503,7 +506,7 @@ export function useDrawingFile({ shapes, fills, layers, page, sizeId, toolName, 
       const apart = conflict.current;
       if (!apart) await flush();
       const drawing = now();
-      const svg = buildSvg(shapes, fills, layers, page, { paperSizeId: sizeId, toolName, paperColor, fonts, margins });
+      const svg = buildSvg(shapes, fills, layers, artboard, { paperSizeId: sizeId, toolName, paperColor, fonts, margins, ...(paper ? { paper } : {}) });
       // Only the drawing's own file is written over. A drawing never saved, or saved under a new name,
       // that lands on a name already taken is numbered by the server instead - a new drawing is named
       // after its picture, and two pictures can share a name.
@@ -565,7 +568,7 @@ export function useDrawingFile({ shapes, fills, layers, page, sizeId, toolName, 
     }
     setBusy(true);
     try {
-      const svg = buildSvg(snapshotShapes(shapes), fills, layers, page, { paperSizeId: sizeId, toolName, paperColor, fonts, margins });
+      const svg = buildSvg(snapshotShapes(shapes), fills, layers, artboard, { paperSizeId: sizeId, toolName, paperColor, fonts, margins, ...(paper ? { paper } : {}) });
       return await postJSON<{ name: string; path: string; folder: string }>("/api/studio/save", {
         name: cleanFileName(snapshotName(name)),
         svg,

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { DrawingToolSection } from "../shared/components/controls/DrawingToolSection";
-// Separations into many plates are solved off the page (importing this turns it on).
+// Separations into many plates are solved off the artboard (importing this turns it on).
 import "../shared/lib/drawing/separationWorker";
 import { ArtboardSection } from "../shared/components/controls/ArtboardSection";
 import { paperMarginMm } from "../shared/components/controls/PaperSection";
@@ -113,8 +113,7 @@ interface Snapshot {
  shapes: Shape[];
  fills: Fill[];
  layers: Layer[];
- page: Page;
- /** The artboard and its margins, so changing either can be undone like anything else. */
+ /** The artboard - the drawing's own size - and its margins, so changing either undoes like anything else. */
  artboard: Page;
  margins: Margins;
 }
@@ -143,7 +142,7 @@ function quarterLeft(at: { x: number; y: number }, size: { w: number; h: number 
 }
 
 /**
- * A photo split into tone bands is one photo on the page: whatever moved, sized or turned one band
+ * A photo split into tone bands is one photo on the artboard: whatever moved, sized or turned one band
  * takes the rest of its bands along with it.
  */
 function withPhotoGroups(list: Shape[], changed: Shape[]): Shape[] {
@@ -161,8 +160,8 @@ function withPhotoGroups(list: Shape[], changed: Shape[]): Shape[] {
 }
 
 /**
- * A photo sized to the page stops being sized to it once it's moved or sized by hand: that is a
- * choice of where it goes, and sizing the page again shouldn't undo it.
+ * A photo sized to the artboard stops being sized to it once it's moved or sized by hand: that is a
+ * choice of where it goes, and sizing the artboard again shouldn't undo it.
  */
 function unfitIfMoved(before: Shape | undefined, after: Shape): Shape {
  if (!before || !after.photo?.fit) return after;
@@ -172,11 +171,11 @@ function unfitIfMoved(before: Shape | undefined, after: Shape): Shape {
 }
 
 export default function App() {
- const [page, setPage] = useState<Page>({ w: 11, h: 8.5 });
- // The artboard - the drawing's own size - and the margins that inset it to the live area. Kept
- // with the drawing, unlike the paper, which is the sheet Plot puts it on. A drawing made before
- // the two were told apart opens with its artboard the size it was saved at.
+ // The artboard - the drawing's own size - and the margins that inset it to the live area. This is
+ // the artboard the drawing is written at (2026-11-23): the sheet is `paper` below, carried for Plot
+ // and nothing else, since this app has no paper of its own any more.
  const [artboard, setArtboard] = useState<Page>({ w: 11, h: 8.5 });
+ const [paper, setPaper] = useState<Page | null>(null);
  const [margins, setMargins] = useState<Margins>(marginsAll(0));
  // How big the drawing is now, as a percent of its size when it was opened or started: the Paper
  // card's scale, which rescales the drawing as it changes. Back to 100 with each drawing.
@@ -232,10 +231,10 @@ export default function App() {
  const showPanel = (which: Exclude<ShapePanel, null>) =>
   setPanel((open) => (open === which ? null : which));
  const [model, setModel] = useState<PlotterModel | undefined>();
- // Paper to begin with: the page is what's being drawn on, and the bed is context around it.
+ // Paper to begin with: the artboard is what's being drawn on, and the bed is context around it.
  // The view is of the artboard, not of a plotter: no bed and no sheet are drawn here.
  const [zoom, setZoom] = useState<Zoom>("artboard");
- // The loupe over the page, for a close look at the lines. The same switch as Plot's.
+ // The loupe over the artboard, for a close look at the lines. The same switch as Plot's.
  const [loupe, setLoupe] = useState(false);
  const [toolName, setToolName] = useState<string>(() => load<string>(TOOL_KEY) ?? "");
  // Select to start with: a drawing opened is usually to be looked at and moved before it's drawn on.
@@ -279,7 +278,7 @@ export default function App() {
  };
  const pick = (id: string | null) => setSelected(id ? [id] : []);
  // Choosing a layer in the Layers card only chooses the layer: its paths are listed, but none is
- // selected until one is clicked, on the page or in the list. Whatever was selected on the layer
+ // selected until one is clicked, on the artboard or in the list. Whatever was selected on the layer
  // before is let go, so nothing is left selected out of sight. With `add`, the layer joins the
  // targets, or leaves them - the last one too, leaving none - and what was picked on the others
  // stays picked.
@@ -305,7 +304,7 @@ export default function App() {
   ok: true,
  });
 
- // The paper's colour: the page is drawn in it and the inks blend with it, as they do in Plot. Kept
+ // The paper's colour: the artboard is drawn in it and the inks blend with it, as they do in Plot. Kept
  // in the drawing, like its size, so all three apps show the same paper; this browser remembers the
  // last one for a new drawing.
  const [paperColor, setPaperColor] = useState(() => load<string>(PAPER_COLOR_KEY) ?? "#ffffff");
@@ -325,7 +324,7 @@ export default function App() {
  const [gridCard, setGridCard] = useState(() => load<boolean>("studio-grid-card") ?? true);
  useEffect(() => remember("studio-grid-card", gridCard), [gridCard]);
  // The Trim marks card, from its switch last in the panels toolbar: the same card as Image's and Plot's.
- // The Simplifier as the tool in hand, its card out. Put down each time the page opens, as a tool is.
+ // The Simplifier as the tool in hand, its card out. Put down each time the artboard opens, as a tool is.
  const [simplifierCard, setSimplifierCard] = useState(false);
  // Jiggle the same way: a tool in hand with its card out, put down when another is taken up. Its
  // numbers are kept between visits - a second pass is usually jiggled the way the last one was.
@@ -343,16 +342,16 @@ export default function App() {
  const sizeId = useMemo(() => {
   const match = SIZES.find(
    (s) =>
-    (Math.abs(s.w - page.w) < 0.01 && Math.abs(s.h - page.h) < 0.01) ||
-    (Math.abs(s.h - page.w) < 0.01 && Math.abs(s.w - page.h) < 0.01),
+    (Math.abs(s.w - artboard.w) < 0.01 && Math.abs(s.h - artboard.h) < 0.01) ||
+    (Math.abs(s.h - artboard.w) < 0.01 && Math.abs(s.w - artboard.h) < 0.01),
   );
   return match ? match.id : "custom";
- }, [page]);
+ }, [artboard]);
 
  // The drawing is the current drawing, shared by the three apps: picked up on starting, and again
  // when it's changed or replaced in another app or window (showCurrent, below).
  const { name, setName, saved, dirty, lock, touch, loaded, combined, started, save, snapshot: takeSnapshot, open, openDropped, goTo, openIn } = useDrawingFile({
-  shapes, fills, layers, page, sizeId, toolName, paperColor, fonts, margins, setBusy, setMessage, onCurrent: (current) => showCurrent(current),
+  shapes, fills, layers, artboard, paper, sizeId, toolName, paperColor, fonts, margins, setBusy, setMessage, onCurrent: (current) => showCurrent(current),
  });
 
  // The drawing tool is written into the file too, so picking one is a change - but only when it's
@@ -404,12 +403,11 @@ export default function App() {
   });
  }, [layers, shapes]);
 
- const snapshot = useMemo<Snapshot>(() => ({ shapes, fills, layers, page, artboard, margins }), [shapes, fills, layers, page, artboard, margins]);
+ const snapshot = useMemo<Snapshot>(() => ({ shapes, fills, layers, artboard, margins }), [shapes, fills, layers, artboard, margins]);
  const restore = useCallback((next: Snapshot) => {
   setShapes(next.shapes);
   setFills(next.fills);
   setLayers(next.layers);
-  setPage(next.page);
   setArtboard(next.artboard);
   setMargins(next.margins);
   // A shape that isn't there any more can't stay selected, or its handles would hang in the air.
@@ -485,7 +483,7 @@ export default function App() {
   record();
   // A step down and across, so it lands beside what it came from rather than exactly on it.
   const copy: Shape = {
-   ...moveBy(clipboard.shape, 0.25, 0.25, page),
+   ...moveBy(clipboard.shape, 0.25, 0.25, artboard),
    id: newShapeId(),
    group: undefined,
    groupName: undefined,
@@ -574,7 +572,7 @@ export default function App() {
   record();
   const copyOf = new Map(members.map((s) => [s.id, newShapeId()]));
   const again = newGroupId();
-  const copies = members.map((s) => ({ ...moveBy(s, 0.25, 0.25, page), id: copyOf.get(s.id)!, group: again }));
+  const copies = members.map((s) => ({ ...moveBy(s, 0.25, 0.25, artboard), id: copyOf.get(s.id)!, group: again }));
   setShapes((list) => [...list, ...copies]);
   setFills((list) => [
    ...list,
@@ -605,7 +603,7 @@ export default function App() {
   */
  const nudge = (dx: number, dy: number) => moveShapes(selected, dx, dy);
 
- /** Move these shapes together, kept on the page; a photo's other layers go with it. */
+ /** Move these shapes together, kept on the artboard; a photo's other layers go with it. */
  const moveShapes = (which: string[], dx: number, dy: number) => {
   if (!which.length) return;
   record();
@@ -616,10 +614,10 @@ export default function App() {
    const moving = list.filter((s) => ids.has(s.id));
    if (!moving.length) return list;
    const { x0, y0, x1, y1 } = boxAround(moving);
-   const byX = Math.max(-x0, Math.min(page.w - x1, dx));
-   const byY = Math.max(-y0, Math.min(page.h - y1, dy));
+   const byX = Math.max(-x0, Math.min(artboard.w - x1, dx));
+   const byY = Math.max(-y0, Math.min(artboard.h - y1, dy));
    if (!byX && !byY) return list;
-   const byId = new Map(moving.map((s) => [s.id, unfitIfMoved(s, moveBy(s, byX, byY, page))]));
+   const byId = new Map(moving.map((s) => [s.id, unfitIfMoved(s, moveBy(s, byX, byY, artboard))]));
    return withPhotoGroups(list.map((s) => byId.get(s.id) ?? s), [...byId.values()]);
   });
  };
@@ -710,7 +708,7 @@ export default function App() {
   return () => window.removeEventListener("keydown", onKey);
  }, [selected, tool, strokePick]);
 
- // Close whatever is open and begin again on a blank page. The page size stays as it is: it's the
+ // Close whatever is open and begin again on a blank artboard. The artboard size stays as it is: it's the
  // paper you're working on today, and a new drawing is almost always for the same sheet.
  // Whether a new drawing is waiting on the question about unsaved work.
  // Something that would put another drawing in this one's place, waiting on the question about
@@ -729,16 +727,16 @@ export default function App() {
   clearHistory();
   setConfirmNext(null);
   if (!quiet) setMessage({ text: "New drawing", ok: true });
-  // An empty page is not unsaved work, and the paper it's on came from the drawing before it.
-  started("Untitled", { shapes: noShapes, fills: noFills, layers: onlyLayer, page });
- }, [started, page, clearHistory]);
+  // An empty artboard is not unsaved work, and the paper it's on came from the drawing before it.
+  started("Untitled", { shapes: noShapes, fills: noFills, layers: onlyLayer, artboard });
+ }, [started, artboard, clearHistory]);
 
  // Undo can't bring back which file was open - a snapshot is the drawing, not the drawing's name -
  // so unsaved work gets a question rather than a silent discard.
  const unsaved = dirty && shapes.length > 0;
  const ask = (what: string, go: () => void) => (unsaved ? setConfirmNext({ what, go }) : go());
 
- // An SVG dragged from the computer onto the page opens in this one's place, as Open… does.
+ // An SVG dragged from the computer onto the artboard opens in this one's place, as Open… does.
  const draggingFile = useFileDrop((files) => {
   const svg = files.find(isSvgFile);
   if (!svg) {
@@ -755,8 +753,9 @@ export default function App() {
    return;
   }
   const drawing = parseDrawing(current.svg);
-  setPage(drawing.page);
+  setArtboard(drawing.page);
   setArtboard(drawing.artboard);
+  setPaper(drawing.paper);
   setMargins(drawing.margins);
   setShapes(drawing.shapes);
   setFills(drawing.fills);
@@ -790,8 +789,9 @@ export default function App() {
   if (res.added) record();
   else clearHistory();
   combined(res, drawing.unsupported);
-  setPage(drawing.page);
+  setArtboard(drawing.page);
   setArtboard(drawing.artboard);
+  setPaper(drawing.paper);
   setMargins(drawing.margins);
   setShapes(drawing.shapes);
   setFills(drawing.fills);
@@ -801,7 +801,7 @@ export default function App() {
   // What most needs saying goes first: files that may not line up, then marks Studio can't redraw.
   const said = res.added ? `Added as layers - ${count} ${count === 1 ? "layer" : "layers"} now` : `Opened as ${count} layers - not saved yet`;
   const misfit = res.mismatched.length
-   ? ` - ${listOf(res.mismatched)} ${res.mismatched.length === 1 ? "isn’t" : "aren’t"} on a page this size: pick Select all on layer from ${res.mismatched.length === 1 ? "its" : "their"} menu and drag to line up`
+   ? ` - ${listOf(res.mismatched)} ${res.mismatched.length === 1 ? "isn’t" : "aren’t"} on a artboard this size: pick Select all on layer from ${res.mismatched.length === 1 ? "its" : "their"} menu and drag to line up`
    : "";
   const foreignNote = drawing.unsupported
    ? ` - ${drawing.unsupported} other ${drawing.unsupported === 1 ? "mark" : "marks"} can’t be edited here and saving would drop ${drawing.unsupported === 1 ? "it" : "them"}`
@@ -976,7 +976,7 @@ export default function App() {
 
  // Turning the active layer as one, about the middle of the box round it: what dragging the turn grip
  // does to the layer picked whole, by an exact angle. Photos stay as they are - they stand square to
- // the page, and their layers are in register with each other - and turn in Photo.
+ // the artboard, and their layers are in register with each other - and turn in Photo.
  const turnLayer = (deg: number) => {
   const turning = onActive.filter((sh) => !sh.photo);
   if (!deg) return;
@@ -1065,7 +1065,7 @@ export default function App() {
  const turnAll = async (dir: 1 | -1) => {
   let turned;
   try {
-   turned = await turnDrawingOnPaper(shapes, fills, page, dir);
+   turned = await turnDrawingOnPaper(shapes, fills, artboard, dir);
   } catch (err) {
    setMessage({ text: `Couldn’t turn the image: ${(err as Error).message}`, ok: false });
    return;
@@ -1080,7 +1080,7 @@ export default function App() {
   const next = reshapeDrawing(shapes, k, about, by);
   record();
   setShapes(next);
-  setMessage(runsOffPage(next, page) ? { text: "The drawing now runs off the paper", ok: false } : { text: "", ok: true });
+  setMessage(runsOffPage(next, artboard) ? { text: "The drawing now runs off the paper", ok: false } : { text: "", ok: true });
  };
 
 
@@ -1119,7 +1119,7 @@ export default function App() {
   const shape = shapes.find((s) => s.id === id);
   if (!shape) return;
   record();
-  setShapes((list) => list.map((s) => (s.id === id ? clampToPage(resizeTo(s, w, h), page) : s)));
+  setShapes((list) => list.map((s) => (s.id === id ? clampToPage(resizeTo(s, w, h), artboard) : s)));
  };
 
  /** Flatten a shape to points it can be edited by (see flattened): its fills go to all it becomes. */
@@ -1191,9 +1191,9 @@ export default function App() {
   const year = new Date().getFullYear();
   const size = signatureSize(year, font);
   const inset = paperMarginMm() / 25.4;
-  const map = await inkMap(buildSvg(shapes, fills, layers, page, { paperSizeId: sizeId, toolName, paperColor, fonts, margins }), page);
-  const { at, clear } = clearSpot(map, page, inset, turned ? { w: size.h, h: size.w } : size, "br");
-  if (!clear) setMessage({ text: "The drawing reaches the page edge here - the signature is on it", ok: false });
+  const map = await inkMap(buildSvg(shapes, fills, layers, artboard, { paperSizeId: sizeId, toolName, paperColor, fonts, margins }), artboard);
+  const { at, clear } = clearSpot(map, artboard, inset, turned ? { w: size.h, h: size.w } : size, "br");
+  if (!clear) setMessage({ text: "The drawing reaches the artboard edge here - the signature is on it", ok: false });
   const made = turned
    ? quarterLeft(at, size, (from) => signatureShapes(year, font, layer.id, from))
    : signatureShapes(year, font, layer.id, at);
@@ -1218,9 +1218,9 @@ export default function App() {
   const inset = paperMarginMm() / 25.4;
   const size = registrationSize(blocked);
   const rest = shapes.filter((s) => !gone.has(s.id));
-  const map = await inkMap(buildSvg(rest, fills, layers, page, { paperSizeId: sizeId, toolName, paperColor, fonts, margins }), page);
-  const { at, clear } = clearSpot(map, page, inset, turned ? { w: size.h, h: size.w } : size, "bl");
-  if (!clear) setMessage({ text: "The drawing reaches the page edge here - the registration blocks are on it", ok: false });
+  const map = await inkMap(buildSvg(rest, fills, layers, artboard, { paperSizeId: sizeId, toolName, paperColor, fonts, margins }), artboard);
+  const { at, clear } = clearSpot(map, artboard, inset, turned ? { w: size.h, h: size.w } : size, "bl");
+  if (!clear) setMessage({ text: "The drawing reaches the artboard edge here - the registration blocks are on it", ok: false });
   record();
   const row = (from: { x: number; y: number }) => registrationShapes(blocked, { x: from.x, y: from.y + size.h });
   const made = turned ? quarterLeft(at, size, row) : row(at);
@@ -1329,13 +1329,13 @@ export default function App() {
   }
   setSimplifier(SIMPLIFIER_START); // kept, and the card is clear for the next go
  };
- // While anything is ticked, the page shows the drawing simplified, and takes no edits: a shape dragged
+ // While anything is ticked, the artboard shows the drawing simplified, and takes no edits: a shape dragged
  // there would be written back simplified, and kept without Simplify being pressed.
  const simplifierShowing = Boolean(simplifierCard && simplifierPreview && (Object.values(simplifier.on).some(Boolean) || simplifier.prune.on || simplifier.merge));
  const keepAsIs = () => {};
 
  /**
-  * Jiggle over the targeted layers that are showing, worked out while its card is out so the page
+  * Jiggle over the targeted layers that are showing, worked out while its card is out so the artboard
   * shows it as it's set: the layers moved, or - jiggling a copy - the copy beside them.
   */
  const jiggleOn = (s: Shape) => targetIds.has(s.layerId) && !hiddenLayerIds.has(s.layerId);
@@ -1355,7 +1355,7 @@ export default function App() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
  }, [jiggleCard, jiggleStrokes, shapes, jiggle, targetIds, hiddenLayerIds]);
  const jiggleShowing = Boolean(jigglePreview);
- // The page takes no edits while it shows either: what was dragged would be kept as it's shown.
+ // The artboard takes no edits while it shows either: what was dragged would be kept as it's shown.
  const previewing = simplifierShowing || jiggleShowing;
  const applyJiggle = () => {
   if (!jigglePreview) return;
@@ -1368,7 +1368,7 @@ export default function App() {
   setJiggle((j) => ({ ...j, seed: newJiggleSeed() })); // the next go is a fresh draw
  };
 
- // What the page draws: the drawing, or the Simplifier's or Jiggle's version of it, less the paths hidden by eye.
+ // What the artboard draws: the drawing, or the Simplifier's or Jiggle's version of it, less the paths hidden by eye.
  const canvasShapes = useMemo(() => {
   const list = simplifierShowing ? simplifierPreview!.shapes : jiggleShowing ? jigglePreview! : shapes;
   return hiddenShapes.size ? list.filter((sh) => !hiddenShapes.has(sh.id)) : list;
@@ -1541,7 +1541,7 @@ export default function App() {
    return;
   }
   const drawn = shapes.filter((sh) => !isKnockoutLayer(layers.find((l) => l.id === sh.layerId)?.name ?? ""));
-  const around = drawn.length ? boxAround(drawn) : { x0: 0, y0: 0, x1: page.w, y1: page.h };
+  const around = drawn.length ? boxAround(drawn) : { x0: 0, y0: 0, x1: artboard.w, y1: artboard.h };
   const name = file.name.replace(/\.svg$/i, "");
   const next = withKnockout(shapes, layers, opened, name, around, fonts);
   if ("error" in next) {
@@ -1559,7 +1559,7 @@ export default function App() {
  // A silhouette - the outline round what's drawn, holes and paper inside filled in - as one mask
  // path on the Varnish layer, hatched with no outline: of the whole drawing (everything on the other
  // layers that shows), or of one layer's shapes alone. A start to tweak, not a final answer: the mask
- // is a path like any other, its points dragged on the page.
+ // is a path like any other, its points dragged on the artboard.
  const varnishWhole = () => varnishSilhouette(shapes.filter((sh) => {
   const layer = layers.find((l) => l.id === sh.layerId);
   return layer && !layer.hidden && !isVarnishLayer(layer.name) && !isKnockoutLayer(layer.name);
@@ -1695,7 +1695,7 @@ export default function App() {
 
  // The same for a shape: typed in place, settled when the field is left. A name that is wiped out
  // goes back to being what the shape is and where it sits, rather than being left blank.
- // Picked on the page rather than in the list. The layer follows the shape: the list under it shows
+ // Picked on the artboard rather than in the list. The layer follows the shape: the list under it shows
  // one layer at a time, so a shape picked from another one would otherwise be held but not shown,
  // and what was drawn next would land on a layer nobody had chosen.
  const selectOnCanvas = (ids: string[]) => {
@@ -1944,7 +1944,7 @@ export default function App() {
 
  return (
   <div className={styles.app}>
-   {/* Problems, and what's under way, across the top of the page - never on the preview's rulers. */}
+   {/* Problems, and what's under way, across the top of the artboard - never on the preview's rulers. */}
    <StatusBanner message={banner} />
    <Hints />
    {confirmModal}
@@ -1958,7 +1958,7 @@ export default function App() {
      endpoint: "/api/studio/combine",
      canAdd: shapes.length > 0,
      // This drawing as it would be saved, for the files to go on top of.
-     base: () => buildSvg(shapes, fills, layers, page, { paperSizeId: sizeId, toolName, paperColor, fonts, margins }),
+     base: () => buildSvg(shapes, fills, layers, artboard, { paperSizeId: sizeId, toolName, paperColor, fonts, margins }),
      onCombined: openCombined,
     }}
    />
@@ -2027,14 +2027,14 @@ export default function App() {
         label: "Select all on layer",
         icon: <MousePointer2 />,
         disabled: !shapes.some((s) => s.layerId === rowMenu.id) || layers.find((l) => l.id === rowMenu.id)?.locked,
-        // Picked as one, they move as one: the way a whole layer is shifted about the page. The layer
-        // becomes the target too, as only the target layer's shapes are picked on the page.
+        // Picked as one, they move as one: the way a whole layer is shifted about the artboard. The layer
+        // becomes the target too, as only the target layer's shapes are picked on the artboard.
         onSelect: () => {
          setActiveLayer(rowMenu.id);
          setSelected(shapes.filter((s) => s.layerId === rowMenu.id).map((s) => s.id));
         },
        },
-       // Locked, nothing on it can be picked or moved on the page; its pen can still be changed.
+       // Locked, nothing on it can be picked or moved on the artboard; its pen can still be changed.
        layers.find((l) => l.id === rowMenu.id)?.locked
         ? { label: "Unlock layer", icon: <LockOpen />, onSelect: () => patchLayer(rowMenu.id, { locked: false }) }
         : { label: "Lock layer", icon: <Lock />, onSelect: () => patchLayer(rowMenu.id, { locked: true }) },
@@ -2177,7 +2177,7 @@ export default function App() {
       jiggling={jiggleCard}
       onSignature={(turned) => void addSignature(turned)}
       onRegistration={(turned) => void addRegistration(turned)}
-      // Picked, the page picks shapes as Select does; picked again, it's put down for Select.
+      // Picked, the artboard picks shapes as Select does; picked again, it's put down for Select.
       onSimplify={() => {
        setTool("select");
        setJiggleCard(false);
@@ -2193,13 +2193,12 @@ export default function App() {
     </div>
     <section className={styles.stage} aria-label="Drawing page" data-dragging-file={draggingFile || undefined}>
      <Canvas
-      page={page}
       artboard={artboard}
       paperColor={paperColor}
       shapes={canvasShapes}
       fills={fills}
       model={model}
-      // One bar over the page for everything true of what is being looked at: what has just
+      // One bar over the artboard for everything true of what is being looked at: what has just
       // been done, how the drawing is drawn, and how close the view sits - the shared canvas's.
       bar={{
         view,

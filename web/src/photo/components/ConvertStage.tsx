@@ -77,11 +77,10 @@ interface Props {
   photo: Photo;
   /** Every layer of the photo, bottom first, each in its own pen: all of them are the lines. */
   parts: { photo: Photo; color: string }[];
-  /** The photo's box on the page, in inches from the page's corner: its lines are worked out at its size. */
+  /** The photo's box on the artboard, in inches from the page's corner: its lines are worked out at its size. */
   box: { x0: number; y0: number; x1: number; y1: number };
-  page: Page;
-  /** The drawing's own size, drawn dashed over the paper. Absent, nothing is drawn for it. */
-  artboard?: Page;
+  /** The artboard: the drawing's own size, which is the artboard the picture sits on (2026-11-23). */
+  artboard: Page;
   paperColor: string;
   model: PlotterModel | undefined;
   ink: Ink;
@@ -96,16 +95,16 @@ interface Props {
   loupe: boolean;
   onLoupe: (on: boolean) => void;
   /** The drawing's other layers - an effect baked before, paths drawn in Studio - bottom first, each its
-   *  paths' data in inches on the page and its ink: drawn under the image's lines. */
+   *  paths' data in inches on the artboard and its ink: drawn under the image's lines. */
   others?: { color: string; d: string[] }[];
-  /** The drawing's trim marks, if it has them: their ink, their paths in inches on the page, and the
+  /** The drawing's trim marks, if it has them: their ink, their paths in inches on the artboard, and the
    *  trim itself, shown as a guide that's never drawn. */
   trim?: { color: string; d: string[]; box: { x0: number; y0: number; x1: number; y1: number } };
   /** The trim dragged on the stage this far, in inches. */
   onTrimMove?: (dx: number, dy: number) => void;
   /** The image dragged on the stage this far, in inches: picked up anywhere on it, outside the trim. */
   onMove?: (dx: number, dy: number) => void;
-  /** The Knockout layer, if it's showing: its outlines as path data in inches on the page, and the box
+  /** The Knockout layer, if it's showing: its outlines as path data in inches on the artboard, and the box
    *  round them. Every line under it is hidden, as it's left out of the file. `onPlace`, when it can be
    *  moved: the box it's been dragged or sized to, once, when it's let go. */
   knockout?: { paths: string[]; box: { x0: number; y0: number; x1: number; y1: number }; onPlace?: (box: { x0: number; y0: number; x1: number; y1: number }) => void;
@@ -125,19 +124,19 @@ type Part = [number, number, number, number];
  * zooms and the loupe that Studio and Plot show a drawing on. Photo's own views go first in the bar, before
  * the shared ones; side by side, a second canvas follows the first's zoom.
  */
-export function ConvertStage({ photo, parts, box, page, artboard, paperColor, model, ink, view, onView, show, onShow, zoom, onZoom, loupe, onLoupe, cropping, others = [], trim, onTrimMove, onMove, knockout }: Props) {
+export function ConvertStage({ photo, parts, box, artboard, paperColor, model, ink, view, onView, show, onShow, zoom, onZoom, loupe, onLoupe, cropping, others = [], trim, onTrimMove, onMove, knockout }: Props) {
   const read = usePhotoRead(photo.src);
   const w = box.x1 - box.x0;
   const h = box.y1 - box.y0;
-  // The page is the paper, at the plotter's home corner - where Studio and Plot put it.
-  const settings = { ...DEFAULT_SETTINGS, paper_w: page.w * 25.4, paper_h: page.h * 25.4, paper_x: 0, paper_y: 0, paper_color: paperColor };
+  // The artboard is the paper, at the plotter's home corner - where Studio and Plot put it.
+  const settings = { ...DEFAULT_SETTINGS, paper_w: artboard.w * 25.4, paper_h: artboard.h * 25.4, paper_x: 0, paper_y: 0, paper_color: paperColor };
   // The "drawing" zoom frames the photo.
   const drawingBox: Box = [box.x0 * UNITS, box.y0 * UNITS, box.x1 * UNITS, box.y1 * UNITS];
 
   // The picture as the lines see it: brightness and contrast applied as the photo is read for them
   // (each channel stretched about middle grey by the contrast, then lifted by the brightness).
   const adjustId = `adjust-${useId().replace(/[^\w-]/g, "")}`;
-  // Where the whole picture lies on the page: the part of it that shows fills the box.
+  // Where the whole picture lies on the artboard: the part of it that shows fills the box.
   const [v0, v1, v2, v3] = photo.crop ?? [0, 0, 1, 1];
   const fullW = w / (v2 - v0), fullH = h / (v3 - v1);
   const full = { x0: box.x0 - v0 * fullW, y0: box.y0 - v1 * fullH, x1: box.x0 - v0 * fullW + fullW, y1: box.y0 - v1 * fullH + fullH };
@@ -235,7 +234,7 @@ export function ConvertStage({ photo, parts, box, page, artboard, paperColor, mo
     <g mask={knockout ? `url(#${knockoutId})` : undefined}>
     {knockout && <KnockoutMask id={knockoutId} paths={knockout.paths} gap={knockoutGapIn()} transform={knockoutAt} />}
     <InkGroup sim={view === "preview"} penIn={ink.penWidthMm / 25.4} build={ink.build}>
-      {/* What's under the image on the page: earlier effects baked into layers, and the rest. */}
+      {/* What's under the image on the artboard: earlier effects baked into layers, and the rest. */}
       {others.map((o, k) => (
         <InkLayer key={`o${k}`} color={o.color} sim={view === "preview"} opacity={ink.opacity} build={ink.build} builds={ink.builds} opaque={ink.opaque}>
           {o.d.map((d, i) => <path key={i} d={d} fill="none" />)}
@@ -393,7 +392,7 @@ const GRIP_CURSOR: Record<Grip, string> = {
 const LEAST = 0.02;
 
 /**
- * The part of a picture kept by a crop, on the page: what's cut away dimmed, what's kept outlined, and
+ * The part of a picture kept by a crop, on the artboard: what's cut away dimmed, what's kept outlined, and
  * a grip on each corner and side to drag - Studio's grips - and the part itself to drag about.
  */
 function CropFrame({ full, part, onPart, r }: { full: { x0: number; y0: number; x1: number; y1: number }; part: Part; onPart: (part: Part) => void; r: number }) {

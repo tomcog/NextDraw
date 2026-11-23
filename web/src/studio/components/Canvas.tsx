@@ -25,8 +25,8 @@ import type { PlotterModel } from "../../shared/lib/types";
 import { strokeAt, strokesInBox, strokesInLasso, strokesOf } from "../lib/strokePick";
 import styles from "./Canvas.module.css";
 
-/** Select picks shapes up; the rest draw. Without the distinction a shape covering the page would
- *  be a hole you couldn't draw in, and a drag over one would be ambiguous. A parametric curve is
+/** Select picks shapes up; the rest draw. Without the distinction a shape covering the artboard would
+ *  be a hole you couldn't draw in, and a drag artboard one would be ambiguous. A parametric curve is
  *  its own tool per generator, since which curve it is can't be told from the drag. A photo is added
  *  from a file, not drawn, so it isn't a tool. */
 export type Tool = Exclude<ShapeKind, "curve" | "path" | "photo"> | "select" | CurveKind | StrokeTool;
@@ -51,16 +51,15 @@ const shapeFor = (tool: Exclude<Tool, "select" | StrokeTool>, layerId: string, x
 };
 
 interface Props {
-  /** The shared bar over the page: how the drawing is drawn, the zooms and the loupe. */
+  /** The shared bar artboard the artboard: how the drawing is drawn, the zooms and the loupe. */
   bar: PreviewToolbarProps;
-  page: Page;
-  /** The drawing's own size, drawn dashed over the paper. Absent, nothing is drawn for it. */
-  artboard?: Page;
-  /** The paper's colour, as Plot draws it: the page is this colour and the inks blend with it. */
+  /** The artboard: the drawing's own size, which is the artboard it sits on (2026-11-23). */
+  artboard: Page;
+  /** The paper's colour, as Plot draws it: the artboard is this colour and the inks blend with it. */
   paperColor: string;
   shapes: Shape[];
   fills: Fill[];
-  /** The plotter the drawing is for, so the page is shown on the bed it will be drawn on. */
+  /** The plotter the drawing is for, so the artboard is shown on the bed it will be drawn on. */
   model: PlotterModel | undefined;
   /** The right end of the width dimension line: the way to Setup. */
   toolbar?: ReactNode;
@@ -96,9 +95,9 @@ interface Props {
   /** Several shapes at once, for dragging a whole selection - or a whole layer - together. */
   onUpdateMany: (shapes: Shape[]) => void;
   /** A move or reshape is about to start. One call per gesture, before anything changes, so undo
-   *  steps back over the whole drag rather than over each of the hundreds of updates it makes. */
+   *  steps back artboard the whole drag rather than artboard each of the hundreds of updates it makes. */
   onEditStart: () => void;
-  /** Picking areas: a click anywhere on the page is a point to pick at, and nothing is drawn, picked
+  /** Picking areas: a click anywhere on the artboard is a point to pick at, and nothing is drawn, picked
    *  up or moved. */
   onPick?: (p: { x: number; y: number }) => void;
   /** The strokes picked with Stroke select or the Lasso, by strokeKey, for Delete to take out. */
@@ -106,9 +105,9 @@ interface Props {
   onStrokePick: (keys: string[]) => void;
 }
 
-// One drag at a time, and what it means depends on where it started: on the page it draws a new
+// One drag at a time, and what it means depends on where it started: on the artboard it draws a new
 // shape, on a shape it moves that shape, on a selected shape's handle it reshapes it. A shape being
-// reshaped is updated as the pointer goes, so the page and the size in the list stay truthful
+// reshaped is updated as the pointer goes, so the artboard and the size in the list stay truthful
 // mid-drag. One being moved is only drawn moved until it's let go: its size doesn't change, and a
 // whole layer rewritten on every pointer move is what made a big drawing crawl.
 type Drag =
@@ -118,7 +117,7 @@ type Drag =
   // pointer move is what made dragging a big drawing crawl. `box` is round all of it, for the page's
   // edges, and `ids` says what's being carried without searching the list for it.
   | { mode: "move"; from: { x: number; y: number }; origins: Shape[]; ids: Set<string>; box: ReturnType<typeof boxOf>; by: { x: number; y: number } }
-  // Rubber band: drawn on the empty page to gather up everything it touches.
+  // Rubber band: drawn on the empty artboard to gather up everything it touches.
   | { mode: "marquee"; from: { x: number; y: number }; to: { x: number; y: number }; add: string[] }
   // Stroke select: a press on a stroke, or a band round strokes; the Lasso: a loop drawn round them.
   // `add` is the pick kept (Shift), `px` an inch in screen pixels, for how near a press must be.
@@ -161,7 +160,7 @@ function straighten(x: number, y: number, toX: number, toY: number) {
 
 /**
  * Past this many marks, a layer gets no grip for each of them: a separation of fifty thousand strokes
- * would be fifty thousand more elements on the page, for picking out strokes nobody picks one at a
+ * would be fifty thousand more elements on the artboard, for picking out strokes nobody picks one at a
  * time. Its marks are picked up together - Select all on layer, or a band dragged round them - and
  * moved by the box round the selection.
  */
@@ -211,8 +210,8 @@ function listsByLayer(shapes: Shape[], fills: Fill[], was: LayerLists): LayerLis
 // they're the same rectangle.
 /**
  * A photo's hatching, drawn once the photo has been read - which takes a moment the first time, so
- * this redraws itself when it's done rather than waiting on the rest of the page to. One path per
- * pass of lines: tens of thousands of strokes, and four things on the page.
+ * this redraws itself when it's done rather than waiting on the rest of the artboard to. One path per
+ * pass of lines: tens of thousands of strokes, and four things on the artboard.
  */
 function PhotoInk({ shape, asPhoto }: { shape: Shape; asPhoto?: boolean }) {
   const photo = shape.photo!;
@@ -250,7 +249,7 @@ function PhotoLines({ shape }: { shape: Shape }) {
 
 function shapeElement(s: Shape, key: string, props: Record<string, unknown>, fonts: Record<string, StrokeFont>) {
   // A photo's ink is its lines, and here that is all it ever is: the picture belongs to Image, where
-  // the conversion is made and judged; in Studio what sits on the page is the object's lines
+  // the conversion is made and judged; in Studio what sits on the artboard is the object's lines
   // (Tom, 2026-11-23). What you grab it by is the box it sits in, as for a rectangle.
   if (s.kind === "photo" && s.photo && props.className !== styles.grab) {
     return <PhotoInk key={key} shape={s} />;
@@ -354,21 +353,19 @@ const LayerMarks = memo(function LayerMarks({ shapes, fills, fonts }: { shapes: 
   );
 });
 
-// The page at true proportions, with a one-inch grid. It keeps the page's own proportions and is
+// The artboard at true proportions, with a one-inch grid. It keeps the page's own proportions and is
 // sized to them (--canvas-aspect), so the drawing gets as large as the space allows - the same way
 // Plot's preview fills its column.
-export function Canvas({ bar, page, artboard, paperColor, shapes, fills, layers, activeLayer, targetLayers, model, toolbar, fonts, font, snap, penWidthMm, inkOpacity, inkBuilds, inkOpaque = false, inkBuild, view, tool, selected, onSelect, onAdd, onUpdate, onUpdateMany, onEditStart, onPick, strokePick, onStrokePick }: Props) {
-  // What the drawing is made on: the artboard, which is what this canvas shows.
-  const over = artboard ?? page;
+export function Canvas({ bar, artboard, paperColor, shapes, fills, layers, activeLayer, targetLayers, model, toolbar, fonts, font, snap, penWidthMm, inkOpacity, inkBuilds, inkOpaque = false, inkBuild, view, tool, selected, onSelect, onAdd, onUpdate, onUpdateMany, onEditStart, onPick, strokePick, onStrokePick }: Props) {
   const bed = useRef<BedCanvasHandle>(null);
   const [drag, setDrag] = useState<Drag | null>(null);
   const pointer = useRef<number | null>(null);
 
-  // The page is the paper, sitting at the plotter's home corner - the same place Plot puts it.
+  // The artboard is the paper, sitting at the plotter's home corner - the same place Plot puts it.
   const settings = {
     ...DEFAULT_SETTINGS,
-    paper_w: page.w * 25.4,
-    paper_h: page.h * 25.4,
+    paper_w: artboard.w * 25.4,
+    paper_h: artboard.h * 25.4,
     paper_x: 0,
     paper_y: 0,
     paper_color: paperColor,
@@ -380,7 +377,7 @@ export function Canvas({ bar, page, artboard, paperColor, shapes, fills, layers,
     return [b.x0 * UNITS, b.y0 * UNITS, b.x1 * UNITS, b.y1 * UNITS];
   }, [shapes]);
 
-  // Where a pointer is on the page, in inches from its top-left corner.
+  // Where a pointer is on the artboard, in inches from its top-left corner.
   // The pen's real width in inches, so the line on screen is the line on paper.
   const penIn = penWidthMm / 25.4;
   const inkSim = view === "preview";
@@ -422,14 +419,14 @@ export function Canvas({ bar, page, artboard, paperColor, shapes, fills, layers,
   const knockoutMoving = Boolean(carriedIds && knockout.some((sh) => carriedIds.has(sh.id)));
   const knockoutAt = knockoutMoving ? shift : undefined;
   const knockoutId = `knockout-${useId().replace(/[^\w-]/g, "")}`;
-  // Layers too big for a grip on each mark (GRIP_LIMIT), counted over the whole drawing.
+  // Layers too big for a grip on each mark (GRIP_LIMIT), counted artboard the whole drawing.
   const bigLayers = useMemo(() => {
     const count = new Map<string, number>();
     for (const sh of shapes) count.set(sh.layerId, (count.get(sh.layerId) ?? 0) + 1);
     return new Set([...count].filter(([, n]) => n > GRIP_LIMIT).map(([id]) => id));
   }, [shapes]);
 
-  // The cleanup tools' strokes: every run of every path on the targeted layers, as the page shows it.
+  // The cleanup tools' strokes: every run of every path on the targeted layers, as the artboard shows it.
   // Worked out only while one of them is in hand.
   const cleaning = isStrokeTool(tool);
   const strokes = useMemo(() => (cleaning ? strokesOf(shown, (id) => targetLayers.has(id) && !lockedLayers.has(id)) : []), [cleaning, shown, targetLayers]);
@@ -455,13 +452,13 @@ export function Canvas({ bar, page, artboard, paperColor, shapes, fills, layers,
     try {
       (e.currentTarget as Element).setPointerCapture(e.pointerId);
     } catch {
-      // not a live pointer (synthetic events); the drag still works while the pointer is over the page
+      // not a live pointer (synthetic events); the drag still works while the pointer is artboard the artboard
     }
     pointer.current = e.pointerId;
     setDrag(next);
   };
 
-  // Started on the page itself: draw a new shape, or in select mode drag a band round what you want.
+  // Started on the artboard itself: draw a new shape, or in select mode drag a band round what you want.
   const onPointerDown = (e: ReactPointerEvent<SVGSVGElement>) => {
     if (e.button !== 0) return;
     const p = pointAt(e);
@@ -490,12 +487,12 @@ export function Canvas({ bar, page, artboard, paperColor, shapes, fills, layers,
     const start = gridPoint(p);
     begin(e, {
       mode: "new",
-      shape: clampToPage(shapeFor(tool, activeLayer, start.x, start.y, font), page),
+      shape: clampToPage(shapeFor(tool, activeLayer, start.x, start.y, font), artboard),
     });
   };
 
   // Started on a shape: pick it and move it. A press that doesn't move is just a selection. Only in
-  // select mode - while a drawing tool is chosen the shapes let the drag through to the page.
+  // select mode - while a drawing tool is chosen the shapes let the drag through to the artboard.
   const onShapeDown = (e: ReactPointerEvent, shape: Shape) => {
     if (e.button !== 0 || tool !== "select") return;
     e.stopPropagation();
@@ -518,7 +515,7 @@ export function Canvas({ bar, page, artboard, paperColor, shapes, fills, layers,
 
   const carry = (e: ReactPointerEvent, p: { x: number; y: number }, ids: string[]) => {
     const set = new Set(ids);
-    // A photo's tone bands are one photo on the page: carrying one carries them all.
+    // A photo's tone bands are one photo on the artboard: carrying one carries them all.
     const groups = new Set(shapes.filter((s) => set.has(s.id) && s.photo?.group).map((s) => s.photo!.group));
     for (const s of shapes) if (s.photo?.group && groups.has(s.photo.group)) set.add(s.id);
     // And a path of a shape made of several carries the rest of them.
@@ -587,7 +584,7 @@ export function Canvas({ bar, page, artboard, paperColor, shapes, fills, layers,
       const end = e.shiftKey && drag.shape.kind !== "line"
         ? keepProportions({ x: drag.shape.x, y: drag.shape.y }, to, 1)
         : to;
-      setDrag({ ...drag, shape: clampToPage({ ...drag.shape, x2: end.x, y2: end.y }, page) });
+      setDrag({ ...drag, shape: clampToPage({ ...drag.shape, x2: end.x, y2: end.y }, artboard) });
     } else if (drag.mode === "marquee" || drag.mode === "strokeBand") {
       setDrag({ ...drag, to: p });
     } else if (drag.mode === "lasso") {
@@ -601,13 +598,13 @@ export function Canvas({ bar, page, artboard, paperColor, shapes, fills, layers,
       // lands on a line, wherever it was picked up.
       const dx = snap > 0 ? grid(x0 + p.x - drag.from.x) - x0 : p.x - drag.from.x;
       const dy = snap > 0 ? grid(y0 + p.y - drag.from.y) - y0 : p.y - drag.from.y;
-      // Free of the page: artwork may hang past the artboard - that is a bleed - and nothing clips it.
+      // Free of the artboard: artwork may hang past the artboard - that is a bleed - and nothing clips it.
       const by = { x: dx, y: dy };
       if (by.x !== drag.by.x || by.y !== drag.by.y) setDrag({ ...drag, by });
     } else if (drag.mode === "groupScale") {
       // The corner opposite the one being dragged stays where it is, as it does for one shape.
       const b = drag.box;
-      // The page holds the box round the whole group, not each shape on its own: clamping them one
+      // The artboard holds the box round the whole group, not each shape on its own: clamping them one
       // by one would squash whichever reached the edge first and the group would come apart.
       // Shift keeps the group's proportions, measured from the corner that stays put.
       const anchor = {
@@ -650,7 +647,7 @@ export function Canvas({ bar, page, artboard, paperColor, shapes, fills, layers,
               : straighten(drag.origin.x2, drag.origin.y2, p.x, p.y))
           : p;
       const g = gridPoint(held);
-      onUpdate(clampToPage(dragHandleTurned(drag.origin, drag.handle, g.x, g.y), page));
+      onUpdate(clampToPage(dragHandleTurned(drag.origin, drag.handle, g.x, g.y), artboard));
     }
   };
 
@@ -660,7 +657,7 @@ export function Canvas({ bar, page, artboard, paperColor, shapes, fills, layers,
     if (drag?.mode === "new" && !isDegenerate(drag.shape)) onAdd(drag.shape);
     // Put down where it was carried to: the one time the shapes themselves move.
     if (drag?.mode === "move" && (drag.by.x || drag.by.y)) {
-      onUpdateMany(drag.origins.map((s) => moveBy(s, drag.by.x, drag.by.y, page)));
+      onUpdateMany(drag.origins.map((s) => moveBy(s, drag.by.x, drag.by.y, artboard)));
     }
     if (drag?.mode === "strokeBand" || drag?.mode === "lasso") {
       const ends = drag.mode === "lasso" ? drag.loop : [drag.from, drag.to];
@@ -780,7 +777,7 @@ export function Canvas({ bar, page, artboard, paperColor, shapes, fills, layers,
       overlay={
         shapes.length === 0 && !drag ? (
           <div className={styles.hint} aria-hidden="true">
-            <strong>{tool === "select" ? "Pick a drawing tool, then drag on the page" : "Drag on the page to draw"}</strong>
+            <strong>{tool === "select" ? "Pick a drawing tool, then drag on the page" : "Drag on the artboard to draw"}</strong>
           </div>
         ) : undefined
       }
@@ -793,13 +790,13 @@ export function Canvas({ bar, page, artboard, paperColor, shapes, fills, layers,
             {/* The grid a drag lands on, under everything else and in the faintest line there is.
                 Only while snapping is on, and only while the lines are far enough apart to read as
                 a grid rather than as a wash. */}
-            {snap > 0 && over.w / snap + over.h / snap <= 400 && (
+            {snap > 0 && artboard.w / snap + artboard.h / snap <= 400 && (
               <g className={styles.grid}>
-                {Array.from({ length: Math.floor(over.w / snap) }, (_, i) => (i + 1) * snap).map((x) => (
-                  <line key={`v${x}`} x1={x} y1={0} x2={x} y2={over.h} />
+                {Array.from({ length: Math.floor(artboard.w / snap) }, (_, i) => (i + 1) * snap).map((x) => (
+                  <line key={`v${x}`} x1={x} y1={0} x2={x} y2={artboard.h} />
                 ))}
-                {Array.from({ length: Math.floor(over.h / snap) }, (_, i) => (i + 1) * snap).map((y) => (
-                  <line key={`h${y}`} x1={0} y1={y} x2={over.w} y2={y} />
+                {Array.from({ length: Math.floor(artboard.h / snap) }, (_, i) => (i + 1) * snap).map((y) => (
+                  <line key={`h${y}`} x1={0} y1={y} x2={artboard.w} y2={y} />
                 ))}
               </g>
             )}
@@ -814,7 +811,7 @@ export function Canvas({ bar, page, artboard, paperColor, shapes, fills, layers,
                 const marks = (
                   <>
                     {/* Always inside this group, shifted or not, so picking a whole layer up doesn't
-                        move its marks to another place in the page and draw them all again. */}
+                        move its marks to another place in the artboard and draw them all again. */}
                     <g transform={carriedWhole?.has(layer.id) ? shift : undefined}>
                       {here && <LayerMarks shapes={here.shapes} fills={here.fills} fonts={fonts} />}
                     </g>
@@ -878,7 +875,7 @@ export function Canvas({ bar, page, artboard, paperColor, shapes, fills, layers,
               {shown.map((sh) => {
                 if (bigLayers.has(sh.layerId)) return null; // picked up with the rest of their layer
                 // Only the targeted layers' shapes can be picked: a press on another layer's goes
-                // through to the page, as if it weren't there.
+                // through to the artboard, as if it weren't there.
                 if (!targetLayers.has(sh.layerId) || lockedLayers.has(sh.layerId)) return null;
                 // Not in Preview, which shows only what the pen will draw: there the hatch is the shape.
                 const guide = sh.outline === false && !inkSim;
@@ -920,7 +917,7 @@ export function Canvas({ bar, page, artboard, paperColor, shapes, fills, layers,
                   height={Math.abs(drag.to.y - drag.from.y)}
                 />
               )}
-              {/* The cleanup tools: the band or loop being drawn, and the strokes picked - drawn over
+              {/* The cleanup tools: the band or loop being drawn, and the strokes picked - drawn artboard
                   in the action color, with their points marked. */}
               {drag?.mode === "strokeBand" && (
                 <rect

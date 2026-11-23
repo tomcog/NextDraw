@@ -18,8 +18,9 @@ import { PLATE_OFF, inkAtOf, inkSetOf, onePlate, photoFromData } from "./photo";
 
 export interface Opened {
   /**
-   * The paper the drawing was last made for. Kept as it was while the artboard is built out: the
-   * three apps still size themselves by this. See `artboard` and `paper` for what replaces it.
+   * The drawing's own size - the SVG's width and height - under the name the many call sites still
+   * use. The same value as `artboard`, since 2026-11-23: the page a drawing is written at is its
+   * artboard, and the sheet it is plotted on is `paper` alone.
    */
   page: Page;
   /**
@@ -667,8 +668,8 @@ export function parseDrawing(text: string): Opened {
   }
 
   // The tool and the paper, from the block Plot reads - the one all three apps write them into. The
-  // paper there is the drawing's paper wherever it was last chosen, Plot included, so it is the page
-  // here - unless Plot trimmed the page to the drawing, when the paper is the sheet it's placed on.
+  // paper is the sheet the drawing is for, and nothing else: it no longer stands in for the page,
+  // which is the artboard (2026-11-23).
   let tool: string | null = null;
   let paperColor: string | null = null;
   let paperPage: Page | null = null;
@@ -694,5 +695,5 @@ export function parseDrawing(text: string): Opened {
   const margins: Margins = kept && typeof kept === "object"
     ? { top: side(kept.top, was.top), right: side(kept.right, was.right), bottom: side(kept.bottom, was.bottom), left: side(kept.left, was.left) }
     : was;
-  return { page: paperPage ?? page, artboard: page, paper: paperPage, margins, shapes, layers, fills, unsupported, tool, paperColor };
+  return { page, artboard: page, paper: paperPage, margins, shapes, layers, fills, unsupported, tool, paperColor };
 }

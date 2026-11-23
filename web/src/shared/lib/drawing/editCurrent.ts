@@ -50,8 +50,11 @@ export async function editCurrent(edit: (d: EditableDrawing) => EditableDrawing 
   // Words are written out as the strokes of their font, so each font in use is read first.
   const fonts: Record<string, StrokeFont> = {};
   for (const name of new Set(next.shapes.map((s) => s.font ?? "").filter(Boolean))) fonts[name] = await loadFont(name);
+  // Written at the artboard, with the sheet it was for kept as it was: building at the paper would
+  // quietly resize the artboard to the sheet every time Plot touched a drawing.
   const svg = buildSvg(next.shapes, (next.fills ?? drawing.fills).filter((f) => kept.has(f.shapeId)), next.layers, next.page, {
-    paperSizeId: sizeIdOf(next.page),
+    paperSizeId: sizeIdOf(drawing.paper ?? next.page),
+    ...(drawing.paper ? { paper: drawing.paper } : {}),
     toolName: drawing.tool ?? "",
     paperColor: drawing.paperColor ?? undefined,
     // The artboard's margins as the file has them: this writes the whole drawing back, so leaving
