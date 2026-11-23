@@ -1042,6 +1042,161 @@ def with_delay(layer, ms):
     layer.set(INKSCAPE_NS + "label", f"{m.group(1)}{m.group(2)}+d{ms}{m.group(3)}")
 
 
+# Trim marks, generated at plot time. They are no longer geometry in the drawing: Plot keeps the two
+# numbers in its own block and the marks are drawn round the ARTBOARD - which is the drawing's own page
+# - in the copy sent to the plotter and the preview. So the same drawing goes on any sheet with the
+# marks that suit it, and a drawing carrying marks drawn into it (made before this) has them left out
+# of the plot in favour of the generated ones, rather than plotting both sets.
+#
+# The marks stand outside the artboard, so the page the plotter is given grows by their reach on every
+# side and the drawing moves in by the same amount. Everything downstream works from that page, so the
+# artwork lands where it was placed as long as there is room between the artboard and home; where there
+# isn't, the usual clamp at home loses part of the marks (lines_shifted_mm), which is the physical truth.
+#
+# The geometry is a port of trimPoints in web/src/shared/lib/drawing/parametric.ts.
+TRIM_LABEL = "Trim marks"
+TRIM_LAYER_ID = "plot-trim-marks"
+TRIM_LINE_MM = 0.25  # what the marks are drawn with in the preview; the pen's own width is the plot's
+
+
+def clean_trim(raw):
+    """Plot's trim marks: each mark's length and how far it stands off the artboard's corner, in mm,
+    and the ink they go down in. None for a drawing plotted without them."""
+    if not isinstance(raw, dict):
+        return None
+    try:
+        length = float(raw["length"])
+        offset = float(raw["offset"])
+    except (KeyError, TypeError, ValueError):
+        return None
+    if not length > 0:
+        return None  # a mark with no length is no mark
+    out = {"length": min(50.0, length), "offset": max(0.0, min(50.0, offset))}
+    ink = raw.get("ink")
+    if isinstance(ink, str) and HEX_COLOR.match(ink):
+        out["ink"] = ink.lower()
+    elif isinstance(ink, dict):
+        kept = {k: ink[k][:60] for k in ("tool", "pen") if isinstance(ink.get(k), str)}
+        if isinstance(ink.get("hex"), str) and HEX_COLOR.match(ink["hex"]):
+            kept["hex"] = ink["hex"].lower()
+        if kept:
+            out["ink"] = kept
+    return out
+
+
+def trim_pad_mm(trim, scale=100.0):
+    """How far the marks reach outside the artboard, in mm on the paper: what the page grows by on
+    every side, and so how far before the artboard's place the drawing starts."""
+    return (trim["offset"] + trim["length"]) * scale / 100.0 if trim else 0.0
+
+
+def trim_ink(trim):
+    """The marks' color for the preview, and the pen they name, from the ink Plot recorded."""
+    ink = trim.get("ink")
+    if isinstance(ink, str):
+        return ink, None
+    if isinstance(ink, dict):
+        return ink.get("hex") or "#000000", ink.get("pen")
+    return "#000000", None
+
+
+def trim_shape_ids(root):
+    """The ids of the shapes a drawing carries as its own trim marks: Studio's design block names them
+    as a parametric curve of kind "trim". Empty for any other drawing."""
+    for node in root.iter(DESIGN_TAG):
+        try:
+            data = json.loads(node.text or "{}")
+        except ValueError:
+            return set()
+        curves = data.get("curves") if isinstance(data, dict) else None
+        return {c["shape"] for c in curves or []
+                if isinstance(c, dict) and c.get("kind") == "trim" and isinstance(c.get("shape"), str)}
+    return set()
+
+
+def drop_stored_trim(root):
+    """Take out the marks a drawing carries, so the generated ones don't plot on top of them. A layer
+    left with nothing to draw goes with them - it is no longer a layer (see layer_groups)."""
+    ids = trim_shape_ids(root)
+    if not ids:
+        return
+    for el in [el for el in root.iter() if el is not root and el.get("id") in ids]:
+        parent = el.getparent()
+        if parent is not None:
+            parent.remove(el)
+    for group in [g for g in root if isinstance(g.tag, str) and g.tag == SVG_NS + "g" and not has_art(g)]:
+        root.remove(group)
+
+
+def add_trim_marks(root, trim):
+    """The marks round the artboard in a layer of their own, the page grown to hold them and the
+    drawing moved in by the same amount. Returns how far the page grew on each side, in mm, which is
+    0 for a drawing plotted without marks - or one whose page can't be measured, since a mark is
+    never worth refusing a plot over.
+
+    `trim` comes with the request, like the scale and the turn: it is Plot's choice for this print, and
+    the drawing keeps it (Plot's block) only so the next plot of it starts from the same place."""
+    from lxml import etree
+    if not trim:
+        return 0.0
+    try:
+        width_mm, units_wide = page_mm_and_units(root, "width", 2)
+        height_mm, units_high = page_mm_and_units(root, "height", 3)
+    except RuntimeError:
+        return 0.0
+    if not (width_mm > 0 and height_mm > 0 and units_wide > 0 and units_high > 0):
+        return 0.0
+    drop_stored_trim(root)
+    pad_mm = trim["offset"] + trim["length"]
+    per_mm_x, per_mm_y = units_wide / width_mm, units_high / height_mm
+    pad_x, pad_y = pad_mm * per_mm_x, pad_mm * per_mm_y
+    if not root.get("viewBox"):
+        root.set("viewBox", f"0 0 {units_wide:g} {units_high:g}")
+    vx, vy, vw, vh = [float(v) for v in re.split(r"[\s,]+", root.get("viewBox").strip())]
+    # The drawing in by the pad, the way shift_lines moves it: a translate prepended to each top-level
+    # element, so the layers stay top-level for plotting and the preview.
+    shift = f"translate({pad_x:g} {pad_y:g})"
+    for child in root:
+        if not isinstance(child.tag, str) or child.tag in NON_DRAWING_TAGS:
+            continue
+        child.set("transform", f"{shift} {child.get('transform')}" if child.get("transform") else shift)
+    root.set("viewBox", f"{vx:g} {vy:g} {vw + 2 * pad_x:g} {vh + 2 * pad_y:g}")
+    for attr, size_mm in (("width", width_mm), ("height", height_mm)):
+        m = re.match(r"^\s*([0-9]*\.?[0-9]+(?:e[-+]?\d+)?)\s*([a-z]*)\s*$", root.get(attr) or "", re.I)
+        if m:
+            root.set(attr, f"{float(m.group(1)) * (size_mm + 2 * pad_mm) / size_mm:g}{m.group(2)}")
+    # The artboard, now that the drawing has moved in: the box the marks go round.
+    x0, y0 = vx + pad_x, vy + pad_y
+    x1, y1 = x0 + vw, y0 + vh
+    gap_x, len_x = trim["offset"] * per_mm_x, trim["length"] * per_mm_x
+    gap_y, len_y = trim["offset"] * per_mm_y, trim["length"] * per_mm_y
+    color, pen = trim_ink(trim)
+    layer = etree.SubElement(root, SVG_NS + "g")
+    layer.set(INKSCAPE_NS + "groupmode", "layer")
+    layer.set(INKSCAPE_NS + "label", f"{pen} - {TRIM_LABEL}" if pen else TRIM_LABEL)
+    layer.set("id", TRIM_LAYER_ID)
+    layer.set("fill", "none")
+    layer.set("stroke", color)
+    layer.set("stroke-width", f"{TRIM_LINE_MM * per_mm_x:g}")
+    # The corners in the order the pen goes round, each mark drawn from its outer end toward the
+    # corner, the way a cut is lined up.
+    for x, y, sx, sy in ((x0, y0, -1, -1), (x1, y0, 1, -1), (x1, y1, 1, 1), (x0, y1, -1, 1)):
+        for run in ((x + sx * (gap_x + len_x), y, x + sx * gap_x, y),
+                    (x, y + sy * (gap_y + len_y), x, y + sy * gap_y)):
+            mark = etree.SubElement(layer, SVG_NS + "path")
+            mark.set("d", "M {:g} {:g} L {:g} {:g}".format(*run))
+    return pad_mm
+
+
+def plot_root(trim=None):
+    """The current drawing as Plot plots and lists it: sized, and with the marks Plot generates in
+    place of any the file carries. Returns the root, a note about its size, and the page's growth."""
+    from lxml import etree
+    root = etree.parse(str(CURRENT_SVG), etree.XMLParser(huge_tree=True)).getroot()
+    note = normalize_size(root)
+    return root, note, add_trim_marks(root, trim)
+
+
 def fill_spacing_of(group, fills):
     """The spacing (mm) Studio gave the fills on a layer - the first one's - or None if it has none."""
     for g in group.iter(SVG_NS + "g"):
@@ -1648,7 +1803,7 @@ def clean_hatch(raw):
     return out
 
 
-def svg_input(scale, layers=None, rotation=0, hatch=None, shift_mm=(0.0, 0.0)):
+def svg_input(scale, layers=None, rotation=0, hatch=None, shift_mm=(0.0, 0.0), trim=None):
     """
     The loaded SVG for the NextDraw software: sized (see normalize_size) and scaled if needed. The
     software plots a document at its width/height, so scaling multiplies those while a viewBox keeps
@@ -1658,6 +1813,9 @@ def svg_input(scale, layers=None, rotation=0, hatch=None, shift_mm=(0.0, 0.0)):
     root = etree.parse(str(CURRENT_SVG), etree.XMLParser(huge_tree=True)).getroot()
     normalize_size(root)
     regenerate_hatches(root, hatch or {}, scale)
+    # The trim marks, before the layers are chosen: they are a layer like any other, and the page grows
+    # for them whichever layer is being plotted - so every pass lands in the same place.
+    add_trim_marks(root, trim)
     if layers:
         only_layers(root, [layers] if isinstance(layers, str) else layers)
     registration_first(root)
@@ -1711,6 +1869,9 @@ def clean_placement(raw):
     placement["layers"] = clean_layers(raw)
     placement["layer"] = placement["layers"][0] if placement["layers"] else None
     placement["hatch"] = clean_hatch(raw)
+    # The trim marks for this print. They are drawn round the artboard at plot time, so they belong to
+    # the plot like the scale and the turn - and a resumed plot, which keeps the placement, keeps them.
+    placement["trim"] = clean_trim(raw.get("trim"))
     # The tool in the holder, by name: only recorded with the plot, never used to choose settings.
     placement["tool"] = str(raw.get("tool") or "").strip()[:60] or None
     for key, name in (("x", "start_x"), ("y", "start_y")):
@@ -1796,12 +1957,12 @@ def skip_tiny_paths(nd, mm, tally):
     nd.randomize_optimize = without_tiny
 
 
-def dry_run(settings, render, scale=100.0, source=None, mode="plot", layers=None, rotation=0, hatch=None, skip_tiny=None):
+def dry_run(settings, render, scale=100.0, source=None, mode="plot", layers=None, rotation=0, hatch=None, skip_tiny=None, trim=None):
     """Simulate the plot without the machine. Returns stats and (optionally) the path preview SVG."""
     log = []
     tally = {}
     if source is None:
-        source = prepared_svg(settings, scale, layers, rotation, hatch, skip_tiny=skip_tiny, tally=tally)
+        source = prepared_svg(settings, scale, layers, rotation, hatch, skip_tiny=skip_tiny, tally=tally, trim=trim)
     nd = make_nextdraw(log)
     if skip_tiny and mode == "plot":
         skip_tiny_paths(nd, skip_tiny, tally)
@@ -1894,10 +2055,10 @@ def limit_drag(svg_text, settings, skip_tiny=None, tally=None):
     return etree.tostring(root, encoding="unicode")
 
 
-def prepared_svg(settings, scale, layers=None, rotation=0, hatch=None, shift_mm=(0.0, 0.0), skip_tiny=None, tally=None):
+def prepared_svg(settings, scale, layers=None, rotation=0, hatch=None, shift_mm=(0.0, 0.0), skip_tiny=None, tally=None, trim=None):
     """The loaded drawing ready to plot: placed and scaled, and drag-limited for a one-way tool. A
     one-way tool's tiny paths are left out here; anything else's as it plots (see skip_tiny_paths)."""
-    svg = svg_input(scale, layers, rotation, hatch, shift_mm)
+    svg = svg_input(scale, layers, rotation, hatch, shift_mm, trim)
     return limit_drag(svg, settings, skip_tiny, tally) if settings.get("drag_only") else svg
 
 
@@ -2186,7 +2347,8 @@ def run_plot(settings, placement, resume=None):
         else:
             clear_resume()  # a new plot replaces any stopped one
             source = prepared_svg(settings, placement["scale"], plot_layers(placement), placement.get("rotation", 0),
-                                  placement.get("hatch"), lines_shifted_mm(placement), placement.get("skip_tiny"))
+                                  placement.get("hatch"), lines_shifted_mm(placement), placement.get("skip_tiny"),
+                                  trim=placement.get("trim"))
             mode = "plot"
 
         # A new plot's simulation also draws its paths; a resumed plot keeps the ones saved when it began.
@@ -3802,6 +3964,9 @@ def clean_plot(raw):
         layers = raw.get("second_tool_layers")
         if isinstance(layers, list):
             out["second_tool_layers"] = [str(x)[:200] for x in layers if isinstance(x, str)][:500]
+    trim = clean_trim(raw.get("trim"))
+    if trim:
+        out["trim"] = trim
     paper = raw.get("paper")
     if isinstance(paper, dict):
         cleaned = {}
@@ -4772,9 +4937,11 @@ def estimate():
             return jsonify(superseded=True)
         try:
             body = request.json or {}
-            result = dry_run(clean_settings(body), render=True, scale=clean_scale(body), layers=clean_layers(body), rotation=clean_rotation(body), hatch=clean_hatch(body), skip_tiny=clean_skip_tiny(body))
-            from lxml import etree
-            result["layers"] = read_layers(etree.parse(str(CURRENT_SVG), etree.XMLParser(huge_tree=True)).getroot())
+            trim = clean_trim(body.get("trim"))
+            result = dry_run(clean_settings(body), render=True, scale=clean_scale(body), layers=clean_layers(body), rotation=clean_rotation(body), hatch=clean_hatch(body), skip_tiny=clean_skip_tiny(body), trim=trim)
+            root, _, pad_mm = plot_root(trim)
+            result["layers"] = read_layers(root)
+            result["trim_pad_mm"] = pad_mm * clean_scale(body) / 100.0
             return jsonify(result)
         except Exception as exc:
             return jsonify(error=f"Couldn't read that SVG: {exc}"), 400
@@ -4788,12 +4955,12 @@ def artwork():
         return jsonify(error="Load an SVG first."), 400
     try:
         body = request.json or {}
-        from lxml import etree
-        svg = svg_input(clean_scale(body), None, clean_rotation(body), clean_hatch(body))
-        root = etree.parse(str(CURRENT_SVG), etree.XMLParser(huge_tree=True)).getroot()
-        size_note = normalize_size(root)
+        trim = clean_trim(body.get("trim"))
+        svg = svg_input(clean_scale(body), None, clean_rotation(body), clean_hatch(body), trim=trim)
+        root, size_note, pad_mm = plot_root(trim)
         trimmed = bool((read_plot(root) or {}).get("original_page"))
-        return jsonify(svg=svg, layers=read_layers(root), warnings=[size_note] if size_note else [], trimmed=trimmed)
+        return jsonify(svg=svg, layers=read_layers(root), warnings=[size_note] if size_note else [],
+                       trimmed=trimmed, trim_pad_mm=pad_mm * clean_scale(body) / 100.0)
     except Exception as exc:
         return jsonify(error=f"Couldn't read that SVG: {exc}"), 400
 

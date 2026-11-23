@@ -4,7 +4,6 @@ import styles from "./Bed.module.css";
 import { inkLayer, VARNISH_LINE_MM } from "../lib/ink";
 import { type Box, type Zoom } from "./BedCanvas";
 import { NextDrawCanvas } from "./NextDrawCanvas";
-import { TrimGrab, TrimGuide } from "./TrimGuide";
 import type { PreviewToolbarProps } from "./PreviewToolbar";
 import { MM, UNITS } from "../lib/constants";
 import { maxPlacement, minPlacement, type Footprint } from "../lib/geometry";
@@ -32,8 +31,6 @@ interface Props {
   canDrag: boolean;
   onOpenBrowser: () => void;
   toolbar?: ReactNode; // sits on the width dimension line, at its right end
-  trimBoxes?: { x0: number; y0: number; x1: number; y1: number }[]; // trim marks' trims, in inches on the drawing's page: dashed, on screen only
-  onTrimMove?: (dx: number, dy: number) => void; // a trim dragged on the bed this far, in inches
   layerLooks: Record<string, { color: string | null; skipped: boolean; hidden: boolean }> | null;
   layerOrder?: string[]; // ids bottom-first: the order they plot, and so the order they stack
   inkOpacity?: number; // how solid the tool's ink is; strokes multiply, so crossings darken
@@ -369,11 +366,10 @@ export function Bed(props: Props) {
       <g className={styles.placed} data-drag="" data-dragging={Boolean(drag)} style={fp ? undefined : { display: "none" }}>
         {fp && <rect className={styles.dragTarget} x={fp.x * UNITS} y={fp.y * UNITS} width={fp.w * UNITS} height={fp.h * UNITS} />}
         <g ref={artRef} transform={artTransform} className={showPenUp ? undefined : "hide-pen-up"} style={plotPaths ? { display: "none" } : undefined} />
-        {/* The drawing's outline: its trim where it has trim marks (below), and otherwise the box its
-            lines make - not its page, which in every app is the paper's size and so says nothing the
-            paper doesn't. Round the lines in red, trim or no trim, when they go past the plotter's
-            reach or off the paper. */}
-        {fp && (!props.trimBoxes?.length || !(props.fitsOnBed && props.fitsOnPaper)) && (
+        {/* The drawing's outline: the box its lines make, not its page - which is the artboard, plus
+            whatever room the trim marks need. Round the lines in red when they go past the plotter's
+            reach or off the paper, the marks included. */}
+        {fp && (
           <rect
             className={styles.sheetEdge}
             data-over={!(props.fitsOnBed && props.fitsOnPaper)}
@@ -383,15 +379,6 @@ export function Bed(props: Props) {
             height={(fp.ink.y1 - fp.ink.y0) * UNITS}
           />
         )}
-        {/* Where the print is cut, as in Studio and Image: with the drawing, wherever it's placed. */}
-        {/* Picked up anywhere inside and dragged, it moves on the drawing; the drawing stays put. */}
-        {fp && props.trimBoxes?.map((b, i) => {
-          const box = { x0: (fp.x + b.x0) * UNITS, y0: (fp.y + b.y0) * UNITS, x1: (fp.x + b.x1) * UNITS, y1: (fp.y + b.y1) * UNITS };
-          const onMove = props.onTrimMove;
-          return props.canDrag && onMove
-            ? <TrimGrab key={i} box={box} onMove={(dx, dy) => onMove(dx / UNITS, dy / UNITS)}><TrimGuide box={box} /></TrimGrab>
-            : <TrimGuide key={i} box={box} />;
-        })}
       </g>
 
       <g

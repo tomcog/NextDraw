@@ -10,7 +10,7 @@ import { fitsOnBed, fitsOnPaper, footprint, minPlacement, marginsTimes, type Fit
 import { parsePlotPaths, type PlotPaths } from "../shared/lib/progressPaths";
 import { parsePreview, type Preview } from "../shared/lib/preview";
 import { load, save } from "../shared/lib/storage";
-import type { Confirmation, Estimate, Info, Ink, Layer, PenColor, LayerView, Message, Placement, Preset, QueueItem, Settings, Status, Plot } from "../shared/lib/types";
+import type { Confirmation, Estimate, Info, Ink, Layer, PenColor, LayerView, Message, Placement, Preset, QueueItem, Settings, Status, Plot, TrimMarks } from "../shared/lib/types";
 import { inkHex, isPalettePen, isVarnishLayer, joinLayerName, penNameAt, penNameOf, splitLayerName } from "../shared/lib/ink";
 import { Hints } from "../shared/components/controls/Hints";
 import { Header } from "./components/Header";
@@ -46,13 +46,11 @@ import { FileSection } from "../shared/components/controls/FileSection";
 import { LayersSection } from "./components/controls/LayersSection";
 import { PositionSection } from "./components/controls/PositionSection";
 import { PresetSection } from "./components/controls/PresetSection";
-import { PaperSection, paperMarginMm } from "../shared/components/controls/PaperSection";
+import { PaperSection } from "../shared/components/controls/PaperSection";
 import { ArtboardSection } from "../shared/components/controls/ArtboardSection";
-import { TrimMarksSection } from "../shared/components/controls/TrimMarksSection";
-import { editCurrent, readCurrent, type EditableDrawing } from "../shared/lib/drawing/editCurrent";
-import type { Opened } from "../shared/lib/drawing/parse";
-import { boxOf, type Page } from "../shared/lib/drawing/shapes";
-import { drawingBoxOf, trimShapeOf, withDrawingMoved, withTrimBox, withTrimMarks, withTrimMoved, withTrimOff, withTrimOn, type TrimDrawing } from "../shared/lib/drawing/trimMarks";
+import { DEFAULT_TRIM, TrimMarksSection } from "./components/controls/TrimMarksSection";
+import { editCurrent, type EditableDrawing } from "../shared/lib/drawing/editCurrent";
+import type { Page } from "../shared/lib/drawing/shapes";
 import { PanelToolbar, panelIcon } from "../shared/components/PanelToolbar";
 import { PenSection } from "./components/controls/PenSection";
 import { SpeedSection } from "./components/controls/SpeedSection";
@@ -428,7 +426,13 @@ export default function App() {
   useEffect(() => save(STORAGE.penCard, penCard), [penCard]);
   const [queueCard, setQueueCard] = useState(() => load<boolean>(STORAGE.queueCard) ?? false);
   useEffect(() => save(STORAGE.queueCard, queueCard), [queueCard]);
-  // The Trim marks card: the same card as Studio's and Image's.
+  // The trim marks this print is plotted with, kept in Plot's own block in the drawing: two lengths
+  // and a pen, never geometry. The server draws them round the artboard in the copy it plots and
+  // previews, and reports how far the page grew for them - the marks stand outside the artboard, so
+  // the plot starts that much before where the artboard goes.
+  const [trimMarks, setTrimMarks] = useState<TrimMarks | null>(null);
+  const [padMm, setPadMm] = useState(0);
+  // The Trim marks card: Plot's alone - the marks are added when the drawing is plotted.
   const [trimCard, setTrimCard] = useState(() => load<boolean>("plot-trim-card") ?? false);
   useEffect(() => save("plot-trim-card", trimCard), [trimCard]);
   // What is set less often - where the drawing sits, how it's plotted, the pen and carriage by hand -
@@ -445,7 +449,7 @@ export default function App() {
   useEffect(() => save(STORAGE.zoom, zoomChoice), [zoomChoice]);
 
   // Refs let the polling loop see current values without restarting.
-  const refs = useRef({ fileName, status, lastAction, settings, scale, presets, plotLayerIds, rotation, hatchSpacing, readRequested: false, plotSettings: settings, skipTiny: null as number | null, activePreset, opened: undefined as string | null | undefined, edited: undefined as string | null | undefined,
+  const refs = useRef({ fileName, status, lastAction, settings, scale, presets, plotLayerIds, rotation, hatchSpacing, trimMarks, readRequested: false, plotSettings: settings, skipTiny: null as number | null, activePreset, opened: undefined as string | null | undefined, edited: undefined as string | null | undefined,
     // Following the other open pages: the last shared-settings version and drawing save this page has
     // taken up, and whether it has changes of its own not yet sent.
     settingsVersion: undefined as string | null | undefined, settingsUnsent: false,
@@ -456,6 +460,7 @@ export default function App() {
     queueVersion: undefined as string | null | undefined, queueUnsent: false });
   refs.current.rotation = rotation;
   refs.current.hatchSpacing = hatchSpacing;
+  refs.current.trimMarks = trimMarks;
   refs.current.skipTiny = skipTiny;
   refs.current.plotLayerIds = plotLayerIds;
   refs.current.presets = presets;
@@ -474,7 +479,7 @@ export default function App() {
   const onIdraw = status?.plotter === "idraw";
   const listedModel = info?.models.find((m) => m.id === (onIdraw ? IDRAW_MODEL : settings.model)) ?? info?.models[0];
   const model = onIdraw && listedModel ? { ...listedModel, name: "iDraw" } : listedModel;
-  const fp = footprint(preview, settings, placement);
+  const fp = footprint(preview, settings, placement, padMm);
   const onBed = fitsOnBed(fp, model);
   const onPaper = fitsOnPaper(fp, settings);
   // Fall back to the whole plotter when there's no drawing (or paper) to zoom to.
@@ -597,10 +602,9 @@ export default function App() {
       return null;
     }
   };
-  // Trim marks, set here as in Studio and Image: the drawing read as shapes while their card is out -
-  // Plot doesn't parse drawings otherwise (trimDrawing, below) - and each change made with the same
-  // edits as theirs, then sent back as the current drawing, a change not saved. One at a time.
-  const [trimming, setTrimming] = useState(false);
+  // A change Plot makes to the drawing itself - the artboard's size, its margins - goes through
+  // editCurrent and is sent back as the current drawing, a change not saved. One at a time.
+  const [editing, setEditing] = useState(false);
   /**
    * The artboard, changed from Plot and written into the drawing - the same path every other edit
    * made here takes (editCurrent). The artwork is not touched: **Plot never scales**, so a bigger
@@ -608,8 +612,8 @@ export default function App() {
    * artboard sits on it is the Drawing position card's.
    */
   const editArtboard = async (change: (d: EditableDrawing) => EditableDrawing, shown: { artboard?: Page; margins?: Margins }) => {
-    if (busy || trimming) return;
-    setTrimming(true);
+    if (busy || editing) return;
+    setEditing(true);
     try {
       const res = await editCurrent(change);
       refs.current.edited = res.edited; // our own change: nothing for the poll to catch up on
@@ -618,25 +622,11 @@ export default function App() {
     } catch (err) {
       setLocalMessage({ text: (err as Error).message, tone: "error" });
     } finally {
-      setTrimming(false);
+      setEditing(false);
     }
   };
   const setArtboardSize = (artboard: Page) => editArtboard((d) => ({ ...d, page: artboard }), { artboard });
   const setArtboardMargins = (margins: Margins) => editArtboard((d) => ({ ...d, margins }), { margins });
-
-  const editTrim = async (edit: (d: TrimDrawing) => TrimDrawing) => {
-    if (busy || trimming) return;
-    setTrimming(true);
-    try {
-      const res = await editCurrent(edit);
-      refs.current.edited = res.edited; // our own change: nothing for the poll to catch up on
-      setDrawingVersion((v) => v + 1);
-    } catch (err) {
-      setLocalMessage({ text: (err as Error).message, tone: "error" });
-    } finally {
-      setTrimming(false);
-    }
-  };
 
   // Fit to the paper where it lies under the page: its corner and size, in inches on the page.
   const fitToPaper = fileName && settings.paper_w > 0 && settings.paper_h > 0
@@ -712,6 +702,7 @@ export default function App() {
     setLayerLinks(plot?.layer_links ?? []);
     setHatchSpacing(plot?.hatch_spacing ?? {});
     setSkipTiny(plot?.skip_tiny ?? null);
+    setTrimMarks(plot?.trim ?? null);
     // The drawing tool is deliberately NOT taken from the file. It stands for the pen actually in the
     // holder, and a file can arrive at any moment - saved from Studio, synced from odin - which would
     // otherwise swap the chosen pen, and its pen positions and speeds with it, in the middle of
@@ -767,6 +758,7 @@ export default function App() {
     ...(layerLinks.length ? { layer_links: layerLinks } : {}),
     ...(Object.keys(hatchSpacing).length ? { hatch_spacing: hatchSpacing } : {}),
     ...(skipTiny ? { skip_tiny: skipTiny } : {}),
+    ...(trimMarks ? { trim: trimMarks } : {}),
     paper: { paper_size: settings.paper_size, paper_w: settings.paper_w, paper_h: settings.paper_h, paper_x: settings.paper_x, paper_y: settings.paper_y, paper_color: settings.paper_color },
   };
   const saveKey = JSON.stringify(drawingNow);
@@ -1062,9 +1054,6 @@ export default function App() {
   // shown straight away; the plot simulation - pen paths, time, reach - takes seconds on a big
   // drawing and replaces it when done. `updating` covers the gap, and Plot waits for it.
   const [drawingVersion, setDrawingVersion] = useState(0); // bumped when a drawing is (re)loaded
-  // The drawing as shapes, for the Trim marks card (see editTrim) and the trim's dashed outline on the
-  // preview: read again whenever it changes. Only a drawing with trim marks is read into shapes - the
-  // rest only while the card is out, to be given some.
   // The drawing's own size and its margins, for the Artboard card. Read from the file's attributes
   // and its design block alone (drawingSizes), never through its shapes: a separation of fifty
   // thousand strokes should not be parsed to learn two numbers.
@@ -1087,20 +1076,6 @@ export default function App() {
     };
   }, [fileName, drawingVersion]);
 
-  const [trimDrawing, setTrimDrawing] = useState<Opened | null>(null);
-  useEffect(() => {
-    if (!fileName) {
-      setTrimDrawing(null);
-      return;
-    }
-    let stale = false;
-    readCurrent((svg) => trimCard || /"kind"\s*:\s*"trim"/.test(svg))
-      .then((read) => !stale && setTrimDrawing(read?.drawing ?? null))
-      .catch(() => !stale && setTrimDrawing(null));
-    return () => {
-      stale = true;
-    };
-  }, [trimCard, fileName, drawingVersion]);
   const [updating, setUpdating] = useState(false);
   const artworkKey = useRef("");
   const estimatedSeq = useRef(0); // the last request whose full simulation is on screen
@@ -1117,16 +1092,18 @@ export default function App() {
     const sentScale = refs.current.scale;
     const sentRotation = refs.current.rotation;
     const sentHatch = refs.current.hatchSpacing;
+    const sentTrim = refs.current.trimMarks;
 
-    const key = [fileName, drawingVersion, sentScale, sentRotation, JSON.stringify(sentHatch)].join("|");
+    const key = [fileName, drawingVersion, sentScale, sentRotation, JSON.stringify(sentHatch), JSON.stringify(sentTrim)].join("|");
     if (key !== artworkKey.current) {
       artworkKey.current = key;
       setSimPreview(null); // its pen paths are for the old size or turn
-      postJSON<{ svg: string; layers: Layer[]; warnings: string[] }>("/api/artwork", { scale: sentScale, rotation: sentRotation, hatch_spacing: sentHatch })
+      postJSON<{ svg: string; layers: Layer[]; warnings: string[]; trim_pad_mm?: number }>("/api/artwork", { scale: sentScale, rotation: sentRotation, hatch_spacing: sentHatch, trim: sentTrim })
         .then((art) => {
           if (key !== artworkKey.current) return; // a newer size or turn was asked for
           setArtPreview(parsePreview(art.svg));
           setDrawingLayers(art.layers);
+          setPadMm(art.trim_pad_mm ?? 0);
           setArtWarnings(art.warnings);
         })
         .catch(() => {}); // the estimate reports anything wrong with the file
@@ -1143,13 +1120,14 @@ export default function App() {
       try {
         const result = await postJSON<Estimate>("/api/estimate", {
           ...refs.current.plotSettings, scale: sentScale, layers: refs.current.plotLayerIds, rotation: sentRotation, hatch_spacing: sentHatch,
-          skip_tiny: refs.current.skipTiny,
+          skip_tiny: refs.current.skipTiny, trim: sentTrim,
         });
         if (seq !== estimateSeq.current || result.superseded) return; // a newer estimate is on its way
         estimatedSeq.current = seq;
         setEstimate(result);
         setSimPreview(parsePreview(result.preview_svg));
         setDrawingLayers(result.layers);
+        setPadMm(result.trim_pad_mm ?? 0);
         setUpdating(false);
         setLocalMessage((m) => (m && (m.text === "Working out the plot…" || m.text.startsWith("Loading ")) ? null : m));
       } catch (err) {
@@ -1161,7 +1139,7 @@ export default function App() {
     }, 450);
     return () => window.clearTimeout(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [fileName, drawingVersion, simulate ? estimateKey : "", scale, simulate ? plotLayerIds?.join("|") : "", rotation, simulate, JSON.stringify(hatchSpacing), skipTiny]);
+  }, [fileName, drawingVersion, simulate ? estimateKey : "", scale, simulate ? plotLayerIds?.join("|") : "", rotation, simulate, JSON.stringify(hatchSpacing), skipTiny, JSON.stringify(trimMarks)]);
 
   /* ---------- Actions ---------- */
 
@@ -1369,7 +1347,7 @@ export default function App() {
     setLastAction("plot");
     setLocalMessage(null);
     try {
-      await postJSON("/api/plot", { ...settingsFor(plotLayerId), tool: active?.name, start_x: placement.x, start_y: placement.y, tip_offset_x: tipOffsetFor(plotLayerId), tip_offset_y: tipOffsetYFor(plotLayerId), scale, layers: plotLayerIds, rotation, hatch_spacing: hatchSpacing, skip_tiny: skipTiny });
+      await postJSON("/api/plot", { ...settingsFor(plotLayerId), tool: active?.name, start_x: placement.x - padMm, start_y: placement.y - padMm, tip_offset_x: tipOffsetFor(plotLayerId), tip_offset_y: tipOffsetYFor(plotLayerId), scale, layers: plotLayerIds, rotation, hatch_spacing: hatchSpacing, skip_tiny: skipTiny, trim: trimMarks });
       setStatus((s) => (s ? { ...s, state: "preparing", message: "", started: false } : s));
     } catch (err) {
       setLocalMessage({ text: (err as Error).message, tone: "error" });
@@ -1515,6 +1493,13 @@ export default function App() {
   /* ---------- Presets ---------- */
 
   const active = presets.find((p) => p.name === activePreset);
+
+  // The pen trim marks go down in until it's changed in the Layers card: the darkest in the tool's
+  // palette, which is how the marks have always been made - black on white paper.
+  const darkestInk = (): Ink | undefined => {
+    const pen = [...(active?.palette ?? [])].sort((a, b) => (lightness(a.color) ?? 1) - (lightness(b.color) ?? 1))[0];
+    return pen && active ? { tool: active.name, pen: pen.name, hex: pen.color } : undefined;
+  };
 
   // Studio, on this drawing, in this tab. The plotter carries on with anything it's doing; Plot's page
   // picks it up again when come back to.
@@ -1981,9 +1966,6 @@ export default function App() {
               settings={settings}
               preview={preview}
               footprint={fp}
-              trimBoxes={trimDrawing?.shapes
-                .filter((sh) => sh.curve?.kind === "trim" && !trimDrawing.layers.find((l) => l.id === sh.layerId)?.hidden)
-                .map((sh) => boxOf(sh))}
               fitsOnBed={onBed}
               fitsOnPaper={onPaper}
               placement={placement}
@@ -1993,7 +1975,6 @@ export default function App() {
               hasFile={Boolean(fileName)}
               draggingFile={draggingFile}
               canDrag={!busy}
-              onTrimMove={trimming ? undefined : (dx, dy) => void editTrim((d) => withTrimMoved(d, dx, dy))}
               onOpenBrowser={openBrowser}
               layerLooks={layerLooks}
               layerOrder={layerOrder}
@@ -2204,19 +2185,11 @@ export default function App() {
           <Card variant="flat" className={styles.controls}>
             <div className={`${styles.cardBody} ${controls.cardSections}`}>
               <TrimMarksSection
-                collapsibleKey="plot-trim"
-                trim={trimDrawing ? trimShapeOf(trimDrawing.shapes) : undefined}
-                drawing={trimDrawing ? drawingBoxOf(trimDrawing.shapes) : null}
-                page={trimDrawing?.page ?? { w: settings.paper_w / 25.4, h: settings.paper_h / 25.4 }}
+                marks={trimMarks}
                 units={settings.units}
-                busy={busy || trimming || !trimDrawing}
-                refused={!fileName ? "Open a drawing to give it trim marks."
-                  : trimDrawing?.unsupported ? `This drawing has ${trimDrawing.unsupported === 1 ? "a mark" : `${trimDrawing.unsupported} marks`} that can't be redrawn from shapes, so changing it would lose ${trimDrawing.unsupported === 1 ? "it" : "them"}. Add trim marks in Studio or Image instead.`
-                  : undefined}
-                onOn={(on) => void editTrim((d) => (on ? withTrimOn(d, active?.palette ?? [], paperMarginMm() / 25.4) : withTrimOff(d)))}
-                setBox={(box) => void editTrim((d) => withTrimBox(d, box))}
-                setMarks={(curve) => void editTrim((d) => withTrimMarks(d, curve))}
-                moveDrawing={(dx, dy) => void editTrim((d) => withDrawingMoved(d, dx, dy))}
+                busy={busy}
+                refused={fileName ? undefined : "Open a drawing to plot it with trim marks."}
+                onChange={(marks) => setTrimMarks(marks && { ...DEFAULT_TRIM, ...marks, ink: marks.ink ?? darkestInk() })}
               />
             </div>
           </Card>

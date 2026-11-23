@@ -114,6 +114,7 @@ export interface Estimate {
   layers: Layer[];
   superseded?: boolean; // a newer estimate was asked for before this one ran
   skipped_tiny?: number; // paths left out by Skip tiny paths
+  trim_pad_mm?: number; // how far the page grew for the trim marks, in mm on the paper; 0 without them
 }
 
 // A layer as found in the drawing file, in file order.
@@ -171,6 +172,19 @@ export interface Plot {
   hatch_spacing?: Record<string, number>; // layer ids to the hatch spacing (mm) Plot fills them at, when not Studio's
   skip_tiny?: number; // paths whose longest side is under this (mm on paper) are left out of the plot; absent when off
   paper?: Partial<Pick<Settings, "paper_size" | "paper_w" | "paper_h" | "paper_x" | "paper_y" | "paper_color">>;
+  trim?: TrimMarks; // the trim marks this print is plotted with; absent when there are none
+}
+
+/**
+ * Trim marks, as Plot keeps them: two lengths and the ink, never any geometry. They are drawn round
+ * the artboard when the drawing is plotted (server.py, add_trim_marks), so one drawing can go on any
+ * sheet with the marks that suit it. Here rather than in the drawing's own block because what a print
+ * is cut to is a decision about this print, like the paper and the placement.
+ */
+export interface TrimMarks {
+  length: number; // mm, each mark's length
+  offset: number; // mm, the gap between the artboard's corner and where each mark starts
+  ink?: Ink; // the pen they go down in; the darkest in the tool's palette unless it's changed
 }
 
 /**

@@ -18,8 +18,8 @@ const PANELS = {
   position: { label: "Drawing position", icon: <Move />, what: "the Drawing position card: where the drawing sits on the plotter" },
   options: { label: "Plot options", icon: <SlidersHorizontal />, what: "the Plot options card: how the drawing is plotted" },
   utilities: { label: "Utilities", icon: <Wrench />, what: "the Utilities card: moving the pen and carriage by hand" },
-  // Every app's: the last switch in the toolbar with File.
-  trim: { label: "Trim marks", icon: <Slice />, what: "the Trim marks card: where the print is cut, for the size it's finished at, and the drawing placed in it" },
+  // Plot's alone: the marks are drawn round the artboard when the drawing is plotted, not kept in it.
+  trim: { label: "Trim marks", icon: <Slice />, what: "the Trim marks card: where the print is cut, round the artboard" },
 };
 
 export type Panel = keyof typeof PANELS;
