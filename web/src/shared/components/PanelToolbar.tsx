@@ -12,15 +12,18 @@ const PANELS = {
   // Studio's and Image's: one card for the two, since the margins are set in the first and read by
   // every button in the second (Tom, 2026-11-24). Plot keeps `artboard` alone, read-only.
   // Called Layout, the print word for how artwork is arranged inside a page: one idea rather than
-  // two names joined by an "and". Artboard and Artwork are still the sections inside it.
-  layout: { label: "Layout", icon: <ScanSquare />, what: "the Layout card: the drawing's own size and margins, and the artwork inside them" },
+  // two names joined by an "and". The same question in all three apps - how big the piece is, where
+  // it sits, which way it lies, none of it touching the artwork itself - so the second section
+  // differs: Artwork in Studio and Image, Position in Plot (Tom, 2026-11-24).
+  layout: { label: "Layout", icon: <ScanSquare />, what: "the Layout card: how big the piece is, and where it sits" },
   paper: { label: "Paper", icon: <StickyNote />, what: "the Paper card: what the drawing is plotted on" },
   grid: { label: "Grid", icon: <Grid3x3 />, what: "the Grid card: what shapes snap to" },
   image: { label: "Image", icon: <Image />, what: "the image's card" },
   layers: { label: "Layers", icon: <Layers2 />, what: "the Layers card: the image's layers, their colors and order" },
   adjustments: { label: "Adjustments", icon: <SlidersHorizontal />, what: "the Adjustments card: the image's brightness and contrast, and each channel's" },
   queue: { label: "Queue", icon: <ListOrdered />, what: "the Queue card: the drawings waiting to be plotted" },
-  position: { label: "Plot position", icon: <Move />, what: "the Plot position card: where the artboard sits on the paper, and the paper on the plotter" },
+  // No longer a card: the Position section inside Plot's Layout card, here for its icon and name.
+  position: { label: "Position", icon: <Move />, what: "where the artboard sits on the paper, and the paper on the plotter" },
   options: { label: "Plot options", icon: <SlidersHorizontal />, what: "the Plot options card: how the drawing is plotted" },
   utilities: { label: "Utilities", icon: <Wrench />, what: "the Utilities card: moving the pen and carriage by hand" },
   // Plot's alone, last: these are all drawn when the drawing is plotted, and kept in none of it.

@@ -486,8 +486,6 @@ export default function App() {
   useEffect(() => save("plot-marks-card", marksCard), [marksCard]);
   // What is set less often - where the drawing sits, how it's plotted, the pen and carriage by hand -
   // a card each, from a toolbar of their own at the foot of the others. Put away until wanted.
-  const [positionCard, setPositionCard] = useState(() => load<boolean>(STORAGE.positionCard) ?? false);
-  useEffect(() => save(STORAGE.positionCard, positionCard), [positionCard]);
   const [optionsCard, setOptionsCard] = useState(() => load<boolean>(STORAGE.optionsCard) ?? false);
   useEffect(() => save(STORAGE.optionsCard, optionsCard), [optionsCard]);
   const [utilitiesCard, setUtilitiesCard] = useState(() => load<boolean>(STORAGE.utilitiesCard) ?? false);
@@ -2016,7 +2014,7 @@ export default function App() {
           <PanelToolbar
             cards={[
               { key: "file", on: fileCard, toggle: () => setFileCard((on) => !on) },
-              { key: "artboard", on: artboardCard, toggle: () => setArtboardCard((on) => !on), disabled: !sizes, why: "open a drawing first" },
+              { key: "layout", on: artboardCard, toggle: () => setArtboardCard((on) => !on), disabled: !sizes, why: "open a drawing first" },
               { key: "paper", on: paperCard, toggle: () => setPaperCard((on) => !on) },
               { key: "pen", on: penCard, toggle: () => setPenCard((on) => !on) },
               { key: "queue", on: queueCard, toggle: () => setQueueCard((on) => !on) },
@@ -2026,14 +2024,13 @@ export default function App() {
           {/* Setup's way in, at the foot of the toolbars, as it was in Studio and Image. */}
           <SetupToolbar open={setupOpen} onToggle={() => setSetupOpen((open) => !open)} orientation="vertical" />
           {/* Last: what is set less often, a card each. */}
-          {/* Plot position is where the piece lands on paper, which is worth setting away from the
-            machine, so it is here with or without a plotter (Tom, 2026-11-24). The other two drive
-            the plotter itself: switched off, and their cards put away, until there is one. Each
-            card's own on or off is kept for when it's back. */}
+          {/* Both drive the plotter itself: switched off, and their cards put away, until there is
+            one. Each card's own on or off is kept for when it's back. Where the piece lands on
+            paper used to be here too, as "Plot position"; it is the Layout card's second half now,
+            beside the artboard it places (Tom, 2026-11-24). */}
           <PanelToolbar
             label="Less often"
             cards={[
-              { key: "position", on: positionCard, toggle: () => setPositionCard((on) => !on) },
               { key: "options", on: optionsCard, toggle: () => setOptionsCard((on) => !on), disabled: !plotterConnected, why: "connect a plotter first" },
               { key: "utilities", on: utilitiesCard, toggle: () => setUtilitiesCard((on) => !on), disabled: !plotterConnected, why: "connect a plotter first" },
             ]}
@@ -2186,9 +2183,11 @@ export default function App() {
               colour lives here too, in all three apps - it is the ground the art is made on, not a
               fact about the sheet (2026-11-23). Changing the size here does not scale the artwork:
               Plot never scales. */}
-          {fileName && artboardCard && sizes && (
+          {fileName && artboardCard && (
           <Card variant="flat" className={styles.controls}>
             <div className={`${styles.cardBody} ${controls.cardSections}`}>
+              <Section title="Layout" icon={panelIcon("layout")} collapsibleKey="plot-layout">
+                {sizes && (
                 <ArtboardSection
                   w={sizes.artboard.w * 25.4}
                   h={sizes.artboard.h * 25.4}
@@ -2201,6 +2200,27 @@ export default function App() {
                   // surface are what the piece is, set in Studio or Image. Plot shows them so you
                   // can see what you're plotting, and changes none of them.
                 />
+                )}
+                {/* Where that artboard lands on the sheet, and which way round. Layout is the same
+                  question in all three apps - how big the piece is, where it sits, which way it
+                  lies - and in Plot none of it touches the artwork (Tom, 2026-11-24). It was a card
+                  of its own, "Plot position", in the rail's lower group beside the plotter's own
+                  controls, away from the two cards it is entirely about. */}
+                <Section title="Position" icon={panelIcon("position")} collapsibleKey="plot-position-card">
+                  <PositionSection
+                    placement={placement}
+                    minPlacement={minPlace}
+                    units={settings.units}
+                    disabled={plotting}
+                    onChange={(p) => setPlacement(p)}
+                    paperX={settings.paper_x}
+                    paperY={settings.paper_y}
+                    onPaperChange={updateSettings}
+                    onPlace={placeOnPaper}
+                    onTurn={fileName ? turnArtboard : null}
+                  />
+                </Section>
+              </Section>
             </div>
           </Card>
           )}
@@ -2379,26 +2399,7 @@ export default function App() {
           )}
           {/* Last in the rail, always: what is set less often, from its own toolbar. Where it goes and
             how it's plotted only mean something once there's a drawing. */}
-          {fileName && positionCard && (
-          <Card variant="flat" className={styles.controls}>
-            <div className={`${styles.cardBody} ${controls.cardSections}`}>
-              <Section title="Plot position" icon={panelIcon("position")} collapsibleKey="plot-position-card">
-                <PositionSection
-                  placement={placement}
-                  minPlacement={minPlace}
-                  units={settings.units}
-                  disabled={plotting}
-                  onChange={(p) => setPlacement(p)}
-                  paperX={settings.paper_x}
-                  paperY={settings.paper_y}
-                  onPaperChange={updateSettings}
-                  onPlace={placeOnPaper}
-                  onTurn={fileName ? turnArtboard : null}
-                />
-              </Section>
-            </div>
-          </Card>
-          )}
+
           {plotterConnected && fileName && optionsCard && (
           <Card variant="flat" className={styles.controls}>
             <div className={`${styles.cardBody} ${controls.cardSections}`}>
