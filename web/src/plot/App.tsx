@@ -6,7 +6,7 @@ import { api, postJSON } from "../shared/lib/api";
 import { barrelOffsetMm, BUSY_STATES, DEFAULT_SETTINGS, IDRAW_MODEL, NONE_PEN, PAPER_SIZES, penWidthOf, PLOTTING_STATES, PRESET_FIELD_NAMES, PRESET_FIELDS, STEPS, STORAGE } from "../shared/lib/constants";
 import { cleanNote, fmtLen, listOf } from "../shared/lib/format";
 import { lightness } from "../shared/lib/color";
-import { fitsOnBed, fitsOnPaper, footprint, minPlacement, turnedFootprint, type FitAlign, type Margins } from "../shared/lib/geometry";
+import { fitsOnBed, fitsOnPaper, footprint, minPlacement, turnedFootprint, type Margins } from "../shared/lib/geometry";
 import { parsePlotPaths, type PlotPaths } from "../shared/lib/progressPaths";
 import { parsePreview, type Preview } from "../shared/lib/preview";
 import { load, save } from "../shared/lib/storage";
@@ -617,29 +617,6 @@ export default function App() {
     const next = { x: Math.max(min.x, p.x), y: Math.max(min.y, p.y) };
     setPlacementState(next);
   }, []);
-
-  // Centre the drawing's lines on the paper along one axis; its empty margin goes where it falls.
-  /**
-   * The artboard put where the align picker says: inside the paper less the margin, against an edge
-   * or centred (Tom, 2026-11-23). It moves the piece, never resizes it - what doesn't fit stays not
-   * fitting, in red. The page is what is placed, marks and all, so they land inside the margin too;
-   * the placement is the artboard's own corner, which starts `pad` after the page's.
-   */
-  const placeOnPaper = fp && settings.paper_w > 0 && settings.paper_h > 0
-    ? (align: FitAlign, marginMm: number) => {
-      const m = Math.max(0, marginMm) / 25.4;
-      const paper = { x: settings.paper_x / 25.4, y: settings.paper_y / 25.4, w: settings.paper_w / 25.4, h: settings.paper_h / 25.4 };
-      // Against an edge is against the MARGIN; in the middle ignores it (Tom, 2026-11-23). Centring
-      // inside the margin is the same thing as centring on the paper while the margins match, and
-      // the wrong thing as soon as the piece is bigger than the room they leave - a 12 in artboard
-      // on a 12 in sheet was pushed half an inch off the paper rather than sitting square on it.
-      const at = (edge: number, room: number, size: number, share: number) =>
-        share === 0.5 ? edge + (room - size) / 2 : edge + (share === 0 ? m : room - m - size);
-      const x = at(paper.x, paper.w, fp.w, align.x) + fp.pad.x;
-      const y = at(paper.y, paper.h, fp.h, align.y) + fp.pad.y;
-      setPlacement({ x: Math.round(x * 254) / 10, y: Math.round(y * 254) / 10 });
-    }
-    : null;
 
   /**
    * A quarter turn of the artboard on the sheet. Placement only: the drawing is not touched - the
@@ -2214,10 +2191,6 @@ export default function App() {
                   units={settings.units}
                   disabled={plotting}
                   onChange={(p) => setPlacement(p)}
-                  paperX={settings.paper_x}
-                  paperY={settings.paper_y}
-                  onPaperChange={updateSettings}
-                  onPlace={placeOnPaper}
                   onTurn={fileName ? turnArtboard : null}
                 />
               </Section>

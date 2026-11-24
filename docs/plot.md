@@ -66,13 +66,26 @@ which-way-it-lies switch goes, and the paper becomes just a size.
 
 **One card, "Plot position", for putting the artboard on the sheet.**
 
-> **Revised 2026-11-24 — it is the Layout card's second half, not a card.** Layout is the same
-> question in all three apps: how big the piece is, where it sits, which way it lies, none of it
-> touching the artwork. Plot's Artboard card is called Layout now, as Studio's and Image's are, and
-> this is the whole of its body - under no heading of its own, since placing the artboard is all
-> the card does besides stating its size. As a card of its own it sat in the rail's lower group beside the
-> plotter's own controls, away from the two cards it is entirely about, and read as missing. What it
-> holds is unchanged:
+> **Revised 2026-11-24 — it is the Layout card, and it holds two of these five things.** Layout is
+> the same question in all three apps: how big the piece is, where it sits, which way it lies, none
+> of it touching the artwork. Plot's Artboard card is called Layout now, as Studio's and Image's
+> are, and placing the artboard is the whole of its body, under no heading of its own. As a card of
+> its own it sat in the rail's lower group beside the plotter's own controls, away from the two
+> cards it is entirely about, and read as missing.
+>
+> Of the five things listed below, **two remain**: the quarter turns, and one pair of Across and
+> Down. Those two numbers are now measured **from the plotter's home**, not from the paper's corner,
+> because that is the one thing Plot's Layout does: say where the artboard starts in relation to the
+> plotter's origin. Gone with the rest:
+>
+> - the **nine-way align picker**, which was only a quick way of computing those two numbers;
+> - the **margin**, which existed only to feed the align picker;
+> - the second pair, **"where the paper's corner sits, from home"**. `paper_x` and `paper_y` are
+>   still kept per drawing and still place the sheet in the preview and in `fitsOnPaper` - they
+>   simply have no control any more. If a sheet needs taping somewhere other than home, that offset
+>   goes into the one pair of numbers instead.
+>
+> The original five:
 
 - the quarter turns;
 - the nine-way align picker Studio's Artwork card uses — corners, edges and centre — acting as it is
@@ -94,9 +107,8 @@ Plot's rail, after 2026-11-24:
     —
     options · utilities
 
-- **Layout** — the artboard's size on a line, then the placing itself, under no sub-heading: the
-  quarter turns, the align picker, the one margin, the artboard's corner from the paper's corner,
-  and the paper's corner from home.
+- **Layout** — the artboard's size on a line, then the quarter turns and one pair of Across and
+  Down: the artboard's corner from the plotter's home. Nothing else.
 - **Paper** — the sheet's size, and which colour of it to load.
 - The lower group is the plotter's own again.
 
@@ -116,6 +128,6 @@ today.
   reshaping, but what should happen to a drawing that still carries an old scale isn't settled.
 - Whether a layer's ink reassigned in Plot is written into the drawing, as Plot's layer inks are
   today, or kept with the plot's own choices.
-- Where "the paper's corner from home" belongs. It is in the Layout card because
-  that is where it has always been, but it is a fact about the machine rather than about the piece,
-  and Utilities is where the rest of those live (noticed 2026-11-24, not decided).
+- Whether "the paper's corner from home" wants a control again. It was taken off the Layout card on
+  2026-11-24 with the align picker it served; the value is still kept and still used. Utilities is
+  where the rest of the machine's facts live, if it comes back.
