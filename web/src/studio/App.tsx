@@ -61,7 +61,7 @@ import { shapeIcon } from "./components/panels/ToolPicker";
 import { addPointOnLongest, boxAround, boxOf, clampToPage, groupLabel, groupsOf, moveBy, newGroupId, newLayerId, newShapeId, pointsBox, resizeTo, scaleInto, shapeName, turnAround, withWholeGroups, type Layer, type Page, type Shape } from "../shared/lib/drawing/shapes";
 import { areaPicker, silhouetteOf } from "../shared/lib/drawing/silhouette";
 import { buildSvg, svgForMarks } from "../shared/lib/drawing/svg";
-import { alignOnPage, drawnBox, drawnMiddle, fitToPage, placeOnPaper, reshapeDrawing, roomRound, runsOffPage } from "../shared/lib/drawing/whole";
+import { alignOnPage, drawnBox, drawnMiddle, drawnOutside, fitToPage, placeOnPaper, reshapeDrawing, roomRound, runsOffPage } from "../shared/lib/drawing/whole";
 import { cropDrawing } from "../shared/lib/drawing/crop";
 import { isKnockoutLayer, withKnockout } from "../shared/lib/drawing/knockout";
 import { turnDrawingOnPaper } from "../shared/lib/drawing/turnPaper";
@@ -1786,6 +1786,10 @@ export default function App() {
   />
  );
 
+ // Whether Crop artwork has anything to take away. Held against the shapes themselves, so the
+ // geometry is walked when the drawing changes and not on every render.
+ const artworkOutside = useMemo(() => drawnOutside(shapes, artboard, margins), [shapes, margins, artboard]);
+
  // The Artwork card: the art itself - turned, fitted inside the artboard's margins, scaled. These
  // were the Paper card's "Drawing transform", and came away with it when the paper left this app.
  const artworkSection = (
@@ -1797,7 +1801,7 @@ export default function App() {
    onTurn={(dir) => void turnAll(dir)}
    onFit={shapes.length ? fitDrawing : undefined}
    onFill={shapes.length ? fillDrawing : undefined}
-   onCut={shapes.length ? cutToArtboard : undefined}
+   onCut={artworkOutside ? cutToArtboard : undefined}
    onScale={shapes.length ? scaleDrawing : undefined}
    onAlign={shapes.length ? alignDrawing : undefined}
   />

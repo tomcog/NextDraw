@@ -88,11 +88,15 @@ export function ArtworkSection({ artboard, margins, units, collapsibleKey, disab
         <Button
           size="sm"
           variant="secondary"
-          title={`Cut to artboard: delete the lines that run outside the ${said}. What crosses the edge is trimmed there and becomes a path, and a shape's hatch fill loses its spacing. Undo brings it back; a save does not.`}
+          // Off unless there is something outside to take away: the caller passes onCut only then,
+          // so the button can't be clicked to no effect (Tom, 2026-11-24).
+          title={onCut
+            ? `Crop artwork: delete the lines that run outside the ${said}. What crosses the edge is trimmed there and becomes a path, and a shape's hatch fill loses its spacing. Undo brings it back; a save does not.`
+            : `Crop artwork: nothing is drawn outside the ${said}, so there is nothing to crop`}
           disabled={disabled || !onCut || !roomLeft}
           onClick={() => onCut?.(margins)}
         >
-          Cut to artboard
+          Crop artwork
         </Button>
       </div>
       {/* Scale by a percent of the size it is now - 200 doubles the artwork, 50 halves it, whatever
