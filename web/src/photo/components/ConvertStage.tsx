@@ -244,10 +244,15 @@ export function ConvertStage({ photo, parts, box, artboard, paperColor, model, i
       <g transform={`${moved ?? ""} translate(${at.x} ${at.y})`}>
         {read && parts.map((part, k) => (
           // Ink is see-through unless the pen's preset says it's opaque (Tom, 2026-10-11): laid on the
-          // paper it multiplies, so on black paper a translucent ink is simply black. With no preset,
-          // a split around the paper's layers are taken as opaque - white and grays on gray are
-          // nothing else, and there's no pen to ask.
-          <InkLayer key={k} color={part.color} sim={view === "preview"} opacity={ink.opacity} build={ink.build} builds={ink.builds} opaque={ink.opaque || (Boolean(ink.noPreset) && Boolean(part.photo.side))}>
+          // paper it multiplies, so on black paper a translucent ink is simply black.
+          //
+          // The LIGHT side of a split around the paper is the exception, whatever the preset says
+          // (Tom, 2026-11-24): a light pen means an opaque ink lighter than the paper it is drawn on
+          // - that is the whole of what the light side is for - and multiplied against the paper it
+          // would disappear, showing a Preview of half the print. The dark side still multiplies,
+          // which is what dark ink on lighter paper does. With no preset at all, both sides are
+          // taken as opaque: there is no pen to ask.
+          <InkLayer key={k} color={part.color} sim={view === "preview"} opacity={ink.opacity} build={ink.build} builds={ink.builds} opaque={ink.opaque || part.photo.side === "light" || (Boolean(ink.noPreset) && Boolean(part.photo.side))}>
             {photoMarks(part.photo, w, h)?.passes.map((d, i) => (d ? <path key={i} d={d} fill="none" /> : null))}
           </InkLayer>
         ))}
