@@ -1,7 +1,6 @@
 import { SizeChooser } from "./SizeChooser";
 import { PaperColorShown } from "./PaperColor";
-import { Section } from "./Section";
-import { panelIcon } from "../PanelToolbar";
+import styles from "./controls.module.css";
 import type { Units } from "../../lib/types";
 
 interface Props {
@@ -12,7 +11,6 @@ interface Props {
   sizeId: string;
   /** What the sizes are named in: one choice for all three apps (useUnits, and Plot's settings). */
   units: Units;
-  collapsibleKey: string;
   disabled?: boolean;
   /** A size from the menu, which always lies with its long edge across the plotter. */
   onSize: (id: string) => void;
@@ -37,14 +35,13 @@ interface Props {
  * all since 2026-11-23; the ground's colour is set on their Layout card, and stated here so you know
  * which sheet to load.
  */
-export function PaperSection({ w, h, sizeId, units, collapsibleKey, disabled, onSize, onDimensions, color }: Props) {
+export function PaperSection({ w, h, sizeId, units, disabled, onSize, onDimensions, color }: Props) {
   return (
-    <Section
-      title="Paper"
-      icon={panelIcon("paper")}
-      collapsibleKey={collapsibleKey}
-      actionWhenOpen
-    >
+    <>
+      {/* A label, not a collapsible section: inside Plot's Layout card the paper is two rows beside
+        two others, and a chevron to fold them away would be furniture over furniture (Tom,
+        2026-11-24). The same small heading Margins and Surface use. */}
+      <p className={styles.subheading}>Paper</p>
       <SizeChooser
         w={w}
         h={h}
@@ -57,6 +54,6 @@ export function PaperSection({ w, h, sizeId, units, collapsibleKey, disabled, on
         onDimensions={onDimensions}
       />
       {color && <PaperColorShown color={color} />}
-    </Section>
+    </>
   );
 }

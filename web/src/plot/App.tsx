@@ -2186,7 +2186,6 @@ export default function App() {
                   h={settings.paper_h}
                   sizeId={paperSizeId}
                   units={settings.units}
-                  collapsibleKey="plot-paper"
                   disabled={plotting}
                   onSize={pickPaperSize}
                   // Turned or typed, the paper is named by its size: Custom, unless it is one of the list's.
