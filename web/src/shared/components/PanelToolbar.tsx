@@ -8,7 +8,10 @@ const PANELS = {
   file: { label: "File", icon: <Save />, what: "the File card" },
   pen: { label: "Pen", icon: <Pen />, what: "the Pen card: what the drawing is plotted with" },
   artboard: { label: "Artboard", icon: <Frame />, what: "the Artboard card: the drawing's own size, and the margins the artwork sits inside" },
-  artwork: { label: "Artwork", icon: <Shapes />, what: "the Artwork card: turning the artwork, fitting it inside the margins, and its scale" },
+  artwork: { label: "Artwork", icon: <Shapes />, what: "turning the artwork, fitting it inside the margins, and its scale" },
+  // Studio's and Image's: one card for the two, since the margins are set in the first and read by
+  // every button in the second (Tom, 2026-11-24). Plot keeps `artboard` alone, read-only.
+  artboardArtwork: { label: "Artboard & artwork", icon: <Frame />, what: "the Artboard & artwork card: the drawing's own size and margins, and the artwork inside them" },
   paper: { label: "Paper", icon: <StickyNote />, what: "the Paper card: what the drawing is plotted on" },
   grid: { label: "Grid", icon: <Grid3x3 />, what: "the Grid card: what shapes snap to" },
   image: { label: "Image", icon: <Image />, what: "the image's card" },

@@ -181,10 +181,13 @@ export default function App() {
   const [fileCard, setFileCard] = useState(() => load<boolean>("photo-file-card") ?? true);
   useEffect(() => remember("photo-file-card", fileCard), [fileCard]);
   // The Paper and Pen cards under it: what the drawing is made on, and with.
-  const [artboardCard, setArtboardCard] = useState(() => load<boolean>("photo-artboard-card") ?? true);
-  useEffect(() => remember("photo-artboard-card", artboardCard), [artboardCard]);
-  const [artworkCard, setArtworkCard] = useState(() => load<boolean>("photo-artwork-card") ?? true);
-  useEffect(() => remember("photo-artwork-card", artworkCard), [artworkCard]);
+  // One card for the artboard and the artwork, as in Studio (Tom, 2026-11-24): the margins are set
+  // in the first half and read by every button in the second. Open if either of the two it replaces
+  // was.
+  const [artboardCard, setArtboardCard] = useState(() =>
+    load<boolean>("photo-artboard-artwork-card")
+    ?? ((load<boolean>("photo-artboard-card") ?? true) || (load<boolean>("photo-artwork-card") ?? true)));
+  useEffect(() => remember("photo-artboard-artwork-card", artboardCard), [artboardCard]);
   const [penCard, setPenCard] = useState(() => load<boolean>("photo-pen-card") ?? true);
   useEffect(() => remember("photo-pen-card", penCard), [penCard]);
   // And the photo's own card, under it: turning, brightness and contrast, size on the artboard.
@@ -940,14 +943,15 @@ export default function App() {
           <div className={`${styles.cardBody} ${controls.cardSections}`}>{toolSection}</div>
         </Card>
       )}
+      {/* The page and what sits on it, one card: the margins above the buttons that use them. */}
       {artboardCard && (
         <Card variant="flat" className={styles.controls}>
-          <div className={`${styles.cardBody} ${controls.cardSections}`}>{artboardSection}</div>
-        </Card>
-      )}
-      {artworkCard && (
-        <Card variant="flat" className={styles.controls}>
-          <div className={`${styles.cardBody} ${controls.cardSections}`}>{artworkSection}</div>
+          <div className={`${styles.cardBody} ${controls.cardSections}`}>
+            <Section title="Artboard &amp; artwork" icon={panelIcon("artboardArtwork")} collapsibleKey="artboard-artwork">
+              {artboardSection}
+              {artworkSection}
+            </Section>
+          </div>
         </Card>
       )}
       {photoCard}
@@ -970,7 +974,7 @@ export default function App() {
   // The toolbar's effect is the whole photo's. Silhouette has no tones or colours to split by, so a
   // split photo comes back together as one layer drawn that way; separations keep a plate each.
   // Whether the rail has any card to show; with none, the stage takes its width.
-  const railOut = Boolean(fileCard || artboardCard || artworkCard || penCard || infoCard || (chosen?.photo && (effectCards || layersCard || adjustCard || vignetteCard || maskCard)));
+  const railOut = Boolean(fileCard || artboardCard || penCard || infoCard || (chosen?.photo && (effectCards || layersCard || adjustCard || vignetteCard || maskCard)));
 
   const setEffect = (effect: Effect) => {
     setEffectCards(true);
@@ -1129,8 +1133,7 @@ export default function App() {
             cards={[
               { key: "file", on: fileCard, toggle: () => setFileCard((on) => !on) },
               { key: "pen", on: penCard, toggle: () => setPenCard((on) => !on) },
-              { key: "artboard", on: artboardCard, toggle: () => setArtboardCard((on) => !on) },
-              { key: "artwork", on: artworkCard, toggle: () => setArtworkCard((on) => !on) },
+              { key: "artboardArtwork", on: artboardCard, toggle: () => setArtboardCard((on) => !on) },
               { key: "image", on: infoCard, toggle: () => setInfoCard((on) => !on) },
             ]}
           />

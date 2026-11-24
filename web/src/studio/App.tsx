@@ -301,10 +301,13 @@ export default function App() {
  // Which of the rail's cards are out, from the toolbar at the left, as in Photo and Plot.
  const [fileCard, setFileCard] = useState(() => load<boolean>("studio-file-card") ?? true);
  useEffect(() => remember("studio-file-card", fileCard), [fileCard]);
- const [artboardCard, setArtboardCard] = useState(() => load<boolean>("studio-artboard-card") ?? true);
- useEffect(() => remember("studio-artboard-card", artboardCard), [artboardCard]);
- const [artworkCard, setArtworkCard] = useState(() => load<boolean>("studio-artwork-card") ?? true);
- useEffect(() => remember("studio-artwork-card", artworkCard), [artworkCard]);
+ // One card for the artboard and the artwork (Tom, 2026-11-24): the margins are set in the first
+ // half and read by every button in the second, so they were never used apart. Open if either of the
+ // two it replaces was.
+ const [artboardCard, setArtboardCard] = useState(() =>
+  load<boolean>("studio-artboard-artwork-card")
+  ?? ((load<boolean>("studio-artboard-card") ?? true) || (load<boolean>("studio-artwork-card") ?? true)));
+ useEffect(() => remember("studio-artboard-artwork-card", artboardCard), [artboardCard]);
  const [penCard, setPenCard] = useState(() => load<boolean>("studio-pen-card") ?? true);
  useEffect(() => remember("studio-pen-card", penCard), [penCard]);
  const [gridCard, setGridCard] = useState(() => load<boolean>("studio-grid-card") ?? true);
@@ -2103,8 +2106,7 @@ export default function App() {
       cards={[
        { key: "file", on: fileCard, toggle: () => setFileCard((on) => !on) },
        { key: "pen", on: penCard, toggle: () => setPenCard((on) => !on) },
-       { key: "artboard", on: artboardCard, toggle: () => setArtboardCard((on) => !on) },
-       { key: "artwork", on: artworkCard, toggle: () => setArtworkCard((on) => !on) },
+       { key: "artboardArtwork", on: artboardCard, toggle: () => setArtboardCard((on) => !on) },
        { key: "grid", on: gridCard, toggle: () => setGridCard((on) => !on) },
       ]}
      />
@@ -2209,14 +2211,15 @@ export default function App() {
       </div>
      </Card>
      )}
+     {/* The page and what sits on it, one card: the margins above the buttons that use them. */}
      {artboardCard && (
      <Card variant="flat" className={styles.controls}>
-      <div className={`${styles.cardBody} ${controls.cardSections}`}>{artboardSection}</div>
-     </Card>
-     )}
-     {artworkCard && (
-     <Card variant="flat" className={styles.controls}>
-      <div className={`${styles.cardBody} ${controls.cardSections}`}>{artworkSection}</div>
+      <div className={`${styles.cardBody} ${controls.cardSections}`}>
+       <Section title="Artboard &amp; artwork" icon={panelIcon("artboardArtwork")} collapsibleKey="artboard-artwork">
+        {artboardSection}
+        {artworkSection}
+       </Section>
+      </div>
      </Card>
      )}
      {gridCard && (
