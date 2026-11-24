@@ -49,7 +49,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from svgpaths import (PATH_ARITY, PATH_TOKENS, arc_points, closed_outlines, concentric_runs, cubic_points, dashed, fill_runs, flatten_path_data, hatch_lines, hatch_stroke, inset_box, inset_outline, mm, outline_strokes, reshape_matrix, waved)
 
 # The drawing's SVG - the tree, its layers and its size - lives in svgtree.py.
-from svgtree import (LENGTH, page_frame, NON_DRAWING_TAGS, LEGACY_PLOT_TAG, PLOT_NS, PLOT_TAG, AUTO_LAYER_ID, DESIGN_TAG, DISPLAY_RULE, ILLUSTRATOR_CLASS_RULE, ILLUSTRATOR_ID_ESCAPE, ILLUSTRATOR_ID_TAIL, ILLUSTRATOR_POINTS_PER_INCH, INKSCAPE_NS, PX_PER_UNIT, SHAPE_TAGS, STUDIO_FILL_PREFIX, STYLE_DECL, SVG_NS, class_strokes, ensure_layer_ids, fill_spacing_of, has_art, hoist_styles, is_illustrator_svg, layer_groups, layer_hidden, layer_name, normalize_size, page_mm_and_units, parse_svg, read_layers, set_layer_hidden, stroke_of, studio_fills, svg_bytes)
+from svgtree import (LENGTH, page_frame, NON_DRAWING_TAGS, LEGACY_PLOT_TAG, PLOT_NS, PLOT_TAG, AUTO_LAYER_ID, DESIGN_TAG, DISPLAY_RULE, ILLUSTRATOR_CLASS_RULE, ILLUSTRATOR_ID_ESCAPE, ILLUSTRATOR_ID_TAIL, ILLUSTRATOR_POINTS_PER_INCH, INKSCAPE_NS, PX_PER_UNIT, SHAPE_TAGS, STUDIO_FILL_PREFIX, STYLE_DECL, SVG_NS, class_strokes, ensure_layer_ids, fill_spacing_of, has_art, hoist_styles, is_illustrator_svg, layer_groups, layer_hidden, layer_name, normalize_size, page_mm_and_units, parse_svg, read_layers, set_layer_hidden, split_layers_by_color, stroke_of, studio_fills, svg_bytes)
 
 # The marks, blocks and signature Plot adds to a print live in plotextras.py.
 from plotextras import (BLOCK_ID, HEX_COLOR, PATH_DATA, REGISTRATION_NAME, REGISTRATION_PAUSE_MS, SIGNATURE_LABEL, SIGNATURE_LABEL_END, SIGNATURE_LAYER_ID, TRIM_LABEL, TRIM_LABEL_END, TRIM_LAYER_ID, TRIM_LINE_MM, add_plot_extras, anchor_at, clean_anchor, clean_blocks, clean_ink, clean_path, clean_signature, clean_size, clean_trim, drop_stamped, ink_parts, registration_first, registration_ids, trim_shape_ids, with_delay)
@@ -1070,6 +1070,7 @@ def load_drawing(svg_path):
     clear_resume()  # a stopped plot of the previous drawing can't be resumed on this one
     forget_printed()
     places.CURRENT_SVG.write_bytes(data)
+    split_layers_by_color(places.CURRENT_SVG)
     ensure_layer_ids(places.CURRENT_SVG)
     (places.JOBS / "current.name").write_text(svg_path.name)
     places.CURRENT_PATH.write_text(str(svg_path))
@@ -1730,6 +1731,7 @@ def upload():
     try:
         if kept:
             onto_paper(places.CURRENT_SVG, kept)
+        split_layers_by_color(places.CURRENT_SVG)
         ensure_layer_ids(places.CURRENT_SVG)
         plot = read_plot(parse_svg(places.CURRENT_SVG).getroot())
     except Exception:  # noqa: BLE001 - an unreadable SVG is reported by the estimate

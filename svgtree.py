@@ -61,32 +61,58 @@ def layer_name(group, illustrator):
         name = name.replace("_", " ")
     return name.strip()
 
-def class_strokes(root):
-    """Stroke colors set by class in <style> blocks, e.g. .st0{stroke:#912474}."""
-    strokes = {}
+def class_paints(root, prop):
+    """Colors set by class in <style> blocks, e.g. .st0{stroke:#912474} or .cls-1{fill:#1a5d80}."""
+    paints = {}
+    rule = re.compile(r"(?:^|;)\s*%s\s*:\s*([^;]+)" % prop)
     for style in root.iter(SVG_NS + "style"):
         for selectors, body in re.findall(r"([^{}]+)\{([^}]*)\}", style.text or ""):
-            match = re.search(r"(?:^|;)\s*stroke\s*:\s*([^;]+)", body)
+            match = rule.search(body)
             if not match:
                 continue
             for selector in selectors.split(","):
                 selector = selector.strip()
                 if selector.startswith("."):
-                    strokes[selector[1:]] = match.group(1).strip()
-    return strokes
+                    paints[selector[1:]] = match.group(1).strip()
+    return paints
 
-def stroke_of(node, by_class):
-    match = re.search(r"(?:^|;)\s*stroke\s*:\s*([^;]+)", node.get("style") or "")
+def class_strokes(root):
+    """Stroke colors set by class in <style> blocks, e.g. .st0{stroke:#912474}."""
+    return class_paints(root, "stroke")
+
+def paint_of(node, by_class, prop):
+    match = re.search(r"(?:^|;)\s*%s\s*:\s*([^;]+)" % prop, node.get("style") or "")
     if match:
         return match.group(1).strip()
-    if node.get("stroke"):
-        return node.get("stroke").strip()
+    if node.get(prop):
+        return node.get(prop).strip()
     for cls in (node.get("class") or "").split():
         if cls in by_class:
             return by_class[cls]
     return None
 
+def stroke_of(node, by_class):
+    return paint_of(node, by_class, "stroke")
+
 SHAPE_TAGS = {SVG_NS + t for t in ("path", "rect", "circle", "ellipse", "line", "polyline", "polygon")}
+
+def mark_color(node, stop, strokes, fills):
+    """
+    What color a mark is drawn in, looking up through its parents as far as `stop` - stroke first,
+    since that's the line a pen draws, and otherwise the fill it's painted with. A flat illustration
+    carries no strokes at all: every shape is a fill, and reading only strokes made such a file one
+    black layer (Tom, 2026-11-24).
+    """
+    for prop, by_class in (("stroke", strokes), ("fill", fills)):
+        walk = node
+        while walk is not None:
+            color = paint_of(walk, by_class, prop)
+            if color and color.lower() != "none":
+                return color.lower()
+            if color:  # "none", said here: this mark has no color of that kind, inherited or not
+                break
+            walk = walk.getparent() if walk is not stop else None
+    return None
 
 def read_layers(root):
     """The drawing's layers, top to bottom as they appear in the file: Inkscape layers if the file has them,
@@ -94,6 +120,7 @@ def read_layers(root):
     illustrator = is_illustrator_svg(root)
     groups = layer_groups(root)
     by_class = class_strokes(root)
+    by_class_fill = class_paints(root, "fill")
     fills = studio_fills(root)
     layers = []
     for index, group in enumerate(groups):
@@ -103,13 +130,9 @@ def read_layers(root):
             if node.tag not in SHAPE_TAGS:
                 continue
             shapes += 1
-            color = None
-            walk = node
-            while walk is not None and color is None:  # stroke can be inherited from a parent group
-                color = stroke_of(walk, by_class)
-                walk = walk.getparent() if walk is not group else None
-            if color and color.lower() != "none":
-                counts[color.lower()] = counts.get(color.lower(), 0) + 1
+            color = mark_color(node, group, by_class, by_class_fill)
+            if color:
+                counts[color] = counts.get(color, 0) + 1
         colors = sorted(counts, key=counts.get, reverse=True)
         name = layer_name(group, illustrator)
         layers.append({
@@ -145,6 +168,84 @@ def parse_svg(path):
 def svg_bytes(tree):
     from lxml import etree
     return etree.tostring(tree, xml_declaration=True, encoding=tree.docinfo.encoding or "utf-8")
+
+# Beyond this many colors a group isn't a pen separation, it's a full-color illustration, and a layer
+# apiece would be hundreds of rows nobody can plot. Such a group is left as the one layer it is.
+SPLIT_COLOR_LIMIT = 24
+
+# Ids an exporter made up rather than a name anybody chose. A layer called "path1234" helps no one.
+MADE_UP_ID = re.compile(r"^(?:path|shape|layer|group|g|svg|rect|circle|ellipse|line|poly\w*|cls)?[-_]?\d*$", re.I)
+
+def split_layers_by_color(path):
+    """
+    Give each color in a layer a layer of its own, where the file separates its colors by mark rather
+    than by group - which is how a flat illustration comes out of Illustrator or VectorCraft: four
+    fills inside one <g id="Layer_1">. A layer is a pen, so four colors are four layers, and until
+    2026-11-24 such a file opened as a single black one (Tom).
+
+    Only groups the file hasn't declared to be layers are split: a drawing that names its own layers,
+    Studio's and Inkscape's included, is left exactly as it is. Only whole children move, each with
+    its own transform, so nothing is reshaped - a child drawn in two colors stops the split, since
+    taking it apart would be guesswork.
+    """
+    tree = parse_svg(path)
+    root = tree.getroot()
+    if any(g.get(INKSCAPE_NS + "groupmode") == "layer" for g in root if g.tag == SVG_NS + "g"):
+        return  # the file says which groups are its layers; they are not ours to rearrange
+    strokes, fills = class_strokes(root), class_paints(root, "fill")
+    illustrator = is_illustrator_svg(root)
+    changed = False
+    for group in layer_groups(root):
+        # Each child, in file order, with the one color everything in it is drawn in.
+        children = []
+        for child in group:
+            if not isinstance(child.tag, str):
+                continue  # a comment or processing instruction: it rides along with the child above
+            marks = [n for n in child.iter() if n.tag in SHAPE_TAGS]
+            colors = {mark_color(m, group, strokes, fills) for m in marks}
+            colors.discard(None)
+            if not marks:
+                children.append((child, None))  # <defs>, a title: no color, stays where the file put it
+            elif len(colors) == 1:
+                children.append((child, colors.pop()))
+            else:
+                children = None  # one child, two colors: splitting it would be guesswork
+                break
+        if children is None:
+            continue
+        order = []
+        for _, color in children:
+            if color and color not in order:
+                order.append(color)
+        if len(order) < 2 or len(order) > SPLIT_COLOR_LIMIT:
+            continue
+        # A color's name: what its marks are called, when they agree on a name worth keeping, else the
+        # color itself. The file at hand names them "Blue", "Red" - better than any guess from a hex.
+        parent = group.getparent()
+        at = parent.index(group)  # the new layers stand exactly where the group they came from did
+        made = {}
+        for n, color in enumerate(order):
+            names = {layer_name(child, illustrator) for child, c in children if c == color}
+            names = {name for name in names if name and not MADE_UP_ID.match(name)}
+            layer = etree.Element(SVG_NS + "g")
+            layer.set(INKSCAPE_NS + "groupmode", "layer")
+            layer.set(INKSCAPE_NS + "label", names.pop() if len(names) == 1 else color)
+            layer.set("stroke", color)  # so every reader of this file agrees on the layer's color
+            if group.get("transform"):
+                layer.set("transform", group.get("transform"))
+            parent.insert(at + n, layer)
+            made[color] = layer
+        # Anything with no color of its own - a <defs>, a <title> - goes with the first layer rather
+        # than nowhere: the group that held it is about to go, and nothing in the file may be lost.
+        for child, color in children:
+            made[color if color else order[0]].append(child)
+        parent.remove(group)
+        changed = True
+    if changed:
+        # A file that never declared xmlns:inkscape gets the prefix lxml invents - ns1:label - which
+        # is correct XML and unreadable to anyone expecting Inkscape's own. Say it once, at the top.
+        etree.cleanup_namespaces(root, top_nsmap={"inkscape": INKSCAPE_NS[1:-1]})
+        path.write_bytes(svg_bytes(tree))
 
 def ensure_layer_ids(path):
     """Give every layer an id, so the page can refer to layers while they're renamed and reordered."""

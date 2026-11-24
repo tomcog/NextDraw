@@ -240,7 +240,15 @@ export function parseDrawing(text: string): Opened {
   // Illustrator writes a layer's name: with the characters an id can't hold escaped (_x31_ is "1"),
   // a long number on the end where a name was used twice, and spaces as underscores. Read the way
   // Plot reads them (layer_name in server.py), so both apps call the same layer the same thing.
-  const labelOf = (g: Element) => (g.getAttribute("inkscape:label") ?? g.getAttribute("label"))?.trim() || undefined;
+  // By the attribute's own name, not by its prefix: a file that never declared xmlns:inkscape has
+  // these written under whatever prefix its writer invented - lxml calls it ns1 - and reading the
+  // literal "inkscape:label" found none of them (Tom, 2026-11-24). Nothing else in a drawing calls
+  // an attribute "label" or "groupmode", so the local name alone is enough.
+  const inkscapeAttr = (g: Element, name: string) => {
+    const found = Array.from(g.attributes).find((a) => a.localName === name || a.name === name || a.name.endsWith(`:${name}`));
+    return found?.value;
+  };
+  const labelOf = (g: Element) => inkscapeAttr(g, "label")?.trim() || undefined;
   const nameOf = (g: Element) => {
     const label = labelOf(g) ?? g.getAttribute("data-name")?.trim();
     if (label) return label;
@@ -269,33 +277,45 @@ export function parseDrawing(text: string): Opened {
     return false;
   };
 
-  // The stroke a mark is drawn in: its own attribute, its own style, or a class in the file's
+  // The paint a mark is drawn in: its own attribute, its own style, or a class in the file's
   // stylesheet - the three ways a drawing program writes it.
-  const classStrokes = new Map<string, string>();
-  for (const sheet of Array.from(svg.querySelectorAll("style"))) {
-    for (const m of (sheet.textContent ?? "").matchAll(/\.([\w-]+)\s*\{[^}]*?stroke\s*:\s*([^;}]+)/g)) {
-      classStrokes.set(m[1], m[2].trim());
+  const classPaint = (prop: string) => {
+    const found = new Map<string, string>();
+    for (const sheet of Array.from(svg.querySelectorAll("style"))) {
+      for (const m of (sheet.textContent ?? "").matchAll(new RegExp(`\\.([\\w-]+)\\s*\\{[^}]*?${prop}\\s*:\\s*([^;}]+)`, "g"))) {
+        found.set(m[1], m[2].trim());
+      }
     }
-  }
-  const ownStroke = (el: Element): string | null => {
-    const attr = el.getAttribute("stroke");
+    return found;
+  };
+  const classStrokes = classPaint("stroke");
+  const classFills = classPaint("fill");
+  const ownPaint = (el: Element, prop: string, byClass: Map<string, string>): string | null => {
+    const attr = el.getAttribute(prop);
     if (attr) return attr;
-    const styled = el.getAttribute("style")?.match(/(?:^|;)\s*stroke\s*:\s*([^;]+)/)?.[1]?.trim();
+    const styled = el.getAttribute("style")?.match(new RegExp(`(?:^|;)\\s*${prop}\\s*:\\s*([^;]+)`))?.[1]?.trim();
     if (styled) return styled;
     for (const cls of (el.getAttribute("class") ?? "").split(/\s+/)) {
-      const found = classStrokes.get(cls);
+      const found = byClass.get(cls);
       if (found) return found;
     }
     return null;
   };
+  const ownStroke = (el: Element) => ownPaint(el, "stroke", classStrokes);
+  // A flat illustration carries no strokes at all - every shape is a fill - so a mark with no stroke
+  // of its own is drawn in the colour it is painted with (Tom, 2026-11-24). The plotter draws its
+  // outline either way; what the file says is which pen.
+  const ownFill = (el: Element) => ownPaint(el, "fill", classFills);
 
   // The layer a shape sits in names the pen that draws it - that's the whole point of naming layers
   // after pens, and it means the file says which pen without depending on Studio's own parameters.
   // A layer's colour comes off the group that holds it, since that's where buildSvg puts it.
   const strokeOf = (el: Element) => {
-    for (let up: Element | null = el; up; up = up.parentElement) {
-      const stroke = ownStroke(up);
-      if (stroke && stroke !== "none") return stroke;
+    for (const paint of [ownStroke, ownFill]) {
+      for (let up: Element | null = el; up; up = up.parentElement) {
+        const color = paint(up);
+        if (color && color !== "none") return color;
+      }
     }
     return null;
   };
@@ -308,7 +328,11 @@ export function parseDrawing(text: string): Opened {
     const counts = new Map<string, number>();
     for (const mark of Array.from(g.querySelectorAll(ART))) {
       let stroke: string | null = null;
-      for (let up: Element | null = mark; up && up !== g.parentElement && !stroke; up = up.parentElement) stroke = ownStroke(up);
+      for (const paint of [ownStroke, ownFill]) {
+        for (let up: Element | null = mark; up && up !== g.parentElement && !stroke; up = up.parentElement) stroke = paint(up);
+        if (stroke && stroke !== "none") break;
+        stroke = null;
+      }
       if (stroke && stroke !== "none") counts.set(stroke.toLowerCase(), (counts.get(stroke.toLowerCase()) ?? 0) + 1);
     }
     const most = Array.from(counts).sort((a, b) => b[1] - a[1])[0]?.[0];
@@ -324,7 +348,7 @@ export function parseDrawing(text: string): Opened {
   // apps see the same layers. Only the top level: a labelled group inside a layer - an exporter's
   // "Mono" inside each of a stack of separations - is part of that layer, not one of its own.
   const top = Array.from(svg.children).filter((g) => g.nodeName.toLowerCase() === "g");
-  const marked = top.filter((g) => g.getAttribute("inkscape:groupmode") === "layer");
+  const marked = top.filter((g) => inkscapeAttr(g, "groupmode") === "layer");
   const groups = marked.length ? marked : top.filter((g) => g.querySelector(ART));
   const layers: Layer[] = [];
   const lockedNames = new Set(Array.isArray(design.locked) ? design.locked.map(String) : []);
