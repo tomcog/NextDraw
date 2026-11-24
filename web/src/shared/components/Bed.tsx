@@ -19,13 +19,18 @@ interface Props {
   settings: Settings;
   preview: Preview | null;
   footprint: Footprint | null;
-  fitsOnBed: boolean;
-  fitsOnPaper: boolean;
   placement: Placement;
   onPlacementChange: (p: Placement, persist?: boolean) => void;
   carriage: Carriage | undefined;
   showPenUp: boolean;
   hairlines?: boolean; // every path as a thin line, ignoring the pen's width: the Layers card's layer by layer
+  /**
+   * The artboard's own size in inches, as it lies on the sheet (turned with the piece): what is left
+   * after the print is trimmed, drawn in red inside the plot outline (Tom, 2026-11-24).
+   */
+  artboard?: { w: number; h: number } | null;
+  /** Outline: the two guides are drawn. Preview shows the ink alone, as in Studio and Image. */
+  outline?: boolean;
   hasFile: boolean;
   draggingFile: boolean;
   canDrag: boolean;
@@ -380,14 +385,25 @@ export function Bed(props: Props) {
             clear of them, and it never moves within the artboard: the box grows around it as those
             extras are switched on. The same box you grab to move it, and it goes red when any of it
             passes the plotter's reach or the paper's edge. */}
-        {fp && (
+        {fp && props.outline && (
           <rect
             className={styles.sheetEdge}
-            data-over={!(props.fitsOnBed && props.fitsOnPaper)}
             x={fp.x * UNITS}
             y={fp.y * UNITS}
             width={fp.w * UNITS}
             height={fp.h * UNITS}
+          />
+        )}
+        {/* The trim line: the artboard itself, which is what is left when the print is cut at the
+          marks. It sits inside the plot outline by whatever the marks, the blocks and the signature
+          reach - `pad` is that distance before the artboard's corner. Red, and in Outline only. */}
+        {fp && props.outline && props.artboard && props.artboard.w > 0 && props.artboard.h > 0 && (
+          <rect
+            className={styles.trimEdge}
+            x={(fp.x + fp.pad.x) * UNITS}
+            y={(fp.y + fp.pad.y) * UNITS}
+            width={props.artboard.w * UNITS}
+            height={props.artboard.h * UNITS}
           />
         )}
       </g>

@@ -9,15 +9,21 @@
 
 .dragTarget { fill: transparent; pointer-events: all; }
 
+/* The plot outline: everything that goes on the paper - the artboard grown to hold the trim marks,
+   the colour blocks and the signature. A bright blue of its own rather than --nd-ink, which is the
+   colour a blue PEN draws in: this is a rule about the print, not a line in it (Tom, 2026-11-24).
+   Outline only, like the trim line it sits outside. */
 .sheetEdge {
   fill: none;
-  stroke: var(--nd-ink);
+  stroke: var(--nd-plot-edge, #0a84ff);
   stroke-width: 1;
   stroke-dasharray: 4 3;
   vector-effect: non-scaling-stroke;
 }
 
-.sheetEdge[data-over="true"] { stroke: var(--ui-danger); }
+/* No red "doesn't fit" state on this line any more (Tom, 2026-11-24): the paper is drawn under the
+   piece and you can see for yourself whether it lands on it, and red now means the trim line. The
+   banner still says it in words. */
 
 .carriage line,
 .carriage circle {
@@ -61,4 +67,17 @@
   opacity: 1;
   border-color: var(--ui-action);
   background: color-mix(in srgb, var(--ui-action) 6%, transparent);
+}
+
+/* The trim line: the artboard, what is left after the print is cut at the marks (Tom, 2026-11-24).
+   Red, against the plot outline's blue, and drawn in Outline only - in Preview nothing comes between
+   the eye and the ink. The two are different questions: the blue is what has to fit on the paper,
+   the red is what you end up holding. */
+.trimEdge {
+  fill: none;
+  stroke: var(--ui-action);
+  stroke-width: 1;
+  stroke-dasharray: 4 3;
+  vector-effect: non-scaling-stroke;
+  pointer-events: none;
 }

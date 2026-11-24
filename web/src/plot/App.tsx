@@ -13,10 +13,11 @@ import { load, save } from "../shared/lib/storage";
 import type { ColorBlocks, Confirmation, Estimate, Info, Ink, Layer, PenColor, LayerView, Message, Placement, Preset, QueueItem, Settings, SignatureMarks, Status, Plot, TrimMarks } from "../shared/lib/types";
 import { inkHex, isPalettePen, isVarnishLayer, joinLayerName, penNameAt, penNameOf, splitLayerName } from "../shared/lib/ink";
 import { Hints } from "../shared/components/controls/Hints";
+import { useHistory } from "../shared/lib/useHistory";
 import { Header } from "./components/Header";
 import { Bed, type Zoom } from "../shared/components/Bed";
 import { PaletteEditor } from "./components/PaletteEditor";
-import { SetupToolbar, type View } from "../shared/components/PreviewToolbar";
+import { HistoryToolbar, SetupToolbar, type View } from "../shared/components/PreviewToolbar";
 import { ThemeToggle } from "../shared/components/ThemeToggle";
 import { CalibrationSection } from "./components/controls/CalibrationSection";
 import { calibrationSheet } from "../shared/lib/calibration/sheet";
@@ -148,6 +149,17 @@ export default function App() {
   const [skipTiny, setSkipTiny] = useState<number | null>(null);
   // The one layer chosen to print (the green printer in the Layers card). None until the operator picks one.
   const [printLayer, setPrintLayer] = useState<string | null>(null);
+  /**
+   * Undo. The history itself is built further down, once everything it watches exists; this is how
+   * the handlers above and below it ask for a snapshot. A ref because useHistory's `record` is a new
+   * function on every render - it closes over the state it would save - and the handlers must not
+   * have to be rebuilt with it.
+   *
+   * Called BEFORE the change, never during one: a drag records once, as it starts.
+   */
+  const recordRef = useRef<() => void>(() => {});
+  const record = () => recordRef.current();
+  const clearHistoryRef = useRef<() => void>(() => {});
   // The drawing's layers as they are in the file - name, order and color all Studio's. Plot adds only
   // its own two things: whether it is holding the layer back today, and the pen color to show it in.
   // A tool's pens by name, and the tool a layer is drawn with. The drawing-tool card has richer
@@ -216,6 +228,7 @@ export default function App() {
   // the inks build on paper. Layers whose color can't be read stay at the bottom, under the ones that
   // can; ties keep the order they already had.
   const sortLayersByLightness = () => {
+    record();
     const ranked = layerViews.map((l, i) => ({ id: l.id, i, light: lightness(l.color) }));
     ranked.sort((a, b) => {
       if (a.light === null || b.light === null) {
@@ -246,6 +259,7 @@ export default function App() {
   // the color. "The drawing's own" hands back a layer given an ink in Plot's block, from before inks
   // went into the drawing; the drawing's own colors are the drawing now.
   const colorAndNameLayer = (id: string, pick: { pen: PenColor } | { hex: string } | null) => {
+    record();
     const layer = fileLayers?.find((l) => l.id === id);
     if (!pick || !layer) colorLayer(id, pick);
     else {
@@ -287,6 +301,7 @@ export default function App() {
   // directly below this one - the link is made from the uppermost of them - which is also what lets
   // the Layers card draw them as one block.
   const linkLayers = (id: string, others: string[]) => {
+    record();
     setLayerLinks((groups) => {
       const members = [id, ...others];
       const joined = groups.filter((g) => g.some((i) => members.includes(i))).flat();
@@ -302,7 +317,8 @@ export default function App() {
   };
   // A hatch spacing for the layers being plotted, found while plotting. Setting it back to the
   // drawing's own spacing drops the override, so the file carries nothing that says nothing.
-  const setLayersHatch = (ids: string[], mm: number) =>
+  const setLayersHatch = (ids: string[], mm: number) => {
+    record();
     setHatchSpacing((all) => {
       const next = { ...all };
       for (const id of ids) {
@@ -313,9 +329,12 @@ export default function App() {
       }
       return next;
     });
+  };
   // Undo a link: every layer of the group goes back to plotting on its own, where it now stands.
-  const unlinkLayers = (id: string) =>
+  const unlinkLayers = (id: string) => {
+    record();
     setLayerLinks((groups) => groups.filter((g) => !g.includes(id)));
+  };
   // Forget which layers have been plotted. The marks are the page's note to itself about what is
   // already on the paper; the paper changes without the app hearing about it.
   const resetPrinted = () => {
@@ -325,6 +344,7 @@ export default function App() {
   };
   // A hidden layer isn't shown or plotted, so it can't stay the layer chosen to print.
   const setLayerVisible = (id: string, visible: boolean) => {
+    record();
     setHiddenLayers((list) => (visible ? list.filter((i) => i !== id) : [...list, id]));
     if (!visible && printLayer === id) setPrintLayer(null);
   };
@@ -584,7 +604,18 @@ export default function App() {
   const minPlace = minPlacement(fp);
   const minPlaceRef = useRef(minPlace);
   minPlaceRef.current = minPlace;
-  const setPlacement = useCallback((p: Placement, _persist = true) => {
+  // A drag reports every move with persist false, and once more - true - when the pointer goes up.
+  // So the snapshot is taken as the drag STARTS, and the end of it records nothing; anything else
+  // (a number typed, the align picker, a reset) is one change of its own.
+  const dragging = useRef(false);
+  const setPlacement = useCallback((p: Placement, persist = true) => {
+    if (!persist) {
+      if (!dragging.current) {
+        dragging.current = true;
+        recordRef.current();
+      }
+    } else if (dragging.current) dragging.current = false;
+    else recordRef.current();
     const min = minPlaceRef.current;
     const next = { x: Math.max(min.x, p.x), y: Math.max(min.y, p.y) };
     setPlacementState(next);
@@ -622,6 +653,7 @@ export default function App() {
    * even if the piece no longer fits.
    */
   const turnArtboard = (dir: 1 | -1) => {
+    record();
     turnedByHand.current = true;
     setRotation((was) => (((was + dir * 90) % 360) + 360) % 360);
   };
@@ -641,6 +673,63 @@ export default function App() {
       return null;
     }
   };
+
+  /**
+   * Undo and redo over Plot's own choices, the shared history every app uses (useHistory): whole
+   * snapshots rather than a list of changes, since there is little to copy and a replayed change
+   * cannot go wrong.
+   *
+   * What a snapshot holds is everything Plot decides about THIS print - where it goes on the sheet,
+   * the turn, which layers go down and in what ink and order, the hatch spacing, and the marks, the
+   * blocks and the signature. Not the paper, the pen or the plotter settings: those are the machine
+   * in front of you rather than this drawing, and are shared with the other pages besides.
+   *
+   * `inks` is the odd one. Choosing an ink in Plot is written into the DRAWING - the layer takes the
+   * pen's name and colour, so Studio and Image show it too - so putting one back is a change to the
+   * file, not just to what the card shows. The snapshot keeps each layer's name and colour as the
+   * file had them, and restoring sends back only the layers that actually differ.
+   */
+  const snapshot = useMemo(() => ({
+    placement, rotation, inkColors, plotOrder, hiddenLayers, layerLinks, hatchSpacing, skipTiny,
+    trimMarks, blocks, signature,
+    inks: drawingLayers?.map((l) => ({ id: l.id, name: l.name, color: l.color })) ?? null,
+  }), [placement, rotation, inkColors, plotOrder, hiddenLayers, layerLinks, hatchSpacing, skipTiny,
+    trimMarks, blocks, signature, drawingLayers]);
+  type Snapshot = typeof snapshot;
+  // Read inside restore, which is made once: the drawing's layers as they stand, and the call that
+  // writes an ink into the file.
+  const drawnRef = useRef(drawingLayers);
+  drawnRef.current = drawingLayers;
+  const inkLayerRef = useRef(inkLayer);
+  inkLayerRef.current = inkLayer;
+  const restore = useCallback((was: Snapshot) => {
+    setPlacementState(was.placement);
+    // A turn put back by hand is still a turn by hand: Plot's own turn must not undo the undo.
+    turnedByHand.current = true;
+    setRotation(was.rotation);
+    setInkColors(was.inkColors);
+    setPlotOrder(was.plotOrder);
+    setHiddenLayers(was.hiddenLayers);
+    setLayerLinks(was.layerLinks);
+    setHatchSpacing(was.hatchSpacing);
+    setSkipTiny(was.skipTiny);
+    setTrimMarks(was.trimMarks);
+    setBlocks(was.blocks);
+    setSignature(was.signature);
+    const now = drawnRef.current ?? [];
+    for (const layer of was.inks ?? []) {
+      const is = now.find((l) => l.id === layer.id);
+      if (!is || (is.name === layer.name && is.color === layer.color)) continue;
+      // An ink is written as a colour, so a layer the file gave no colour of its own cannot be handed
+      // one back: the endpoint takes a hex and nothing else. Rare - a layer with no stroke colour at
+      // all - and the alternative would be inventing one.
+      if (layer.color === null) continue;
+      void inkLayerRef.current({ id: layer.id, name: layer.name, color: layer.color });
+    }
+  }, []);
+  const { record: recordHistory, undo, redo, clear: clearHistory, canUndo, canRedo } = useHistory(snapshot, restore);
+  recordRef.current = recordHistory;
+  clearHistoryRef.current = clearHistory;
 
   // Fit, Fill, Scale and the quarter turn have gone from Plot (Tom, 2026-11-23, docs/plot.md): each
   // of them rewrote the drawing - Fill cut the strokes off at the margin - and resizing the artwork
@@ -681,7 +770,8 @@ export default function App() {
     setLayerLinks(plot?.layer_links ?? []);
     setHatchSpacing(plot?.hatch_spacing ?? {});
     setSkipTiny(plot?.skip_tiny ?? null);
-    setTrimMarks(plot?.trim ?? null);
+    // Trim marks are the same on every print now, so a drawing saved with other numbers takes these.
+    setTrimMarks(plot?.trim ? { ...plot.trim, ...DEFAULT_TRIM } : null);
     setBlocks(plot?.blocks ?? null);
     setSignature(plot?.signature ?? null);
     // The drawing tool is deliberately NOT taken from the file. It stands for the pen actually in the
@@ -882,6 +972,7 @@ export default function App() {
     setPrintLayer(null);
     setLoadedFile(null);
     setLocalMessage(null);
+    clearHistoryRef.current();
   }, []);
 
   // Poll the server for plot progress, carriage state and plotter connection.
@@ -1128,6 +1219,7 @@ export default function App() {
 
   // A drawing was just loaded (opened, imported or uploaded): start it at home, at full size.
   const startNewDrawing = async (name: string, plot: Plot | null) => {
+    clearHistoryRef.current(); // another drawing: there is nothing to undo back to
     estimateSeq.current++;
     setEstimate(null);
     setPreview(null);
@@ -1946,6 +2038,8 @@ export default function App() {
               { key: "utilities", on: utilitiesCard, toggle: () => setUtilitiesCard((on) => !on), disabled: !plotterConnected, why: "connect a plotter first" },
             ]}
           />
+          {/* Last in the rail, as in Studio and Image: undo and redo over Plot's own choices. */}
+          <HistoryToolbar canUndo={canUndo} canRedo={canRedo} onUndo={undo} onRedo={redo} disabled={busy} />
         </div>
         <section className={styles.stage} aria-label={paletteOpen ? "Pen colors" : "Drawing preview"}>
           <div className={styles.bedArea}>
@@ -1965,13 +2059,14 @@ export default function App() {
               settings={settings}
               preview={preview}
               footprint={fp}
-              fitsOnBed={onBed}
-              fitsOnPaper={onPaper}
               placement={placement}
               onPlacementChange={setPlacement}
               carriage={status?.carriage}
               showPenUp={showPenUp}
               hasFile={Boolean(fileName)}
+              // The trim line's size, turned with the piece: what is left when the print is cut.
+              artboard={sizes ? (rotation % 180 ? { w: sizes.artboard.h, h: sizes.artboard.w } : sizes.artboard) : null}
+              outline={view === "outline"}
               draggingFile={draggingFile}
               canDrag={!busy}
               onOpenBrowser={openBrowser}
@@ -2183,24 +2278,25 @@ export default function App() {
               <Section title="Plotter&rsquo;s marks" icon={panelIcon("marks")} collapsibleKey="plot-marks">
                 <TrimMarksSection
                   marks={trimMarks}
-                  units={settings.units}
                   busy={busy}
                   refused={fileName ? undefined : "Open a drawing to plot it with trim marks."}
-                  onChange={(marks) => setTrimMarks(marks && { ...DEFAULT_TRIM, ...marks, ink: marks.ink ?? darkestInk() })}
+                  // The numbers are the component's, not the drawing's: a file saved with others is
+                  // plotted with these (Tom, 2026-11-24). Only the ink is the drawing's own.
+                  onChange={(marks) => { record(); setTrimMarks(marks && { ...marks, ...DEFAULT_TRIM, ink: marks.ink ?? darkestInk() }); }}
                 />
                 <BlocksSection
                   blocks={blocks}
                   units={settings.units}
                   busy={busy}
                   refused={fileName ? undefined : "Open a drawing to give it color blocks."}
-                  onBlocks={setBlocks}
+                  onBlocks={(next) => { record(); setBlocks(next); }}
                 />
                 <SignatureSection
                   signature={signature}
                   units={settings.units}
                   busy={busy}
                   refused={fileName ? undefined : "Open a drawing to sign it."}
-                  onSignature={(next) => setSignature(next && { ...next, ink: next.ink ?? darkestInk() })}
+                  onSignature={(next) => { record(); setSignature(next && { ...next, ink: next.ink ?? darkestInk() }); }}
                 />
               </Section>
             </div>
@@ -2313,7 +2409,7 @@ export default function App() {
                   onChange={updateSettings}
                   handling={info?.handling ?? []}
                   skipTiny={skipTiny}
-                  onSkipTiny={setSkipTiny}
+                  onSkipTiny={(mm) => { record(); setSkipTiny(mm); }}
                   skipped={estimate?.skipped_tiny ?? null}
                 />
               </Section>
