@@ -69,7 +69,8 @@ which-way-it-lies switch goes, and the paper becomes just a size.
 > **Revised 2026-11-24 — it is the Layout card's second half, not a card.** Layout is the same
 > question in all three apps: how big the piece is, where it sits, which way it lies, none of it
 > touching the artwork. Plot's Artboard card is called Layout now, as Studio's and Image's are, and
-> this is its Position section. As a card of its own it sat in the rail's lower group beside the
+> this is the whole of its body - under no heading of its own, since placing the artboard is all
+> the card does besides stating its size. As a card of its own it sat in the rail's lower group beside the
 > plotter's own controls, away from the two cards it is entirely about, and read as missing. What it
 > holds is unchanged:
 
@@ -93,8 +94,9 @@ Plot's rail, after 2026-11-24:
     —
     options · utilities
 
-- **Layout** — the artboard's size on a line, then Position: the quarter turns, the align picker,
-  the one margin, the artboard's corner from the paper's corner, and the paper's corner from home.
+- **Layout** — the artboard's size on a line, then the placing itself, under no sub-heading: the
+  quarter turns, the align picker, the one margin, the artboard's corner from the paper's corner,
+  and the paper's corner from home.
 - **Paper** — the sheet's size, and which colour of it to load.
 - The lower group is the plotter's own again.
 
@@ -114,6 +116,6 @@ today.
   reshaping, but what should happen to a drawing that still carries an old scale isn't settled.
 - Whether a layer's ink reassigned in Plot is written into the drawing, as Plot's layer inks are
   today, or kept with the plot's own choices.
-- Where "the paper's corner from home" belongs. It is in the Layout card's Position section because
+- Where "the paper's corner from home" belongs. It is in the Layout card because
   that is where it has always been, but it is a fact about the machine rather than about the piece,
   and Utilities is where the rest of those live (noticed 2026-11-24, not decided).

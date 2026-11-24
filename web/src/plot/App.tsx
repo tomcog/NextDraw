@@ -2201,25 +2201,25 @@ export default function App() {
                   </span>
                 </p>
                 )}
-                {/* Where that artboard lands on the sheet, and which way round. Layout is the same
-                  question in all three apps - how big the piece is, where it sits, which way it
-                  lies - and in Plot none of it touches the artwork (Tom, 2026-11-24). It was a card
-                  of its own, "Plot position", in the rail's lower group beside the plotter's own
-                  controls, away from the two cards it is entirely about. */}
-                <Section title="Position" icon={panelIcon("position")} collapsibleKey="plot-position-card">
-                  <PositionSection
-                    placement={placement}
-                    minPlacement={minPlace}
-                    units={settings.units}
-                    disabled={plotting}
-                    onChange={(p) => setPlacement(p)}
-                    paperX={settings.paper_x}
-                    paperY={settings.paper_y}
-                    onPaperChange={updateSettings}
-                    onPlace={placeOnPaper}
-                    onTurn={fileName ? turnArtboard : null}
-                  />
-                </Section>
+                {/* Where that artboard lands on the sheet, and which way round - straight into the
+                  card, under no heading of its own. Layout is the same question in all three apps -
+                  how big the piece is, where it sits, which way it lies, none of it touching the
+                  artwork - and in Plot this is the whole of it, so a "Position" heading over one
+                  line of fact named a section that was the card (Tom, 2026-11-24). It was a card of
+                  its own before that, "Plot position", in the rail's lower group beside the
+                  plotter's own controls, away from the two cards it is entirely about. */}
+                <PositionSection
+                  placement={placement}
+                  minPlacement={minPlace}
+                  units={settings.units}
+                  disabled={plotting}
+                  onChange={(p) => setPlacement(p)}
+                  paperX={settings.paper_x}
+                  paperY={settings.paper_y}
+                  onPaperChange={updateSettings}
+                  onPlace={placeOnPaper}
+                  onTurn={fileName ? turnArtboard : null}
+                />
               </Section>
             </div>
           </Card>
