@@ -313,8 +313,6 @@ export default function App() {
  useEffect(() => remember("studio-artboard-artwork-card", artboardCard), [artboardCard]);
  const [penCard, setPenCard] = useState(() => load<boolean>("studio-pen-card") ?? true);
  useEffect(() => remember("studio-pen-card", penCard), [penCard]);
- const [gridCard, setGridCard] = useState(() => load<boolean>("studio-grid-card") ?? true);
- useEffect(() => remember("studio-grid-card", gridCard), [gridCard]);
  // The Simplifier as the tool in hand, its card out. Put down each time the artboard opens, as a tool is.
  const [simplifierCard, setSimplifierCard] = useState(false);
  // Jiggle the same way: a tool in hand with its card out, put down when another is taken up. Its
@@ -2114,9 +2112,8 @@ export default function App() {
      <PanelToolbar
       cards={[
        { key: "file", on: fileCard, toggle: () => setFileCard((on) => !on) },
-       { key: "pen", on: penCard, toggle: () => setPenCard((on) => !on) },
        { key: "layout", on: artboardCard, toggle: () => setArtboardCard((on) => !on) },
-       { key: "grid", on: gridCard, toggle: () => setGridCard((on) => !on) },
+       { key: "pen", on: penCard, toggle: () => setPenCard((on) => !on) },
       ]}
      />
      <ToolPicker
@@ -2210,31 +2207,25 @@ export default function App() {
      </Card>
      )}
 
-     {/* What the drawing is drawn with and made on, and the grid, which is Studio's alone: a card
-       each, shown or hidden from the toolbar. The pen leads (Tom, 2026-11-23), then the artboard -
-       the drawing's own size, which travels with it - and what is done to the artwork on it. */}
-     {penCard && (
-     <Card variant="flat" className={styles.controls}>
-      <div className={`${styles.cardBody} ${controls.cardSections}`}>
-       <DrawingToolSection tools={presets} value={toolName} onPick={pickTool} collapsibleKey="pen" disabled={busy} />
-      </div>
-     </Card>
-     )}
-     {/* The page and what sits on it, one card: the margins above the buttons that use them. */}
+     {/* The page and what sits on it, one card: the margins above the buttons that use them, and
+       the grid the drawing is laid out against at the end of it. Layout leads (Tom, 2026-11-24):
+       how big the piece is comes before what it is drawn with. */}
      {artboardCard && (
      <Card variant="flat" className={styles.controls}>
       <div className={`${styles.cardBody} ${controls.cardSections}`}>
        <Section title="Layout" icon={panelIcon("layout")} collapsibleKey="artboard-artwork">
         {artboardSection}
         {artworkSection}
+        <GridSection snapping={snapping} onSnapping={setSnapping} step={snapStep} onStep={setSnapStep} />
        </Section>
       </div>
      </Card>
      )}
-     {gridCard && (
+     {/* What the drawing is drawn with: a card of its own, shown or hidden from the toolbar. */}
+     {penCard && (
      <Card variant="flat" className={styles.controls}>
       <div className={`${styles.cardBody} ${controls.cardSections}`}>
-       <GridSection snapping={snapping} onSnapping={setSnapping} step={snapStep} onStep={setSnapStep} />
+       <DrawingToolSection tools={presets} value={toolName} onPick={pickTool} collapsibleKey="pen" disabled={busy} />
       </div>
      </Card>
      )}

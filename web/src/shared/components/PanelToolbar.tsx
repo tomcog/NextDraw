@@ -3,7 +3,7 @@ import { Frame, Grid3x3, Image, Layers2, ListOrdered, LocateFixed, Move, Palette
 import bar from "./PreviewToolbar.module.css";
 import { ToolbarIcons } from "./ToolbarIcons";
 
-/** The rail's cards the toolbar shows and hides, in the order they stack. Artboard and Artwork are Studio's and Image's; Grid is Studio's; Image, and Layers and Adjustments (a toolbar of their own), Image's; Queue, Plotter’s marks, and Plot position, Plot options and Utilities (a toolbar of their own), Plot's (Studio's Layers switch is with its tools). `trim`, `blocks` and `signature` are no longer rail buttons of their own - they head the three sections inside the Plotter’s marks card. */
+/** The rail's cards the toolbar shows and hides, in the order they stack. Artboard and Artwork are Studio's and Image's; `grid` is a section inside Studio's Layout card, not a card, and is here for its icon alone (Tom, 2026-11-24); Image, and Layers and Adjustments (a toolbar of their own), Image's; Queue, Plotter’s marks, and Plot position, Plot options and Utilities (a toolbar of their own), Plot's (Studio's Layers switch is with its tools). `trim`, `blocks` and `signature` are no longer rail buttons of their own - they head the three sections inside the Plotter’s marks card. */
 const PANELS = {
   file: { label: "File", icon: <Save />, what: "the File card" },
   pen: { label: "Pen", icon: <Pen />, what: "the Pen card: what the drawing is plotted with" },

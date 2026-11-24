@@ -12,7 +12,8 @@ interface Props {
   onStep: (inches: number) => void;
 }
 
-/** Snapping to a grid: Studio's alone, in the Settings card beside Paper and Drawing tool. */
+/** Snapping to a grid: Studio's alone, the last section of the Layout card - what the drawing is
+ *  laid out against, under the page it is laid out on (Tom, 2026-11-24). */
 export function GridSection({ snapping, onSnapping, step, onStep }: Props) {
   return (
     <Section
