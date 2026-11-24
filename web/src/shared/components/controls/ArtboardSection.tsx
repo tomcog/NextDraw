@@ -62,9 +62,14 @@ export function ArtboardSection({ w, h, margins, units, color, collapsibleKey, d
   color: string;
   collapsibleKey: string;
   disabled?: boolean;
-  onSize: (w: number, h: number) => void;
-  onMargins: (margins: Margins) => void;
-  onColor: (color: string) => void;
+  /**
+   * The three ways the artboard is changed. Left out, that part of the card is shown but can't be
+   * changed: Plot shows the artboard read-only, so you can see what you're plotting without being
+   * able to resize the piece there (Tom, 2026-11-23, docs/plot.md).
+   */
+  onSize?: (w: number, h: number) => void;
+  onMargins?: (margins: Margins) => void;
+  onColor?: (color: string) => void;
 }) {
   // Locked, the four margins are one number: setting any sets them all, and the lock evens them up
   // the moment it goes on (to the top's, the first of the four). Unlocked they stay as they are and
@@ -75,10 +80,13 @@ export function ArtboardSection({ w, h, margins, units, color, collapsibleKey, d
   const lock = (on: boolean) => {
     setLocked(on);
     try { localStorage.setItem(LOCK_KEY, String(on)); } catch { /* kept for this visit only */ }
-    if (on) onMargins(marginsAll(margins.top));
+    if (on) onMargins?.(marginsAll(margins.top));
   };
   const side = (which: keyof Margins) => (mm: number) =>
-    onMargins(locked ? marginsAll(mm) : { ...margins, [which]: mm });
+    onMargins?.(locked ? marginsAll(mm) : { ...margins, [which]: mm });
+  // Shown but not the user's to change, where the app doesn't offer that change.
+  const noSize = disabled || !onSize;
+  const noMargins = disabled || !onMargins;
   // One field stands for the four only while they really are one number. A drawing opened with
   // uneven margins under a lock left on from last time still shows all four - the lock evens them
   // when it is turned on or one of them is set, never behind the drawing's back.
@@ -96,7 +104,7 @@ export function ArtboardSection({ w, h, margins, units, color, collapsibleKey, d
         width and height of this drawing's own; and which way it lies, which only swaps the two
         numbers - the drawing stays as it is. The artboard carries no size by name: which of the
         list it is, if any, is read from its width and height (SizeChooser). */}
-      <SizeChooser w={w} h={h} units={units} what="artboard" disabled={disabled} onDimensions={onSize} />
+      <SizeChooser w={w} h={h} units={units} what="artboard" disabled={noSize} onDimensions={onSize ?? (() => {})} />
       {/* The live area the artwork sits in. A bigger bottom is the usual print convention, and is
         where the colour blocks and the signature go. The heading carries the unit for all four, and
         each field sits on the edge it insets, which is label enough (Figma 165:1111). */}
@@ -110,9 +118,9 @@ export function ArtboardSection({ w, h, margins, units, color, collapsibleKey, d
               key={label}
               size="sm"
               variant="tertiary"
-              disabled={disabled}
+              disabled={noMargins}
               title={`Every margin ${label} ${units}`}
-              onClick={() => onMargins(marginsAll(mm))}
+              onClick={() => onMargins?.(marginsAll(mm))}
             >
               {label}
             </Button>
@@ -128,7 +136,7 @@ export function ArtboardSection({ w, h, margins, units, color, collapsibleKey, d
                 mm={margins.top}
                 units={units}
                 min={0}
-                disabled={disabled}
+                disabled={noMargins}
                 unitInLabel={false}
                 hideLabel
                 onChange={side("top")}
@@ -141,7 +149,7 @@ export function ArtboardSection({ w, h, margins, units, color, collapsibleKey, d
                 mm={margins[edge]}
                 units={units}
                 min={0}
-                disabled={disabled}
+                disabled={noMargins}
                 unitInLabel={false}
                 hideLabel
                 onChange={side(edge)}
@@ -161,7 +169,7 @@ export function ArtboardSection({ w, h, margins, units, color, collapsibleKey, d
             title={locked
               ? "The four margins are held the same: setting one sets them all. Click to set each on its own."
               : "Hold the four margins the same: they even up now, and setting one sets them all"}
-            disabled={disabled}
+            disabled={noMargins}
             onClick={() => lock(!locked)}
           />
         </span>
@@ -172,7 +180,7 @@ export function ArtboardSection({ w, h, margins, units, color, collapsibleKey, d
         heading that opened them - a colour this plain to see is quicker to change than to find. */}
       <div className={styles.cardGroup}>
         <p className={styles.subheading}>Surface</p>
-        <PaperColorRow color={color} disabled={disabled} onColor={onColor} />
+        <PaperColorRow color={color} disabled={disabled || !onColor} onColor={onColor ?? (() => {})} />
       </div>
     </Section>
   );

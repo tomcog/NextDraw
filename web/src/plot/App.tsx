@@ -6,7 +6,7 @@ import { api, postJSON } from "../shared/lib/api";
 import { barrelOffsetMm, BUSY_STATES, DEFAULT_SETTINGS, IDRAW_MODEL, NONE_PEN, PAPER_SIZES, penWidthOf, PLOTTING_STATES, PRESET_FIELD_NAMES, PRESET_FIELDS, STEPS, STORAGE } from "../shared/lib/constants";
 import { cleanNote, listOf } from "../shared/lib/format";
 import { lightness } from "../shared/lib/color";
-import { fitsOnBed, fitsOnPaper, footprint, minPlacement, marginsTimes, type FitAlign, type Margins } from "../shared/lib/geometry";
+import { fitsOnBed, fitsOnPaper, footprint, minPlacement, marginsTimes, turnedFootprint, type FitAlign, type Margins } from "../shared/lib/geometry";
 import { parsePlotPaths, type PlotPaths } from "../shared/lib/progressPaths";
 import { parsePreview, type Preview } from "../shared/lib/preview";
 import { load, save } from "../shared/lib/storage";
@@ -23,8 +23,6 @@ import { calibrationSheet } from "../shared/lib/calibration/sheet";
 import { pairsSheet } from "../shared/lib/calibration/pairs";
 import { readCalibration, readingProblems, sheetLayout, type SheetLayout } from "../shared/lib/calibration/read";
 import { loadFont, type StrokeFont } from "../shared/lib/drawing/font";
-import { placeOnPaper, reshapeDrawing } from "../shared/lib/drawing/whole";
-import { cropDrawing } from "../shared/lib/drawing/crop";
 import { fitText } from "../shared/lib/drawing/text";
 import { buildSvg, cleanFileName } from "../shared/lib/drawing/svg";
 import type { Current } from "../shared/lib/drawing/useDrawingFile";
@@ -52,7 +50,6 @@ import { DEFAULT_TRIM, TrimMarksSection } from "./components/controls/TrimMarksS
 import { SignatureSection } from "./components/controls/SignatureSection";
 import { blocksStamp, signatureStamp } from "../shared/lib/drawing/plotStamps";
 import { SIGNATURE_FONT } from "../shared/lib/drawing/signature";
-import { editCurrent, type EditableDrawing } from "../shared/lib/drawing/editCurrent";
 import type { Page } from "../shared/lib/drawing/shapes";
 import { PanelToolbar, panelIcon } from "../shared/components/PanelToolbar";
 import { PenSection } from "./components/controls/PenSection";
@@ -511,8 +508,23 @@ export default function App() {
   const listedModel = info?.models.find((m) => m.id === (onIdraw ? IDRAW_MODEL : settings.model)) ?? info?.models[0];
   const model = onIdraw && listedModel ? { ...listedModel, name: "iDraw" } : listedModel;
   const fp = footprint(preview, settings, placement, padMm);
+  // Whether the turn on the sheet was set by hand (turnArtboard), which Plot's own turn never undoes.
+  const turnedByHand = useRef(false);
   const onBed = fitsOnBed(fp, model);
   const onPaper = fitsOnPaper(fp, settings);
+  /**
+   * Plot's own turn (Tom, 2026-11-23, docs/plot.md): a piece that doesn't fit the sheet as it lies,
+   * but would fit turned, is turned. Only then - a piece that fits is left as it is, whatever shape
+   * the sheet is - and never over a turn set by hand, which stands even when it doesn't fit.
+   *
+   * It can only turn a drawing that hasn't been turned yet, so it runs once per drawing and settles:
+   * the artwork comes back turned, the footprint follows, and the test passes.
+   */
+  useEffect(() => {
+    if (turnedByHand.current || rotation !== 0 || !fp || (onBed && onPaper)) return;
+    const turned = turnedFootprint(fp);
+    if (fitsOnBed(turned, model) && fitsOnPaper(turned, settings)) setRotation(90);
+  }, [fp, onBed, onPaper, rotation, model, settings]);
   // Fall back to the whole plotter when there's no drawing (or paper) to zoom to.
   const zoom: Zoom = zoomChoice === "drawing" && !fp ? "plotter" : zoomChoice === "paper" && !(settings.paper_w > 0 && settings.paper_h > 0) ? "plotter" : zoomChoice;
 
@@ -577,47 +589,36 @@ export default function App() {
   }, []);
 
   // Centre the drawing's lines on the paper along one axis; its empty margin goes where it falls.
-  const centreOnPaper = fp && settings.paper_w > 0 && settings.paper_h > 0
-    ? (axis: "x" | "y") => {
-      const into = axis === "x" ? fp.ink.x0 - fp.x : fp.ink.y0 - fp.y; // lines' offset in the page, in
-      const size = axis === "x" ? fp.ink.x1 - fp.ink.x0 : fp.ink.y1 - fp.ink.y0;
-      const paperAt = axis === "x" ? settings.paper_x : settings.paper_y;
-      const paperSize = axis === "x" ? settings.paper_w : settings.paper_h;
-      const at = Math.round((paperAt + (paperSize - size * 25.4) / 2 - into * 25.4) * 10) / 10;
-      setPlacement({ ...placement, [axis]: at });
+  /**
+   * The artboard put where the align picker says: inside the paper less the margin, against an edge
+   * or centred (Tom, 2026-11-23). It moves the piece, never resizes it - what doesn't fit stays not
+   * fitting, in red. The page is what is placed, marks and all, so they land inside the margin too;
+   * the placement is the artboard's own corner, which starts `pad` after the page's.
+   */
+  const placeOnPaper = fp && settings.paper_w > 0 && settings.paper_h > 0
+    ? (align: FitAlign, marginMm: number) => {
+      const m = Math.max(0, marginMm) / 25.4;
+      const paper = { x: settings.paper_x / 25.4, y: settings.paper_y / 25.4, w: settings.paper_w / 25.4, h: settings.paper_h / 25.4 };
+      const at = (edge: number, room: number, size: number, share: number) => edge + m + Math.max(0, room - 2 * m - size) * share;
+      const x = at(paper.x, paper.w, fp.w, align.x) + fp.pad.x;
+      const y = at(paper.y, paper.h, fp.h, align.y) + fp.pad.y;
+      setPlacement({ x: Math.round(x * 254) / 10, y: Math.round(y * 254) / 10 });
     }
     : null;
 
-  // The Paper card's drawing controls, as in Studio and Image: they change the drawing itself, here
-  // by the server, which sends it to the other apps as a change not saved.
-  // What the Paper card is doing to the drawing, while it's at it: the canvas bar says so, with its
-  // spinner, since measuring a big drawing for Fit can take seconds. One change at a time.
-  const [reshaping, setReshaping] = useState<string | null>(null);
-  const reshapingRef = useRef(false);
-  const reshape = async (change: Record<string, unknown>) => {
-    if (busy || reshapingRef.current) return null;
-    reshapingRef.current = true;
-    setReshaping("fit" in change ? "Fitting the drawing…" : "scale" in change ? "Scaling the drawing…" : "turn_paper" in change ? "Turning the paper and drawing…" : "Changing the drawing…");
-    try {
-      const res = await postJSON<{ edited?: string; turned_paper?: boolean }>("/api/current/reshape", { ...change, settings: refs.current.settings });
-      if (res.edited) {
-        refs.current.edited = res.edited; // our own change: nothing for the poll to catch up on
-        setDrawingVersion((v) => v + 1);
-      }
-      return res;
-    } catch (err) {
-      // A server from before a change was asked for refuses it: it needs starting again.
-      const old = "turn_paper" in change && /can.t be done to this drawing/.test((err as Error).message);
-      setLocalMessage({ text: old ? "The server is older than this page and can't turn the paper. Restart it (close its window, then start.command), then reload." : (err as Error).message, tone: "error" });
-      return null;
-    } finally {
-      reshapingRef.current = false;
-      setReshaping(null);
-    }
+  /**
+   * A quarter turn of the artboard on the sheet. Placement only: the drawing is not touched - the
+   * turn rides with the plot and with the artwork the server renders for the preview, which comes
+   * back turned, so the footprint and the fit checks follow it on their own.
+   *
+   * A turn set here is the user's and stands: Plot's own turn (below) leaves it alone from then on,
+   * even if the piece no longer fits.
+   */
+  const turnArtboard = (dir: 1 | -1) => {
+    turnedByHand.current = true;
+    setRotation((was) => (((was + dir * 90) % 360) + 360) % 360);
   };
-  // The drawing a quarter turn on the paper, about its middle, as in every app: the paper stays as it
-  // lies - only the Paper card's Landscape / Portrait turns that.
-  const turnDrawing = (dir: 1 | -1) => void reshape({ turn: dir });
+
   // A layer given another ink, written into the drawing (see colorAndNameLayer).
   const inkLayer = async (change: { id: string; name?: string; color: string }) => {
     if (busy) return null;
@@ -633,72 +634,10 @@ export default function App() {
       return null;
     }
   };
-  // A change Plot makes to the drawing itself - the artboard's size, its margins - goes through
-  // editCurrent and is sent back as the current drawing, a change not saved. One at a time.
-  const [editing, setEditing] = useState(false);
-  /**
-   * The artboard, changed from Plot and written into the drawing - the same path every other edit
-   * made here takes (editCurrent). The artwork is not touched: **Plot never scales**, so a bigger
-   * artboard is more room round the art, not bigger art. The sheet is untouched too; where the
-   * artboard sits on it is the Drawing position card's.
-   */
-  const editArtboard = async (change: (d: EditableDrawing) => EditableDrawing, shown: { artboard?: Page; margins?: Margins }) => {
-    if (busy || editing) return;
-    setEditing(true);
-    try {
-      const res = await editCurrent(change);
-      refs.current.edited = res.edited; // our own change: nothing for the poll to catch up on
-      setSizes((was) => (was ? { artboard: shown.artboard ?? was.artboard, margins: shown.margins ?? was.margins } : was));
-      setDrawingVersion((v) => v + 1);
-    } catch (err) {
-      setLocalMessage({ text: (err as Error).message, tone: "error" });
-    } finally {
-      setEditing(false);
-    }
-  };
-  const setArtboardSize = (artboard: Page) => editArtboard((d) => ({ ...d, page: artboard }), { artboard });
-  const setArtboardMargins = (margins: Margins) => editArtboard((d) => ({ ...d, margins }), { margins });
 
-  // Fit to the paper where it lies under the page: its corner and size, in inches on the page.
-  const fitToPaper = fileName && settings.paper_w > 0 && settings.paper_h > 0
-    ? async (margins: Margins, align: FitAlign) => {
-      const box = [(settings.paper_x - placement.x) / 25.4, (settings.paper_y - placement.y) / 25.4, settings.paper_w / 25.4, settings.paper_h / 25.4];
-      // The same all round goes as `fit`, as it always has; sides of their own as `fit_margins`, a name
-      // a server from before it refuses rather than fitting with the same margin all round.
-      const even = margins.top === margins.left && margins.right === margins.left && margins.bottom === margins.left;
-      await reshape({ ...(even ? { fit: margins.left } : { fit_margins: margins }), align, box });
-    }
-    : undefined;
-
-  // Fill: the drawing scaled to cover the paper inside the margins and cut off at them - the same
-  // edit Studio makes, done to the current drawing read as shapes (editCurrent) and sent back.
-  const fillPaper = fileName && settings.paper_w > 0 && settings.paper_h > 0
-    ? async (margins: Margins, align: FitAlign) => {
-      if (busy || reshapingRef.current) return;
-      reshapingRef.current = true;
-      setReshaping("Filling the paper…");
-      const paper = { x: (settings.paper_x - placement.x) / 25.4, y: (settings.paper_y - placement.y) / 25.4, w: settings.paper_w / 25.4, h: settings.paper_h / 25.4 };
-      try {
-        const res = await editCurrent(async (d) => {
-          const place = placeOnPaper(d.shapes, paper, marginsTimes(margins, 1 / 25.4), align, "fill");
-          if (!place) throw new Error("There's nothing in the drawing to fill the paper with.");
-          const fonts: Record<string, StrokeFont> = {};
-          for (const name of new Set(d.shapes.map((sh) => sh.font ?? "").filter(Boolean))) fonts[name] = await loadFont(name);
-          const cut = cropDrawing(reshapeDrawing(d.shapes, place.k, place.about, place.by), d.fills ?? [], place.box, fonts);
-          return { ...d, shapes: cut.shapes, fills: cut.fills };
-        });
-        refs.current.edited = res.edited; // our own change: nothing for the poll to catch up on
-        setDrawingVersion((v) => v + 1);
-      } catch (err) {
-        setLocalMessage({ text: (err as Error).message, tone: "error" });
-      } finally {
-        reshapingRef.current = false;
-        setReshaping(null);
-      }
-    }
-    : undefined;
-  // The whole drawing at a percent of its size now, about its middle (the server's scale).
-  const scaleDrawing = fileName ? (percent: number) => { if (percent > 0 && percent !== 100) void reshape({ scale: percent }); } : undefined;
+  // Fit, Fill, Scale and the quarter turn have gone from Plot (Tom, 2026-11-23, docs/plot.md): each
+  // of them rewrote the drawing - Fill cut the strokes off at the margin - and resizing the artwork
+  // or its artboard is Studio's and Image's. Plot places the piece on the sheet at its true size.
 
   const [loadedFile, setLoadedFile] = useState<string | null>(null);
   const savedKey = useRef<string | null>(null);
@@ -708,9 +647,11 @@ export default function App() {
   // is opened, and when another open page (odin's own screen, the laptop) saves its choices.
   const applyChoices = useCallback((plot: Plot | null) => {
     setPlacementState(plot?.placement ?? { x: 0, y: 0 });
-    // Plot's own scale and turn are no more: the Paper card changes the drawing instead, in every
-    // app. A drawing saved with them has them put into it, once, as a change not saved.
-    if ((plot?.scale ?? 100) !== 100 || plot?.rotation) {
+    // Plot has no scale of its own any more (Tom, 2026-11-23): a drawing saved with one by an older
+    // Plot has it put into the drawing, once, as a change not saved - and its turn with it, since
+    // the bake does both. A turn on its own is kept and used as the turn on the sheet.
+    turnedByHand.current = false;
+    if ((plot?.scale ?? 100) !== 100) {
       postJSON<{ edited?: string }>("/api/current/reshape", { bake: true, settings: refs.current.settings })
         .then((res) => {
           if (res.edited) {
@@ -1489,8 +1430,9 @@ export default function App() {
   const pickPaperSize = (id: string) => {
     const size = PAPER_SIZES.find((p) => p.id === id);
     if (size?.w && size.h) {
-      const landscape = settings.paper_w >= settings.paper_h;
-      updateSettings({ paper_size: id, paper_w: landscape ? size.h : size.w, paper_h: landscape ? size.w : size.h });
+      // The sheet goes in long edge across the plotter, always (Tom, 2026-11-23): which way it lies
+      // is not the user's to choose here, so a size from the list lands that way round.
+      updateSettings({ paper_size: id, paper_w: Math.max(size.w, size.h), paper_h: Math.min(size.w, size.h) });
     } else {
       updateSettings({ paper_size: id });
     }
@@ -1986,12 +1928,14 @@ export default function App() {
           {/* Setup's way in, at the foot of the toolbars, as it was in Studio and Image. */}
           <SetupToolbar open={setupOpen} onToggle={() => setSetupOpen((open) => !open)} orientation="vertical" />
           {/* Last: what is set less often, a card each. */}
-          {/* Only with a plotter connected: switched off, and their cards put away, until there is one.
-            Each card's own on or off is kept for when it's back. */}
+          {/* Plot position is where the piece lands on paper, which is worth setting away from the
+            machine, so it is here with or without a plotter (Tom, 2026-11-24). The other two drive
+            the plotter itself: switched off, and their cards put away, until there is one. Each
+            card's own on or off is kept for when it's back. */}
           <PanelToolbar
             label="Less often"
             cards={[
-              { key: "position", on: positionCard, toggle: () => setPositionCard((on) => !on), disabled: !plotterConnected, why: "connect a plotter first" },
+              { key: "position", on: positionCard, toggle: () => setPositionCard((on) => !on) },
               { key: "options", on: optionsCard, toggle: () => setOptionsCard((on) => !on), disabled: !plotterConnected, why: "connect a plotter first" },
               { key: "utilities", on: utilitiesCard, toggle: () => setUtilitiesCard((on) => !on), disabled: !plotterConnected, why: "connect a plotter first" },
             ]}
@@ -2051,7 +1995,7 @@ export default function App() {
                 onZoom: setZoomChoice,
                 canPaper: settings.paper_w > 0 && settings.paper_h > 0,
                 canDrawing: Boolean(fp),
-                working: reshaping ?? (updating && fp ? "Updating plot time…" : undefined),
+                working: updating && fp ? "Updating plot time…" : undefined,
                 loupe,
                 onLoupe: setLoupe,
               }}
@@ -2152,9 +2096,9 @@ export default function App() {
                   color={settings.paper_color}
                   collapsibleKey="plot-artboard"
                   disabled={plotting || busy}
-                  onSize={(w, h) => void setArtboardSize({ w: w / 25.4, h: h / 25.4 })}
-                  onMargins={(next) => void setArtboardMargins(marginsTimes(next, 1 / 25.4))}
-                  onColor={(paper_color) => updateSettings({ paper_color })}
+                  // Read-only here (Tom, 2026-11-23, docs/plot.md): the size, the margins and the
+                  // surface are what the piece is, set in Studio or Image. Plot shows them so you
+                  // can see what you're plotting, and changes none of them.
                 />
             </div>
           </Card>
@@ -2175,10 +2119,6 @@ export default function App() {
                   onSize={pickPaperSize}
                   // Turned or typed, the paper is named by its size: Custom, unless it is one of the list's.
                   onDimensions={(paper_w, paper_h) => updateSettings({ paper_size: "custom", paper_w, paper_h })}
-                  onTurnDrawing={fileName ? turnDrawing : undefined}
-                  onFit={fitToPaper ? (margins, align) => void fitToPaper(margins, align) : undefined}
-                  onFill={fillPaper ? (margins, align) => void fillPaper(margins, align) : undefined}
-                  onScale={scaleDrawing}
                 />
             </div>
           </Card>
@@ -2334,10 +2274,10 @@ export default function App() {
           )}
           {/* Last in the rail, always: what is set less often, from its own toolbar. Where it goes and
             how it's plotted only mean something once there's a drawing. */}
-          {plotterConnected && fileName && positionCard && (
+          {fileName && positionCard && (
           <Card variant="flat" className={styles.controls}>
             <div className={`${styles.cardBody} ${controls.cardSections}`}>
-              <Section title="Drawing position" icon={panelIcon("position")} collapsibleKey="plot-position-card">
+              <Section title="Plot position" icon={panelIcon("position")} collapsibleKey="plot-position-card">
                 <PositionSection
                   placement={placement}
                   minPlacement={minPlace}
@@ -2347,7 +2287,8 @@ export default function App() {
                   paperX={settings.paper_x}
                   paperY={settings.paper_y}
                   onPaperChange={updateSettings}
-                  onCentre={centreOnPaper}
+                  onPlace={placeOnPaper}
+                  onTurn={fileName ? turnArtboard : null}
                 />
               </Section>
             </div>

@@ -27,7 +27,7 @@ export function sizeIdFor(w: number, h: number) {
  * Custom stays chosen while its numbers are typed, even through a size that happens to be one of
  * the list's on the way.
  */
-export function SizeChooser({ w, h, sizeId, units, what, disabled, onPick, onDimensions }: {
+export function SizeChooser({ w, h, sizeId, units, what, canTurn = true, disabled, onPick, onDimensions }: {
   /** The thing's width and height in mm, as it lies. */
   w: number;
   h: number;
@@ -37,6 +37,12 @@ export function SizeChooser({ w, h, sizeId, units, what, disabled, onPick, onDim
   units: Units;
   /** What is being sized, for the labels: "paper", "artboard". */
   what: string;
+  /**
+   * Whether which way it lies is the user's to choose. Plot's paper goes in with its long edge
+   * across the plotter, always (Tom, 2026-11-23): no switch, and a size picked from the list lies
+   * that way whatever the sheet before it was. A width and height typed in are taken as typed.
+   */
+  canTurn?: boolean;
   disabled?: boolean;
   /** A size chosen from the list, where the app keeps its name. Left out, the width and height go
    *  through onDimensions instead, keeping the way it lies. */
@@ -44,7 +50,9 @@ export function SizeChooser({ w, h, sizeId, units, what, disabled, onPick, onDim
   /** A new width and height in mm: a size chosen, the thing turned, or a custom size typed in. */
   onDimensions: (w: number, h: number) => void;
 }) {
-  const landscape = w >= h;
+  // Which way round the list is named, and the way a size picked from it lies: as this one lies, or
+  // long edge across where that is not the user's to change.
+  const landscape = canTurn ? w >= h : true;
   const [typing, setTyping] = useState(false);
   const custom = typing || (sizeId ?? sizeIdFor(w, h)) === "custom";
 
@@ -56,7 +64,8 @@ export function SizeChooser({ w, h, sizeId, units, what, disabled, onPick, onDim
       return;
     }
     const size = PAPER_SIZES.find((p) => p.id === id);
-    // The size as it is chosen lies the way this one already does.
+    // The size as it is chosen lies the way this one already does - or long edge across, where which
+    // way it lies is not the user's to choose.
     if (size) onDimensions(landscape ? size.h : size.w, landscape ? size.w : size.h);
   };
 
@@ -81,7 +90,7 @@ export function SizeChooser({ w, h, sizeId, units, what, disabled, onPick, onDim
           <option value="custom">{custom ? "Custom" : "Custom size…"}</option>
         </InputSelect>
         {/* Only the thing itself turns: the drawing on it stays as it is. */}
-        <LieSwitch w={w} h={h} what={what} disabled={disabled} onSwap={() => onDimensions(h, w)} />
+        {canTurn && <LieSwitch w={w} h={h} what={what} disabled={disabled} onSwap={() => onDimensions(h, w)} />}
       </div>
 
       {custom && (

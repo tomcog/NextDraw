@@ -32,6 +32,29 @@ export function footprint(preview: Preview | null, _settings: Settings, placemen
 
 const TOL = 0.003;
 
+/**
+ * The footprint as it would be a quarter turn clockwise, at the same corner: the page's width and
+ * height swap and the lines' box turns with them - what the server does to the document when it
+ * plots at a rotation (rotate_document). Plot asks it one question: would a piece that doesn't fit
+ * the sheet as it lies fit turned? (Tom, 2026-11-23, docs/plot.md.)
+ *
+ * The pad is swapped rather than turned, which is exact while the marks reach the same distance on
+ * both axes - they do - and near enough for a fit test either way.
+ */
+export function turnedFootprint(fp: Footprint): Footprint {
+  // A point (ix, iy) inside the page lands at (pageH - iy, ix) when the page turns clockwise.
+  const ix0 = fp.ink.x0 - fp.x, iy0 = fp.ink.y0 - fp.y;
+  const ix1 = fp.ink.x1 - fp.x, iy1 = fp.ink.y1 - fp.y;
+  return {
+    ...fp,
+    rotated: !fp.rotated,
+    w: fp.h,
+    h: fp.w,
+    pad: { x: fp.pad.y, y: fp.pad.x },
+    ink: { x0: fp.x + (fp.h - iy1), y0: fp.y + ix0, x1: fp.x + (fp.h - iy0), y1: fp.y + ix1 },
+  };
+}
+
 export function fitsOnBed(fp: Footprint | null, model: PlotterModel | undefined) {
   if (!model || !fp) return true;
   // The lines alone, as on the paper: the page's empty margin may run past the rails on any side.
