@@ -15,10 +15,10 @@ import { penWidthOf } from "../constants";
 
 /** How much of the paper each pen covers in a patch, as a share: both solid, one solid and the other
  *  at half either way round, and both at half. Solid is the spacing the tool was measured solid at. */
-export const PAIR_COVERS: [number, number][] = [[1, 1], [1, 0.5], [0.5, 1], [0.5, 0.5]];
+const PAIR_COVERS: [number, number][] = [[1, 1], [1, 0.5], [0.5, 1], [0.5, 0.5]];
 
 /** The pairs chosen for photographs, by tool, either way round - the lighter pen goes down first. */
-export const PHOTO_PAIRS: Record<string, [string, string][]> = {
+const PHOTO_PAIRS: Record<string, [string, string][]> = {
   EnerGel: [
     ["Yellow", "Sky Blue"], ["Yellow", "Turquoise"], ["Yellow", "Green"], ["Yellow", "Red"],
     ["Yellow", "Pink"], ["Sky Blue", "Pink"], ["Pink", "Blue"], ["Yellow", "Coral pink"],
@@ -47,7 +47,7 @@ const ROW_GAP = 0.2;
 
 const pct = (cover: number) => `${Math.round(cover * 1000) / 10}`;
 /** A patch's name says both pens and how much of each, so the sheet can be read back by its shapes. */
-export const pairName = (under: string, underCover: number, over: string, overCover: number) =>
+const pairName = (under: string, underCover: number, over: string, overCover: number) =>
   `${under} ${pct(underCover)}% + ${over} ${pct(overCover)}% pair`;
 
 /**
@@ -55,7 +55,7 @@ export const pairName = (under: string, underCover: number, over: string, overCo
  * where on the colour wheel they sit, each pen in at most two. Greys and blacks count as apart from
  * everything in colour. The lighter pen of each pair comes first - it's the one that goes down first.
  */
-export function choosePairs(pens: PenColor[], count = PAIRS): [PenColor, PenColor][] {
+function choosePairs(pens: PenColor[], count = PAIRS): [PenColor, PenColor][] {
   const look = new Map(pens.map((p) => {
     const [h, s] = hexToHsl(p.color) ?? [0, 0, 0];
     return [p.name, { h, s, l: lightness(p.color) ?? 0 }];

@@ -8,7 +8,7 @@
  */
 export type AppName = "plot" | "studio" | "photo";
 
-export const APP_URL: Record<AppName, string> = { plot: "/", studio: "/studio", photo: "/image" };
+const APP_URL: Record<AppName, string> = { plot: "/", studio: "/studio", photo: "/image" };
 
 // What has to happen before this page is left for another app: an editor's changes sent to the
 // current drawing. Answers why not, when it can't go yet.

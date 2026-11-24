@@ -133,7 +133,7 @@ export function SetupToolbar({ open, onToggle, orientation }: { open: boolean; o
  * Shared by every app that looks at a drawing, in whatever bar it has. Its loupe switch takes its
  * red from the bar's row, so it goes inside a `.row` (ZOOM_ROW).
  */
-export function ZoomControls({ zoom, onZoom, ground = "bed", canPaper = true, canDrawing, loupe, onLoupe }: {
+function ZoomControls({ zoom, onZoom, ground = "bed", canPaper = true, canDrawing, loupe, onLoupe }: {
   zoom: Zoom;
   onZoom: (zoom: Zoom) => void;
   /** What the canvas is of, so the zooms are the ones that view has. */
@@ -196,9 +196,6 @@ export function ZoomControls({ zoom, onZoom, ground = "bed", canPaper = true, ca
     </>
   );
 }
-
-/** The class a bar holding ZoomControls sits in, so the loupe's switch shows red while it's out. */
-export const ZOOM_ROW = styles.row;
 
 /**
  * Undo and redo, as a bar of their own at the foot of the toolbars down the left, just above Setup -

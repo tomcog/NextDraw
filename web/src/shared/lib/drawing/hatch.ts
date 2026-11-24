@@ -200,7 +200,7 @@ const inches = (mm: number, fill: Fill) => mm / 25.4 / (fill.scale / 100);
 const DEFAULT_SWING = 0.4;
 // Rounded to the hundredth of a millimetre, because this number is shown in a field and typed
 // over: 0.14 is a swing, 0.13999999999999999 is arithmetic.
-export const defaultSwingMm = (fill: Fill) => Math.round(fill.spacingMm * DEFAULT_SWING * 100) / 100;
+const defaultSwingMm = (fill: Fill) => Math.round(fill.spacingMm * DEFAULT_SWING * 100) / 100;
 
 /** What each fill's own numbers come to, with the defaults filled in. */
 export const fillNumbers = (fill: Fill) => ({
@@ -430,7 +430,7 @@ export const canConnect = (fill: Fill) => (fill.kind ?? "hatch") === "hatch";
  * of an ellipse - so the joins never cut across the inside of the shape. A curve or a path is joined
  * by outlineStrokes instead.
  */
-export function hatchStroke(shape: Shape, fill: Fill): { x: number; y: number }[] {
+function hatchStroke(shape: Shape, fill: Fill): { x: number; y: number }[] {
   const lines = hatchLines(shape, fill);
   const b = boxOf(shape);
   const cx = (b.x0 + b.x1) / 2;

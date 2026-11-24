@@ -11,7 +11,7 @@ import type { Node } from "./path";
 import type { Point } from "./parametric";
 
 /** What each block is called in the Paths list - and how pressing Registration again finds the old ones. */
-export const REGISTRATION_NAME = "Registration";
+const REGISTRATION_NAME = "Registration";
 
 // A block, in inches: 13.846 by 14.4 points, 21 strokes across it.
 const BLOCK_W = 13.846 / 72;

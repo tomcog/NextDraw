@@ -754,7 +754,7 @@ export function inkNamed<P extends { name: string }>(name: string, pens: P[] = [
 }
 
 /** Which plate a separation's file is, from its name (see inkNamed). Undefined when it names none. */
-export const plateNamed = (name: string): Plate | undefined => inkNamed(name)?.plate;
+const plateNamed = (name: string): Plate | undefined => inkNamed(name)?.plate;
 
 /** The plate a layer is: a CMYK split's, or a separation's by its name ("Cyan"). For its angle. */
 export const plateOfPhoto = (p: Pick<Photo, "plate" | "separation">): Plate | undefined =>
@@ -813,9 +813,9 @@ export const MOST_LAYERS = 6;
 export const MOST_SIDE_LAYERS = 3;
 
 /** The most colors a photo is split into, by best fit or by the photo's own colors. */
-export const MOST_COLORS = 8;
+const MOST_COLORS = 8;
 /** Paint's flat regions take more colors than hatching mixes: its own, higher limit. */
-export const MOST_PAINT_COLORS = 10;
+const MOST_PAINT_COLORS = 10;
 /** The most colors an image split by color may have, drawn this way. */
 export const mostColorsOf = (photo: Pick<Photo, "style">) => (photo.style === "paint" ? MOST_PAINT_COLORS : MOST_COLORS);
 
@@ -824,7 +824,7 @@ export const hatchShortestOf = (photo: Pick<Photo, "hatchShortestMm" | "spacingM
   photo.hatchShortestMm ?? Math.round(Math.max(0.05, photo.spacingMm) * 1.5 * 100) / 100;
 
 /** The longer side of the working copy, in pixels: enough for lines a pen width apart across a big sheet. */
-export const WORKING_EDGE = 1600;
+const WORKING_EDGE = 1600;
 export type MaskSide = "top" | "right" | "bottom" | "left";
 export const MASK_SIDES: MaskSide[] = ["top", "right", "bottom", "left"];
 
@@ -871,9 +871,6 @@ export const MOST_PASSES = 6;
 
 /** What tone lines start from: rows a couple of millimetres apart, waves a millimetre long at black. */
 export const WAVE_DEFAULTS = { rowMm: 2, waveMm: 1 };
-
-/** What squiggles start from: SquiggleDraw's look, waves at black swinging 1.5 mm, overlapping 2 mm rows. */
-export const SQUIGGLE_DEFAULTS = { ampMm: 1.5 };
 
 /**
  * SquiggleDraw's controls, with the sketch's names, ranges and defaults (its Default button), in its
@@ -933,7 +930,7 @@ export const SKETCH_LINES = {
 };
 export type SketchLines = typeof SKETCH_LINES;
 type SketchNumber = { [K in keyof SketchLines]: SketchLines[K] extends number ? K : never }[keyof SketchLines];
-export const SKETCH_RANGES: Record<SketchNumber, { label: string; min: number; max: number; step: number }> = {
+const SKETCH_RANGES: Record<SketchNumber, { label: string; min: number; max: number; step: number }> = {
   seed: { label: "Random Seed", min: 0, max: 1000, step: 1 },
   lineDensity: { label: "Line Density", min: 0, max: 100, step: 1 },
   lineMin: { label: "Line Min Length", min: 2, max: 500, step: 1 },
@@ -972,10 +969,6 @@ export const squiggleDrawOf = (photo: Pick<Photo, "squiggleDraw">): SquiggleDraw
   out.invert = out.invert === true;
   return out;
 };
-
-/** How far a squiggle swings at black, in mm: its own, or worked out from a share of the rows as first saved. */
-export const squiggleAmp = (photo: Pick<Photo, "squiggleAmpMm" | "squiggleHeight" | "rowMm">) =>
-  photo.squiggleAmpMm ?? (photo.squiggleHeight !== undefined ? (photo.squiggleHeight * (photo.rowMm ?? WAVE_DEFAULTS.rowMm)) / 2 : SQUIGGLE_DEFAULTS.ampMm);
 
 /** What outlines start from: a handful of contours, a millimetre's detail smoothed away. */
 /** The Hilbert curve's coarsest square to start with, in mm. */
@@ -1360,7 +1353,7 @@ const splitting = new Set<string>();
  * goes, as a separation's is. Null while the profile or the photo is still being read - asked for now,
  * and whatever is drawing told when it's ready. Any other photo comes back as it is.
  */
-export function profiled(p: Photo): Photo | null {
+function profiled(p: Photo): Photo | null {
   if (!p.profile) return p;
   const key = profileKey(p);
   if (tonesCache.has(key)) return { ...p, src: key };
@@ -1511,7 +1504,7 @@ export async function joinedPicture(plates: { picture: Blob | string; ink: strin
 }
 
 /** A picture whose file doesn't say how big it is: 72 pixels to the inch, as Photoshop takes it. */
-export const DEFAULT_DPI = 72;
+const DEFAULT_DPI = 72;
 
 /**
  * The pixels to the inch a picture file says it is, or null where it doesn't say: a JPEG's JFIF or
@@ -1657,7 +1650,7 @@ export async function turnedCopy(src: string, quarter: 1 | -1): Promise<Pick<Pho
 }
 
 /** Whether this is a part of a picture - left, top, right, bottom, as fractions, each in order. */
-export const isPart = (v: unknown): v is [number, number, number, number] =>
+const isPart = (v: unknown): v is [number, number, number, number] =>
   Array.isArray(v) && v.length === 4 && v.every((n) => typeof n === "number" && n >= 0 && n <= 1) && v[0] < v[2] && v[1] < v[3];
 
 /** A part of a part, as a part of the whole: `inner` in fractions of `outer`, made fractions of what `outer` is cut from. */
@@ -1878,7 +1871,7 @@ function lab(r: number, g: number, b: number): [number, number, number] {
   const f = (t: number) => (t > 0.008856 ? Math.cbrt(t) : 7.787 * t + 16 / 116);
   return [116 * f(y) - 16, 500 * (f(x) - f(y)), 200 * (f(y) - f(z))];
 }
-export const hexLab = (hex: string) => {
+const hexLab = (hex: string) => {
   const n = parseInt(hex.replace("#", "").padEnd(6, "0").slice(0, 6), 16);
   return lab((n >> 16) & 255, (n >> 8) & 255, n & 255);
 };
@@ -1953,22 +1946,6 @@ export function isColourful(src: string): boolean {
     if (Math.hypot(a, b) > 20) coloured++;
   }
   return coloured > probes * 0.1;
-}
-
-/** The darkest colour of a photo to speak of - a dark shade, not its one blackest pixel - as a hex. */
-export function darkestOf(src: string): string {
-  const tones = tonesOf(src);
-  if (!tones) return "#000000";
-  const total = tones.w * tones.h;
-  const picks: { l: number; p: number }[] = [];
-  for (let i = 0; i < 2000; i++) {
-    const p = Math.floor((((i * 2654435761) % 4294967296) / 4294967296) * total) * 4;
-    picks.push({ l: tones.light[p / 4], p });
-  }
-  picks.sort((a, b) => a.l - b.l);
-  const dark = picks.slice(0, Math.max(1, Math.round(picks.length * 0.05)));
-  const avg = [0, 1, 2].map((ch) => dark.reduce((sum, d) => sum + tones.rgba[d.p + ch], 0) / dark.length);
-  return toHex(avg);
 }
 
 /**
@@ -2403,7 +2380,7 @@ function linearOfLab([L, a, b]: number[]): [number, number, number] {
  * through, as a filter does; an opaque ink's cover what's under them instead. `pens` are each pen's
  * colour on this paper, solid, as light.
  */
-export function mixOf(paper: number[], pens: number[][], covers: number[], opaque: boolean): [number, number, number] {
+function mixOf(paper: number[], pens: number[][], covers: number[], opaque: boolean): [number, number, number] {
   const out: [number, number, number] = [paper[0], paper[1], paper[2]];
   pens.forEach((pen, k) => {
     const c = covers[k];
@@ -2645,7 +2622,7 @@ export function onSeparation(heard: () => void): () => void {
 }
 
 /** Whether a photo layer can be drawn yet: false while its plates are still being separated off the page. */
-export function separationReady(photo: Photo): boolean {
+function separationReady(photo: Photo): boolean {
   if (!photo.plate || (photo.plates?.length ?? 0) < 4) return true;
   const tones = photoTones(photo);
   return Boolean(tones && separationOf(tones, photo));
@@ -4589,7 +4566,7 @@ function hatch(tones: Tones, photo: Photo, w: number, h: number): PhotoMarks {
 // ---------- Paint ----------
 
 /** What a painting starts from: borders smoothed over a millimetre, nothing smaller than a 3 mm square kept, a line round each region. */
-export const PAINT_DEFAULTS = { smoothMm: 1, smallestMm: 3, outline: true };
+const PAINT_DEFAULTS = { smoothMm: 1, smallestMm: 3, outline: true };
 
 /**
  * What a painting of flat art starts from instead. A photo's colour areas have ragged borders and
@@ -4597,7 +4574,7 @@ export const PAINT_DEFAULTS = { smoothMm: 1, smallestMm: 3, outline: true };
  * meant to be hard, and its small shapes - a star's points, a spike of hair, the catchlight in an eye
  * - are drawn on purpose. So barely any smoothing, and nothing dropped that a pen can still draw.
  */
-export const PAINT_FLAT_DEFAULTS = { smoothMm: 0.2, smallestMm: 0.8, outline: true };
+const PAINT_FLAT_DEFAULTS = { smoothMm: 0.2, smallestMm: 0.8, outline: true };
 
 /** What a painting of this picture starts from: flat art's, or a photo's. */
 export const paintDefaultsOf = (photo: Pick<Photo, "flat">) => (photo.flat ? PAINT_FLAT_DEFAULTS : PAINT_DEFAULTS);

@@ -24,7 +24,7 @@ export const IDRAW_MODEL = 2;
 // The barrel the plotter and paper are lined up for: the EnerGel's, in mm. The clip centers a pen
 // across its width, so a fatter barrel puts the tip half the difference further down the page and a
 // thinner one half the difference higher. Tools run from 7.7 to 24.5 mm: -1.9 to +6.5 mm.
-export const REFERENCE_BARREL_MM = 11.44;
+const REFERENCE_BARREL_MM = 11.44;
 
 /** How far down the page a tool's tip lands, in mm, compared with the reference pen (negative: higher).
  *  A tool with no barrel width saved gets no correction. */
@@ -125,6 +125,3 @@ export const STORAGE = {
 // The pen for a new or one-off tool, first in every app's Pen menu: the server's, per plotter, with
 // EnerGel's settings until they're changed in Plot's HUD (server.py, none_tool).
 export const NONE_PEN = "None";
-
-// The channel Studio's "Open in Plot" uses to find a Plot page already open in another tab.
-export const PLOT_CHANNEL = "nextdraw-plot";

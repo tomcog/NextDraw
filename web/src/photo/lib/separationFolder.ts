@@ -20,8 +20,6 @@ export const pictureSources = new WeakMap<File, string>();
 /** And which channel of it, for a channel of a Multichannel Photoshop file. */
 export const pictureChannels = new WeakMap<File, number>();
 
-const IMAGE = /\.(png|jpe?g|gif|webp|bmp|avif|tiff?|heic)$/i;
-
 export type FileInk = NonNullable<ReturnType<typeof inkNamed<PenColor>>>;
 
 /** What reading the inks found: each file's ink, and the files no ink was found for, with why Claude wasn't asked or couldn't say. */
@@ -65,18 +63,6 @@ export async function inksOf(files: File[], pens: PenColor[]): Promise<Inks> {
         : `Claude couldn't say (${why})`,
     };
   }
-}
-
-export async function separationFiles(files: File[], pens: PenColor[]): Promise<{ use: File[]; skipped: string[] } & Inks> {
-  const images = files
-    // The folder's own files: a path "folder/name.png", not "folder/inner/name.png".
-    .filter((f) => (f.webkitRelativePath || f.name).split("/").length <= 2)
-    .filter((f) => !f.name.startsWith(".") && (f.type.startsWith("image/") || IMAGE.test(f.name)))
-    .sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
-  const found = await inksOf(images, pens);
-  const named = images.filter((f) => found.inks.has(f));
-  const use = named.length ? named : images;
-  return { ...found, use, skipped: images.filter((f) => !use.includes(f)).map((f) => f.name) };
 }
 
 /** The folder a file was picked from, when it came in a folder: what a drawing of its separations is named, if their names say nothing else. */

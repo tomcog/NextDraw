@@ -2,7 +2,7 @@ import { Segment, SegmentedControl } from "@tomcoggia/ui";
 
 /** The paper-orientation icons from the NextDraw Figma file (Frame 5): a page with its
  *  corner folded at the top right, standing up or lying on its side. */
-export function SheetIcon({ wide = false }: { wide?: boolean }) {
+function SheetIcon({ wide = false }: { wide?: boolean }) {
   return (
     <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1" aria-hidden="true">
       {wide ? (

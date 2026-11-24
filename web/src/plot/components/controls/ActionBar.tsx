@@ -24,9 +24,9 @@ interface Props {
 // The status line under the button is hidden for now.
 const SHOW_STATUS = false;
 
-export const SPEED_STEP = 10;
-export const SPEED_MIN = 20;
-export const SPEED_MAX = 200;
+const SPEED_STEP = 10;
+const SPEED_MIN = 20;
+const SPEED_MAX = 200;
 
 // Speeds the running (or stopped) plot up or down, from the next path it draws.
 function SpeedControl({ pct, disabled, onSpeed }: { pct: number; disabled: boolean; onSpeed: (percent: number) => void }) {

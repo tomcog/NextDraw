@@ -96,7 +96,7 @@ const RISO: Record<string, string> = {
   "yellow ochre": "#c6942e", "bubble gum": "#f984ca", brick: "#a75154", copper: "#bd8c66",
 };
 
-export const COLOR_NAMES: Record<string, string> = { ...CSS, ...EVERYDAY, ...RISO };
+const COLOR_NAMES: Record<string, string> = { ...CSS, ...EVERYDAY, ...RISO };
 
 /** The names, longest first by words then letters: so "light blue" is found before "blue". */
 const BY_LENGTH = Object.keys(COLOR_NAMES).sort((a, b) => b.split(" ").length - a.split(" ").length || b.length - a.length);

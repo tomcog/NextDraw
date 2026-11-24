@@ -17,7 +17,7 @@ const turnedAlign = (a: FitAlign, dir: 1 | -1) => (dir < 0 ? { x: a.y, y: 1 - a.
  * its crop, its cut and its alignment with it - and its box stands the other way round about its
  * middle. Throws when a picture can't be turned.
  */
-export async function turnPaperAndDrawing(shapes: Shape[], fills: Fill[], page: Page, dir: 1 | -1): Promise<{ shapes: Shape[]; fills: Fill[]; page: Page }> {
+async function turnPaperAndDrawing(shapes: Shape[], fills: Fill[], page: Page, dir: 1 | -1): Promise<{ shapes: Shape[]; fills: Fill[]; page: Page }> {
   const turned = turnWhole(shapes, fills, page, dir);
   // Each picture once: a split's layers share one.
   const pictures = new Map<string, Pick<Photo, "src" | "width" | "height">>();

@@ -124,10 +124,10 @@ export const PHOTO_GROUP_PREFIX = "studio-photo-";
 // fill's cut lines are in a group named after the fill, not a FILL_GROUP_PREFIX one, so Plot doesn't
 // make them again whole at another spacing.
 export const KNOCKED_PREFIX = "studio-knocked-";
-export const KNOCKED_FILL_PREFIX = "studio-knocked-fill-";
+const KNOCKED_FILL_PREFIX = "studio-knocked-fill-";
 export const KNOCKED_LAYER = "%knocked out";
 export const KNOCKED_GROUP_SUFFIX = "--knocked";
-export const KNOCKOUT_LAYER_ID = "studio-knockout";
+const KNOCKOUT_LAYER_ID = "studio-knockout";
 
 /** A cutter for a turned photo's lines: they are written inside the turn, so cut where the turn puts them. */
 function turnedCutter(cutter: KnockoutCutter, s: Shape): KnockoutCutter {
@@ -177,7 +177,7 @@ export const FILL_GROUP_PREFIX = "studio-fill-";
 // from it. It goes on a layer whose name starts with "%", which NextDraw skips: Plot hides those
 // from the preview, never plots them, and leaves them out of the drawing's bounds (tested - see
 // docs/studio.md). So the shape survives to be edited without ever reaching the paper.
-export const SOURCE_LAYER = "%sources";
+const SOURCE_LAYER = "%sources";
 
 function fillMarkup(shapes: Shape[], fills: Fill[], cutter?: KnockoutCutter | null): string {
   return fills

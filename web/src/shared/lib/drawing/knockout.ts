@@ -372,13 +372,13 @@ export const KNOCKOUT = "Knockout";
 /** How the layer is called in the file: the % is what keeps NextDraw from plotting it. */
 export const KNOCKOUT_FILE_LABEL = `%${KNOCKOUT}`;
 /** The swatch the layer shows in the lists. Never plotted, so never a pen's color. */
-export const KNOCKOUT_COLOR = "#8a8f98";
+const KNOCKOUT_COLOR = "#8a8f98";
 /**
  * How far past its outlines the knockout cuts, in mm: half the line of a typical pen, so the ink of a
  * line stopping at the edge stops at the edge. One number for every app and pen, so what the preview
  * shows and what the file plots always agree.
  */
-export const KNOCKOUT_GAP_MM = 0.25;
+const KNOCKOUT_GAP_MM = 0.25;
 export const knockoutGapIn = () => KNOCKOUT_GAP_MM / 25.4;
 
 export const isKnockoutLayer = (name: string) => name.trim().toLowerCase() === KNOCKOUT.toLowerCase();
@@ -444,7 +444,7 @@ export function knockoutCutter(maskShapes: Shape[], fonts: Record<string, Stroke
  * closed shape in it, as one group named after the file, scaled to `width` inches across and centered
  * on `at`. Null, with the reason, when there's nothing in it to knock out with.
  */
-export function placedKnockout(file: { shapes: Shape[]; unsupported: number }, name: string, layerId: string, at: Point, width: number, fonts: Record<string, StrokeFont> = {}): { shapes: Shape[] } | { error: string } {
+function placedKnockout(file: { shapes: Shape[]; unsupported: number }, name: string, layerId: string, at: Point, width: number, fonts: Record<string, StrokeFont> = {}): { shapes: Shape[] } | { error: string } {
   const closed = file.shapes.filter((s) => s.kind !== "photo" && s.kind !== "line"
     && markRuns({ ...s, outline: true }, fonts[s.font ?? ""]).some((r) => r.length > 2));
   if (!closed.length) {

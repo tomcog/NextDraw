@@ -5,7 +5,7 @@ import { FIT_CENTERED, type FitAlign } from "../../lib/geometry";
 
 /** The fit-alignment icons from the NextDraw Figma file (Frame 3): a 7 × 12 drawing
  *  beside or on a full-height line, turned for each direction. */
-export function FitIcon({ centered = false, turn = 0 }: { centered?: boolean; turn?: number }) {
+function FitIcon({ centered = false, turn = 0 }: { centered?: boolean; turn?: number }) {
   return (
     <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 16 16" fill="none" aria-hidden="true">
       <g transform={turn ? `rotate(${turn} 8 8)` : undefined}>

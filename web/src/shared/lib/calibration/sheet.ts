@@ -35,7 +35,7 @@ const TRACKING = 15; // percent of the size, between letters
 const PER_LETTER = 0.75; // ems a letter takes, spacing included - generous, so names never run into the next
 
 /** A patch's name says which pen and how much ink, so the sheet can be read back by its shapes. */
-export const patchName = (pen: string, cover: number) => `${pen} ${Math.round(cover * 1000) / 10}%`;
+const patchName = (pen: string, cover: number) => `${pen} ${Math.round(cover * 1000) / 10}%`;
 
 const coverText = (cover: number) => `${Math.round(cover * 1000) / 10}`.replace(/\.5$/, "");
 

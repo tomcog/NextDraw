@@ -88,7 +88,7 @@ export function textRuns(shape: Shape, font: StrokeFont | undefined): TextRun[] 
 }
 
 /** How wide the words come out at the box's height, in inches: what the box's width is set to. */
-export function textWidth(shape: Shape, font: StrokeFont | undefined): number {
+function textWidth(shape: Shape, font: StrokeFont | undefined): number {
   if (!font || shape.kind !== "text") return 0;
   const { tracking } = settingsOf(shape);
   const set = setText(shape.text ?? "", font, (tracking / 100) * font.unitsPerEm);

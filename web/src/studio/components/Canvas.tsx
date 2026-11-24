@@ -164,7 +164,7 @@ function straighten(x: number, y: number, toX: number, toY: number) {
  * time. Its marks are picked up together - Select all on layer, or a band dragged round them - and
  * moved by the box round the selection.
  */
-export const GRIP_LIMIT = 2000;
+const GRIP_LIMIT = 2000;
 
 const sameItems = <T,>(a: T[], b: T[]) => a.length === b.length && a.every((x, i) => x === b[i]);
 

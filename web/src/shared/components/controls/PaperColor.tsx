@@ -4,39 +4,12 @@ import styles from "./controls.module.css";
 
 // Common paper colours, plus any colour from the picker. The paper is drawn in this colour whatever
 // the app's theme, so light or dark mode never changes how a print looks.
-export const PAPER_COLORS = [
+const PAPER_COLORS = [
   { name: "White", color: "#ffffff" },
   { name: "Kraft", color: "#dcb78e" },
   { name: "Gray", color: "#8f9198" },
   { name: "Black", color: "#1d1d1f" },
 ];
-
-export const paperColorName = (color: string) => PAPER_COLORS.find((c) => c.color === color)?.name ?? color;
-
-/**
- * The dot in the paper's colour that a card's heading carries, ringed while the colours are out.
- * Shared, so the Artboard card's (Studio and Image) and the Paper card's (Plot) are the one control.
- */
-export function PaperDot({ color, open, disabled, onToggle }: {
-  color: string;
-  open: boolean;
-  disabled?: boolean;
-  onToggle: () => void;
-}) {
-  const name = paperColorName(color);
-  return (
-    <button
-      type="button"
-      className={styles.paperSwatch}
-      style={{ background: color }}
-      aria-label={`Paper color: ${name}`}
-      aria-expanded={open}
-      title={open ? "Hide paper colors" : `${name} paper: click for another color`}
-      disabled={disabled}
-      onClick={onToggle}
-    />
-  );
-}
 
 /** The colours themselves, tucked behind the dot: the list, then any colour from the picker. */
 export function PaperColorRow({ color, disabled, onColor }: {

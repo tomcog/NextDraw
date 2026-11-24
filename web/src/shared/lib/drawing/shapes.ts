@@ -300,7 +300,7 @@ export const turnAround = (shapes: Shape[], about: { x: number; y: number }, deg
   });
 
 /** The same shape in a new box, with a path's points carried across so they keep their places in it. */
-export const withBox = (s: Shape, box: { x0: number; y0: number; x1: number; y1: number }): Shape => {
+const withBox = (s: Shape, box: { x0: number; y0: number; x1: number; y1: number }): Shape => {
   const next = { ...s, x: box.x0, y: box.y0, x2: box.x1, y2: box.y1 };
   const runs = pathRuns(s);
   if (!runs.length) return next;
@@ -332,7 +332,7 @@ export const clampToPage = (s: Shape, page: Page): Shape => {
 };
 
 /** The same shape with x/y as its top-left corner, so a handle always means the same corner. */
-export const normalized = (s: Shape): Shape => {
+const normalized = (s: Shape): Shape => {
   if (s.kind === "line") return s; // a line's ends are its own; normalising would flip it
   const b = boxOf(s);
   return { ...s, x: b.x0, y: b.y0, x2: b.x1, y2: b.y1 };
@@ -397,7 +397,7 @@ export type Handle = "nw" | "ne" | "sw" | "se" | "a" | "b" | `p${number}`;
 /** A path with more points than this is dragged by its corners: a thousand grips is not an edit. */
 export const POINT_HANDLE_LIMIT = 120;
 
-export const handlesOf = (s: Shape): { id: Handle; x: number; y: number; point?: true }[] => {
+const handlesOf = (s: Shape): { id: Handle; x: number; y: number; point?: true }[] => {
   // A path has both: the corners of its box, which scale the whole of it, and - while there are few
   // enough of them to pick one out - a grip on every point, which moves that point alone. The points
   // are counted straight through the runs, so one number names a point however many runs there are.

@@ -25,7 +25,7 @@ import type { InkProfile, Rendering } from "../../shared/lib/drawing/icc";
 import { penWidthOf } from "../../shared/lib/constants";
 
 /** The profile a photo was last split by, and its intent: what the next is split by to start with. */
-export const PROFILE_KEY = "photo-profile";
+const PROFILE_KEY = "photo-profile";
 /** A profile's file name, from a drawing that kept its whole path before profiles had a folder of their own. */
 const baseName = (path: string) => path.slice(path.lastIndexOf("/") + 1);
 
@@ -72,7 +72,7 @@ const turnedBy = (angle: number, by: number) => Math.round(((((angle + by) % 180
  * a sixth clear of white when there are light pens, and of black when there are dark ones: on white
  * or cream paper the third would otherwise start at white, and the light pen have nothing to draw.
  */
-export function autoPaperTone(paper: string, dark: number, light: number): [number, number] {
+function autoPaperTone(paper: string, dark: number, light: number): [number, number] {
   const at = 1 - (lightness(paper) ?? 100) / 100;
   const least = light > 0 ? 1 / 6 : 0;
   const most = (dark > 0 ? 5 / 6 : 1) - 1 / 3;

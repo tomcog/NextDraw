@@ -6,7 +6,7 @@
 
 export type Theme = "light" | "dark";
 
-export const THEME_KEY = "nextdraw-theme";
+const THEME_KEY = "nextdraw-theme";
 
 export function readTheme(): Theme {
   try {

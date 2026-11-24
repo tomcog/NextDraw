@@ -10,7 +10,7 @@ import type { Units } from "../../lib/types";
 /** The listed size a width and height are, whichever way round they lie, or "custom" for neither.
  *  In mm, loosely enough that a size written to a file in inches and read back is still itself:
  *  no two of the list are within a millimetre of each other. */
-export function sizeIdFor(w: number, h: number) {
+function sizeIdFor(w: number, h: number) {
   const match = PAPER_SIZES.find(
     (p) => (Math.abs(p.w - w) < 0.05 && Math.abs(p.h - h) < 0.05) || (Math.abs(p.h - w) < 0.05 && Math.abs(p.w - h) < 0.05),
   );
