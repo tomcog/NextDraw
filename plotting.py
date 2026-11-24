@@ -192,9 +192,7 @@ def write_queue(items):
     try:
         QUEUE_FILE.parent.mkdir(parents=True, exist_ok=True)
         kept = [{**i, "path": queue_path_to_file(i["path"])} for i in items]
-        tmp = QUEUE_FILE.with_name(".queue.json.tmp")
-        tmp.write_text(json.dumps({"items": kept, "version": state.queue["version"]}))
-        os.replace(tmp, QUEUE_FILE)
+        places.write_atomic(QUEUE_FILE, json.dumps({"items": kept, "version": state.queue["version"]}))
         state.queue_stamp = queue_file_stamp()
     except OSError:
         pass  # the state.queue still holds until the app restarts

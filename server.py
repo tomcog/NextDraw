@@ -683,9 +683,7 @@ def save_presets(presets):
     if PRESETS_FILE != BUNDLED_PRESETS and not PRESETS_FILE.exists():
         raise PresetsMissing(f"The tools file is missing from {display_path(PRESETS_FILE.parent)}, so nothing "
                              "was saved. Put presets.json back there (check the Trash), then try again.")
-    tmp = PRESETS_FILE.with_suffix(".tmp")
-    tmp.write_text(json.dumps(presets, indent=2))
-    tmp.replace(PRESETS_FILE)
+    places.write_atomic(PRESETS_FILE, json.dumps(presets, indent=2))
 
 
 @app.errorhandler(PresetsMissing)
@@ -1166,9 +1164,7 @@ def import_from_vectorcraft(vc_path):
         raise RuntimeError(f"{vc_path.name} isn't a VectorCraft document.")
     svg, left_out = vectorcraft_svg(doc, load_presets())
     svg_path = vc_path.with_suffix(".svg")
-    tmp = svg_path.with_name(f".{svg_path.name}.tmp")
-    tmp.write_text(svg, encoding="utf-8")
-    os.replace(tmp, svg_path)
+    places.write_atomic(svg_path, svg)
     if left_out:
         kinds = sorted(set(left_out))
         logging.getLogger(__name__).warning("VectorCraft %s: left out %s", vc_path.name, ", ".join(kinds))
@@ -1298,9 +1294,7 @@ def combine():
             return jsonify(error="That folder isn't one the app can save drawings in."), 403
         from lxml import etree
         etree.cleanup_namespaces(root, top_nsmap={"inkscape": INKSCAPE_NS[1:-1], "nds": PLOT_NS})
-        tmp = out.with_name(f".{out.name}.combining")
-        tmp.write_bytes(etree.tostring(root, xml_declaration=True, encoding="utf-8"))
-        os.replace(tmp, out)
+        places.write_atomic(out, etree.tostring(root, xml_declaration=True, encoding="utf-8"))
         plot = load_drawing(out)
     except (OSError, ValueError) as exc:
         return jsonify(error=str(exc)), 400
@@ -1460,9 +1454,7 @@ def put_plot_settings():
         if settings == state.shared_settings["settings"] and preset == state.shared_settings["preset"]:
             return jsonify(version=state.shared_settings["version"])  # nothing new: the other pages are already showing it
         state.shared_settings = {"settings": settings, "preset": preset, "version": f"{time.time_ns():x}"}
-        tmp = PLOT_SETTINGS.with_suffix(".tmp")
-        tmp.write_text(json.dumps(state.shared_settings))
-        os.replace(tmp, PLOT_SETTINGS)
+        places.write_atomic(PLOT_SETTINGS, json.dumps(state.shared_settings))
         return jsonify(version=state.shared_settings["version"])
 
 
@@ -1530,15 +1522,10 @@ def commit_drawing(tree, disk_path):
     from lxml import etree
     etree.cleanup_namespaces(tree, top_nsmap={"inkscape": INKSCAPE_NS[1:-1]})
     data = svg_bytes(tree)
-    tmp = places.CURRENT_SVG.with_suffix(".tmp")
-    tmp.write_bytes(data)
-    os.replace(tmp, places.CURRENT_SVG)
+    places.write_atomic(places.CURRENT_SVG, data)
     if disk_path is not None:
         try:
-            tmp = disk_path.with_name(f".{disk_path.name}.nextdraw-saving")
-            tmp.write_bytes(data)
-            shutil.copymode(disk_path, tmp)
-            os.replace(tmp, disk_path)
+            places.write_atomic(disk_path, data, like=disk_path)
             places.CURRENT_MTIME.write_text(str(disk_path.stat().st_mtime_ns))
             places.CURRENT_HASH.write_text(disk_token(disk_path) or "")
         except OSError as exc:
@@ -1891,9 +1878,7 @@ def studio_save():
         except Exception:  # noqa: BLE001 - an unreadable old file is simply replaced
             pass
     try:
-        tmp = path.with_name(f".{path.name}.studio-saving")
-        tmp.write_text(svg, encoding="utf-8")
-        os.replace(tmp, path)
+        places.write_atomic(path, svg)
     except OSError as exc:
         return jsonify(error=f"Couldn't save {name}: {exc.strerror or exc}"), 500
     if current is not None:
@@ -1933,16 +1918,12 @@ def current_state():
 def write_current_state(state):
     """Record the editors' side; every write is a new edit, which the open pages notice."""
     out = {"dirty": False, "save_to": None, "foreign": 0, **state, "edited": f"{time.time_ns():x}"}
-    tmp = places.CURRENT_STATE.with_suffix(".tmp")
-    tmp.write_text(json.dumps(out))
-    os.replace(tmp, places.CURRENT_STATE)
+    places.write_atomic(places.CURRENT_STATE, json.dumps(out))
     return out
 
 
 def write_current_svg(svg):
-    tmp = places.CURRENT_SVG.with_suffix(".tmp")
-    tmp.write_text(svg, encoding="utf-8")
-    os.replace(tmp, places.CURRENT_SVG)
+    places.write_atomic(places.CURRENT_SVG, svg)
     ensure_layer_ids(places.CURRENT_SVG)
 
 
@@ -2912,9 +2893,7 @@ def save_image_preset(name):
     if len(text) > MAX_IMAGE_PRESET:
         return jsonify(error="That preset is too big to keep."), 400
     IMAGE_PRESETS.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_suffix(".tmp")
-    tmp.write_text(text)
-    os.replace(tmp, path)
+    places.write_atomic(path, text)
     return list_image_presets()
 
 
@@ -2974,9 +2953,7 @@ def save_ink_set(name):
     if len(text) > MAX_INK_SET:
         return jsonify(error="That ink set is too big to keep."), 400
     INK_SETS.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_suffix(".tmp")
-    tmp.write_text(text)
-    os.replace(tmp, path)
+    places.write_atomic(path, text)
     return ink_sets_listed()
 
 

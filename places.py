@@ -1,14 +1,15 @@
 """Where everything lives on this Mac: the working folder, the open drawing, the queue, the presets,
 the folders the file browser may open drawings from (Tom, 2026-11-24).
 
-Paths and the few helpers that read them, and nothing else. Every other module can ask here without
-asking server.py, which is what lets the plotter and the drawing's own code be read apart from the
-routes that drive them.
+Paths, the few helpers that read them, and the one that writes a file safely, and nothing else.
+Every other module can ask here without asking server.py, which is what lets the plotter and the
+drawing's own code be read apart from the routes that drive them.
 """
 import json
 import os
 import re
 import shutil
+import tempfile
 from pathlib import Path
 
 HOST, PORT = "127.0.0.1", 5055
@@ -135,3 +136,34 @@ QUEUE_FILE = (ICLOUD_DRIVE / "NextDraw Studio" / "queue.json") if ICLOUD_DRIVE.i
 # whether a file is one of these.
 IMPORT_SUFFIXES = (".ai", ".vectorcraft")
 DRAWING_SUFFIXES = (".svg", *IMPORT_SUFFIXES)
+
+
+def write_atomic(path, data, like=None):
+    """
+    Write a file in one step: fill a temp file beside it, then rename it over the top. A reader sees
+    the file as it was or as it now is, never half of either, and a write that fails partway leaves
+    the old one untouched.
+
+    The temp file's name is this write's alone. One fixed name per target looked safe and wasn't:
+    two pages auto-saving the open drawing at the same moment both wrote jobs/current.tmp, the first
+    rename carried it off, and the second died with FileNotFoundError - losing that save and taking
+    the request with it (Tom, 2026-11-24). mkstemp settles the name in the one step that can't race.
+
+    `data` is bytes or text. `like` is a file to take the permissions from, for a write over one that
+    has its own; without it the mode is the ordinary 0644 rather than mkstemp's private 0600.
+    """
+    path = Path(path)
+    fd, name = tempfile.mkstemp(dir=str(path.parent), prefix=f".{path.name}.", suffix=".tmp")
+    tmp = Path(name)
+    try:
+        with os.fdopen(fd, "wb") as out:
+            out.write(data if isinstance(data, bytes) else data.encode("utf-8"))
+        source = like if like is not None else (path if path.exists() else None)
+        if source is not None:
+            shutil.copymode(source, tmp)
+        else:
+            os.chmod(tmp, 0o644)
+        os.replace(tmp, path)
+    except BaseException:
+        tmp.unlink(missing_ok=True)  # never leave half a file lying beside the real one
+        raise
