@@ -303,40 +303,37 @@ export function BedCanvas(props: BedCanvasProps) {
   // The canvas fills the room it has, whatever the zoom, so it holds its size and place and only what's
   // in it changes (Tom, 2026-10-10: a tall drawing zoomed to had shrunk the canvas and moved it; then,
   // it should use the height as well as the width). What's framed is as large as the room allows, and
-  // the room left over - the canvas being a different shape from what's in it - is dealt with
-  // differently on the two axes (Tom, 2026-11-24):
+  // the room left over - the canvas being a different shape from what's in it - goes to the RIGHT and
+  // BELOW, both of it (Tom, 2026-11-24).
   //
-  // ACROSS, it is halved, so what's framed sits in the middle. It used to go entirely on the right,
-  // which left the drawing against the left edge with a band of empty canvas down one side.
-  //
-  // DOWN, it all goes BELOW: the top of what's framed is always the top of the canvas. Halving it too
-  // floated a wide, shallow thing - the plotter bed in a tall window - down the canvas with a gap
-  // above it, and the top edge is the one that means something: it is where home is, and where the
-  // dimension line and the toolbar sit.
+  // So the top left of what's framed is the top left of the canvas, whatever shape either happens to
+  // be. That is the corner the rulers hug and the corner home sits in, and it is the one place the
+  // eye can measure from: halved across, a wide canvas pushed the drawing into the middle and left
+  // the down ruler stranded a hand's width from it while the across ruler stayed against it.
   //
   // The margins fit leaves are untouched, so the dimension lines keep their room above and to the
   // left. Until the room is measured, the plotter view's.
   const { vb } = fit(frame);
   const baseAspect = base.vb[2] / base.vb[3];
   const aspect = room.w > 0 && room.h > 0 ? room.w / room.h : baseAspect;
-  if (vb[2] / vb[3] < aspect) {
-    const over = vb[3] * aspect - vb[2];
-    vb[0] -= over / 2;
-    vb[2] += over;
-  } else {
-    vb[3] = vb[2] / aspect;
-  }
+  if (vb[2] / vb[3] < aspect) vb[2] = vb[3] * aspect;
+  else vb[3] = vb[2] / aspect;
   const viewBox = props.viewBoxOverride ?? vb.join(" ");
 
-  // Where the dimension lines sit in the plotter view, carried into this view at the same screen spot.
   const [vx, vy, vw, vh] = viewBox.split(" ").map(Number);
   // The plotter view as it would fill this room - widened or deepened to the room's shape, as every
   // view now is. Measured against the bare plotter view instead, the lines and labels grew with how
   // much wider the room was than the bed: a wide window, or a rail put away, made them huge.
   const baseW = Math.max(base.vb[2], base.vb[3] * aspect);
   const k = vw / baseW; // this view's units per plotter-view unit
-  const dy = vy + (-base.pad * 0.4 - base.vb[1]) * k;
-  const dx = vx + (-base.pad * 0.35 - base.vb[0]) * k;
+  // The dimension lines hug the canvas, not what is framed in it: the same gap from the top edge and
+  // from the left edge, whatever shape the canvas happens to be (Tom, 2026-11-24). They used to sit
+  // a fixed distance from the FRAME, measured in the drawing's units - so a wide canvas left the
+  // across line nearly touching the top while the down line drifted inward, and the two never
+  // agreed. In screen pixels they can: a canvas unit is worth vw / room.w across, vh / room.h down.
+  const RULER_GAP_PX = 16;
+  const dy = vy + RULER_GAP_PX * (room.h > 0 ? vh / room.h : k);
+  const dx = vx + RULER_GAP_PX * (room.w > 0 ? vw / room.w : k);
   const tick = base.pad * 0.14 * k;
   const labelFont = Math.max(W, H) * 0.0156 * k;
   const [dimX0, dimY0, dimX1, dimY1] = dimBox;
@@ -344,6 +341,18 @@ export function BedCanvas(props: BedCanvasProps) {
     "--toolbar-top": `${((dy - vy) / vh) * 100}%`,
     "--toolbar-right": `${((vx + vw - dimX1) / vw) * 100}%`,
     "--toolbar-left": `${((dimX0 - vx) / vw) * 100}%`,
+  } as CSSProperties;
+
+  // Where the page sits inside the canvas, as a share of it, for anything laid OVER the canvas in
+  // HTML - a hint, a way in - to sit on the page rather than on the canvas (Tom, 2026-11-24). The
+  // two were the same thing while the page was centred; now that the spare room is all to the right
+  // and below, a box centred on the canvas is visibly off the page.
+  const onPage = artBox ?? paperBox ?? travelBox;
+  const pageStyle = {
+    "--page-left": `${((onPage[0] - vx) / vw) * 100}%`,
+    "--page-top": `${((onPage[1] - vy) / vh) * 100}%`,
+    "--page-width": `${((onPage[2] - onPage[0]) / vw) * 100}%`,
+    "--page-height": `${((onPage[3] - onPage[1]) / vh) * 100}%`,
   } as CSSProperties;
 
   // What the toolbar occupies, in the bed's own units, and the middle of what is left beside it.
@@ -368,7 +377,7 @@ export function BedCanvas(props: BedCanvasProps) {
     <div
       className={props.wrapClassName ? `${styles.wrap} ${props.wrapClassName}` : styles.wrap}
       ref={wrapRef}
-      style={{ "--bed-aspect": baseAspect } as CSSProperties}
+      style={{ "--bed-aspect": baseAspect, ...pageStyle } as CSSProperties}
       {...props.wrapData}
     >
       <svg

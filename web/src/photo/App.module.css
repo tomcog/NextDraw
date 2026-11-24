@@ -55,7 +55,10 @@
    now, and the overlay covers it, so the button has to place itself. */
 .stageEmpty {
   position: absolute;
-  inset: 0;
+  left: var(--page-left, 0);
+  top: var(--page-top, 0);
+  width: var(--page-width, 100%);
+  height: var(--page-height, 100%);
   display: flex;
   align-items: center;
   justify-content: center;

@@ -139,9 +139,14 @@
 
 .wrap[data-tool="select"][data-drag="move"] .carryBox { cursor: grabbing; }
 
+/* Over the PAGE, not over the canvas: the canvas keeps its spare room to the right and below, so a
+   box at inset 0 reads as off-centre (Tom, 2026-11-24). BedCanvas publishes where the page sits. */
 .hint {
   position: absolute;
-  inset: 0;
+  left: var(--page-left, 0);
+  top: var(--page-top, 0);
+  width: var(--page-width, 100%);
+  height: var(--page-height, 100%);
   display: flex;
   flex-direction: column;
   align-items: center;
