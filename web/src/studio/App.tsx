@@ -14,7 +14,7 @@ import { api } from "../shared/lib/api";
 import { isSvgFile, useFileDrop } from "../shared/lib/useFileDrop";
 import { marginsAll, marginsTimes, type FitAlign, type Margins } from "../shared/lib/geometry";
 import { load, save as remember } from "../shared/lib/storage";
-import { DEFAULT_SETTINGS, PAPER_SIZES, penWidthOf } from "../shared/lib/constants";
+import { DEFAULT_SETTINGS, NEW_ARTBOARD, NEW_MARGIN_IN, NEW_PAPER_COLOR, PAPER_SIZES, penWidthOf } from "../shared/lib/constants";
 import type { Info, PenColor, PlotterModel, Preset } from "../shared/lib/types";
 import { listOf } from "../shared/lib/format";
 import { lightness } from "../shared/lib/color";
@@ -715,9 +715,15 @@ export default function App() {
   clearHistory();
   setConfirmNext(null);
   if (!quiet) setMessage({ text: "New drawing", ok: true });
-  // An empty artboard is not unsaved work, and the paper it's on came from the drawing before it.
-  started("Untitled", { shapes: noShapes, fills: noFills, layers: onlyLayer, artboard });
- }, [started, artboard, clearHistory]);
+  // A new drawing starts the same every time, here and in Image: a foot square, an inch of margin,
+  // on white (constants.ts, Tom, 2026-11-24). It used to keep the artboard and the paper of the
+  // drawing before it, so the page you got depended on what you happened to have been doing.
+  setArtboard(NEW_ARTBOARD);
+  setMargins(marginsAll(NEW_MARGIN_IN));
+  setPaperColor(NEW_PAPER_COLOR);
+  // An empty artboard is not unsaved work.
+  started("Untitled", { shapes: noShapes, fills: noFills, layers: onlyLayer, artboard: NEW_ARTBOARD });
+ }, [started, clearHistory]);
 
  // Undo can't bring back which file was open - a snapshot is the drawing, not the drawing's name -
  // so unsaved work gets a question rather than a silent discard.

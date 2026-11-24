@@ -50,7 +50,15 @@
   object-fit: contain;
 }
 
+/* The way in, over the empty artboard: centred on the canvas the way Studio centres its own hint
+   (Tom, 2026-11-24). It was a button inside a plain rectangle; the rectangle is the shared canvas
+   now, and the overlay covers it, so the button has to place itself. */
 .stageEmpty {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   border: none;
   background: none;
   font: inherit;

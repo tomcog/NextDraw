@@ -6,6 +6,7 @@ import { DrawingToolSection } from "../shared/components/controls/DrawingToolSec
 import { FileSection } from "../shared/components/controls/FileSection";
 import { useUnits } from "../shared/lib/useUnits";
 import { ArtboardSection } from "../shared/components/controls/ArtboardSection";
+import { NextDrawCanvas } from "../shared/components/NextDrawCanvas";
 import { drawnBox, reshapeDrawing, roomRound } from "../shared/lib/drawing/whole";
 import { ArtworkSection } from "../shared/components/controls/ArtworkSection";
 import { Section } from "../shared/components/controls/Section";
@@ -19,7 +20,7 @@ import { UnsavedChangesModal } from "../shared/components/UnsavedChangesModal";
 import { StatusBanner, type BannerMessage } from "../shared/components/StatusBanner";
 import { api, postJSON } from "../shared/lib/api";
 import { isSvgFile, useFileDrop } from "../shared/lib/useFileDrop";
-import { PAPER_SIZES } from "../shared/lib/constants";
+import { NEW_ARTBOARD as NEW_DRAWING_ARTBOARD, NEW_MARGIN_IN, NEW_PAPER_COLOR, PAPER_SIZES } from "../shared/lib/constants";
 import { marginsAll, marginsTimes, type Margins } from "../shared/lib/geometry";
 import { load, save as remember } from "../shared/lib/storage";
 import type { Info, PlotterModel, Preset } from "../shared/lib/types";
@@ -80,8 +81,10 @@ const PAPER_COLOR_KEY = "photo-paper-color";
  * one every app shares, so a new image puts the EnerGel's measured palette in Plot and Studio too;
  * a plotter without an EnerGel preset falls back to None, as a pen that's gone always does.
  */
-const NEW_ARTBOARD: Page = { w: 12, h: 12 };
-const NEW_MARGINS = marginsAll(0);
+// A new drawing is the same in both apps - a foot square, an inch of margin, on white (constants.ts,
+// Tom, 2026-11-24) - and starts on the EnerGel, which is the pen in the holder more often than not.
+const NEW_ARTBOARD: Page = NEW_DRAWING_ARTBOARD;
+const NEW_MARGINS = marginsAll(NEW_MARGIN_IN);
 const NEW_PEN = "EnerGel";
 
 const NO_SHAPES: Shape[] = [];
@@ -428,6 +431,9 @@ export default function App() {
     setSelected(null);
     setArtboard(NEW_ARTBOARD);
     setMargins(NEW_MARGINS);
+    // The paper it was on came from the drawing before it, so an hour on kraft used to hand the next
+    // drawing a beige page. A new drawing starts white.
+    setPaperColor(NEW_PAPER_COLOR);
     setToolName(NEW_PEN);
     sharePen(NEW_PEN);
     clearHistory();
@@ -1192,16 +1198,24 @@ export default function App() {
               onMove={busy || !photoLayerIds.length || !photoLayerIds.every(movable) ? undefined : movePhoto}
             />
           ) : (
-            <>
-              <div
-                className={styles.paper}
-                style={{ aspectRatio: `${artboard.w} / ${artboard.h}`, background: paperColor }}
-              >
+            /* No picture yet: the artboard on the shared canvas, exactly as Studio draws an empty
+              one (Tom, 2026-11-24) - at true scale on the plotter's bed, with its dimension lines
+              and its red trim line - rather than a plain rectangle stretched to the column. The way
+              in sits over it, as Studio's "Pick a drawing tool" hint does. */
+            <NextDrawCanvas
+              model={model}
+              settings={{ ...DEFAULT_SETTINGS, paper_w: artboard.w * 25.4, paper_h: artboard.h * 25.4, paper_x: 0, paper_y: 0, paper_color: paperColor }}
+              drawingBox={null}
+              artboard={artboard}
+              ground="artboard"
+              zoom="artboard"
+              guides={{ trim: true }}
+              overlay={
                 <button type="button" className={styles.stageEmpty} onClick={() => photoInput.current?.click()}>
                   Open an image to start
                 </button>
-              </div>
-            </>
+              }
+            />
           )}
         </section>
 

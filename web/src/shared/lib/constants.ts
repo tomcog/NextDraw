@@ -71,6 +71,18 @@ export const PRESET_FIELD_NAMES: Record<(typeof PRESET_FIELDS)[number], string> 
   speed_penup: "travel speed", accel: "acceleration", handling: "motion",
 };
 
+/**
+ * What a new drawing starts as, in Studio and in Image alike (Tom, 2026-11-24): a foot square, an
+ * inch of margin all round, on white.
+ *
+ * It is stated here rather than left to whatever was open before. Studio used to keep the artboard
+ * and the paper of the drawing before it, and Image kept the paper colour - so a new drawing after
+ * an hour on kraft came up beige, which is nobody's starting point.
+ */
+export const NEW_ARTBOARD = { w: 12, h: 12 };
+export const NEW_MARGIN_IN = 1;
+export const NEW_PAPER_COLOR = "#ffffff";
+
 // Width × height in mm, portrait. Shown landscape by default to suit the plotter.
 export const PAPER_SIZES: { id: string; name: string; w: number; h: number }[] = [
   { id: "8x10", name: "8 × 10 in", w: 203.2, h: 254 },
