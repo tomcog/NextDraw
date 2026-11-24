@@ -319,6 +319,9 @@
 .marginAt[data-edge="right"] { right: 4px; top: 50%; transform: translateY(-50%); }
 .marginAt[data-edge="top"] { top: 4px; left: 50%; transform: translateX(-50%); }
 .marginAt[data-edge="bottom"] { bottom: 4px; left: 50%; transform: translateX(-50%); }
+/* The one field the four become while they are held the same: the middle of the sheet, where there
+   is room for a longer number than an edge field holds. */
+.marginAt[data-edge="all"] { top: 50%; left: 50%; width: 48px; transform: translate(-50%, -50%); }
 
 /* The size chooser, in the Paper card and the Artboard card alike: the list of sizes taking what
    the way-it-lies control leaves, which sits level with the menu while its label hangs below. */

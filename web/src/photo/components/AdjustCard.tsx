@@ -78,9 +78,17 @@ export function AdjustCard({ photo, channels, set, setChannel }: Props) {
               title="The image cut down to a few flat colors with hard borders, before anything draws it: a photograph as a poster. Every effect and every ink set then works from the flattened picture."
               onChange={(e) => set({ flatten: e.target.checked ? FLATTEN_DEFAULT : undefined })}
             />
-            {Boolean(photo.flatten) && (
-              <NumberField label="Colors" min={2} max={FLATTEN_MOST} step={1} value={photo.flatten ?? FLATTEN_DEFAULT} onChange={(flatten) => set({ flatten })} />
-            )}
+            {/* How many colors stays in its place whether or not Flatten is on - greyed until it is -
+              so turning it on and off doesn't move the card under the pointer. */}
+            <NumberField
+              label="Colors"
+              min={2}
+              max={FLATTEN_MOST}
+              step={1}
+              value={photo.flatten ?? FLATTEN_DEFAULT}
+              disabled={!photo.flatten}
+              onChange={(flatten) => set({ flatten })}
+            />
           </div>
           {/* Each plate's own, inside Adjustments: folding the card puts these away with it. */}
           {channels.length > 0 && (

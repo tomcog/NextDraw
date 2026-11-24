@@ -1,5 +1,5 @@
 import { Segment, SegmentedControl } from "@tomcoggia/ui";
-import { Columns2, Image, Layers, Spline } from "lucide-react";
+import { Columns2, Image, Spline } from "lucide-react";
 import { useId, useRef, useState, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
 import type { Box, Zoom } from "../../shared/components/BedCanvas";
 import { InkGroup, InkLayer } from "../../shared/components/Ink";
@@ -8,7 +8,7 @@ import { knockoutGapIn } from "../../shared/lib/drawing/knockout";
 import { NextDrawCanvas } from "../../shared/components/NextDrawCanvas";
 import type { View } from "../../shared/components/PreviewToolbar";
 import { DEFAULT_SETTINGS, UNITS } from "../../shared/lib/constants";
-import { channelAdjusted, photoMarks, photoOrigin, pictureOf, type Photo } from "../../shared/lib/drawing/photo";
+import { channelAdjusted, flattenedPicture, photoMarks, photoOrigin, pictureOf, type Photo } from "../../shared/lib/drawing/photo";
 import type { Page } from "../../shared/lib/drawing/shapes";
 import { vignetteKey, vignetteOn, vignetteStrength, type Vignette } from "../../shared/lib/drawing/vignette";
 import { usePhotoRead } from "../../shared/lib/drawing/usePhotoRead";
@@ -17,9 +17,10 @@ import styles from "./ConvertStage.module.css";
 
 /**
  * What the stage shows: the picture alone, as it was opened; the lines alone, the drawing with nothing
- * of the photo; the lines over a faded copy of the picture; or the two side by side.
+ * of the photo; or the two side by side. (Lines over a faded picture was one of these until Tom took
+ * it out, 2026-11-23: side by side says the same thing without the drawing fighting the photo.)
  */
-export type ConvertView = "picture" | "lines" | "over" | "side";
+export type ConvertView = "picture" | "lines" | "side";
 
 /** A hex color as sRGB 0 to 1. */
 const rgbOf = (hex: string): [number, number, number] => {
@@ -143,13 +144,19 @@ export function ConvertStage({ photo, parts, box, artboard, paperColor, model, i
     const c = Math.max(-99, Math.min(99, p.contrast)) / 100;
     const gain = c >= 0 ? 1 / (1 - c) : 1 + c;
     const shift = 0.5 - 0.5 * gain + p.brightness / 200;
-    const saturate = 1 + (p.saturation ?? 0) / 100;
+    // Flattened, the picture shown is the flattened one - what the lines are reading - rather than
+    // the image it was made from (Tom, 2026-11-23). Its saturation and its vignette are already in
+    // those pixels, so neither is applied again here; brightness and contrast still are, since
+    // flattening happens before them. Not for a profile's ink, whose picture is its own share of the
+    // photo; and the image as it was opened until it has been read, rather than nothing.
+    const flat = !p.profile ? flattenedPicture(p) : undefined;
+    const saturate = flat ? 1 : 1 + (p.saturation ?? 0) / 100;
     // The vignette goes on before brightness and contrast, as it does for the lines.
-    const vignette = vignetteOn(p.vignette) ? p.vignette : null;
+    const vignette = !flat && vignetteOn(p.vignette) ? p.vignette : null;
     const adjusted = p.brightness !== 0 || p.contrast !== 0 || saturate !== 1;
     const ink = tint ? rgbOf(tint) : null;
     // A profile's ink is its share of the photo, worked out a moment after it's asked for.
-    const href = pictureOf(shown);
+    const href = flat ?? pictureOf(shown);
     if (!href) return null;
     return (
       <svg x={at.x0} y={at.y0} width={at.x1 - at.x0} height={at.y1 - at.y0} viewBox={`${c0 * p.width} ${c1 * p.height} ${(c2 - c0) * p.width} ${(c3 - c1) * p.height}`} preserveAspectRatio="none">
@@ -192,8 +199,8 @@ export function ConvertStage({ photo, parts, box, artboard, paperColor, model, i
   // While the image is dragged, how far it's gone so far: the picture and its lines follow, in every pane.
   const [by, setBy] = useState<{ x: number; y: number } | null>(null);
   const moved = by ? `translate(${by.x} ${by.y})` : undefined;
-  const picture = (faded?: boolean, whole = false) => (
-    <g opacity={faded ? 0.3 : 1} transform={whole ? undefined : moved}>
+  const picture = (whole = false) => (
+    <g transform={whole ? undefined : moved}>
       {photo.separation
         ? plates.map((part, i) => (
             <g key={i} style={{ mixBlendMode: "multiply" }}>{plate(part.photo, `${adjustId}-${i}`, part.color, whole)}</g>
@@ -254,7 +261,6 @@ export function ConvertStage({ photo, parts, box, artboard, paperColor, model, i
     <SegmentedControl size="sm" variant="dark" aria-label="What the stage shows">
       <Segment selected={show === "picture"} onClick={() => onShow("picture")} icon={<Image />} aria-label="Picture" title={photo.separation ? "Picture: the separations together, each in its ink, with no effect" : "Picture: the image as it was opened, with no effect"} />
       <Segment selected={show === "lines"} onClick={() => onShow("lines")} icon={<Spline />} aria-label="Lines" title="Lines: the drawing the effect makes, with nothing of the image" />
-      <Segment selected={show === "over"} onClick={() => onShow("over")} icon={<Layers />} aria-label="Lines over picture" title="Lines over picture: the drawing on top of a faded copy of the image" />
       <Segment selected={show === "side"} onClick={() => onShow("side")} icon={<Columns2 />} aria-label="Side by side" title="Side by side: the picture on the left, the drawing on the right" />
     </SegmentedControl>
   );
@@ -280,7 +286,7 @@ export function ConvertStage({ photo, parts, box, artboard, paperColor, model, i
       <div className={styles.panes} data-view="picture">
         {pane((mark) => (
           <>
-            {picture(false, true)}
+            {picture(true)}
             <CropFrame full={full} part={cropping.part} onPart={cropping.onPart} r={(mark * 0.28) / UNITS} />
           </>
         ), true)}
@@ -293,7 +299,6 @@ export function ConvertStage({ photo, parts, box, artboard, paperColor, model, i
     <div className={styles.panes} data-view={show}>
       {show === "picture" && pane((mark) => <>{picture()}{grab}{knockoutGuide(mark)}</>, true)}
       {show === "lines" && pane((mark) => <>{lines}{grab}{knockoutGuide(mark)}</>, true)}
-      {show === "over" && pane((mark) => <>{picture(true)}{lines}{grab}{knockoutGuide(mark)}</>, true)}
       {show === "side" && (
         <>
           {pane((mark) => <>{picture()}{grab}{knockoutGuide(mark)}</>, true)}

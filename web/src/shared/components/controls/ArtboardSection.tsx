@@ -7,7 +7,7 @@ import { panelIcon } from "../PanelToolbar";
 import { LengthField } from "./LengthField";
 import { Section } from "./Section";
 import { fmtLen } from "../../lib/format";
-import { marginsAll, type Margins } from "../../lib/geometry";
+import { marginsAll, MARGIN_SIDES, type Margins } from "../../lib/geometry";
 import type { Units } from "../../lib/types";
 import styles from "./controls.module.css";
 
@@ -79,6 +79,10 @@ export function ArtboardSection({ w, h, margins, units, color, collapsibleKey, d
   };
   const side = (which: keyof Margins) => (mm: number) =>
     onMargins(locked ? marginsAll(mm) : { ...margins, [which]: mm });
+  // One field stands for the four only while they really are one number. A drawing opened with
+  // uneven margins under a lock left on from last time still shows all four - the lock evens them
+  // when it is turned on or one of them is set, never behind the drawing's back.
+  const asOne = locked && MARGIN_SIDES.every((s) => margins[s] === margins.top);
   return (
     <Section
       title="Artboard"
@@ -115,7 +119,22 @@ export function ArtboardSection({ w, h, margins, units, color, collapsibleKey, d
           ))}
         </div>
         <div className={styles.marginsAround}>
-          {MARGIN_EDGES.map(({ edge, label }) => (
+          {/* Held the same, the four are one number, so the sheet carries one field in the middle
+            rather than four saying the same thing. Unlocked, each is back at its own edge. */}
+          {asOne ? (
+            <div className={styles.marginAt} data-edge="all">
+              <LengthField
+                label="Margins"
+                mm={margins.top}
+                units={units}
+                min={0}
+                disabled={disabled}
+                unitInLabel={false}
+                hideLabel
+                onChange={side("top")}
+              />
+            </div>
+          ) : MARGIN_EDGES.map(({ edge, label }) => (
             <div key={edge} className={styles.marginAt} data-edge={edge}>
               <LengthField
                 label={label}

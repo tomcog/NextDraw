@@ -1376,6 +1376,36 @@ export function profiled(p: Photo): Photo | null {
   return null;
 }
 
+const flattenedImages = new Map<string, string>();
+
+/**
+ * The flattened picture as a picture, for the stage to show: what Flatten makes of the image, which
+ * is what every effect and every ink set reads (Tom, 2026-11-23). Undefined until the image has been
+ * read, and for an image that isn't flattened at all.
+ *
+ * Its saturation and its vignette are already in these pixels - flattening happens after both - so
+ * whatever draws it must not apply them a second time. Its brightness and contrast are NOT: those
+ * are applied to what comes out of the flattening, which is why moving them doesn't flatten it again.
+ */
+export function flattenedPicture(p: Pick<Photo, "src" | "saturation" | "vignette" | "crop" | "flatten">): string | undefined {
+  if (!p.flatten) return undefined;
+  const tones = tonesOf(p.src);
+  if (!tones) return undefined;
+  const vig = vignetteOn(p.vignette) ? vignetteKey(p.vignette!) : "";
+  const key = `${p.src.length}|${p.src.slice(-32)}|${p.saturation ?? 0}|${vig}|${p.crop?.join(",") ?? ""}|${p.flatten}`;
+  const known = flattenedImages.get(key);
+  if (known) return known;
+  const made = flattenedTones(p.src, vignettedTones(p.src, saturatedTones(p.src, tones, p.saturation ?? 0), p), p.flatten);
+  const canvas = document.createElement("canvas");
+  canvas.width = made.w;
+  canvas.height = made.h;
+  canvas.getContext("2d")!.putImageData(new ImageData(new Uint8ClampedArray(made.rgba), made.w, made.h), 0, 0);
+  const url = canvas.toDataURL("image/png");
+  if (flattenedImages.size > 8) flattenedImages.delete(flattenedImages.keys().next().value!);
+  flattenedImages.set(key, url);
+  return url;
+}
+
 const plateImages = new Map<string, string>();
 
 /**
