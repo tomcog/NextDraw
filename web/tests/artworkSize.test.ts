@@ -7,7 +7,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { drawnBox, drawnMiddle, reshapeDrawing } from "../src/shared/lib/drawing/whole";
-import type { Shape } from "../src/shared/lib/drawing/shapes";
+import { boxOf, type Shape } from "../src/shared/lib/drawing/shapes";
 
 const line = (x: number, y: number, x2: number, y2: number): Shape =>
   ({ id: `l${x}${y}${x2}`, layerId: "a", kind: "line", x, y, x2, y2 });
@@ -72,4 +72,46 @@ test("asking for the size it already is changes nothing", () => {
   const art = [line(2, 2, 8, 6)];
   const { w, h } = measure(sizeTo(art, 6, "w"));
   assert.ok(near(w, 6) && near(h, 4), `${w} x ${h}`);
+});
+
+// Image sizes the chosen picture rather than everything drawn: Fit, Fill, Scale and the alignment
+// in that section all act on the picture, so its box is the one the fields show and move. Studio's
+// reads the whole drawing, because there the two are the same thing.
+
+const picture = (x: number, y: number, x2: number, y2: number): Shape =>
+  ({ id: "p", layerId: "a", kind: "photo", x, y, x2, y2, photo: { src: "x", inkAt: {} } } as unknown as Shape);
+
+/** What Image's field does: a percent from the picture's own box, then what scalePhoto does with it. */
+const pictureTo = (sh: Shape, mm: number, axis: "w" | "h") => {
+  const b = boxOf(sh);
+  const now = axis === "w" ? b.x1 - b.x0 : b.y1 - b.y0;
+  const k = mm / now;
+  const cx = (b.x0 + b.x1) / 2, cy = (b.y0 + b.y1) / 2;
+  const at = (v: number, c: number) => c + (v - c) * k;
+  return { ...sh, x: at(sh.x, cx), y: at(sh.y, cy), x2: at(sh.x2, cx), y2: at(sh.y2, cy) };
+};
+
+test("Image: typing a width resizes the picture to it", () => {
+  const out = pictureTo(picture(1, 1, 7, 5), 3, "w"); // 6 x 4 to 3 wide
+  const b = boxOf(out);
+  assert.ok(near(b.x1 - b.x0, 3), `width ${b.x1 - b.x0}`);
+});
+
+test("Image: the height follows in proportion", () => {
+  const out = pictureTo(picture(1, 1, 7, 5), 3, "w");
+  const b = boxOf(out);
+  assert.ok(near(b.y1 - b.y0, 2), `height ${b.y1 - b.y0}`);
+});
+
+test("Image: the picture keeps its middle", () => {
+  const before = boxOf(picture(1, 1, 7, 5));
+  const after = boxOf(pictureTo(picture(1, 1, 7, 5), 3, "w"));
+  assert.ok(near((before.x0 + before.x1) / 2, (after.x0 + after.x1) / 2));
+  assert.ok(near((before.y0 + before.y1) / 2, (after.y0 + after.y1) / 2));
+});
+
+test("Image: a picture drawn corner-to-corner either way measures the same", () => {
+  // boxOf sorts the corners, so a picture placed bottom-right to top-left is still 6 x 4.
+  const flipped = boxOf(picture(7, 5, 1, 1));
+  assert.ok(near(flipped.x1 - flipped.x0, 6) && near(flipped.y1 - flipped.y0, 4));
 });

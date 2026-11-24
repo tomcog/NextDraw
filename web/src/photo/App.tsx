@@ -626,6 +626,12 @@ export default function App() {
   const artworkSection = (
     <ArtworkSection
       artboard={{ w: artboard.w * 25.4, h: artboard.h * 25.4 }}
+      /* The picture as it is placed, not everything drawn: Fit, Fill, Scale and the alignment in
+         this section all act on the chosen picture, and its size is the one they move (Tom,
+         2026-11-24). Studio's reads the whole drawing, because there the two are the same thing. */
+      size={chosen?.photo && convertBox
+        ? { w: (convertBox.x1 - convertBox.x0) * 25.4, h: (convertBox.y1 - convertBox.y0) * 25.4 }
+        : undefined}
       margins={marginsTimes(margins, 25.4)}
       units={units}
       collapsibleKey="photo-artwork"
