@@ -485,6 +485,20 @@ export const PLATE_SETS: { key: PlateSet; label: string; about: string; plates: 
   { key: "cmykogv", label: "CMYK + OGV", about: "Seven plates, as today's extended-gamut printing: CMYK with orange, green and violet", plates: ["c", "m", "y", "k", "o", "g", "v"] },
   { key: "cmykogrv", label: "CMYK + OGRV", about: "Eight plates: CMYK with orange, green, red and violet", plates: ["c", "m", "y", "k", "o", "g", "r", "v"] },
 ];
+/**
+ * A set of inks said in a line: the built-in set's own name where they are one of them - CMYK,
+ * CMYK + OGV - and how many there are where they aren't. For naming a color profile in the Inks
+ * menu by what it separates into, in the words the menu already uses above it (Tom, 2026-11-23).
+ */
+export function inksSaid(names: string[] | undefined, inks: number): string {
+  const want = (names ?? []).map((n) => n.trim().toLowerCase()).filter(Boolean);
+  if (want.length === inks) {
+    const set = PLATE_SETS.find((s) => s.plates.length === inks && s.plates.every((pl) => want.includes(PLATE_AIMS[pl].name.toLowerCase())));
+    if (set) return set.label;
+  }
+  return `${inks} inks`;
+}
+
 /** Which plate set a photo's plates are, by how many there are. */
 export const plateSetOf = (plates: unknown[] | undefined): PlateSet =>
   PLATE_SETS.find((s) => s.plates.length === (plates?.length ?? 4))?.key ?? "cmyk";

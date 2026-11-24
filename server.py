@@ -5612,7 +5612,7 @@ INK_SPACES = {"CMYK": 4, **{f"{n:X}CLR": n for n in range(2, 16)}}
 
 
 def profile_info(path):
-    """A profile Image can split a photo by, as {name, file, inks, black}, or None."""
+    """A profile Image can split a photo by, as {name, file, inks, names, black}, or None."""
     try:
         with open(path, "rb") as f:
             head = f.read(132)
@@ -5638,11 +5638,22 @@ def profile_info(path):
                 f.seek(tags[b"desc"][0])
                 desc = f.read(min(tags[b"desc"][1], 2048))
                 name = profile_name(desc) or name
+            # What it separates into, by name - Cyan, Magenta, ... Orange, Green, Violet - which is
+            # what says what a profile is for. Its colorant table, as the page reads it (icc.ts).
+            inks_named = []
+            if b"clrt" in tags:
+                f.seek(tags[b"clrt"][0])
+                clrt = f.read(min(tags[b"clrt"][1], 12 + 38 * 16))
+                if clrt[:4] == b"clrt" and len(clrt) >= 12:
+                    n, = struct.unpack(">I", clrt[8:12])
+                    if n == inks and len(clrt) >= 12 + 38 * n:
+                        inks_named = [clrt[12 + 38 * i:12 + 38 * i + 32].split(b"\0")[0].decode("latin1").strip() for i in range(n)]
+                        inks_named = [ink for ink in inks_named if ink] if all(inks_named) else []
     except (OSError, struct.error, UnicodeDecodeError):
         return None
     # Some name themselves after their file: "Ink set.icc" reads as "Ink set".
     # Whether it says where its inks' black is: black point compensation has nothing to work from without.
-    return {"name": re.sub(r"\.ic[cm]$", "", name, flags=re.I) or path.stem, "file": path.name, "inks": inks, "black": b"bkpt" in tags}
+    return {"name": re.sub(r"\.ic[cm]$", "", name, flags=re.I) or path.stem, "file": path.name, "inks": inks, "names": inks_named, "black": b"bkpt" in tags}
 
 
 def profile_name(desc):

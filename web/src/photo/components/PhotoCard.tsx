@@ -7,7 +7,7 @@ import { SaveAs } from "../../shared/components/controls/SaveAs";
 import { panelIcon } from "../../shared/components/PanelToolbar";
 import { NumberField } from "../../shared/components/controls/NumberField";
 import controls from "../../shared/components/controls/controls.module.css";
-import { BLACK_SHARE, CENTER_DEFAULTS, KEY_FROM, mostColorsOf, MOST_LAYERS, MOST_SIDE_LAYERS, MOST_PASSES, paperToneOf, OUTLINE_DEFAULTS, paintDefaultsOf, SILHOUETTE_DEFAULTS, STREAM_DEFAULTS, ONE_LINE_DEFAULTS, ONE_LINE_MOST, SCRIBBLE_DEFAULTS, SKETCH_LINES, sketchLinesOf, type SketchLines, HILBERT_DEFAULTS, WAVE_DEFAULTS, ANGLE_PRESETS, centerModeOf, EDGE_DEFAULTS, hatchShortestOf, BUILT_IN_INK_SETS, inkSetOf, type InkSet, SQUIGGLE_DRAW, SQUIGGLE_INKSCAPE, SQUIGGLE_INKSCAPE_RANGES, SQUIGGLE_RANGES, coverSteps, squiggleDrawOf, squiggleInkscapeOf, type AnglePreset, type SquiggleDraw, type SquiggleInkscape, type PlateSet, photoMarks, photoMode, type Photo, type Plate } from "../../shared/lib/drawing/photo";
+import { BLACK_SHARE, CENTER_DEFAULTS, KEY_FROM, mostColorsOf, MOST_LAYERS, MOST_SIDE_LAYERS, MOST_PASSES, paperToneOf, OUTLINE_DEFAULTS, paintDefaultsOf, SILHOUETTE_DEFAULTS, STREAM_DEFAULTS, ONE_LINE_DEFAULTS, ONE_LINE_MOST, SCRIBBLE_DEFAULTS, SKETCH_LINES, sketchLinesOf, type SketchLines, HILBERT_DEFAULTS, WAVE_DEFAULTS, ANGLE_PRESETS, centerModeOf, EDGE_DEFAULTS, hatchShortestOf, BUILT_IN_INK_SETS, inkSetOf, inksSaid, type InkSet, SQUIGGLE_DRAW, SQUIGGLE_INKSCAPE, SQUIGGLE_INKSCAPE_RANGES, SQUIGGLE_RANGES, coverSteps, squiggleDrawOf, squiggleInkscapeOf, type AnglePreset, type SquiggleDraw, type SquiggleInkscape, type PlateSet, photoMarks, photoMode, type Photo, type Plate } from "../../shared/lib/drawing/photo";
 import type { EdgeGen } from "../../shared/lib/drawing/edgeMask";
 import { MaskCard } from "./MaskCard";
 import { boxOf, type Shape } from "../../shared/lib/drawing/shapes";
@@ -156,7 +156,7 @@ export function PhotoCard({ shape, inksChanged, title, shapes, busy, targeted, l
   const presetsBlocked = Boolean(photo.separation && !photo.profile);
   // The printer profiles in NextDraw's Color profiles folder: read once Profile is chosen, and again
   // after the folder is opened to add some.
-  const [profiles, setProfiles] = useState<{ name: string; file: string; inks: number; black?: boolean }[]>([]);
+  const [profiles, setProfiles] = useState<{ name: string; file: string; inks: number; names?: string[]; black?: boolean }[]>([]);
   const readProfiles = () => api<{ profiles: typeof profiles }>("/api/color-profiles").then((r) => setProfiles(r.profiles)).catch(() => {});
   useEffect(() => { void readProfiles(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
   // Back from the Finder, having added profiles to the folder: the list again.
@@ -197,6 +197,7 @@ export function PhotoCard({ shape, inksChanged, title, shapes, busy, targeted, l
   // to report, so it is there only while it applies and can't be picked.
   const MODIFIED_OPTION = "__modified__";
   const profileFile = photo.profile ? photo.profile.slice(photo.profile.lastIndexOf("/") + 1) : "";
+  const chosenProfile = profiles.find((p) => p.file === profileFile);
   const rendering: Rendering = { intent: photo.profileIntent ?? 0, bpc: photo.profileBpc };
   // How many inks a photo split by colour is in: its layers, not counting the key.
   const inks = photo.group ? shapes.filter((sh) => sh.photo?.group === photo.group && !sh.photo?.key).length : 1;
@@ -343,7 +344,12 @@ export function PhotoCard({ shape, inksChanged, title, shapes, busy, targeted, l
                 )}
                 {profiles.length > 0 && (
                   <optgroup label="Color profiles">
-                    {profiles.map((p) => <option key={p.file} value={`icc:${p.file}`}>{`${p.name} - ${p.inks} inks`}</option>)}
+                    {/* How many inks it separates into: all that fits on the menu's one line, which
+                      the control draws without truncating. Which inks they are is said under it,
+                      for the profile chosen, where there is room for their names. */}
+                    {profiles.map((p) => (
+                      <option key={p.file} value={`icc:${p.file}`}>{`${p.name} - ${p.inks} inks`}</option>
+                    ))}
                   </optgroup>
                 )}
                 <option value={PROFILES_OPTION}>Color profiles…</option>
@@ -367,6 +373,12 @@ export function PhotoCard({ shape, inksChanged, title, shapes, busy, targeted, l
                 <NumberField label="Black" unit="%" min={0} max={100} step={5} value={Math.round((photo.blackShare ?? BLACK_SHARE) * 100)} onChange={(v) => actions.set({ blackShare: v / 100 })} />
               )}
               </div>
+              {/* What the chosen profile is for, where the menu has no room to say it: the inks it
+                separates into, by name, as its own colorant table has them - CMYK + OGV, written
+                out. Nothing for a profile that doesn't name its colorants. */}
+              {photo.profile && chosenProfile?.names?.length && (
+                <p className={styles.empty}>{`${inksSaid(chosenProfile.names, chosenProfile.inks)}: ${chosenProfile.names.join(", ")}`}</p>
+              )}
               {/* Only where it changes anything: Perceptual and Saturation bring the black down in
                 their own tables, Absolute keeps the paper's, and a profile that doesn't say where
                 its inks' black is (IA ECG B1C X) gives it nothing to work from. */}
