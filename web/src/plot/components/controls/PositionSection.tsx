@@ -41,11 +41,12 @@ export function PositionSection({ placement, minPlacement, units, disabled, onCh
           <ButtonRound size="sm" icon={<RotateCcwSquare />} aria-label="Turn the artboard left" title="Turn the artboard a quarter turn left on the sheet. The drawing itself is not changed." disabled={disabled || !onTurn} onClick={() => onTurn?.(-1)} />
           <ButtonRound size="sm" icon={<RotateCwSquare />} aria-label="Turn the artboard right" title="Turn the artboard a quarter turn right on the sheet. The drawing itself is not changed." disabled={disabled || !onTurn} onClick={() => onTurn?.(1)} />
         </div>
-        {/* Labelled under the box rather than with a word inside it: the suffix takes 4rem of the
-          field's width, and three things don't fit across a 220px card that way - "down" wrapped to
-          a line of its own. */}
-        <LengthField label="Across" mm={placement.x} units={units} min={minPlacement.x} disabled={disabled} onChange={(v) => onChange({ x: v, y: placement.y })} />
-        <LengthField label="Down" mm={placement.y} units={units} min={minPlacement.y} disabled={disabled} onChange={(v) => onChange({ x: placement.x, y: v })} />
+        {/* X and Y, the plotter's own axes, rather than Across and Down: these are measured from
+          its home corner, and that is what the machine calls them (Tom, 2026-11-24). Labelled under
+          the box rather than with a word inside it - the suffix takes 4rem of the field's width,
+          and three things don't fit across a 220px card that way. */}
+        <LengthField label="X pos" mm={placement.x} units={units} min={minPlacement.x} disabled={disabled} onChange={(v) => onChange({ x: v, y: placement.y })} />
+        <LengthField label="Y pos" mm={placement.y} units={units} min={minPlacement.y} disabled={disabled} onChange={(v) => onChange({ x: placement.x, y: v })} />
       </div>
     </div>
   );
