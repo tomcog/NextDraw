@@ -6,6 +6,9 @@ asking server.py, which is what lets the plotter and the drawing's own code be r
 routes that drive them.
 """
 import json
+import os
+import re
+import shutil
 from pathlib import Path
 
 HOST, PORT = "127.0.0.1", 5055
