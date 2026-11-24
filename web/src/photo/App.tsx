@@ -399,7 +399,7 @@ export default function App() {
     placePhoto, alignPhoto, scalePhoto, movePhoto, replacePhoto, reloadPhoto, joinSeparations, cropPhoto, bakeEffect, savePreset, applyPreset, deletePreset, setPhotoOf, addEdgeMask, chooseEdgeMask, deleteEdgeMask, setEdgeGen, saveEdgeGen, setAngles, photoStem, splitPhotoCmyk, setLayerColor,
     splitAroundPaper, setPaperTone, addPass, removePass, setChannelOf, splitPhotoProfile,
   } = photoActions({
-    chosen, shapes, setShapes, layers, setLayers, active, setActiveLayer, artboard, tool,
+    chosen, shapes, setShapes, layers, setLayers, active, setActiveLayer, artboard, margins, tool,
     // Hatching starts at half a millimetre between lines, whatever the pen: a pen preset's hatch
     // spacing is for Studio's solid fills, not a picture's tones.
     spacingMm: 0.5, targets, paper: paperColor, record, addShape, pick, setMessage, setBusy,

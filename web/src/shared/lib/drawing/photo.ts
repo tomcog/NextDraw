@@ -1594,17 +1594,6 @@ export async function fileDpi(file: File): Promise<number | null> {
 }
 
 /**
- * Where a picture goes at the size its file says it is: in the middle of the page, whether or not it
- * fits there - how big it is drawn is the user's to change. Pixels to the inch from its file, or 72.
- */
-export function placeAtOwnSize(copy: Pick<Photo, "width" | "height" | "ppi">, page: { w: number; h: number }) {
-  const ppi = copy.ppi ?? DEFAULT_DPI;
-  const w = copy.width / ppi, h = copy.height / ppi;
-  const x = (page.w - w) / 2, y = (page.h - h) / 2;
-  return { x, y, x2: x + w, y2: y + h };
-}
-
-/**
  * How big a photo is drawn, as a percent of the size its file says it is: its box over the part of the
  * picture that shows, at the file's pixels to the inch. A photo from before that was kept has no such
  * size; it's taken as it is now, so 100% leaves it where it is.

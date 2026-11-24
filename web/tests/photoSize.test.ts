@@ -1,8 +1,9 @@
-// A picture comes in at the size its file says it is, and the Scale field measures from that size:
-// the resolution read from each kind of file, where it goes on the page, and its size as a percent.
+// A picture comes in fitted to the artboard, and the Scale field measures from the size its file
+// says it is: the resolution read from each kind of file, where it lands, and its size as a percent.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { DEFAULT_DPI, fileDpi, photoScale, placeAtOwnSize, type Photo } from "../src/shared/lib/drawing/photo";
+import { fileDpi, photoScale, placeOnPage, type Photo } from "../src/shared/lib/drawing/photo";
+import { marginsAll } from "../src/shared/lib/geometry";
 
 const bytes = (...parts: (number[] | string)[]) =>
   new Uint8Array(parts.flatMap((p) => (typeof p === "string" ? [...p].map((c) => c.charCodeAt(0)) : p)));
@@ -54,13 +55,17 @@ test("a file that doesn't say", async () => {
   assert.equal(await fileDpi(file(bytes("GIF89a", [0, 0, 0, 0]), "a.gif")), null);
 });
 
-test("it comes in at its own size, in the middle of the page, whether or not it fits", () => {
-  const page = { w: 11, h: 8.5 };
-  assert.deepEqual(placeAtOwnSize({ width: 600, height: 300, ppi: 300 }, page), { x: 4.5, y: 3.75, x2: 6.5, y2: 4.75 });
-  const big = placeAtOwnSize({ width: 3000, height: 1500, ppi: 100 }, page);
-  assert.deepEqual([big.x2 - big.x, big.y2 - big.y], [30, 15]); // larger than the paper, and left so
-  const unsaid = placeAtOwnSize({ width: DEFAULT_DPI * 2, height: DEFAULT_DPI }, page);
-  assert.deepEqual([unsaid.x2 - unsaid.x, unsaid.y2 - unsaid.y], [2, 1]);
+// As addPhoto places a picture as it arrives (Tom, 2026-11-23): Fit, which is placeOnPage's "fit".
+test("it comes in fitted: all of it inside the artboard's margins, centred", () => {
+  const artboard = { w: 12, h: 12 };
+  // Twice as wide as it is tall: across the artboard, halfway down, whatever its file measures.
+  const wide = placeOnPage(2, artboard, "fit", marginsAll(0));
+  assert.deepEqual([wide.x, wide.y, wide.x2, wide.y2], [0, 3, 12, 9]);
+  // A picture smaller than the artboard is drawn larger to fit it, not left at its own size.
+  const inset = placeOnPage(2, artboard, "fit", marginsAll(1));
+  assert.deepEqual([inset.x, inset.y, inset.x2, inset.y2], [1, 3.5, 11, 8.5]);
+  // Fitted, so all of it shows: nothing is cropped away, however it is shaped.
+  assert.equal(placeOnPage(0.5, artboard, "fit", marginsAll(0)).crop, undefined);
 });
 
 test("its scale is its drawn size over its file's, the part cropped away left out", () => {

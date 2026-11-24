@@ -12,7 +12,7 @@ import type { FitAlign, Margins } from "../../shared/lib/geometry";
 import type { PenColor, Preset } from "../../shared/lib/types";
 import {
   BAND_NAMES, LAYER_SETTINGS, MOST_SIDE_LAYERS, paperToneOf, mostColorsOf, MOST_LAYERS, PHOTO_DEFAULTS, PLATES, PLATE_AIMS, colourGroups, flatColours, FLAT_ENOUGH, inkAtOf, inkSetOf, isColourful, matchPens, onePlate, photoMode, type InkSet, type SetInk,
-  placeOnPage, placeAtOwnSize, croppedCopy, joinedPicture, keptPlatesAlike, partOfPart, photoData, photoFromData, inkNamed, loadProfile, plateOfPhoto, platePens, presetAngle, readTones, tonesOf, hexLinear, linearHex, coverSteps, stemWithoutPlate, turnedCopy, workingCopy, MASK_EDGE_PX, MASK_SIDES, type AnglePreset, type Photo, type PhotoPart, type Plate, type PlateSet, PLATE_SETS, plateSetOf,
+  placeOnPage, croppedCopy, joinedPicture, keptPlatesAlike, partOfPart, photoData, photoFromData, inkNamed, loadProfile, plateOfPhoto, platePens, presetAngle, readTones, tonesOf, hexLinear, linearHex, coverSteps, stemWithoutPlate, turnedCopy, workingCopy, MASK_EDGE_PX, MASK_SIDES, type AnglePreset, type Photo, type PhotoPart, type Plate, type PlateSet, PLATE_SETS, plateSetOf,
 } from "../../shared/lib/drawing/photo";
 import { boxOf, newLayerId, newShapeId, type Layer, type Page, type Shape } from "../../shared/lib/drawing/shapes";
 import { snapshotShapes } from "../../shared/lib/drawing/snapshot";
@@ -41,6 +41,8 @@ export interface PhotoContext {
   setActiveLayer: (id: string) => void;
   /** The artboard: the drawing's own size, which is the artboard the picture sits on (2026-11-23). */
   artboard: Page;
+  /** Its margins: what a picture is fitted inside as it comes in, and by Fit afterwards. */
+  margins: Margins;
   /** The drawing tool, whose palette a photo's layers are matched to. */
   tool: Preset | null;
   /** The fill spacing the tool solid-fills at, which a photo's closest lines start from. */
@@ -81,7 +83,7 @@ export function autoPaperTone(paper: string, dark: number, light: number): [numb
 export { pictureSources } from "./separationFolder";
 
 export function photoActions(ctx: PhotoContext) {
-  const { chosen, shapes, setShapes, layers, setLayers, active, setActiveLayer, artboard, tool: tool2, targets, paper, record, addShape, pick, setMessage, setBusy } = ctx;
+  const { chosen, shapes, setShapes, layers, setLayers, active, setActiveLayer, artboard, margins, tool: tool2, targets, paper, record, addShape, pick, setMessage, setBusy } = ctx;
   /**
    * Whether a shape is part of the chosen image: the chosen layer, its pass's other layers, and the
    * other passes over the same picture. What moves, sizes, crops, turns and changes picture together.
@@ -93,15 +95,26 @@ export function photoActions(ctx: PhotoContext) {
   };
   const defaults = { spacingMm: ctx.spacingMm };
 
-  // A photo, from a file on this Mac: made into a working copy, at the size its file says it is in the
-  // middle of the artboard, and put on the layer being drawn on - whose ink it is hatched in. Never sized
-  // to the paper: how big it's drawn is the user's to say.
+  /**
+   * Where a picture goes as it comes in: fitted, exactly as the Fit command fits it - as large as it
+   * goes inside the artboard's margins, centred (Tom, 2026-11-23). A placement, not something kept:
+   * moving or scaling it afterwards is free, and nothing fits it again when the artboard changes.
+   */
+  const fitted = (aspect: number) => {
+    const { x, y, x2, y2 } = placeOnPage(aspect, artboard, "fit", margins);
+    return { x, y, x2, y2 };
+  };
+
+  // A photo, from a file on this Mac: made into a working copy, fitted to the artboard, and put on the
+  // layer being drawn on - whose ink it is hatched in. It comes in as Fit would leave it (Tom,
+  // 2026-11-23), so the whole picture is there to see whatever size its file is; after that, how big
+  // it's drawn is the user's to say, and nothing sizes it again.
   const addPhoto = async (file: File | undefined) => {
     if (!file || !active) return;
     try {
       const copy = await workingCopy(file);
       await readTones(copy.src);
-      const box = placeAtOwnSize(copy, artboard);
+      const box = fitted(copy.width / copy.height);
       const stem = file.name.replace(/\.[^.]+$/, "");
       const photo: Photo = { ...copy, ...PHOTO_DEFAULTS, spacingMm: defaults.spacingMm, source: pictureSources.get(file) };
       const pens = tool2?.palette ?? [];
@@ -205,8 +218,8 @@ export function photoActions(ctx: PhotoContext) {
       const matched = used.length ? platePens(pens, used) : [];
       const darkest = darkestPen(pens);
       const [first] = copies;
-      // At the size the first file says it is: the plates are one picture, so they lie on one another.
-      const box = placeAtOwnSize(first.copy, artboard);
+      // Fitted by the first file's shape: the plates are one picture, so they lie on one another.
+      const box = fitted(first.copy.width / first.copy.height);
       const stem = stemWithoutPlate(first.file.name, pens, folderOf(first.file));
       const group = copies.length > 1 ? newShapeId() : undefined;
       const parts = copies.map(({ file, copy }, i) => {
