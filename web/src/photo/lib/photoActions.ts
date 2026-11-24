@@ -433,7 +433,12 @@ export function photoActions(ctx: PhotoContext) {
         true,
       );
     } else if (to === "colour") {
-      splitPhotoBestFit(3, { modes });
+      // As many colors as the image itself is drawn in, where it can be read for them: the number it
+      // has is a better start than any fixed one (Tom, 2026-11-23). Three while it is still being
+      // read, which is what this started at.
+      const { src, brightness, contrast, saturation } = chosen.photo;
+      const own = flatColours(src, mostColorsOf(chosen.photo), brightness, contrast, saturation).colours.length;
+      splitPhotoBestFit(own || 3, { modes });
     } else if (to === "flat") {
       splitPhotoFlat(undefined, undefined, { modes });
     } else if (to === "cmyk") {
