@@ -3,9 +3,10 @@ import { api, postJSON } from "./api";
 import type { Units } from "./types";
 
 /**
- * Inches or millimetres, as the Paper card names its sizes: one choice for all three apps, kept with
- * Plot's shared settings on the server. Read when the page opens - going to another app opens it
- * again - and sent the moment it's changed, so every app names sizes alike.
+ * Inches or millimetres, as the Paper and Artboard cards name their sizes: one choice for all three
+ * apps, kept with Plot's shared settings on the server. Read when the page opens - going to another
+ * app opens it again - and sent the moment it's changed, so every app names sizes alike. Nothing in
+ * the cards sets it since the in | mm switch left them (2026-11-23); the setting is what says which.
  */
 export function useUnits(): [Units, (units: Units) => void] {
   const [units, setUnits] = useState<Units>("in");

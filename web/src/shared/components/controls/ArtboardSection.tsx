@@ -1,10 +1,13 @@
-import { LieSwitch } from "./LieSwitch";
+import { useState } from "react";
+import { Button, ButtonRound } from "@tomcoggia/ui";
+import { Lock } from "lucide-react";
+import { SizeChooser } from "./SizeChooser";
 import { PaperColorRow } from "./PaperColor";
 import { panelIcon } from "../PanelToolbar";
 import { LengthField } from "./LengthField";
 import { Section } from "./Section";
 import { fmtLen } from "../../lib/format";
-import type { Margins } from "../../lib/geometry";
+import { marginsAll, type Margins } from "../../lib/geometry";
 import type { Units } from "../../lib/types";
 import styles from "./controls.module.css";
 
@@ -22,6 +25,19 @@ import styles from "./controls.module.css";
  * which number is which needs no reading and the unit is said once, in the heading. The sheet is a
  * picture, not a preview: it keeps its size whatever the artboard measures.
  */
+/**
+ * The usual margins, each setting all four at once: the inches of the design, and round millimetres
+ * for the same in mm. Named by the number alone - the heading above them says the unit.
+ */
+const MARGIN_PRESETS: Record<Units, { label: string; mm: number }[]> = {
+  in: [0.5, 1, 1.5, 2].map((v) => ({ label: v.toFixed(1), mm: v * 25.4 })),
+  mm: [10, 20, 30, 40].map((v) => ({ label: String(v), mm: v })),
+};
+
+/** Whether the four margins are held the same, kept between visits: a way of working, not a fact
+ *  about the drawing, so it stays here rather than going into the file. */
+const LOCK_KEY = "nextdraw.marginsLocked";
+
 /** The four margins, each at the edge of the sheet it insets - which is what says which it is. */
 const MARGIN_EDGES = [
   { edge: "top", label: "Top" },
@@ -50,7 +66,19 @@ export function ArtboardSection({ w, h, margins, units, color, collapsibleKey, d
   onMargins: (margins: Margins) => void;
   onColor: (color: string) => void;
 }) {
-  const side = (which: keyof Margins) => (mm: number) => onMargins({ ...margins, [which]: mm });
+  // Locked, the four margins are one number: setting any sets them all, and the lock evens them up
+  // the moment it goes on (to the top's, the first of the four). Unlocked they stay as they are and
+  // each is set on its own again.
+  const [locked, setLocked] = useState(() => {
+    try { return localStorage.getItem(LOCK_KEY) === "true"; } catch { return false; }
+  });
+  const lock = (on: boolean) => {
+    setLocked(on);
+    try { localStorage.setItem(LOCK_KEY, String(on)); } catch { /* kept for this visit only */ }
+    if (on) onMargins(marginsAll(margins.top));
+  };
+  const side = (which: keyof Margins) => (mm: number) =>
+    onMargins(locked ? marginsAll(mm) : { ...margins, [which]: mm });
   return (
     <Section
       title="Artboard"
@@ -60,35 +88,64 @@ export function ArtboardSection({ w, h, margins, units, color, collapsibleKey, d
       // Folded, the heading says the size, as the Paper card's does.
       closedAction={<span className={styles.toolInTitle}>{`${fmtLen(w, units, false)} × ${fmtLen(h, units)}`}</span>}
     >
-      {/* Its size, and which way it lies - the Paper card's own control, turning the artboard here
-        rather than the paper. It only swaps the two numbers; the drawing stays as it is. */}
-      <div className={styles.sizeRow}>
-        <LengthField label="Width" mm={w} units={units} min={1} disabled={disabled} onChange={(next) => onSize(next, h)} />
-        <LengthField label="Height" mm={h} units={units} min={1} disabled={disabled} onChange={(next) => onSize(w, next)} />
-        <LieSwitch w={w} h={h} what="artboard" disabled={disabled} onSwap={() => onSize(h, w)} />
-      </div>
+      {/* Its size, from the same list of sizes the Paper card offers, with Custom at the end for a
+        width and height of this drawing's own; and which way it lies, which only swaps the two
+        numbers - the drawing stays as it is. The artboard carries no size by name: which of the
+        list it is, if any, is read from its width and height (SizeChooser). */}
+      <SizeChooser w={w} h={h} units={units} what="artboard" disabled={disabled} onDimensions={onSize} />
       {/* The live area the artwork sits in. A bigger bottom is the usual print convention, and is
         where the colour blocks and the signature go. The heading carries the unit for all four, and
         each field sits on the edge it insets, which is label enough (Figma 165:1111). */}
       <div className={styles.cardGroup}>
       <p className={styles.subheading}>{`Margins (${units === "in" ? "inches" : "mm"})`}</p>
-      <div className={styles.marginsAround}>
-        {/* The live area the margins leave, between the four fields. */}
-        <span className={styles.marginSheetArea} aria-hidden="true" />
-        {MARGIN_EDGES.map(({ edge, label }) => (
-          <div key={edge} className={styles.marginAt} data-edge={edge}>
-            <LengthField
-              label={label}
-              mm={margins[edge]}
-              units={units}
-              min={0}
+      <div className={styles.marginsRow}>
+        {/* The usual margins down the left, each setting all four at once (Figma 181:2599). */}
+        <div className={styles.marginPresets}>
+          {MARGIN_PRESETS[units].map(({ label, mm }) => (
+            <Button
+              key={label}
+              size="sm"
+              variant="tertiary"
               disabled={disabled}
-              unitInLabel={false}
-              hideLabel
-              onChange={side(edge)}
-            />
-          </div>
-        ))}
+              title={`Every margin ${label} ${units}`}
+              onClick={() => onMargins(marginsAll(mm))}
+            >
+              {label}
+            </Button>
+          ))}
+        </div>
+        <div className={styles.marginsAround}>
+          {MARGIN_EDGES.map(({ edge, label }) => (
+            <div key={edge} className={styles.marginAt} data-edge={edge}>
+              <LengthField
+                label={label}
+                mm={margins[edge]}
+                units={units}
+                min={0}
+                disabled={disabled}
+                unitInLabel={false}
+                hideLabel
+                onChange={side(edge)}
+              />
+            </div>
+          ))}
+        </div>
+        {/* The four held the same, beside them as the design has it: the glyph alone while each is
+            its own, the action disc with a white glyph while it holds (Figma 182:2676/182:2681). */}
+        <span className={styles.marginLock}>
+          <ButtonRound
+            size="sm"
+            variant={locked ? "primary" : "tertiary"}
+            icon={<Lock />}
+            aria-pressed={locked}
+            aria-label={locked ? "Set each margin on its own" : "Hold the four margins the same"}
+            title={locked
+              ? "The four margins are held the same: setting one sets them all. Click to set each on its own."
+              : "Hold the four margins the same: they even up now, and setting one sets them all"}
+            disabled={disabled}
+            onClick={() => lock(!locked)}
+          />
+        </span>
       </div>
       </div>
       {/* The surface the artwork is made on: the colours out in the open, the one chosen ringed, and

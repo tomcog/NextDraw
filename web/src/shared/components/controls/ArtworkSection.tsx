@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { Button, ButtonRound } from "@tomcoggia/ui";
 import { RotateCcwSquare, RotateCwSquare } from "lucide-react";
 import styles from "./controls.module.css";
@@ -18,7 +19,7 @@ import type { Margins } from "../../lib/geometry";
  * margins - so there is no margin of its own here, and no Extra margin: a deeper foot is a bigger
  * number on the Artboard card. Plot keeps these in its Paper card, fitting to the sheet.
  */
-export function ArtworkSection({ artboard, margins, units, collapsibleKey, disabled, scale, onTurn, onFit, onFill, onScale, onAlign }: {
+export function ArtworkSection({ artboard, margins, units, collapsibleKey, disabled, onTurn, onFit, onFill, onScale, onAlign }: {
   /** The artboard in mm, which the artwork is fitted inside. */
   artboard: { w: number; h: number };
   /** Its margins in mm: what Fit and Fill leave around the artwork. */
@@ -26,15 +27,13 @@ export function ArtworkSection({ artboard, margins, units, collapsibleKey, disab
   units: Units;
   collapsibleKey: string;
   disabled?: boolean;
-  /** Image: how big the picture is drawn, as a percent of the size its file says it is. Left out,
-   *  the field reads 100 and scales by a percent of the size now, then reads 100 again. */
-  scale?: number;
   /** A quarter turn, 1 right or -1 left, about the artwork's middle. The artboard stays as it is. */
   onTurn?: (dir: 1 | -1) => void;
   /** As large as it goes inside the live area, placed as the alignment says. */
   onFit?: (marginsMm: Margins, align: FitAlignArg) => void;
   /** Covering the live area, what's over cropped - the alignment says which part stays. */
   onFill?: (marginsMm: Margins, align: FitAlignArg) => void;
+  /** Scale the artwork by this percent of the size it is now: 200 doubles it, 50 halves it. */
   onScale?: (percent: number) => void;
   /**
    * The alignment was changed: move the artwork to it, now. The buttons are live - Bottom to Top
@@ -44,6 +43,9 @@ export function ArtworkSection({ artboard, margins, units, collapsibleKey, disab
   onAlign?: (marginsMm: Margins, align: FitAlignArg) => void;
 }) {
   const [align, keepAlign] = useFitAlign();
+  // The percent waits in the box until Apply: scaling is something done to the artwork, not a size
+  // it keeps, so the number is an instruction - and it stays typed, to be applied again.
+  const [by, setBy] = useState(100);
   // A live area with nothing left of it has nothing to fit into.
   const roomLeft = artboard.w - margins.left - margins.right > 0 && artboard.h - margins.top - margins.bottom > 0;
   const said = `${fmtLen(margins.top, units, false)} / ${fmtLen(margins.right, units, false)} / ${fmtLen(margins.bottom, units, false)} / ${fmtLen(margins.left, units)} margins`;
@@ -74,18 +76,31 @@ export function ArtworkSection({ artboard, margins, units, collapsibleKey, disab
           Fill
         </Button>
       </div>
-      {/* Scale, then where Fit and Fill put the artwork: across, then down - one line. */}
+      {/* Scale by a percent of the size it is now - 200 doubles the artwork, 50 halves it, whatever
+        it measured before - and it happens when Apply is pressed, not as the number is typed. Then
+        where Fit and Fill put the artwork: across, then down. */}
       <div className={styles.scaleAlignRow}>
-        <NumberField
-          label="Scale"
-          unit="%"
-          min={1}
-          max={10000}
-          step={5}
-          value={scale ?? 100}
-          disabled={disabled || !onScale}
-          onChange={(percent) => onScale?.(percent)}
-        />
+        <div className={styles.scaleRow}>
+          <NumberField
+            label="Scale by"
+            unit="%"
+            min={1}
+            max={10000}
+            step={5}
+            value={by}
+            disabled={disabled || !onScale}
+            onChange={setBy}
+          />
+          <Button
+            size="sm"
+            variant="secondary"
+            title={by === 100 ? "100% is the size it is already" : `Scale the artwork to ${by}% of the size it is now, about its middle`}
+            disabled={disabled || !onScale || by === 100}
+            onClick={() => onScale?.(by)}
+          >
+            Apply
+          </Button>
+        </div>
         <AlignPicker
           align={align}
           inside="artboard"

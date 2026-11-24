@@ -1,14 +1,12 @@
 import { useState } from "react";
-import { Button, ButtonRound, Checkbox, InputSelect, Segment, SegmentedControl } from "@tomcoggia/ui";
+import { Button, ButtonRound, Checkbox, Segment, SegmentedControl } from "@tomcoggia/ui";
 import { RotateCcwSquare, RotateCwSquare } from "lucide-react";
 import styles from "./controls.module.css";
 import { LengthField } from "./LengthField";
 import { NumberField } from "./NumberField";
-import { UnitSwitch } from "./UnitSwitch";
-import { LieSwitch } from "./LieSwitch";
+import { SizeChooser } from "./SizeChooser";
 import { Section } from "./Section";
 import { panelIcon } from "../PanelToolbar";
-import { PAPER_SIZES } from "../../lib/constants";
 import { fmtLen } from "../../lib/format";
 import type { Units } from "../../lib/types";
 import { extraMarginSide, FIT_CENTERED, MARGIN_SIDES, type FitAlign, type Margins } from "../../lib/geometry";
@@ -32,7 +30,7 @@ interface Props {
   h: number;
   /** One of PAPER_SIZES, or "custom" for a width and height of this drawing's own. */
   sizeId: string;
-  /** What the sizes are named in. */
+  /** What the sizes are named in: one choice for all three apps (useUnits, and Plot's settings). */
   units: Units;
   collapsibleKey: string;
   disabled?: boolean;
@@ -40,8 +38,6 @@ interface Props {
   onSize: (id: string) => void;
   /** A new width and height, in mm: the paper turned, or a custom size typed in. */
   onDimensions: (w: number, h: number) => void;
-  /** Measure in inches or millimetres: one choice for all three apps (useUnits, and Plot's settings). */
-  onUnits: (units: Units) => void;
   /** Turn the paper and everything on it a quarter turn, 1 right or -1 left: landscape to portrait, as a
    *  sheet is turned by hand. Landscape and Portrait never do this: they turn the paper alone. Left out
    *  while there is no drawing to turn. */
@@ -53,11 +49,8 @@ interface Props {
    *  crop, lines cut at the margins - the alignment says which part stays. Left out while there is
    *  nothing to fill. */
   onFill?: (marginsMm: Margins, align: FitAlign) => void;
-  /** Image: how big the picture is drawn, as a percent of the size its file says it is. Left out, the
-   *  field reads 100 and scales the drawing by a percent of its size now, then reads 100 again. */
-  scale?: number;
-  /** Draw it at that percent - of its file's size with `scale`, of its size now without. Left out
-   *  while there is nothing to scale. */
+  /** Scale the drawing by this percent of the size it is now: 200 doubles it, 50 halves it. Left
+   *  out while there is nothing to scale. */
   onScale?: (percent: number) => void;
 }
 
@@ -89,17 +82,13 @@ export function paperMarginMm(): number {
  * since 2026-11-23, and the ground's colour moved to the Artboard card, which all three apps show:
  * the colour is what the art is made on, not a fact about the sheet.
  */
-export function PaperSection({ w, h, sizeId, units, collapsibleKey, disabled, onSize, onDimensions, onUnits, onTurnDrawing, onFit, onFill, scale, onScale }: Props) {
+export function PaperSection({ w, h, sizeId, units, collapsibleKey, disabled, onSize, onDimensions, onTurnDrawing, onFit, onFill, onScale }: Props) {
   const landscape = w >= h;
-  // Custom chosen by hand stays chosen while its width and height are typed, even through a size
-  // that happens to be one of the list's on the way. The size belongs to this drawing alone: it is
-  // never added to the list.
-  const [typing, setTyping] = useState(false);
-  const custom = typing || sizeId === "custom";
   // Kept between visits, so the margin a sheet is usually given is the one the button fits to.
   const [margin, setMargin] = useState(paperMarginMm);
-  // Scaling by a percent of the size now: the field starts again at 100 once it's done.
-  const [scaleRound, setScaleRound] = useState(0);
+  // The percent waits in the box until Apply: scaling is something done to the drawing, not a size
+  // it keeps, so the number is an instruction - and it stays typed, to be applied again.
+  const [by, setBy] = useState(100);
   const keepMargin = (mm: number) => {
     setMargin(mm);
     try { localStorage.setItem(MARGIN_KEY, String(mm)); } catch { /* kept for this visit only */ }
@@ -149,11 +138,6 @@ export function PaperSection({ w, h, sizeId, units, collapsibleKey, disabled, on
   // A margin that leaves no paper between them has nothing to fit into.
   const roomLeft = w - sideMargins.left - sideMargins.right > 0 && h - sideMargins.top - sideMargins.bottom > 0;
 
-  // Each size is named in the chosen unit and the way the paper lies (width × height), so the list
-  // follows a turn and a change of unit.
-  const sizeName = (pw: number, ph: number) => `${fmtLen(pw, units, false)} × ${fmtLen(ph, units)}`;
-  const listed = (p: (typeof PAPER_SIZES)[number]) => sizeName(...((landscape ? [p.h, p.w] : [p.w, p.h]) as [number, number]));
-
   return (
     <Section
       title="Paper"
@@ -161,35 +145,18 @@ export function PaperSection({ w, h, sizeId, units, collapsibleKey, disabled, on
       collapsibleKey={collapsibleKey}
       actionWhenOpen
     >
-      <div className={styles.paperRow}>
-        <InputSelect
-          size="md"
-          label="Paper size"
-          hideLabel
-          value={custom ? "custom" : sizeId}
-          disabled={disabled}
-          onChange={(e) => {
-            const id = e.target.value;
-            setTyping(id === "custom");
-            if (id !== "custom") onSize(id); // Custom starts from the paper as it is
-          }}
-        >
-          {PAPER_SIZES.map((p) => <option key={p.id} value={p.id}>{listed(p)}</option>)}
-          {/* Its width and height are in the fields below, so the menu needn't repeat them. */}
-          <option value="custom">{custom ? "Custom" : "Custom size…"}</option>
-        </InputSelect>
-        <UnitSwitch units={units} disabled={disabled} onChange={onUnits} />
-        {/* Only the paper turns, as it lies on the plotter: the drawing stays as it is. The Drawing
-            transform's turn buttons turn the drawing alone, never the paper. */}
-        <LieSwitch w={w} h={h} what="paper" disabled={disabled} onSwap={() => onDimensions(h, w)} />
-      </div>
-
-      {custom && (
-        <div className={styles.paperCustom}>
-          <LengthField label="Width" mm={w} units={units} min={1} disabled={disabled} onChange={(mm) => onDimensions(mm, h)} />
-          <LengthField label="Height" mm={h} units={units} min={1} disabled={disabled} onChange={(mm) => onDimensions(w, mm)} />
-        </div>
-      )}
+      {/* The size list, which way the sheet lies, and a custom width and height: the Artboard
+          card's own control, sizing the paper here. */}
+      <SizeChooser
+        w={w}
+        h={h}
+        sizeId={sizeId}
+        units={units}
+        what="paper"
+        disabled={disabled}
+        onPick={onSize}
+        onDimensions={onDimensions}
+      />
 
       {/* What's done to the drawing on the paper, apart from the paper itself: turning it, and fitting
           it inside a margin. Folds on its own, its choice remembered per app. */}
@@ -228,20 +195,27 @@ export function PaperSection({ w, h, sizeId, units, collapsibleKey, disabled, on
         </div>
         {/* Scale, then where Fit and Fill put the drawing: across, then down - one line. */}
         <div className={styles.scaleAlignRow}>
-          <NumberField
-            key={scaleRound}
-            label="Scale"
-            unit="%"
-            min={1}
-            max={10000}
-            step={5}
-            value={scale ?? 100}
-            disabled={disabled || !onScale}
-            onChange={(percent) => {
-              onScale?.(percent);
-              if (scale === undefined) setScaleRound((n) => n + 1);
-            }}
-          />
+          <div className={styles.scaleRow}>
+            <NumberField
+              label="Scale by"
+              unit="%"
+              min={1}
+              max={10000}
+              step={5}
+              value={by}
+              disabled={disabled || !onScale}
+              onChange={setBy}
+            />
+            <Button
+              size="sm"
+              variant="secondary"
+              title={by === 100 ? "100% is the size it is already" : `Scale the drawing to ${by}% of the size it is now, about its middle`}
+              disabled={disabled || !onScale || by === 100}
+              onClick={() => onScale?.(by)}
+            >
+              Apply
+            </Button>
+          </div>
           <div className={styles.fitAlign}>
             <SegmentedControl size="sm" variant="dark" aria-label="Fit across: left, center or right">
               {[

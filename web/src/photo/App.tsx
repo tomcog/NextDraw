@@ -30,7 +30,7 @@ import type { Fill } from "../shared/lib/drawing/hatch";
 import { parseDrawing } from "../shared/lib/drawing/parse";
 import { isKnockoutLayer, knockoutPaths, knockoutPlaced, knockoutShapes, withKnockout } from "../shared/lib/drawing/knockout";
 import { buildSvg, cleanFileName } from "../shared/lib/drawing/svg";
-import { inksAreTheSet, joinedPicture, photoMode, photoScale, PLATE_AIMS, plateSetOf, stemWithoutPlate, type Photo } from "../shared/lib/drawing/photo";
+import { inksAreTheSet, joinedPicture, photoMode, PLATE_AIMS, plateSetOf, stemWithoutPlate, type Photo } from "../shared/lib/drawing/photo";
 import { boxOf, drawnNodes, newLayerId, type Layer, type Page, type Shape } from "../shared/lib/drawing/shapes";
 import { pathData } from "../shared/lib/drawing/path";
 import { useDrawingFile, type Current } from "../shared/lib/drawing/useDrawingFile";
@@ -89,8 +89,7 @@ export default function App() {
   const [paper, setPaper] = useState<Page | null>(null);
   const [margins, setMargins] = useState<Margins>(marginsAll(0));
   const [paperColor, setPaperColor] = useState(() => load<string>(PAPER_COLOR_KEY) ?? "#ffffff");
-  // Inches or millimetres for the Paper card: one choice for all three apps.
-  // Inches or millimetres: one choice for all three apps, set in Plot's Paper card.
+  // Inches or millimetres: one choice for all three apps, kept with Plot's settings.
   const [units] = useUnits();
   // A paper color chosen by hand, as opposed to one a drawing opens with (see the effect that follows it).
   const paperPicked = useRef(false);
@@ -593,7 +592,6 @@ export default function App() {
       onTurn={shapes.length ? (dir) => void turnAll(dir) : undefined}
       onFit={chosen?.photo ? (marginsMm, align) => placePhoto("fit", marginsTimes(marginsMm, 1 / 25.4), align) : undefined}
       onFill={chosen?.photo ? (marginsMm, align) => placePhoto("fill", marginsTimes(marginsMm, 1 / 25.4), align) : undefined}
-      scale={chosen?.photo ? Math.round(photoScale(chosen) * 10) / 10 : undefined}
       onScale={chosen?.photo ? scalePhoto : undefined}
       onAlign={chosen?.photo ? (marginsMm, align) => alignPhoto(marginsTimes(marginsMm, 1 / 25.4), align) : undefined}
     />

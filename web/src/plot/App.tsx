@@ -2175,7 +2175,6 @@ export default function App() {
                   onSize={pickPaperSize}
                   // Turned or typed, the paper is named by its size: Custom, unless it is one of the list's.
                   onDimensions={(paper_w, paper_h) => updateSettings({ paper_size: "custom", paper_w, paper_h })}
-                  onUnits={(units) => updateSettings({ units })}
                   onTurnDrawing={fileName ? turnDrawing : undefined}
                   onFit={fitToPaper ? (margins, align) => void fitToPaper(margins, align) : undefined}
                   onFill={fillPaper ? (margins, align) => void fillPaper(margins, align) : undefined}

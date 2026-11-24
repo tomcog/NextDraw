@@ -12,7 +12,7 @@ import type { FitAlign, Margins } from "../../shared/lib/geometry";
 import type { PenColor, Preset } from "../../shared/lib/types";
 import {
   BAND_NAMES, LAYER_SETTINGS, MOST_SIDE_LAYERS, paperToneOf, mostColorsOf, MOST_LAYERS, PHOTO_DEFAULTS, PLATES, PLATE_AIMS, colourGroups, flatColours, FLAT_ENOUGH, inkAtOf, inkSetOf, isColourful, matchPens, onePlate, photoMode, type InkSet, type SetInk,
-  placeOnPage, placeAtOwnSize, photoScale, croppedCopy, joinedPicture, keptPlatesAlike, partOfPart, photoData, photoFromData, inkNamed, loadProfile, plateOfPhoto, platePens, presetAngle, readTones, tonesOf, hexLinear, linearHex, coverSteps, stemWithoutPlate, turnedCopy, workingCopy, MASK_EDGE_PX, MASK_SIDES, type AnglePreset, type Photo, type PhotoPart, type Plate, type PlateSet, PLATE_SETS, plateSetOf,
+  placeOnPage, placeAtOwnSize, croppedCopy, joinedPicture, keptPlatesAlike, partOfPart, photoData, photoFromData, inkNamed, loadProfile, plateOfPhoto, platePens, presetAngle, readTones, tonesOf, hexLinear, linearHex, coverSteps, stemWithoutPlate, turnedCopy, workingCopy, MASK_EDGE_PX, MASK_SIDES, type AnglePreset, type Photo, type PhotoPart, type Plate, type PlateSet, PLATE_SETS, plateSetOf,
 } from "../../shared/lib/drawing/photo";
 import { boxOf, newLayerId, newShapeId, type Layer, type Page, type Shape } from "../../shared/lib/drawing/shapes";
 import { snapshotShapes } from "../../shared/lib/drawing/snapshot";
@@ -938,26 +938,22 @@ export function photoActions(ctx: PhotoContext) {
 
 
   /**
-   * Draw the chosen image - all its layers - at a percent of the size its file says it is, about its
-   * middle: 100 puts it back to that size, whatever it was before. A photo from a drawing made before
-   * that size was kept is taken to be at 100% as it is now, and scales from there.
+   * Scale the chosen image - all its layers - by a percent of the size it is now, about its middle:
+   * 200 doubles it, 50 halves it, as in Studio (Tom, 2026-11-23). It is an action, not a size kept:
+   * what the picture measured before doesn't come into it, and nothing is read back.
    */
   const scalePhoto = (percent: number) => {
-    if (!chosen?.photo || !(percent > 0)) return;
-    const was = photoScale(chosen);
-    const k = percent / was;
-    if (Math.abs(k - 1) < 1e-9) return;
+    if (!chosen?.photo || !(percent > 0) || percent === 100) return;
+    const k = percent / 100;
     const b = boxOf(chosen);
     const cx = (b.x0 + b.x1) / 2, cy = (b.y0 + b.y1) / 2;
     record();
     setShapes((list) => list.map((sh) => {
       if (!sameImage(sh)) return sh;
-      const p = sh.photo!;
-      // Its pixels to the inch as drawn now, where the file's weren't kept: now is 100%.
-      const [l, , r] = p.crop ?? [0, 0, 1, 1];
-      const ppi = p.ppi ?? ((r - l) * p.width) / Math.max(1e-9, Math.abs(sh.x2 - sh.x));
       const at = (v: number, c: number) => c + (v - c) * k;
-      return { ...sh, x: at(sh.x, cx), y: at(sh.y, cy), x2: at(sh.x2, cx), y2: at(sh.y2, cy), photo: { ...p, ppi, fit: undefined } };
+      // The file's pixels to the inch stay what they are - the picture is drawn bigger or smaller,
+      // the file is not; `fit` goes, since this is no longer the size Fit left it at.
+      return { ...sh, x: at(sh.x, cx), y: at(sh.y, cy), x2: at(sh.x2, cx), y2: at(sh.y2, cy), photo: { ...sh.photo!, fit: undefined } };
     }));
   };
 

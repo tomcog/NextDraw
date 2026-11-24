@@ -167,12 +167,6 @@
   gap: 0.5rem;
 }
 
-.scaleRow {
-  display: flex;
-  align-items: center;
-  gap: 0.75rem;
-}
-
 .scaleField { width: 4rem; flex: none; }
 
 .trimRow { display: flex; gap: 0.25rem; }
@@ -246,19 +240,6 @@
 }
 
 /* The paper's size, Plot's units, then the way it lies: one row while it fits. */
-.paperRow {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
-  gap: 0.75rem;
-  /* The same switch, in Plot's Paper card: the same ground. */
-  --ui-segmented-track-bg: var(--ui-surface-sunken);
-}
-
-/* The size menu only as wide as a size needs, so the units and the way the paper lies have room. */
-.paperRow > :first-child { flex: 0 1 6.5rem; min-width: 0; }
-
 /* Two fields side by side, sharing the card's width - the artboard's size, and its four margins
    two to a line. Each may shrink below a number box's natural width (about 134px), which on its own
    pushes a pair out of the card. */
@@ -278,23 +259,38 @@
   gap: 0.25rem;
 }
 
-/* The artboard's size: the two fields sharing what the way-it-lies control leaves, which sits level
-   with their boxes while their labels hang below. */
-.sizeRow {
+/* The margins, in three: the usual ones down the left, each setting all four at once; the sheet
+   they are set on; and the lock that holds them the same (Figma 181:2598, 2026-11-23). The sheet
+   takes what the other two leave, and they are as tall as it is - the lock level with its middle. */
+.marginsRow {
   display: flex;
-  align-items: flex-start;
-  gap: 0.5rem;
-  /* The way-it-lies switch sits in a card rather than in a Toolbar, so its track would fall back to
-     Surface/Pale. Sunken, as Tom asked (2026-11-23): the library's own variable, not an override. */
-  --ui-segmented-track-bg: var(--ui-surface-sunken);
+  align-items: stretch;
+  gap: 0.75rem;
 }
 
-.sizeRow > :not(:last-child) {
-  flex: 1 1 0;
-  min-width: 0;
+.marginsRow > .marginsAround { flex: 1 1 auto; }
+
+/* The four buttons spread over the sheet's height, each only as wide as its number needs. */
+.marginPresets {
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: 0.125rem;
 }
 
-.sizeRow > :last-child { flex: none; }
+/* Narrower than a button of words: these are numbers, and the room is the sheet's. */
+.marginPresets button {
+  --ui-button-padding-x: 0;
+  min-width: 1.75rem;
+  padding-inline: 0.125rem;
+}
+
+.marginLock {
+  display: flex;
+  flex: none;
+  align-items: center;
+}
 
 /* The artboard's margins, set ON a sheet rather than listed: the sheet is the card's full width,
    and each field sits at the edge it insets - left on the left, top at the top - which says which
@@ -304,33 +300,28 @@
   position: relative;
   box-sizing: border-box;
   width: 100%;
-  height: 96px;
+  min-height: 96px;
   border-radius: 4px;
   background: var(--ui-white);
   box-shadow: var(--ui-shadow-float-1);
 }
 
-/* The live area the margins leave: the box between the four fields. */
-.marginSheetArea {
-  position: absolute;
-  inset: 29px 32px;
-  border: 1px dashed color-mix(in srgb, var(--ui-action) 50%, var(--ui-surface-raised));
-  pointer-events: none;
-}
-
-/* Each field on the edge it belongs to, as wide as a number needs. */
+/* Each field on the edge it belongs to, as wide as a number needs, the number centred in it: with
+   nothing drawn between the four, each number sits on the middle of the edge it insets. */
 .marginAt {
   position: absolute;
   width: 24px;
 }
+
+.marginAt input { text-align: center; }
 
 .marginAt[data-edge="left"] { left: 4px; top: 50%; transform: translateY(-50%); }
 .marginAt[data-edge="right"] { right: 4px; top: 50%; transform: translateY(-50%); }
 .marginAt[data-edge="top"] { top: 4px; left: 50%; transform: translateX(-50%); }
 .marginAt[data-edge="bottom"] { bottom: 4px; left: 50%; transform: translateX(-50%); }
 
-/* The artboard's size: the two fields sharing what the way-it-lies control leaves, which sits level
-   with their boxes while their labels hang below. */
+/* The size chooser, in the Paper card and the Artboard card alike: the list of sizes taking what
+   the way-it-lies control leaves, which sits level with the menu while its label hangs below. */
 .sizeRow {
   display: flex;
   align-items: flex-start;
@@ -356,16 +347,6 @@
 }
 
 .paperCustom > * { min-width: 0; }
-
-/* Scaling the drawing: the percent, with its label above, then the button that scales by it. */
-.scaleRow {
-  display: flex;
-  align-items: flex-end;
-  gap: 0.5rem;
-  margin-top: 0.5rem;
-}
-
-.scaleRow > :first-child { flex: 0 1 7rem; min-width: 5rem; }
 
 /* The Paper card's drawing transform: the turn buttons, a narrow margin and Fit, on one line. The
    buttons sit level with the field's box, its label hanging below it. */
@@ -400,14 +381,25 @@
 /* Scale and the alignment, on one line: the toolbars level with the field's box, its label below.
    The card leaves 220px; the two toolbars take 168 of it, so the field has what's left - room for
    "100 %" - and never pushes the toolbars onto a line of their own. */
+/* Scaling, then the alignment. Scaling is a percent typed and then applied, so the box and its
+   button belong together; the alignment follows on the same line while there is room for it, and
+   takes a line of its own when there isn't. */
+.scaleRow {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.375rem;
+}
+
+.scaleRow > :first-child { flex: 0 1 4.5rem; min-width: 3.5rem; }
+
 .scaleAlignRow {
   display: flex;
-  flex-wrap: nowrap;
+  flex-wrap: wrap;
   align-items: flex-start;
   gap: 0.375rem;
   margin-top: 0.5rem;
 }
-.scaleAlignRow > :first-child { flex: 1 1 0; min-width: 0; }
+.scaleAlignRow > :first-child { flex: 1 1 auto; min-width: 0; }
 .scaleAlignRow .fitAlign { flex: none; margin-top: 0; flex-wrap: nowrap; gap: 0.375rem; }
 
 /* Folded, the Paper heading's size and the dot in the paper's color, side by side. */
