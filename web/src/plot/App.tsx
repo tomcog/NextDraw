@@ -2165,8 +2165,7 @@ export default function App() {
                   couldn't press - which looked broken and told you nothing Plot acts on: the
                   margins drive nothing here, and the marks grow the page round the artboard rather
                   than sitting in them. The size is the one fact that matters at the machine, since
-                  it is what has to fit the sheet. The colour is stated too, under the sheet it
-                  describes, because there it answers "which sheet do I load" (Tom, 2026-11-24). */}
+                  it is what has to fit the sheet (Tom, 2026-11-24). */}
                 {sizes && (
                 <p className={controls.stated}>
                   Artboard
@@ -2181,7 +2180,6 @@ export default function App() {
                   a line of text. Shown without a drawing too: Setup makes a calibration sheet, and
                   the sheet is the piece then (Tom, 2026-11-24). */}
                 <PaperSection
-                  color={settings.paper_color}
                   w={settings.paper_w}
                   h={settings.paper_h}
                   sizeId={paperSizeId}

@@ -27,7 +27,7 @@ function sizeIdFor(w: number, h: number) {
  * Custom stays chosen while its numbers are typed, even through a size that happens to be one of
  * the list's on the way.
  */
-export function SizeChooser({ w, h, sizeId, units, what, canTurn = true, disabled, onPick, onDimensions }: {
+export function SizeChooser({ w, h, sizeId, units, what, canTurn = true, showLabel = false, disabled, onPick, onDimensions }: {
   /** The thing's width and height in mm, as it lies. */
   w: number;
   h: number;
@@ -49,6 +49,9 @@ export function SizeChooser({ w, h, sizeId, units, what, canTurn = true, disable
   onPick?: (id: string) => void;
   /** A new width and height in mm: a size chosen, the thing turned, or a custom size typed in. */
   onDimensions: (w: number, h: number) => void;
+  /** Draw the picker's own label - "Paper size", "Artboard size" - under it. Off by default: in a
+   *  card with a heading of its own the heading said it already (Tom, 2026-11-24). */
+  showLabel?: boolean;
 }) {
   // Which way round the list is named, and the way a size picked from it lies: as this one lies, or
   // long edge across where that is not the user's to change.
@@ -80,7 +83,7 @@ export function SizeChooser({ w, h, sizeId, units, what, canTurn = true, disable
         <InputSelect
           size="md"
           label={`${what.charAt(0).toUpperCase()}${what.slice(1)} size`}
-          hideLabel
+          hideLabel={!showLabel}
           value={custom ? "custom" : (sizeId ?? sizeIdFor(w, h))}
           disabled={disabled}
           onChange={(e) => pick(e.target.value)}

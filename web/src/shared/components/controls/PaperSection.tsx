@@ -1,6 +1,4 @@
 import { SizeChooser } from "./SizeChooser";
-import { PaperColorShown } from "./PaperColor";
-import styles from "./controls.module.css";
 import type { Units } from "../../lib/types";
 
 interface Props {
@@ -16,12 +14,6 @@ interface Props {
   onSize: (id: string) => void;
   /** A new width and height, in mm: a custom size typed in. */
   onDimensions: (w: number, h: number) => void;
-  /**
-   * The ground the drawing was made for, shown so you know which sheet to put in. Plot's alone:
-   * the colour is the piece's, set in Studio or Image, so it is stated here and not offered
-   * (Tom, 2026-11-24). Left out, nothing is said.
-   */
-  color?: string;
 }
 
 /**
@@ -32,17 +24,15 @@ interface Props {
  *
  * The sheet goes in with its long edge across the plotter, always, so there is no Landscape and
  * Portrait to choose: a size picked from the list lies that way. Studio and Image have no paper at
- * all since 2026-11-23; the ground's colour is set on their Layout card, and stated here so you know
- * which sheet to load.
+ * all since 2026-11-23, and the ground's colour is set on their Layout card.
  */
-export function PaperSection({ w, h, sizeId, units, disabled, onSize, onDimensions, color }: Props) {
+export function PaperSection({ w, h, sizeId, units, disabled, onSize, onDimensions }: Props) {
   return (
     <>
-      {/* A label, not a collapsible section: inside Plot's Layout card the paper is two rows beside
-        two others, and a chevron to fold them away would be furniture over furniture (Tom,
-        2026-11-24). The same small heading Margins and Surface use. */}
-      <p className={styles.subheading}>Paper</p>
+      {/* No heading over it: the picker's own label says "Paper size" under the box, which is the
+        whole of what a heading would have said (Tom, 2026-11-24). */}
       <SizeChooser
+        showLabel
         w={w}
         h={h}
         sizeId={sizeId}
@@ -53,7 +43,6 @@ export function PaperSection({ w, h, sizeId, units, disabled, onSize, onDimensio
         onPick={onSize}
         onDimensions={onDimensions}
       />
-      {color && <PaperColorShown color={color} />}
     </>
   );
 }
