@@ -47,15 +47,15 @@ def main():
     folder = Path(tempfile.mkdtemp())
     jobs = folder / "jobs"
     jobs.mkdir()
-    server.DRAWINGS_FOLDER = folder
-    server.allowed_folders = lambda: [folder]
-    server.JOBS = jobs
+    server.places.DRAWINGS_FOLDER = folder
+    server.places.allowed_folders = lambda: [folder]
+    server.places.JOBS = jobs
     for name, file in (("CURRENT_SVG", "current.svg"), ("CURRENT_MTIME", "current.mtime"),
                        ("CURRENT_OPENED", "current.opened"), ("CURRENT_HASH", "current.hash"),
                        ("CURRENT_PATH", "current.path"), ("CURRENT_STATE", "current.json"),
                        ("RESUME_SVG", "resume.svg"), ("RESUME_META", "resume.json"),
                        ("PLOT_PATHS", "plot-paths.svg"), ("PRINTED_FILE", "printed-layers.json")):
-        setattr(server, name, jobs / file)
+        setattr(server.places, name, jobs / file)
     client = server.app.test_client()
     file = folder / "box.svg"
     file.write_text(drawing())
@@ -102,7 +102,7 @@ def main():
     check("are put into the drawing", res.get_json().get("baked"), True)
     check("scaled from the page's corner", near(box(), (0.5, 0.5, 2.5, 1.5)), True)
     from lxml import etree
-    plot = server.read_plot(etree.fromstring(server.CURRENT_SVG.read_bytes())) or {}
+    plot = server.read_plot(etree.fromstring(server.places.CURRENT_SVG.read_bytes())) or {}
     check("and out of its block", (plot.get("scale"), plot.get("rotation")), (100, 0))
     res = client.post("/api/current/reshape", json={"bake": True})
     check("once: asked again, nothing is done", res.get_json().get("baked"), False)
@@ -114,12 +114,12 @@ def main():
     client.post("/api/open?svg=1", json={"path": str(file3)})
     res = client.post("/api/current/reshape", json={"turn_paper": 1})
     check("it's done, and said so", (res.status_code, res.get_json().get("turned_paper")), (200, True))
-    root = etree.fromstring(server.CURRENT_SVG.read_bytes())
+    root = etree.fromstring(server.places.CURRENT_SVG.read_bytes())
     check("the page stands up", (root.get("width"), root.get("height"), root.get("viewBox")), ("8.5in", "11in", "0 0 8.5 11"))
     check("the paper in Plot's block too", ((server.read_plot(root) or {}).get("paper") or {}).get("paper_w"), 215.9)
     check("the lines where the sheet took them: top-left goes top right", near(box(), (5.5, 1, 7.5, 5)), True)
     client.post("/api/current/reshape", json={"turn_paper": -1})
-    root = etree.fromstring(server.CURRENT_SVG.read_bytes())
+    root = etree.fromstring(server.places.CURRENT_SVG.read_bytes())
     check("and back left, as it was", (root.get("width"), root.get("height"), near(box(), (1, 1, 5, 3))), ("11in", "8.5in", True))
 
     print(f"\n{'all good' if not failures else f'{len(failures)} failed'}")

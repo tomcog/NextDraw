@@ -41,15 +41,15 @@ def main():
     folder = Path(tempfile.mkdtemp())
     jobs = folder / "jobs"
     jobs.mkdir()
-    server.DRAWINGS_FOLDER = folder
-    server.allowed_folders = lambda: [folder]
-    server.JOBS = jobs
+    server.places.DRAWINGS_FOLDER = folder
+    server.places.allowed_folders = lambda: [folder]
+    server.places.JOBS = jobs
     for name, file in (("CURRENT_SVG", "current.svg"), ("CURRENT_MTIME", "current.mtime"),
                        ("CURRENT_OPENED", "current.opened"), ("CURRENT_HASH", "current.hash"),
                        ("CURRENT_PATH", "current.path"), ("CURRENT_STATE", "current.json"),
                        ("RESUME_SVG", "resume.svg"), ("RESUME_META", "resume.json"),
                        ("PLOT_PATHS", "plot-paths.svg"), ("PRINTED_FILE", "printed-layers.json")):
-        setattr(server, name, jobs / file)
+        setattr(server.places, name, jobs / file)
     client = server.app.test_client()
     file = folder / "big.svg"
     file.write_text(BIG_PAGE)

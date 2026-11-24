@@ -36,7 +36,7 @@ def drawing(mark):
 
 def main():
     folder = Path(tempfile.mkdtemp())
-    server.DRAWINGS_FOLDER = folder
+    server.places.DRAWINGS_FOLDER = folder
     client = server.app.test_client()
 
     print("a new drawing on a name that's taken")

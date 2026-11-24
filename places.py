@@ -125,3 +125,10 @@ PRINTED_FILE = JOBS / "printed-layers.json"
 
 LOCAL_QUEUE_FILE = JOBS / "queue.json"
 QUEUE_FILE = (ICLOUD_DRIVE / "NextDraw Studio" / "queue.json") if ICLOUD_DRIVE.is_dir() else LOCAL_QUEUE_FILE
+
+
+# The drawing files this app can open besides SVG, by suffix. The table that maps each to the
+# importer that reads it lives in server.py, where those live; everything else only ever asks
+# whether a file is one of these.
+IMPORT_SUFFIXES = (".ai", ".vectorcraft")
+DRAWING_SUFFIXES = (".svg", *IMPORT_SUFFIXES)

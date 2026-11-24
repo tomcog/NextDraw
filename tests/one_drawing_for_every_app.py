@@ -61,15 +61,15 @@ def main():
     folder = Path(tempfile.mkdtemp())
     jobs = folder / "jobs"
     jobs.mkdir()
-    server.DRAWINGS_FOLDER = folder
-    server.allowed_folders = lambda: [folder]
-    server.JOBS = jobs
+    server.places.DRAWINGS_FOLDER = folder
+    server.places.allowed_folders = lambda: [folder]
+    server.places.JOBS = jobs
     for name, file in (("CURRENT_SVG", "current.svg"), ("CURRENT_MTIME", "current.mtime"),
                        ("CURRENT_OPENED", "current.opened"), ("CURRENT_HASH", "current.hash"),
                        ("CURRENT_PATH", "current.path"), ("CURRENT_STATE", "current.json"),
                        ("RESUME_SVG", "resume.svg"), ("RESUME_META", "resume.json"),
                        ("PLOT_PATHS", "plot-paths.svg"), ("PRINTED_FILE", "printed-layers.json")):
-        setattr(server, name, jobs / file)
+        setattr(server.places, name, jobs / file)
     client = server.app.test_client()
 
     file = folder / "portrait.svg"
@@ -154,8 +154,8 @@ def main():
     check("and still has nothing saved", client.get("/api/current").get_json()["dirty"], True)
 
     print("\nwhile a stopped plot waits to be resumed")
-    server.RESUME_META.write_text(json.dumps({"done_mm": 10, "total_mm": 100}))
-    server.RESUME_SVG.write_text(drawing("stopped"))
+    server.places.RESUME_META.write_text(json.dumps({"done_mm": 10, "total_mm": 100}))
+    server.places.RESUME_SVG.write_text(drawing("stopped"))
     sunset = client.get("/api/current").get_json()["opened"]
     res = client.post("/api/current", json={"svg": drawing("while-paused"), "name": "sunset", "base": sunset, "dirty": True})
     check("a change is refused", res.status_code, 409)

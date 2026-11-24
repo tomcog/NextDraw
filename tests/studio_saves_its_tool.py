@@ -40,7 +40,7 @@ def drawing(plot):
 
 def main():
     folder = Path(tempfile.mkdtemp())
-    server.DRAWINGS_FOLDER = folder
+    server.places.DRAWINGS_FOLDER = folder
     client = server.app.test_client()
     path = folder / "tool test.svg"
 

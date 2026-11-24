@@ -97,16 +97,16 @@ with tempfile.TemporaryDirectory() as tmp:
 
     # Keep everything in the temporary folder: the loaded drawing too, so a Plot that happens to be
     # running keeps the one it has.
-    server.allowed_folders = lambda: [folder]
+    server.places.allowed_folders = lambda: [folder]
     jobs = folder / "jobs"
     jobs.mkdir()
-    server.JOBS = jobs
+    server.places.JOBS = jobs
     for name, file in (("CURRENT_SVG", "current.svg"), ("CURRENT_MTIME", "current.mtime"),
                        ("CURRENT_OPENED", "current.opened"), ("CURRENT_HASH", "current.hash"),
                        ("CURRENT_PATH", "current.path"), ("RESUME_SVG", "resume.svg"),
                        ("RESUME_META", "resume.json"), ("PLOT_PATHS", "plot-paths.svg"),
                        ("CURRENT_STATE", "current.json"), ("PRINTED_FILE", "printed-layers.json")):
-        setattr(server, name, jobs / file)
+        setattr(server.places, name, jobs / file)
     client = server.app.test_client()
 
     # --- Studio: combined and handed back, nothing written.
@@ -145,7 +145,7 @@ with tempfile.TemporaryDirectory() as tmp:
     res = client.post("/api/combine", json={"paths": [str(folder / "black.svg"), str(folder / "orange.svg")]}).get_json()
     combined = folder / "black combined.svg"
     check(res.get("path") == str(combined) and combined.exists(), f"Plot saves the combined drawing next to the first file ({res.get('error', 'ok')})")
-    check(server.CURRENT_SVG.read_bytes() == combined.read_bytes(), "and opens it")
+    check(server.places.CURRENT_SVG.read_bytes() == combined.read_bytes(), "and opens it")
 
     res = client.post("/api/combine", json={"paths": [str(folder / "blue.svg")], "add": True}).get_json()
     check(res.get("path") == str(combined), "adding to a combined drawing rewrites it")

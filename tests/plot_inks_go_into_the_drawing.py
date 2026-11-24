@@ -45,15 +45,15 @@ def main():
     folder = Path(tempfile.mkdtemp())
     jobs = folder / "jobs"
     jobs.mkdir()
-    server.DRAWINGS_FOLDER = folder
-    server.allowed_folders = lambda: [folder]
-    server.JOBS = jobs
+    server.places.DRAWINGS_FOLDER = folder
+    server.places.allowed_folders = lambda: [folder]
+    server.places.JOBS = jobs
     for name, file in (("CURRENT_SVG", "current.svg"), ("CURRENT_MTIME", "current.mtime"),
                        ("CURRENT_OPENED", "current.opened"), ("CURRENT_HASH", "current.hash"),
                        ("CURRENT_PATH", "current.path"), ("CURRENT_STATE", "current.json"),
                        ("RESUME_SVG", "resume.svg"), ("RESUME_META", "resume.json"),
                        ("PLOT_PATHS", "plot-paths.svg"), ("PRINTED_FILE", "printed-layers.json")):
-        setattr(server, name, jobs / file)
+        setattr(server.places, name, jobs / file)
     client = server.app.test_client()
     file = folder / "leaves.svg"
     file.write_text(DRAWING)
@@ -64,7 +64,7 @@ def main():
     res = client.post("/api/current/layer", json={"id": "Sky_Blue_Leaves", "name": "Marigold - Leaves", "color": "#F5A623"})
     check("it's done", res.status_code, 200)
     from lxml import etree
-    root = etree.fromstring(server.CURRENT_SVG.read_bytes())
+    root = etree.fromstring(server.places.CURRENT_SVG.read_bytes())
     layers = server.read_layers(root)
     check("the layer is called after the pen, its label kept", layers[0]["name"], "Marigold - Leaves")
     check("and drawn in its color, every mark", (layers[0]["color"], layers[0]["colors"]), ("#f5a623", ["#f5a623"]))
@@ -78,7 +78,7 @@ def main():
 
     print("\na color with no pen: the name stays")
     client.post("/api/current/layer", json={"id": "Black", "color": "#336699"})
-    layers = server.read_layers(etree.fromstring(server.CURRENT_SVG.read_bytes()))
+    layers = server.read_layers(etree.fromstring(server.places.CURRENT_SVG.read_bytes()))
     check("recolored, still called Black", (layers[1]["name"], layers[1]["color"]), ("Black", "#336699"))
 
     print("\nwhat isn't a layer or a color")
