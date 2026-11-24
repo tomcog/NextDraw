@@ -68,10 +68,20 @@ const sizeIdOf = (artboard: Page) =>
 
 // This browser's choices, Photo's own: the tool and paper on the plotter for photos needn't be the
 // ones Studio was last drawing with. The drawing worked on last is picked up again on return.
-// The pen starts at None - general colors, no preset - so this key is new with that choice, and
-// a pen remembered from before it doesn't stand in for it.
 const TOOL_KEY = "photo-pen-preset";
 const PAPER_COLOR_KEY = "photo-paper-color";
+
+/**
+ * Where a new image starts (Tom, 2026-11-23): a square foot, edge to edge, drawn with the EnerGel.
+ *
+ * The size and margins travel with the drawing, so one opened keeps its own - these are only what a
+ * new one begins at, and New goes back to them however the last drawing was set up. The pen is the
+ * one every app shares, so a new image puts the EnerGel's measured palette in Plot and Studio too;
+ * a plotter without an EnerGel preset falls back to None, as a pen that's gone always does.
+ */
+const NEW_ARTBOARD: Page = { w: 12, h: 12 };
+const NEW_MARGINS = marginsAll(0);
+const NEW_PEN = "EnerGel";
 
 const NO_SHAPES: Shape[] = [];
 const NO_FILLS: Fill[] = [];
@@ -85,9 +95,9 @@ type Next = { kind: "new" } | { kind: "photos"; files: File[]; skipped?: string[
 export default function App() {
   // The artboard - the drawing's own size - is the artboard it is written at (2026-11-23); the sheet is
   // carried in `paper` for Plot alone, since this app has no paper of its own.
-  const [artboard, setArtboard] = useState<Page>({ w: 11, h: 8.5 });
+  const [artboard, setArtboard] = useState<Page>(NEW_ARTBOARD);
   const [paper, setPaper] = useState<Page | null>(null);
-  const [margins, setMargins] = useState<Margins>(marginsAll(0));
+  const [margins, setMargins] = useState<Margins>(NEW_MARGINS);
   const [paperColor, setPaperColor] = useState(() => load<string>(PAPER_COLOR_KEY) ?? "#ffffff");
   // Inches or millimetres: one choice for all three apps, kept with Plot's settings.
   const [units] = useUnits();
@@ -195,8 +205,8 @@ export default function App() {
   const [maskCard, setMaskCard] = useState(() => load<boolean>("photo-mask-card") ?? false);
   useEffect(() => remember("photo-mask-card", maskCard), [maskCard]);
 
-  // None until a pen is picked: the server's None pen, first in the list (once "", before it was one).
-  const [toolName, setToolName] = useState<string>(() => load<string>(TOOL_KEY) || NONE_PEN);
+  // The pen last used here, or the one a new image starts with until another is picked.
+  const [toolName, setToolName] = useState<string>(() => load<string>(TOOL_KEY) || NEW_PEN);
   useEffect(() => remember(TOOL_KEY, toolName), [toolName]);
   const presetsSeen = useRef<string | null>(null);
   useEffect(() => {
@@ -403,7 +413,8 @@ export default function App() {
     switchPhotoMode(modeAfterJoin);
   }, [modeAfterJoin, chosen]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // A new, empty drawing on the paper as it is.
+  // A new, empty drawing, back at where a new image starts: a square foot with no margins, drawn
+  // with the EnerGel, however the drawing before it was set up.
   const newDrawing = useCallback(() => {
     const only = [firstLayer()];
     setShapes(NO_SHAPES);
@@ -411,9 +422,13 @@ export default function App() {
     setLayers(only);
     setActiveLayer(only[0].id);
     setSelected(null);
+    setArtboard(NEW_ARTBOARD);
+    setMargins(NEW_MARGINS);
+    setToolName(NEW_PEN);
+    sharePen(NEW_PEN);
     clearHistory();
-    file.started("Untitled", { shapes: NO_SHAPES, fills: NO_FILLS, layers: only, artboard });
-  }, [clearHistory, file, artboard]);
+    file.started("Untitled", { shapes: NO_SHAPES, fills: NO_FILLS, layers: only, artboard: NEW_ARTBOARD });
+  }, [clearHistory, file, sharePen]);
 
   // Photos opened: a new drawing named after them, and the photo put in once it's in place - one
   // photo, or several separations (…_C, …_M, …_Y, …_K) for a layer each.
