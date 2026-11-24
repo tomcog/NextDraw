@@ -66,3 +66,18 @@ export function PaperColorRow({ color, disabled, onColor }: {
     </div>
   );
 }
+
+/**
+ * Which sheet to load, said rather than offered. The ground is the piece's own, set in Studio or
+ * Image, so in Plot it is a fact and not a choice - and a row of swatches you can't press claimed
+ * otherwise (Tom, 2026-11-24).
+ */
+export function PaperColorShown({ color }: { color: string }) {
+  const named = PAPER_COLORS.find((c) => c.color === color)?.name;
+  return (
+    <p className={styles.stated}>
+      <span className={styles.statedDot} style={{ background: color }} aria-hidden="true" />
+      {named ? `${named} paper` : `Paper ${color}`}
+    </p>
+  );
+}

@@ -4,9 +4,9 @@ import styles from "./App.module.css";
 import { isSvgFile, useFileDrop } from "../shared/lib/useFileDrop";
 import { api, postJSON } from "../shared/lib/api";
 import { barrelOffsetMm, BUSY_STATES, DEFAULT_SETTINGS, IDRAW_MODEL, NONE_PEN, PAPER_SIZES, penWidthOf, PLOTTING_STATES, PRESET_FIELD_NAMES, PRESET_FIELDS, STEPS, STORAGE } from "../shared/lib/constants";
-import { cleanNote, listOf } from "../shared/lib/format";
+import { cleanNote, fmtLen, listOf } from "../shared/lib/format";
 import { lightness } from "../shared/lib/color";
-import { fitsOnBed, fitsOnPaper, footprint, minPlacement, marginsTimes, turnedFootprint, type FitAlign, type Margins } from "../shared/lib/geometry";
+import { fitsOnBed, fitsOnPaper, footprint, minPlacement, turnedFootprint, type FitAlign, type Margins } from "../shared/lib/geometry";
 import { parsePlotPaths, type PlotPaths } from "../shared/lib/progressPaths";
 import { parsePreview, type Preview } from "../shared/lib/preview";
 import { load, save } from "../shared/lib/storage";
@@ -46,7 +46,6 @@ import { LayersSection } from "./components/controls/LayersSection";
 import { PositionSection } from "./components/controls/PositionSection";
 import { PresetSection } from "./components/controls/PresetSection";
 import { PaperSection } from "../shared/components/controls/PaperSection";
-import { ArtboardSection } from "../shared/components/controls/ArtboardSection";
 import { DEFAULT_TRIM, TrimMarksSection } from "./components/controls/TrimMarksSection";
 import { BlocksSection, SignatureSection } from "./components/controls/SignatureSection";
 import { blocksStamp, signatureStamp } from "../shared/lib/drawing/plotStamps";
@@ -2187,19 +2186,20 @@ export default function App() {
           <Card variant="flat" className={styles.controls}>
             <div className={`${styles.cardBody} ${controls.cardSections}`}>
               <Section title="Layout" icon={panelIcon("layout")} collapsibleKey="plot-layout">
+                {/* The artboard said, not offered. It used to be Studio's whole Artboard section
+                  with every control disabled - four margin fields and five colour swatches you
+                  couldn't press - which looked broken and told you nothing Plot acts on: the
+                  margins drive nothing here, and the marks grow the page round the artboard rather
+                  than sitting in them. The size is the one fact that matters at the machine, since
+                  it is what has to fit the sheet, and the colour has gone to the Paper card, where
+                  "which sheet do I load" belongs (Tom, 2026-11-24). */}
                 {sizes && (
-                <ArtboardSection
-                  w={sizes.artboard.w * 25.4}
-                  h={sizes.artboard.h * 25.4}
-                  margins={marginsTimes(sizes.margins, 25.4)}
-                  units={settings.units}
-                  color={settings.paper_color}
-                  collapsibleKey="plot-artboard"
-                  disabled={plotting || busy}
-                  // Read-only here (Tom, 2026-11-23, docs/plot.md): the size, the margins and the
-                  // surface are what the piece is, set in Studio or Image. Plot shows them so you
-                  // can see what you're plotting, and changes none of them.
-                />
+                <p className={controls.stated}>
+                  Artboard
+                  <span className={controls.statedValue}>
+                    {`${fmtLen(sizes.artboard.w * 25.4, settings.units, false)} × ${fmtLen(sizes.artboard.h * 25.4, settings.units)}`}
+                  </span>
+                </p>
                 )}
                 {/* Where that artboard lands on the sheet, and which way round. Layout is the same
                   question in all three apps - how big the piece is, where it sits, which way it
@@ -2231,6 +2231,7 @@ export default function App() {
           <Card variant="flat" className={styles.controls}>
             <div className={`${styles.cardBody} ${controls.cardSections}`}>
                 <PaperSection
+                  color={settings.paper_color}
                   w={settings.paper_w}
                   h={settings.paper_h}
                   sizeId={paperSizeId}

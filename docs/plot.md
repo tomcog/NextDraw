@@ -1,8 +1,12 @@
 # NextDraw Plot — what belongs in Plot
 
 The record of what was decided in discussion on 2026-11-23, and why, so that building it starts from
-those conclusions instead of re-deriving them. Nothing here is built yet. **Decided** is settled;
-**Open** is a leaning with a question still attached.
+those conclusions instead of re-deriving them. **Decided** is settled; **Open** is a leaning with a
+question still attached.
+
+Revised on 2026-11-24, once the cards were built and looked at; the two revisions are marked below.
+What the rule allows Plot to touch has not moved; where the controls live, and how much of a fact is
+worth showing, has.
 
 It settles a drift: Plot had grown controls that change the piece itself — scaling, turning, fitting
 and cropping the artwork, the artboard's size, its margins, its surface colour. All of them rewrote
@@ -27,6 +31,16 @@ file. Fill in particular scaled the artwork and then *cropped the strokes* at th
 **The Artboard card stays in Plot, read-only.** Size, margins and surface colour are shown so you can
 see what you are plotting; none of them can be changed here.
 
+> **Revised 2026-11-24 — the artboard is one line, not a card.** Built, this was Studio's whole
+> Artboard section with every control disabled: four margin fields you couldn't type in and five
+> colour swatches you couldn't press. It looked broken, and it told you nothing Plot acts on. The
+> margins drive nothing in Plot — the only place the app reads them is to render those fields, and
+> the marks grow the page around the artboard rather than sitting inside them. So what remains is
+> the artboard's **size**, stated on one line, because it is the fact that matters at the machine:
+> it is what has to fit the sheet. The **surface colour** moves to the Paper card, stated the same
+> way, because there it answers "which sheet do I load". Read-only is unchanged — Plot still
+> changes none of it.
+
 **The Pen card stays whole, and the preview follows it.** It is an exception to the rule, and a
 considered one: the preset is how the lines look — colours, line width, which the preview must show
 so aesthetic decisions can be made — *and* how the plotter behaves, with pen-up and pen-down heights
@@ -50,7 +64,14 @@ which-way-it-lies switch goes, and the paper becomes just a size.
 - A turn you set by hand stands. If it then doesn't fit, the outline goes red rather than Plot
   turning it back.
 
-**One card, "Plot position", for putting the artboard on the sheet.** It holds, together:
+**One card, "Plot position", for putting the artboard on the sheet.**
+
+> **Revised 2026-11-24 — it is the Layout card's second half, not a card.** Layout is the same
+> question in all three apps: how big the piece is, where it sits, which way it lies, none of it
+> touching the artwork. Plot's Artboard card is called Layout now, as Studio's and Image's are, and
+> this is its Position section. As a card of its own it sat in the rail's lower group beside the
+> plotter's own controls, away from the two cards it is entirely about, and read as missing. What it
+> holds is unchanged:
 
 - the quarter turns;
 - the nine-way align picker Studio's Artwork card uses — corners, edges and centre — acting as it is
@@ -63,6 +84,19 @@ which-way-it-lies switch goes, and the paper becomes just a size.
 **An SVG made elsewhere takes its page size as its artboard.** A drawing made in NextDraw carries an
 artboard, its margins and its surface; a foreign SVG carries a page size and strokes, and the page
 size is artboard enough to place it. No trip to Studio first.
+
+## The cards, as built
+
+Plot's rail, after 2026-11-24:
+
+    file · layout · paper · pen · queue · marks
+    —
+    options · utilities
+
+- **Layout** — the artboard's size on a line, then Position: the quarter turns, the align picker,
+  the one margin, the artboard's corner from the paper's corner, and the paper's corner from home.
+- **Paper** — the sheet's size, and which colour of it to load.
+- The lower group is the plotter's own again.
 
 ## What this leaves to build
 
@@ -80,3 +114,6 @@ today.
   reshaping, but what should happen to a drawing that still carries an old scale isn't settled.
 - Whether a layer's ink reassigned in Plot is written into the drawing, as Plot's layer inks are
   today, or kept with the plot's own choices.
+- Where "the paper's corner from home" belongs. It is in the Layout card's Position section because
+  that is where it has always been, but it is a fact about the machine rather than about the piece,
+  and Utilities is where the rest of those live (noticed 2026-11-24, not decided).

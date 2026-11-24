@@ -1,4 +1,5 @@
 import { SizeChooser } from "./SizeChooser";
+import { PaperColorShown } from "./PaperColor";
 import { Section } from "./Section";
 import { panelIcon } from "../PanelToolbar";
 import type { Units } from "../../lib/types";
@@ -17,6 +18,12 @@ interface Props {
   onSize: (id: string) => void;
   /** A new width and height, in mm: a custom size typed in. */
   onDimensions: (w: number, h: number) => void;
+  /**
+   * The ground the drawing was made for, shown so you know which sheet to put in. Plot's alone:
+   * the colour is the piece's, set in Studio or Image, so it is stated here and not offered
+   * (Tom, 2026-11-24). Left out, nothing is said.
+   */
+  color?: string;
 }
 
 /**
@@ -27,9 +34,10 @@ interface Props {
  *
  * The sheet goes in with its long edge across the plotter, always, so there is no Landscape and
  * Portrait to choose: a size picked from the list lies that way. Studio and Image have no paper at
- * all since 2026-11-23, and the ground's colour is the Artboard card's, which all three apps show.
+ * all since 2026-11-23; the ground's colour is set on their Layout card, and stated here so you know
+ * which sheet to load.
  */
-export function PaperSection({ w, h, sizeId, units, collapsibleKey, disabled, onSize, onDimensions }: Props) {
+export function PaperSection({ w, h, sizeId, units, collapsibleKey, disabled, onSize, onDimensions, color }: Props) {
   return (
     <Section
       title="Paper"
@@ -48,6 +56,7 @@ export function PaperSection({ w, h, sizeId, units, collapsibleKey, disabled, on
         onPick={onSize}
         onDimensions={onDimensions}
       />
+      {color && <PaperColorShown color={color} />}
     </Section>
   );
 }
