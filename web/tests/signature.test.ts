@@ -7,7 +7,7 @@ import { DOMParser } from "linkedom";
 import { parseFont } from "../src/shared/lib/drawing/font";
 import { flattenRun, parsePath } from "../src/shared/lib/drawing/path";
 import { pointsBox } from "../src/shared/lib/drawing/shapes";
-import { signatureShapes, signatureSize } from "../src/studio/lib/signature";
+import { signatureShapes, signatureSize } from "../src/shared/lib/drawing/signature";
 
 (globalThis as { DOMParser?: unknown }).DOMParser = DOMParser;
 

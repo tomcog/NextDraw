@@ -3,12 +3,12 @@
 // landed against the others, and in what order they went down. Taken from the drawing they were made
 // in (Desktop/registration blocks.svg): each square one path, a zigzag of 21 strokes up and down with
 // round turns, close enough together to lay the ink down solid.
-import { newShapeId, type Layer, type Shape } from "../../shared/lib/drawing/shapes";
-import { splitLayerName, TRIM_LABEL } from "../../shared/lib/ink";
-import type { PenColor } from "../../shared/lib/types";
+import { newShapeId, type Shape } from "./shapes";
+import { splitLayerName, TRIM_LABEL } from "../ink";
+import type { PenColor } from "../types";
 import { SIGNATURE_LABEL } from "./signature";
-import type { Node } from "../../shared/lib/drawing/path";
-import type { Point } from "../../shared/lib/drawing/parametric";
+import type { Node } from "./path";
+import type { Point } from "./parametric";
 
 /** What each block is called in the Paths list - and how pressing Registration again finds the old ones. */
 export const REGISTRATION_NAME = "Registration";
@@ -41,8 +41,15 @@ function block(layerId: string, at: Point): Shape {
 // Layers that are no part of the print's colours, so get no block: the trim marks and the signature.
 const NO_BLOCK = [TRIM_LABEL, SIGNATURE_LABEL].map((l) => l.toLowerCase());
 
+/** What a block needs to know about the layer it belongs to: enough for Plot's views and Studio's. */
+export interface BlockLayer {
+  id: string;
+  name: string;
+  hidden?: boolean;
+}
+
 /** The layers that get a block: every one but the Trim marks and Signature layers. */
-export function registrationLayers(layers: Layer[], palette: PenColor[]): Layer[] {
+export function registrationLayers<T extends BlockLayer>(layers: T[], palette: PenColor[]): T[] {
   return layers.filter((l) => !NO_BLOCK.includes(splitLayerName(l.name, palette).label.trim().toLowerCase()));
 }
 
@@ -50,12 +57,12 @@ export function registrationLayers(layers: Layer[], palette: PenColor[]): Layer[
  * A block for each layer, butted side by side from `at` (the row's bottom left), layer 1 first: the
  * order Plot draws them in. A hidden layer gets none, and leaves no gap: the next one butts up.
  */
-export function registrationShapes(layers: Layer[], at: Point): Shape[] {
+export function registrationShapes(layers: BlockLayer[], at: Point): Shape[] {
   return layers.filter((l) => !l.hidden).map((l, i) => block(l.id, { x: at.x + i * BLOCK_W, y: at.y - BLOCK_H }));
 }
 
 /** How much room the row takes, in inches: a block for each shown layer. */
-export function registrationSize(layers: Layer[]): { w: number; h: number } {
+export function registrationSize(layers: BlockLayer[]): { w: number; h: number } {
   return { w: layers.filter((l) => !l.hidden).length * BLOCK_W, h: BLOCK_H };
 }
 

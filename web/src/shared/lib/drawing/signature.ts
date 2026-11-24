@@ -3,10 +3,10 @@
 // *REFERENCE/tc-2026.svg). The initials are that drawing's own lines; the year is set again each time
 // from Hershey Sans 1, the plotter font it was set in, drawn as smooth curves through the font's
 // points as that drawing has it - which is what lets it say whatever year it is.
-import type { StrokeFont } from "../../shared/lib/drawing/font";
-import { flattenRun, parsePath, type Node } from "../../shared/lib/drawing/path";
-import type { Point } from "../../shared/lib/drawing/parametric";
-import { drawnRuns, newGroupId, newShapeId, pointsBox, type Shape } from "../../shared/lib/drawing/shapes";
+import type { StrokeFont } from "./font";
+import { flattenRun, parsePath, type Node } from "./path";
+import type { Point } from "./parametric";
+import { drawnRuns, newGroupId, newShapeId, pointsBox, type Shape } from "./shapes";
 
 /** The font the year is set in. */
 export const SIGNATURE_FONT = "HersheySans1";

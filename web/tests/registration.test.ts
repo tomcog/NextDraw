@@ -5,7 +5,7 @@ import assert from "node:assert/strict";
 import { existsSync, readFileSync } from "node:fs";
 import { parsePath } from "../src/shared/lib/drawing/path";
 import type { Layer } from "../src/shared/lib/drawing/shapes";
-import { isRegistrationBlock, registrationLayers, registrationShapes } from "../src/studio/lib/registration";
+import { isRegistrationBlock, registrationLayers, registrationShapes } from "../src/shared/lib/drawing/registration";
 
 const REFERENCE = `${process.env.HOME}/Desktop/registration blocks.svg`;
 const LAYERS: Layer[] = [

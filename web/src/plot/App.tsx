@@ -10,7 +10,7 @@ import { fitsOnBed, fitsOnPaper, footprint, minPlacement, marginsTimes, type Fit
 import { parsePlotPaths, type PlotPaths } from "../shared/lib/progressPaths";
 import { parsePreview, type Preview } from "../shared/lib/preview";
 import { load, save } from "../shared/lib/storage";
-import type { Confirmation, Estimate, Info, Ink, Layer, PenColor, LayerView, Message, Placement, Preset, QueueItem, Settings, Status, Plot, TrimMarks } from "../shared/lib/types";
+import type { ColorBlocks, Confirmation, Estimate, Info, Ink, Layer, PenColor, LayerView, Message, Placement, Preset, QueueItem, Settings, SignatureMarks, Status, Plot, TrimMarks } from "../shared/lib/types";
 import { inkHex, isPalettePen, isVarnishLayer, joinLayerName, penNameAt, penNameOf, splitLayerName } from "../shared/lib/ink";
 import { Hints } from "../shared/components/controls/Hints";
 import { Header } from "./components/Header";
@@ -49,6 +49,9 @@ import { PresetSection } from "./components/controls/PresetSection";
 import { PaperSection } from "../shared/components/controls/PaperSection";
 import { ArtboardSection } from "../shared/components/controls/ArtboardSection";
 import { DEFAULT_TRIM, TrimMarksSection } from "./components/controls/TrimMarksSection";
+import { SignatureSection } from "./components/controls/SignatureSection";
+import { blocksStamp, signatureStamp } from "../shared/lib/drawing/plotStamps";
+import { SIGNATURE_FONT } from "../shared/lib/drawing/signature";
 import { editCurrent, type EditableDrawing } from "../shared/lib/drawing/editCurrent";
 import type { Page } from "../shared/lib/drawing/shapes";
 import { PanelToolbar, panelIcon } from "../shared/components/PanelToolbar";
@@ -431,10 +434,37 @@ export default function App() {
   // previews, and reports how far the page grew for them - the marks stand outside the artboard, so
   // the plot starts that much before where the artboard goes.
   const [trimMarks, setTrimMarks] = useState<TrimMarks | null>(null);
-  const [padMm, setPadMm] = useState(0);
+  // And the two Plot adds as the last step before plotting: a block of each ink that goes down, and
+  // the signature. Where they go is kept here; what they look like is made in the page below.
+  const [blocks, setBlocks] = useState<ColorBlocks | null>(null);
+  const [signature, setSignature] = useState<SignatureMarks | null>(null);
+  const [signatureFont, setSignatureFont] = useState<StrokeFont | null>(null);
+  const [padMm, setPadMm] = useState({ x: 0, y: 0 });
+  const padOf = (pair?: [number, number]) => ({ x: pair?.[0] ?? 0, y: pair?.[1] ?? 0 });
+
+  /**
+   * What Plot is adding to this print, geometry and all: sent with every preview, estimate and plot,
+   * the way the scale and the turn are, and never written into the drawing. The blocks are made from
+   * the layers as they stand right now - the ones that go down in this print, in the order they go -
+   * so they cannot say anything the print doesn't.
+   */
+  const plotExtras = useMemo(() => {
+    const shown = layerViews.filter((l) => !l.hidden && !l.skipped);
+    const madeBlocks = blocks && blocksStamp(shown, paletteOfTool(activePreset ?? ""));
+    const madeSignature = signature && signatureFont && signatureStamp(new Date().getFullYear(), signatureFont);
+    return {
+      ...(trimMarks ? { trim: trimMarks } : {}),
+      ...(blocks && madeBlocks ? { blocks: { ...blocks, ...madeBlocks } } : {}),
+      ...(signature && madeSignature ? { signature: { ...signature, ...madeSignature } } : {}),
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [trimMarks, blocks, signature, signatureFont, layerViews, activePreset, paletteOfTool]);
   // The Trim marks card: Plot's alone - the marks are added when the drawing is plotted.
   const [trimCard, setTrimCard] = useState(() => load<boolean>("plot-trim-card") ?? false);
   useEffect(() => save("plot-trim-card", trimCard), [trimCard]);
+  // And the Signature & blocks card, the same way.
+  const [signatureCard, setSignatureCard] = useState(() => load<boolean>("plot-signature-card") ?? false);
+  useEffect(() => save("plot-signature-card", signatureCard), [signatureCard]);
   // What is set less often - where the drawing sits, how it's plotted, the pen and carriage by hand -
   // a card each, from a toolbar of their own at the foot of the others. Put away until wanted.
   const [positionCard, setPositionCard] = useState(() => load<boolean>(STORAGE.positionCard) ?? false);
@@ -449,7 +479,7 @@ export default function App() {
   useEffect(() => save(STORAGE.zoom, zoomChoice), [zoomChoice]);
 
   // Refs let the polling loop see current values without restarting.
-  const refs = useRef({ fileName, status, lastAction, settings, scale, presets, plotLayerIds, rotation, hatchSpacing, trimMarks, readRequested: false, plotSettings: settings, skipTiny: null as number | null, activePreset, opened: undefined as string | null | undefined, edited: undefined as string | null | undefined,
+  const refs = useRef({ fileName, status, lastAction, settings, scale, presets, plotLayerIds, rotation, hatchSpacing, plotExtras: {} as Record<string, unknown>, readRequested: false, plotSettings: settings, skipTiny: null as number | null, activePreset, opened: undefined as string | null | undefined, edited: undefined as string | null | undefined,
     // Following the other open pages: the last shared-settings version and drawing save this page has
     // taken up, and whether it has changes of its own not yet sent.
     settingsVersion: undefined as string | null | undefined, settingsUnsent: false,
@@ -460,7 +490,8 @@ export default function App() {
     queueVersion: undefined as string | null | undefined, queueUnsent: false });
   refs.current.rotation = rotation;
   refs.current.hatchSpacing = hatchSpacing;
-  refs.current.trimMarks = trimMarks;
+  refs.current.plotExtras = plotExtras;
+
   refs.current.skipTiny = skipTiny;
   refs.current.plotLayerIds = plotLayerIds;
   refs.current.presets = presets;
@@ -703,6 +734,8 @@ export default function App() {
     setHatchSpacing(plot?.hatch_spacing ?? {});
     setSkipTiny(plot?.skip_tiny ?? null);
     setTrimMarks(plot?.trim ?? null);
+    setBlocks(plot?.blocks ?? null);
+    setSignature(plot?.signature ?? null);
     // The drawing tool is deliberately NOT taken from the file. It stands for the pen actually in the
     // holder, and a file can arrive at any moment - saved from Studio, synced from odin - which would
     // otherwise swap the chosen pen, and its pen positions and speeds with it, in the middle of
@@ -759,6 +792,8 @@ export default function App() {
     ...(Object.keys(hatchSpacing).length ? { hatch_spacing: hatchSpacing } : {}),
     ...(skipTiny ? { skip_tiny: skipTiny } : {}),
     ...(trimMarks ? { trim: trimMarks } : {}),
+    ...(blocks ? { blocks } : {}),
+    ...(signature ? { signature } : {}),
     paper: { paper_size: settings.paper_size, paper_w: settings.paper_w, paper_h: settings.paper_h, paper_x: settings.paper_x, paper_y: settings.paper_y, paper_color: settings.paper_color },
   };
   const saveKey = JSON.stringify(drawingNow);
@@ -1092,18 +1127,18 @@ export default function App() {
     const sentScale = refs.current.scale;
     const sentRotation = refs.current.rotation;
     const sentHatch = refs.current.hatchSpacing;
-    const sentTrim = refs.current.trimMarks;
+    const sentExtras = refs.current.plotExtras;
 
-    const key = [fileName, drawingVersion, sentScale, sentRotation, JSON.stringify(sentHatch), JSON.stringify(sentTrim)].join("|");
+    const key = [fileName, drawingVersion, sentScale, sentRotation, JSON.stringify(sentHatch), JSON.stringify(sentExtras)].join("|");
     if (key !== artworkKey.current) {
       artworkKey.current = key;
       setSimPreview(null); // its pen paths are for the old size or turn
-      postJSON<{ svg: string; layers: Layer[]; warnings: string[]; trim_pad_mm?: number }>("/api/artwork", { scale: sentScale, rotation: sentRotation, hatch_spacing: sentHatch, trim: sentTrim })
+      postJSON<{ svg: string; layers: Layer[]; warnings: string[]; page_pad_mm?: [number, number] }>("/api/artwork", { ...refs.current.plotSettings, scale: sentScale, rotation: sentRotation, hatch_spacing: sentHatch, ...sentExtras })
         .then((art) => {
           if (key !== artworkKey.current) return; // a newer size or turn was asked for
           setArtPreview(parsePreview(art.svg));
           setDrawingLayers(art.layers);
-          setPadMm(art.trim_pad_mm ?? 0);
+          setPadMm(padOf(art.page_pad_mm));
           setArtWarnings(art.warnings);
         })
         .catch(() => {}); // the estimate reports anything wrong with the file
@@ -1120,14 +1155,14 @@ export default function App() {
       try {
         const result = await postJSON<Estimate>("/api/estimate", {
           ...refs.current.plotSettings, scale: sentScale, layers: refs.current.plotLayerIds, rotation: sentRotation, hatch_spacing: sentHatch,
-          skip_tiny: refs.current.skipTiny, trim: sentTrim,
+          skip_tiny: refs.current.skipTiny, ...sentExtras,
         });
         if (seq !== estimateSeq.current || result.superseded) return; // a newer estimate is on its way
         estimatedSeq.current = seq;
         setEstimate(result);
         setSimPreview(parsePreview(result.preview_svg));
         setDrawingLayers(result.layers);
-        setPadMm(result.trim_pad_mm ?? 0);
+        setPadMm(padOf(result.page_pad_mm));
         setUpdating(false);
         setLocalMessage((m) => (m && (m.text === "Working out the plot…" || m.text.startsWith("Loading ")) ? null : m));
       } catch (err) {
@@ -1139,7 +1174,7 @@ export default function App() {
     }, 450);
     return () => window.clearTimeout(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [fileName, drawingVersion, simulate ? estimateKey : "", scale, simulate ? plotLayerIds?.join("|") : "", rotation, simulate, JSON.stringify(hatchSpacing), skipTiny, JSON.stringify(trimMarks)]);
+  }, [fileName, drawingVersion, simulate ? estimateKey : "", scale, simulate ? plotLayerIds?.join("|") : "", rotation, simulate, JSON.stringify(hatchSpacing), skipTiny, JSON.stringify(plotExtras)]);
 
   /* ---------- Actions ---------- */
 
@@ -1347,7 +1382,7 @@ export default function App() {
     setLastAction("plot");
     setLocalMessage(null);
     try {
-      await postJSON("/api/plot", { ...settingsFor(plotLayerId), tool: active?.name, start_x: placement.x - padMm, start_y: placement.y - padMm, tip_offset_x: tipOffsetFor(plotLayerId), tip_offset_y: tipOffsetYFor(plotLayerId), scale, layers: plotLayerIds, rotation, hatch_spacing: hatchSpacing, skip_tiny: skipTiny, trim: trimMarks });
+      await postJSON("/api/plot", { ...settingsFor(plotLayerId), tool: active?.name, start_x: placement.x - padMm.x, start_y: placement.y - padMm.y, tip_offset_x: tipOffsetFor(plotLayerId), tip_offset_y: tipOffsetYFor(plotLayerId), scale, layers: plotLayerIds, rotation, hatch_spacing: hatchSpacing, skip_tiny: skipTiny, ...plotExtras });
       setStatus((s) => (s ? { ...s, state: "preparing", message: "", started: false } : s));
     } catch (err) {
       setLocalMessage({ text: (err as Error).message, tone: "error" });
@@ -1493,6 +1528,19 @@ export default function App() {
   /* ---------- Presets ---------- */
 
   const active = presets.find((p) => p.name === activePreset);
+
+  // The signature's font, fetched the first time a print is to have one.
+  useEffect(() => {
+    if (!signature || signatureFont) return;
+    let stale = false;
+    loadFont(SIGNATURE_FONT)
+      .then((font) => !stale && setSignatureFont(font))
+      .catch((err) => !stale && setLocalMessage({ text: `Couldn't load the signature's font: ${(err as Error).message}`, tone: "error" }));
+    return () => {
+      stale = true;
+    };
+  }, [signature, signatureFont]);
+
 
   // The pen trim marks go down in until it's changed in the Layers card: the darkest in the tool's
   // palette, which is how the marks have always been made - black on white paper.
@@ -1932,6 +1980,7 @@ export default function App() {
               { key: "pen", on: penCard, toggle: () => setPenCard((on) => !on) },
               { key: "queue", on: queueCard, toggle: () => setQueueCard((on) => !on) },
               { key: "trim", on: trimCard, toggle: () => setTrimCard((on) => !on) },
+              { key: "signature", on: signatureCard, toggle: () => setSignatureCard((on) => !on) },
             ]}
           />
           {/* Setup's way in, at the foot of the toolbars, as it was in Studio and Image. */}
@@ -2190,6 +2239,21 @@ export default function App() {
                 busy={busy}
                 refused={fileName ? undefined : "Open a drawing to plot it with trim marks."}
                 onChange={(marks) => setTrimMarks(marks && { ...DEFAULT_TRIM, ...marks, ink: marks.ink ?? darkestInk() })}
+              />
+            </div>
+          </Card>
+          )}
+          {signatureCard && (
+          <Card variant="flat" className={styles.controls}>
+            <div className={`${styles.cardBody} ${controls.cardSections}`}>
+              <SignatureSection
+                blocks={blocks}
+                signature={signature}
+                units={settings.units}
+                busy={busy}
+                refused={fileName ? undefined : "Open a drawing to sign it or give it color blocks."}
+                onBlocks={setBlocks}
+                onSignature={(next) => setSignature(next && { ...next, ink: next.ink ?? darkestInk() })}
               />
             </div>
           </Card>

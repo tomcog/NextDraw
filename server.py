@@ -997,10 +997,11 @@ def registration_ids(root):
     return set()
 
 
-def registration_first(root):
-    """Move each plotted layer's registration blocks into a layer of their own ahead of all the plotted layers."""
+def registration_first(root, made=()):
+    """Move each plotted layer's registration blocks into a layer of their own ahead of all the plotted
+    layers - the ones a drawing carries, and the ones Plot made for this print (`made`)."""
     from lxml import etree
-    ids = registration_ids(root)
+    ids = registration_ids(root) | set(made)
     if not ids:
         return
     plotted = [g for g in layer_groups(root) if not layer_hidden(g)]
@@ -1042,23 +1043,59 @@ def with_delay(layer, ms):
     layer.set(INKSCAPE_NS + "label", f"{m.group(1)}{m.group(2)}+d{ms}{m.group(3)}")
 
 
-# Trim marks, generated at plot time. They are no longer geometry in the drawing: Plot keeps the two
-# numbers in its own block and the marks are drawn round the ARTBOARD - which is the drawing's own page
-# - in the copy sent to the plotter and the preview. So the same drawing goes on any sheet with the
-# marks that suit it, and a drawing carrying marks drawn into it (made before this) has them left out
-# of the plot in favour of the generated ones, rather than plotting both sets.
+# ---- What Plot adds to a print when it plots it ----
 #
-# The marks stand outside the artboard, so the page the plotter is given grows by their reach on every
-# side and the drawing moves in by the same amount. Everything downstream works from that page, so the
-# artwork lands where it was placed as long as there is room between the artboard and home; where there
-# isn't, the usual clamp at home loses part of the marks (lines_shifted_mm), which is the physical truth.
+# Three things are no part of the drawing and are made here, in the copy sent to the plotter and the
+# preview: the trim marks round the artboard, the color blocks, and the signature. Plot keeps only
+# WHERE they go, in its own block in the file, and sends that with each request the way it sends the
+# scale and the turn. So none of them can go stale - the blocks are made from the layers and inks of
+# the version being plotted, and the signature carries the year the print is made - and the drawing
+# itself is never written into. A drawing that carries a set stamped into it from before (Studio used
+# to) has them left out in favour of the generated ones, so nothing ever goes down twice.
 #
-# The geometry is a port of trimPoints in web/src/shared/lib/drawing/parametric.ts.
+# The blocks' and the signature's geometry comes WITH the request, as paths at their own size on paper
+# (web/src/shared/lib/drawing/plotStamps.ts): the page holds the font and the drawing's layers, and
+# both are always the same size on paper whatever size the artwork prints at - so they are made at
+# that size and placed here, rather than drawn into the drawing's own coordinates. The trim marks are
+# the page's own corners, so they are made here, and they scale with the page as the artboard does.
+#
+# All three can land outside the artboard, so the page the plotter is given grows to hold them and the
+# drawing moves in by however much it grew before its top-left corner. Everything downstream works
+# from that page, so the artwork lands where it was placed as long as there is room between it and
+# home; where there isn't, the usual clamp at home loses part of what sits before it
+# (lines_shifted_mm), which is the physical truth.
 TRIM_LABEL = "Trim marks"
 TRIM_LAYER_ID = "plot-trim-marks"
-# A layer of marks is labelled after its pen, "Black - Trim marks" - the apps' own naming (ink.ts).
-TRIM_LABEL_END = re.compile(r"(?:^|\s-\s)%s$" % re.escape(TRIM_LABEL), re.I)
 TRIM_LINE_MM = 0.25  # what the marks are drawn with in the preview; the pen's own width is the plot's
+SIGNATURE_LABEL = "Signature"
+SIGNATURE_LAYER_ID = "plot-signature"
+BLOCK_ID = "plot-block-"
+# A layer of either is labelled after its pen - "Black - Trim marks" - the apps' own naming (ink.ts).
+TRIM_LABEL_END = re.compile(r"(?:^|\s-\s)%s$" % re.escape(TRIM_LABEL), re.I)
+SIGNATURE_LABEL_END = re.compile(r"(?:^|\s-\s)%s$" % re.escape(SIGNATURE_LABEL), re.I)
+# Path data as the page writes it: the commands it uses and the numbers between them, nothing else.
+PATH_DATA = re.compile(r"[MLCQZAHVSTmlcqzahvst0-9eE+\-.,\s]{1,400000}")
+
+
+def clean_ink(raw):
+    """The pen something goes down in: which pen of which tool, or a color picked by hand."""
+    if isinstance(raw, str) and HEX_COLOR.match(raw):
+        return raw.lower()
+    if isinstance(raw, dict):
+        kept = {k: raw[k][:60] for k in ("tool", "pen") if isinstance(raw.get(k), str)}
+        if isinstance(raw.get("hex"), str) and HEX_COLOR.match(raw["hex"]):
+            kept["hex"] = raw["hex"].lower()
+        return kept or None
+    return None
+
+
+def ink_parts(ink):
+    """An ink's color for the preview, and the pen it names, for a layer Plot makes."""
+    if isinstance(ink, str):
+        return ink, None
+    if isinstance(ink, dict):
+        return ink.get("hex") or "#000000", ink.get("pen")
+    return "#000000", None
 
 
 def clean_trim(raw):
@@ -1074,32 +1111,86 @@ def clean_trim(raw):
     if not length > 0:
         return None  # a mark with no length is no mark
     out = {"length": min(50.0, length), "offset": max(0.0, min(50.0, offset))}
-    ink = raw.get("ink")
-    if isinstance(ink, str) and HEX_COLOR.match(ink):
-        out["ink"] = ink.lower()
-    elif isinstance(ink, dict):
-        kept = {k: ink[k][:60] for k in ("tool", "pen") if isinstance(ink.get(k), str)}
-        if isinstance(ink.get("hex"), str) and HEX_COLOR.match(ink["hex"]):
-            kept["hex"] = ink["hex"].lower()
-        if kept:
-            out["ink"] = kept
+    ink = clean_ink(raw.get("ink"))
+    if ink:
+        out["ink"] = ink
     return out
 
 
-def trim_pad_mm(trim, scale=100.0):
-    """How far the marks reach outside the artboard, in mm on the paper: what the page grows by on
-    every side, and so how far before the artboard's place the drawing starts."""
-    return (trim["offset"] + trim["length"]) * scale / 100.0 if trim else 0.0
+def clean_anchor(raw, axis):
+    """Where one of Plot's additions sits on an axis: so far many mm inside or outside the named edge
+    of the artwork or the artboard, as the Signature card reads it out."""
+    edges = ("left", "right") if axis == "x" else ("top", "bottom")
+    out = {"mm": 0.0, "edge": edges[0], "side": "inside", "from": "artwork"}
+    if isinstance(raw, dict):
+        try:
+            out["mm"] = max(0.0, min(2000.0, float(raw.get("mm", 0))))
+        except (TypeError, ValueError):
+            pass
+        for key, allowed in (("edge", edges), ("side", ("inside", "outside")), ("from", ("artwork", "artboard"))):
+            if raw.get(key) in allowed:
+                out[key] = raw[key]
+    return out
 
 
-def trim_ink(trim):
-    """The marks' color for the preview, and the pen they name, from the ink Plot recorded."""
-    ink = trim.get("ink")
-    if isinstance(ink, str):
-        return ink, None
-    if isinstance(ink, dict):
-        return ink.get("hex") or "#000000", ink.get("pen")
-    return "#000000", None
+def clean_size(raw):
+    """A stamp's width or height, in inches on the paper."""
+    try:
+        return max(0.0, min(100.0, float(raw)))
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def clean_path(raw):
+    """One path's data, as the page wrote it, or None for anything else."""
+    text = raw.strip() if isinstance(raw, str) else ""
+    return text if text and PATH_DATA.fullmatch(text) else None
+
+
+def clean_signature(raw, geometry=False):
+    """Plot's signature: where it goes and the pen, and with `geometry` the paths the page made for
+    it too - at their own size on paper, the stamp's top-left at 0,0. None for a print without one."""
+    if not isinstance(raw, dict):
+        return None
+    out = {"x": clean_anchor(raw.get("x"), "x"), "y": clean_anchor(raw.get("y"), "y")}
+    ink = clean_ink(raw.get("ink"))
+    if ink:
+        out["ink"] = ink
+    if geometry:
+        d = [p for p in (clean_path(one) for one in (raw.get("d") or [])[:400]) if p]
+        w, h = clean_size(raw.get("w")), clean_size(raw.get("h"))
+        if not (d and w > 0 and h > 0):
+            return None  # nothing to draw
+        out.update(w=w, h=h, d=d)
+    return out
+
+
+def clean_blocks(raw, geometry=False):
+    """Plot's color blocks: where the row goes, and with `geometry` the row itself - a block for each
+    layer that goes down in this print, named by the layer it belongs to and in plotting order."""
+    if not isinstance(raw, dict):
+        return None
+    out = {"x": clean_anchor(raw.get("x"), "x"), "y": clean_anchor(raw.get("y"), "y")}
+    if geometry:
+        items = []
+        for one in (raw.get("items") or [])[:500]:
+            d = clean_path(one.get("d")) if isinstance(one, dict) else None
+            if d and isinstance(one.get("layer"), str):
+                items.append({"layer": one["layer"][:200], "d": d})
+        w, h = clean_size(raw.get("w")), clean_size(raw.get("h"))
+        if not (items and w > 0 and h > 0):
+            return None
+        out.update(w=w, h=h, items=items)
+    return out
+
+
+def anchor_at(anchor, size, box, gap):
+    """Where the near edge of something `size` across goes on this axis, in the page's own units:
+    measured to the nearest edges of the two, so half an inch outside is half an inch of gap."""
+    lo, hi = box
+    if anchor["edge"] in ("left", "top"):
+        return lo + gap if anchor["side"] == "inside" else lo - gap - size
+    return hi - gap - size if anchor["side"] == "inside" else hi + gap
 
 
 def trim_shape_ids(root):
@@ -1116,93 +1207,164 @@ def trim_shape_ids(root):
     return set()
 
 
-def drop_stored_trim(root):
-    """Take out the marks a drawing carries, so the generated ones don't plot on top of them. A layer
-    left with nothing to draw goes with them - it is no longer a layer (see layer_groups).
-
-    Two ways to know them: the design block names them while they are still a curve, and the layer
-    they are on is labelled after the pen and "Trim marks". The label is what is left once a drawing
-    has been through Studio since the curve went (2026-11-23), which reads them back as plain lines."""
-    ids = trim_shape_ids(root)
-    for el in [el for el in root.iter() if el is not root and el.get("id") in ids] if ids else []:
-        parent = el.getparent()
-        if parent is not None:
-            parent.remove(el)
+def drop_stamped(root, ids=(), label=None):
+    """Take out what a drawing carries of its own, so what Plot makes doesn't go down on top of it:
+    the elements with these ids, any layer whose name ends in `label`, and any layer left with nothing
+    to draw - which is no longer a layer at all (see layer_groups)."""
+    ids = set(ids)
+    if ids:
+        for el in [el for el in root.iter() if el is not root and el.get("id") in ids]:
+            parent = el.getparent()
+            if parent is not None:
+                parent.remove(el)
     for group in list(root):
         if not isinstance(group.tag, str) or group.tag != SVG_NS + "g":
             continue
-        label = (group.get(INKSCAPE_NS + "label") or "").strip()
-        if TRIM_LABEL_END.search(label) or not has_art(group):
+        name = (group.get(INKSCAPE_NS + "label") or "").strip()
+        if (label is not None and label.search(name)) or not has_art(group):
             root.remove(group)
 
 
-def add_trim_marks(root, trim):
-    """The marks round the artboard in a layer of their own, the page grown to hold them and the
-    drawing moved in by the same amount. Returns how far the page grew on each side, in mm, which is
-    0 for a drawing plotted without marks - or one whose page can't be measured, since a mark is
-    never worth refusing a plot over.
-
-    `trim` comes with the request, like the scale and the turn: it is Plot's choice for this print, and
-    the drawing keeps it (Plot's block) only so the next plot of it starts from the same place."""
+def add_plot_extras(root, extras):
+    """Everything Plot adds to the print, drawn into the copy it plots and previews: the color blocks
+    on their own layers' groups, the signature on a layer of its own, and the trim marks round the
+    artboard. Returns how far the page grew before the artboard's top-left corner, in mm on the paper
+    (across, down) - which is how far before the artboard's place the plot starts. (0, 0) for a print
+    with none of them, or a page whose size can't be read: none of this is worth refusing a plot over.
+    """
     from lxml import etree
-    if not trim:
-        return 0.0
+    extras = extras or {}
+    trim, blocks, sig = extras.get("trim"), extras.get("blocks"), extras.get("signature")
+    if not (trim or blocks or sig):
+        return (0.0, 0.0)
     try:
         width_mm, units_wide = page_mm_and_units(root, "width", 2)
         height_mm, units_high = page_mm_and_units(root, "height", 3)
     except RuntimeError:
-        return 0.0
+        return (0.0, 0.0)
     if not (width_mm > 0 and height_mm > 0 and units_wide > 0 and units_high > 0):
-        return 0.0
-    drop_stored_trim(root)
-    pad_mm = trim["offset"] + trim["length"]
-    per_mm_x, per_mm_y = units_wide / width_mm, units_high / height_mm
-    pad_x, pad_y = pad_mm * per_mm_x, pad_mm * per_mm_y
+        return (0.0, 0.0)
     if not root.get("viewBox"):
         root.set("viewBox", f"0 0 {units_wide:g} {units_high:g}")
     vx, vy, vw, vh = [float(v) for v in re.split(r"[\s,]+", root.get("viewBox").strip())]
-    # The drawing in by the pad, the way shift_lines moves it: a translate prepended to each top-level
-    # element, so the layers stay top-level for plotting and the preview.
-    shift = f"translate({pad_x:g} {pad_y:g})"
-    for child in root:
-        if not isinstance(child.tag, str) or child.tag in NON_DRAWING_TAGS:
-            continue
-        child.set("transform", f"{shift} {child.get('transform')}" if child.get("transform") else shift)
-    root.set("viewBox", f"{vx:g} {vy:g} {vw + 2 * pad_x:g} {vh + 2 * pad_y:g}")
-    for attr, size_mm in (("width", width_mm), ("height", height_mm)):
+    per_in_x, per_in_y = units_wide / (width_mm / 25.4), units_high / (height_mm / 25.4)
+    # The page is scaled after this, so anything that must come out the same size on paper whatever
+    # the scale - the blocks, the signature, and the gaps they are placed by - is made smaller by as
+    # much here. The marks are the artboard's own corners and scale with it, as they always have.
+    factor = max(0.01, float(extras.get("scale") or 100.0)) / 100.0
+    stamp_x, stamp_y = per_in_x / factor, per_in_y / factor
+    board_x, board_y = (vx, vx + vw), (vy, vy + vh)
+    art = extras.get("art")
+    art_x = (vx + art[0] * per_in_x, vx + art[2] * per_in_x) if art else board_x
+    art_y = (vy + art[1] * per_in_y, vy + art[3] * per_in_y) if art else board_y
+    boxes = [(vx, vy, vx + vw, vy + vh)]  # the page itself, and then whatever lands outside it
+
+    def place(setting):
+        """Where a stamp's top-left goes, in the page's units; its box is kept for the page's growth."""
+        w, h = setting["w"] * stamp_x, setting["h"] * stamp_y
+        x = anchor_at(setting["x"], w, art_x if setting["x"]["from"] == "artwork" else board_x,
+                      setting["x"]["mm"] / 25.4 * stamp_x)
+        y = anchor_at(setting["y"], h, art_y if setting["y"]["from"] == "artwork" else board_y,
+                      setting["y"]["mm"] / 25.4 * stamp_y)
+        boxes.append((x, y, x + w, y + h))
+        return f"translate({x:g} {y:g}) scale({stamp_x:g} {stamp_y:g})"
+
+    made_ids = []
+    if blocks:
+        # A block goes INSIDE its own layer, so it plots in that layer's pass and that layer's pen -
+        # and registration_first then moves it to the front of the pass, as it does a stamped one.
+        drop_stamped(root, registration_ids(root))
+        at = place(blocks)
+        by_id = {g.get("id"): g for g in layer_groups(root)}
+        for item in blocks["items"]:
+            layer = by_id.get(item["layer"])
+            if layer is None:
+                continue  # a layer that isn't in the drawing any more: no block, and no gap either
+            group = etree.SubElement(layer, SVG_NS + "g")
+            group.set("id", f"{BLOCK_ID}{item['layer']}")
+            group.set("transform", at)
+            group.set("fill", "none")
+            etree.SubElement(group, SVG_NS + "path").set("d", item["d"])
+            made_ids.append(group.get("id"))
+    if sig:
+        drop_stamped(root, label=SIGNATURE_LABEL_END)
+        color, pen = ink_parts(sig.get("ink"))
+        layer = etree.SubElement(root, SVG_NS + "g")
+        layer.set(INKSCAPE_NS + "groupmode", "layer")
+        layer.set(INKSCAPE_NS + "label", f"{pen} - {SIGNATURE_LABEL}" if pen else SIGNATURE_LABEL)
+        layer.set("id", SIGNATURE_LAYER_ID)
+        layer.set("fill", "none")
+        layer.set("stroke", color)
+        layer.set("stroke-width", f"{TRIM_LINE_MM * per_in_x / 25.4:g}")
+        group = etree.SubElement(layer, SVG_NS + "g")
+        group.set("transform", place(sig))
+        for d in sig["d"]:
+            etree.SubElement(group, SVG_NS + "path").set("d", d)
+    if trim:
+        drop_stamped(root, trim_shape_ids(root), TRIM_LABEL_END)
+        per_mm_x, per_mm_y = per_in_x / 25.4, per_in_y / 25.4
+        gap_x, len_x = trim["offset"] * per_mm_x, trim["length"] * per_mm_x
+        gap_y, len_y = trim["offset"] * per_mm_y, trim["length"] * per_mm_y
+        color, pen = ink_parts(trim.get("ink"))
+        layer = etree.SubElement(root, SVG_NS + "g")
+        layer.set(INKSCAPE_NS + "groupmode", "layer")
+        layer.set(INKSCAPE_NS + "label", f"{pen} - {TRIM_LABEL}" if pen else TRIM_LABEL)
+        layer.set("id", TRIM_LAYER_ID)
+        layer.set("fill", "none")
+        layer.set("stroke", color)
+        layer.set("stroke-width", f"{TRIM_LINE_MM * per_mm_x:g}")
+        x0, y0, x1, y1 = vx, vy, vx + vw, vy + vh
+        # The corners in the order the pen goes round, each mark drawn from its outer end toward the
+        # corner, the way a cut is lined up.
+        for x, y, sx, sy in ((x0, y0, -1, -1), (x1, y0, 1, -1), (x1, y1, 1, 1), (x0, y1, -1, 1)):
+            for run in ((x + sx * (gap_x + len_x), y, x + sx * gap_x, y),
+                        (x, y + sy * (gap_y + len_y), x, y + sy * gap_y)):
+                etree.SubElement(layer, SVG_NS + "path").set("d", "M {:g} {:g} L {:g} {:g}".format(*run))
+        boxes.append((x0 - gap_x - len_x, y0 - gap_y - len_y, x1 + gap_x + len_x, y1 + gap_y + len_y))
+    # The page grown to hold all of it, and the drawing moved in by whatever grew before its corner.
+    x0, y0 = min(b[0] for b in boxes), min(b[1] for b in boxes)
+    x1, y1 = max(b[2] for b in boxes), max(b[3] for b in boxes)
+    pad_x, pad_y = vx - x0, vy - y0
+    if pad_x > 0 or pad_y > 0:
+        shift = f"translate({pad_x:g} {pad_y:g})"
+        for child in root:
+            if not isinstance(child.tag, str) or child.tag in NON_DRAWING_TAGS:
+                continue
+            child.set("transform", f"{shift} {child.get('transform')}" if child.get("transform") else shift)
+    root.set("viewBox", f"{vx:g} {vy:g} {x1 - x0:g} {y1 - y0:g}")
+    for attr, was, now in (("width", vw, x1 - x0), ("height", vh, y1 - y0)):
         m = re.match(r"^\s*([0-9]*\.?[0-9]+(?:e[-+]?\d+)?)\s*([a-z]*)\s*$", root.get(attr) or "", re.I)
-        if m:
-            root.set(attr, f"{float(m.group(1)) * (size_mm + 2 * pad_mm) / size_mm:g}{m.group(2)}")
-    # The artboard, now that the drawing has moved in: the box the marks go round.
-    x0, y0 = vx + pad_x, vy + pad_y
-    x1, y1 = x0 + vw, y0 + vh
-    gap_x, len_x = trim["offset"] * per_mm_x, trim["length"] * per_mm_x
-    gap_y, len_y = trim["offset"] * per_mm_y, trim["length"] * per_mm_y
-    color, pen = trim_ink(trim)
-    layer = etree.SubElement(root, SVG_NS + "g")
-    layer.set(INKSCAPE_NS + "groupmode", "layer")
-    layer.set(INKSCAPE_NS + "label", f"{pen} - {TRIM_LABEL}" if pen else TRIM_LABEL)
-    layer.set("id", TRIM_LAYER_ID)
-    layer.set("fill", "none")
-    layer.set("stroke", color)
-    layer.set("stroke-width", f"{TRIM_LINE_MM * per_mm_x:g}")
-    # The corners in the order the pen goes round, each mark drawn from its outer end toward the
-    # corner, the way a cut is lined up.
-    for x, y, sx, sy in ((x0, y0, -1, -1), (x1, y0, 1, -1), (x1, y1, 1, 1), (x0, y1, -1, 1)):
-        for run in ((x + sx * (gap_x + len_x), y, x + sx * gap_x, y),
-                    (x, y + sy * (gap_y + len_y), x, y + sy * gap_y)):
-            mark = etree.SubElement(layer, SVG_NS + "path")
-            mark.set("d", "M {:g} {:g} L {:g} {:g}".format(*run))
-    return pad_mm
+        if m and was > 0:
+            root.set(attr, f"{float(m.group(1)) * now / was:g}{m.group(2)}")
+    extras["block_ids"] = made_ids
+    return (pad_x / per_in_x * 25.4 * factor, pad_y / per_in_y * 25.4 * factor)
 
 
-def plot_root(trim=None):
-    """The current drawing as Plot plots and lists it: sized, and with the marks Plot generates in
-    place of any the file carries. Returns the root, a note about its size, and the page's growth."""
+def plot_extras(body, settings=None):
+    """What Plot is adding to this print, read out of the request: the marks, the blocks and the
+    signature, with the artwork's own box when any of them is placed against it rather than the
+    artboard. The box is the drawing as it stands, before any of this is added to it."""
+    extras = {"scale": clean_scale(body)}
+    for key, cleaned in (("trim", clean_trim(body.get("trim"))),
+                         ("blocks", clean_blocks(body.get("blocks"), geometry=True)),
+                         ("signature", clean_signature(body.get("signature"), geometry=True))):
+        if cleaned:
+            extras[key] = cleaned
+    placed = [extras.get("blocks"), extras.get("signature")]
+    if any(one[axis]["from"] == "artwork" for one in placed if one for axis in ("x", "y")):
+        bounds = drawing_bounds(settings if settings is not None else clean_settings(body))
+        if bounds:
+            extras["art"] = list(bounds[:4])
+    return extras
+
+
+def plot_root(extras=None):
+    """The current drawing as Plot plots and lists it: sized, and with everything Plot adds in place
+    of any the file carries. Returns the root, a note about its size, and how far the page grew."""
     from lxml import etree
     root = etree.parse(str(CURRENT_SVG), etree.XMLParser(huge_tree=True)).getroot()
     note = normalize_size(root)
-    return root, note, add_trim_marks(root, trim)
+    return root, note, add_plot_extras(root, extras)
 
 
 def fill_spacing_of(group, fills):
@@ -1811,7 +1973,7 @@ def clean_hatch(raw):
     return out
 
 
-def svg_input(scale, layers=None, rotation=0, hatch=None, shift_mm=(0.0, 0.0), trim=None):
+def svg_input(scale, layers=None, rotation=0, hatch=None, shift_mm=(0.0, 0.0), extras=None):
     """
     The loaded SVG for the NextDraw software: sized (see normalize_size) and scaled if needed. The
     software plots a document at its width/height, so scaling multiplies those while a viewBox keeps
@@ -1821,12 +1983,14 @@ def svg_input(scale, layers=None, rotation=0, hatch=None, shift_mm=(0.0, 0.0), t
     root = etree.parse(str(CURRENT_SVG), etree.XMLParser(huge_tree=True)).getroot()
     normalize_size(root)
     regenerate_hatches(root, hatch or {}, scale)
-    # The trim marks, before the layers are chosen: they are a layer like any other, and the page grows
-    # for them whichever layer is being plotted - so every pass lands in the same place.
-    add_trim_marks(root, trim)
+    # What Plot adds, before the layers are chosen: the blocks and the signature are layers like any
+    # other, and the page grows for them whichever layer is being plotted - so every pass of a print
+    # lands in the same place.
+    made = dict(extras or {})
+    add_plot_extras(root, made)
     if layers:
         only_layers(root, [layers] if isinstance(layers, str) else layers)
-    registration_first(root)
+    registration_first(root, made.get("block_ids") or ())
     rotate_document(root, rotation)
     if abs(scale - 100) < 1e-9:
         shift_lines(root, shift_mm)
@@ -1877,9 +2041,10 @@ def clean_placement(raw):
     placement["layers"] = clean_layers(raw)
     placement["layer"] = placement["layers"][0] if placement["layers"] else None
     placement["hatch"] = clean_hatch(raw)
-    # The trim marks for this print. They are drawn round the artboard at plot time, so they belong to
-    # the plot like the scale and the turn - and a resumed plot, which keeps the placement, keeps them.
-    placement["trim"] = clean_trim(raw.get("trim"))
+    # What Plot adds to this print - the marks, the blocks, the signature. They are made at plot time,
+    # so they belong to the plot like the scale and the turn, and a resumed plot keeps them with the
+    # placement it saved. The artwork's box is worked out now, from the drawing as it stands.
+    placement["extras"] = plot_extras(raw, clean_settings(raw))
     # The tool in the holder, by name: only recorded with the plot, never used to choose settings.
     placement["tool"] = str(raw.get("tool") or "").strip()[:60] or None
     for key, name in (("x", "start_x"), ("y", "start_y")):
@@ -1965,12 +2130,12 @@ def skip_tiny_paths(nd, mm, tally):
     nd.randomize_optimize = without_tiny
 
 
-def dry_run(settings, render, scale=100.0, source=None, mode="plot", layers=None, rotation=0, hatch=None, skip_tiny=None, trim=None):
+def dry_run(settings, render, scale=100.0, source=None, mode="plot", layers=None, rotation=0, hatch=None, skip_tiny=None, extras=None):
     """Simulate the plot without the machine. Returns stats and (optionally) the path preview SVG."""
     log = []
     tally = {}
     if source is None:
-        source = prepared_svg(settings, scale, layers, rotation, hatch, skip_tiny=skip_tiny, tally=tally, trim=trim)
+        source = prepared_svg(settings, scale, layers, rotation, hatch, skip_tiny=skip_tiny, tally=tally, extras=extras)
     nd = make_nextdraw(log)
     if skip_tiny and mode == "plot":
         skip_tiny_paths(nd, skip_tiny, tally)
@@ -2063,10 +2228,10 @@ def limit_drag(svg_text, settings, skip_tiny=None, tally=None):
     return etree.tostring(root, encoding="unicode")
 
 
-def prepared_svg(settings, scale, layers=None, rotation=0, hatch=None, shift_mm=(0.0, 0.0), skip_tiny=None, tally=None, trim=None):
+def prepared_svg(settings, scale, layers=None, rotation=0, hatch=None, shift_mm=(0.0, 0.0), skip_tiny=None, tally=None, extras=None):
     """The loaded drawing ready to plot: placed and scaled, and drag-limited for a one-way tool. A
     one-way tool's tiny paths are left out here; anything else's as it plots (see skip_tiny_paths)."""
-    svg = svg_input(scale, layers, rotation, hatch, shift_mm, trim)
+    svg = svg_input(scale, layers, rotation, hatch, shift_mm, extras)
     return limit_drag(svg, settings, skip_tiny, tally) if settings.get("drag_only") else svg
 
 
@@ -2356,7 +2521,7 @@ def run_plot(settings, placement, resume=None):
             clear_resume()  # a new plot replaces any stopped one
             source = prepared_svg(settings, placement["scale"], plot_layers(placement), placement.get("rotation", 0),
                                   placement.get("hatch"), lines_shifted_mm(placement), placement.get("skip_tiny"),
-                                  trim=placement.get("trim"))
+                                  extras=placement.get("extras"))
             mode = "plot"
 
         # A new plot's simulation also draws its paths; a resumed plot keeps the ones saved when it began.
@@ -3972,9 +4137,11 @@ def clean_plot(raw):
         layers = raw.get("second_tool_layers")
         if isinstance(layers, list):
             out["second_tool_layers"] = [str(x)[:200] for x in layers if isinstance(x, str)][:500]
-    trim = clean_trim(raw.get("trim"))
-    if trim:
-        out["trim"] = trim
+    for key, cleaned in (("trim", clean_trim(raw.get("trim"))),
+                         ("blocks", clean_blocks(raw.get("blocks"))),
+                         ("signature", clean_signature(raw.get("signature")))):
+        if cleaned:
+            out[key] = cleaned
     paper = raw.get("paper")
     if isinstance(paper, dict):
         cleaned = {}
@@ -4945,11 +5112,12 @@ def estimate():
             return jsonify(superseded=True)
         try:
             body = request.json or {}
-            trim = clean_trim(body.get("trim"))
-            result = dry_run(clean_settings(body), render=True, scale=clean_scale(body), layers=clean_layers(body), rotation=clean_rotation(body), hatch=clean_hatch(body), skip_tiny=clean_skip_tiny(body), trim=trim)
-            root, _, pad_mm = plot_root(trim)
+            settings = clean_settings(body)
+            extras = plot_extras(body, settings)
+            result = dry_run(settings, render=True, scale=clean_scale(body), layers=clean_layers(body), rotation=clean_rotation(body), hatch=clean_hatch(body), skip_tiny=clean_skip_tiny(body), extras=extras)
+            root, _, pad_mm = plot_root(extras)
             result["layers"] = read_layers(root)
-            result["trim_pad_mm"] = pad_mm * clean_scale(body) / 100.0
+            result["page_pad_mm"] = list(pad_mm)
             return jsonify(result)
         except Exception as exc:
             return jsonify(error=f"Couldn't read that SVG: {exc}"), 400
@@ -4963,12 +5131,12 @@ def artwork():
         return jsonify(error="Load an SVG first."), 400
     try:
         body = request.json or {}
-        trim = clean_trim(body.get("trim"))
-        svg = svg_input(clean_scale(body), None, clean_rotation(body), clean_hatch(body), trim=trim)
-        root, size_note, pad_mm = plot_root(trim)
+        extras = plot_extras(body)
+        svg = svg_input(clean_scale(body), None, clean_rotation(body), clean_hatch(body), extras=extras)
+        root, size_note, pad_mm = plot_root(extras)
         trimmed = bool((read_plot(root) or {}).get("original_page"))
         return jsonify(svg=svg, layers=read_layers(root), warnings=[size_note] if size_note else [],
-                       trimmed=trimmed, trim_pad_mm=pad_mm * clean_scale(body) / 100.0)
+                       trimmed=trimmed, page_pad_mm=list(pad_mm))
     except Exception as exc:
         return jsonify(error=f"Couldn't read that SVG: {exc}"), 400
 

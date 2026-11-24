@@ -114,7 +114,7 @@ export interface Estimate {
   layers: Layer[];
   superseded?: boolean; // a newer estimate was asked for before this one ran
   skipped_tiny?: number; // paths left out by Skip tiny paths
-  trim_pad_mm?: number; // how far the page grew for the trim marks, in mm on the paper; 0 without them
+  page_pad_mm?: [number, number]; // how far the page grew before the artboard's corner, in mm on the paper
 }
 
 // A layer as found in the drawing file, in file order.
@@ -173,6 +173,8 @@ export interface Plot {
   skip_tiny?: number; // paths whose longest side is under this (mm on paper) are left out of the plot; absent when off
   paper?: Partial<Pick<Settings, "paper_size" | "paper_w" | "paper_h" | "paper_x" | "paper_y" | "paper_color">>;
   trim?: TrimMarks; // the trim marks this print is plotted with; absent when there are none
+  signature?: SignatureMarks; // where this print's signature goes; absent when it gets none
+  blocks?: ColorBlocks; // where this print's color blocks go; absent when it gets none
 }
 
 /**
@@ -181,6 +183,46 @@ export interface Plot {
  * sheet with the marks that suit it. Here rather than in the drawing's own block because what a print
  * is cut to is a decision about this print, like the paper and the placement.
  */
+/**
+ * Where something Plot adds to the print goes on one axis, as the note has always read it: so far
+ * `mm` inside or outside the named edge of the artwork or the artboard. The distance is measured to
+ * the nearest edges of the two, so 12.7 outside the bottom edge is a half-inch gap, and it is a
+ * distance on paper - positive, with the direction a word rather than a sign.
+ */
+export interface Anchor {
+  mm: number;
+  edge: "left" | "right" | "top" | "bottom";
+  side: "inside" | "outside";
+  from: "artwork" | "artboard";
+}
+
+/** The signature Plot adds: where it goes, and the pen it goes down in. */
+export interface SignatureMarks {
+  x: Anchor;
+  y: Anchor;
+  ink?: Ink;
+}
+
+/** The color blocks Plot adds: where the row goes. Each block is in its own layer's ink. */
+export interface ColorBlocks {
+  x: Anchor;
+  y: Anchor;
+}
+
+/** The signature's own geometry, at its size on paper: made in the page, sent with each request. */
+export interface SignatureStamp {
+  w: number; // inches
+  h: number;
+  d: string[]; // paths, the stamp's top-left at 0,0
+}
+
+/** The blocks' geometry: the row at its size on paper, each block named by the layer it belongs to. */
+export interface BlocksStamp {
+  w: number; // inches
+  h: number;
+  items: { layer: string; d: string }[];
+}
+
 export interface TrimMarks {
   length: number; // mm, each mark's length
   offset: number; // mm, the gap between the artboard's corner and where each mark starts

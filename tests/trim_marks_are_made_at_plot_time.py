@@ -17,6 +17,7 @@ It needs nothing running: no server, no plotter.
 """
 import importlib.util
 import json
+import re
 from pathlib import Path
 
 from lxml import etree
@@ -72,15 +73,19 @@ def made(trim=None, **kwargs):
     # The marks come with the plot request, as the scale and the turn do; the drawing's block is only
     # where Plot keeps them between plots, so the fixture carries them too.
     root = etree.fromstring(fixture(trim=trim, **kwargs).encode())
-    return root, server.add_trim_marks(root, server.clean_trim(trim))
+    pad = server.add_plot_extras(root, {"trim": server.clean_trim(trim)})
+    return root, pad[0]
 
 
 def runs(layer):
-    """Each mark as the four numbers of its line, in the page's units."""
+    """Each mark as the four numbers of its line, where it lands on the page: the marks are drawn in
+    the page as it was and the whole layer is moved in with the drawing, so its move counts."""
+    at = re.match(r"translate\(([-\d.e]+) ([-\d.e]+)\)", layer.get("transform") or "translate(0 0)")
+    dx, dy = float(at.group(1)), float(at.group(2))
     out = []
     for path in layer:
         d = path.get("d").split()
-        out.append((float(d[1]), float(d[2]), float(d[4]), float(d[5])))
+        out.append((float(d[1]) + dx, float(d[2]) + dy, float(d[4]) + dx, float(d[5]) + dy))
     return out
 
 
@@ -122,11 +127,10 @@ check("their layer with them, and the generated ones in its place",
       [g.get("id") for g in server.layer_groups(root)], ["layer-art", server.TRIM_LAYER_ID])
 # Studio reads a drawing made before this as plain lines on a layer still named for the marks, so the
 # layer's own name is the other way to know them - the design block no longer says what they are.
-import re
 text, gone = re.subn(r', "curves": \[[^]]*\]', "", fixture(trim=MARKS, stored=True))
 assert gone == 1, "the fixture should have had a curves entry to take out"
 plain = etree.fromstring(text.encode())
-server.add_trim_marks(plain, server.clean_trim(MARKS))
+server.add_plot_extras(plain, {"trim": server.clean_trim(MARKS)})
 check("a drawing Studio has saved since, with only the layer's name to go by",
       [g.get("id") for g in server.layer_groups(plain)], ["layer-art", server.TRIM_LAYER_ID])
 
@@ -144,9 +148,10 @@ check("the pen the marks go down in is kept", server.clean_trim({"length": 6, "o
       {"length": 6.0, "offset": 3.0, "ink": {"tool": "EnerGel", "pen": "Black", "hex": "#231f20"}})
 check("a color picked by hand too", server.clean_trim({"length": 6, "offset": 3, "ink": "#AABBCC"}),
       {"length": 6.0, "offset": 3.0, "ink": "#aabbcc"})
-near("the page's growth at full size", server.trim_pad_mm(MARKS), 9.525)
-near("and at half, since the page is scaled after the marks go on", server.trim_pad_mm(MARKS, 50.0), 4.7625)
-near("no marks, no growth", server.trim_pad_mm(None), 0.0)
+near("the page's growth at full size", made(trim=MARKS)[1], 9.525)
+near("and at half, since the page is scaled with the marks on it",
+     server.add_plot_extras(etree.fromstring(fixture(trim=MARKS).encode()), {"trim": server.clean_trim(MARKS), "scale": 50})[0], 4.7625)
+near("no marks, no growth", server.add_plot_extras(etree.fromstring(fixture().encode()), {})[0], 0.0)
 root, _ = made(trim={"length": 6.35, "offset": 3.175, "ink": {"tool": "EnerGel", "pen": "Black", "hex": "#231f20"}})
 layer = [g for g in server.layer_groups(root) if g.get("id") == server.TRIM_LAYER_ID][0]
 check("the layer is named for its pen, so Plot says which to load",

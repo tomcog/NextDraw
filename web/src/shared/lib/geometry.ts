@@ -7,25 +7,25 @@ export interface Footprint {
   y: number;
   w: number;
   h: number;
-  // How much of the page is room for the trim marks, which stand outside the artboard: the page the
-  // plotter is given grows by this on every side (server.py, add_trim_marks), so the plot starts that
-  // far before where the artboard goes. 0 for a drawing plotted without marks.
-  pad: number; // inches
+  // How much page there is before the artboard's own corner: room for whatever Plot adds that lands
+  // outside it - the trim marks, the color blocks, the signature (server.py, add_plot_extras). The
+  // plot starts that far before where the artboard goes. 0 for a print with none of them.
+  pad: { x: number; y: number }; // inches
   // The box around the lines, in inches from home; the page when they couldn't be measured. Only the
   // lines have to stay past home and on the paper: the page's empty margin may run off either.
   ink: { x0: number; y0: number; x1: number; y1: number };
 }
 
 // The drawing's footprint on the plotter, in inches from home.
-export function footprint(preview: Preview | null, _settings: Settings, placement: Placement, padMm = 0): Footprint | null {
+export function footprint(preview: Preview | null, _settings: Settings, placement: Placement, padMm = { x: 0, y: 0 }): Footprint | null {
   if (!preview) return null;
   // Drawings plot as drawn (turned only by the rotate buttons, which the server applies to the SVG),
   // so the footprint is never turned here. The server always sends auto_rotate off.
   const rotated = false;
-  // The placement is where the ARTBOARD goes. With trim marks the page starts the marks' reach before
-  // it, since they are drawn outside the artboard.
-  const pad = padMm / 25.4;
-  const x = placement.x / 25.4 - pad, y = placement.y / 25.4 - pad, w = preview.widthIn, h = preview.heightIn;
+  // The placement is where the ARTBOARD goes; the page starts before it by whatever Plot added
+  // outside the artboard.
+  const pad = { x: padMm.x / 25.4, y: padMm.y / 25.4 };
+  const x = placement.x / 25.4 - pad.x, y = placement.y / 25.4 - pad.y, w = preview.widthIn, h = preview.heightIn;
   const f = preview.ink ?? { x0: 0, y0: 0, x1: 1, y1: 1 };
   return { rotated, x, y, w, h, pad, ink: { x0: x + f.x0 * w, y0: y + f.y0 * h, x1: x + f.x1 * w, y1: y + f.y1 * h } };
 }
@@ -51,9 +51,9 @@ export function fitsOnPaper(fp: Footprint | null, s: Settings) {
 // as there is above and left of its lines.
 export function minPlacement(fp: Footprint | null) {
   if (!fp) return { x: 0, y: 0 };
-  // In the placement's own terms, so the marks' room counts: an artboard with marks can go no closer
-  // to home than their reach, less whatever empty margin the page has beyond them.
-  return { x: (fp.pad - (fp.ink.x0 - fp.x)) * 25.4, y: (fp.pad - (fp.ink.y0 - fp.y)) * 25.4 };
+  // In the placement's own terms, so that room counts: an artboard with marks can go no closer to
+  // home than their reach, less whatever empty margin the page has beyond them.
+  return { x: (fp.pad.x - (fp.ink.x0 - fp.x)) * 25.4, y: (fp.pad.y - (fp.ink.y0 - fp.y)) * 25.4 };
 }
 
 
@@ -62,8 +62,8 @@ export function maxPlacement(fp: Footprint | null, model: PlotterModel | undefin
   if (!model || !fp) return { x: Infinity, y: Infinity };
   return {
     // As far as the lines' far edges can go, not the page's: as fitsOnBed judges it.
-    x: Math.max(0, (model.travel_in[0] - (fp.ink.x1 - fp.x) + fp.pad) * 25.4),
-    y: Math.max(0, (model.travel_in[1] - (fp.ink.y1 - fp.y) + fp.pad) * 25.4),
+    x: Math.max(0, (model.travel_in[0] - (fp.ink.x1 - fp.x) + fp.pad.x) * 25.4),
+    y: Math.max(0, (model.travel_in[1] - (fp.ink.y1 - fp.y) + fp.pad.y) * 25.4),
   };
 }
 
