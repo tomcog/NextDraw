@@ -599,7 +599,12 @@ export default function App() {
     ? (align: FitAlign, marginMm: number) => {
       const m = Math.max(0, marginMm) / 25.4;
       const paper = { x: settings.paper_x / 25.4, y: settings.paper_y / 25.4, w: settings.paper_w / 25.4, h: settings.paper_h / 25.4 };
-      const at = (edge: number, room: number, size: number, share: number) => edge + m + Math.max(0, room - 2 * m - size) * share;
+      // Against an edge is against the MARGIN; in the middle ignores it (Tom, 2026-11-23). Centring
+      // inside the margin is the same thing as centring on the paper while the margins match, and
+      // the wrong thing as soon as the piece is bigger than the room they leave - a 12 in artboard
+      // on a 12 in sheet was pushed half an inch off the paper rather than sitting square on it.
+      const at = (edge: number, room: number, size: number, share: number) =>
+        share === 0.5 ? edge + (room - size) / 2 : edge + (share === 0 ? m : room - m - size);
       const x = at(paper.x, paper.w, fp.w, align.x) + fp.pad.x;
       const y = at(paper.y, paper.h, fp.h, align.y) + fp.pad.y;
       setPlacement({ x: Math.round(x * 254) / 10, y: Math.round(y * 254) / 10 });
