@@ -1,5 +1,5 @@
 import { Segment, SegmentedControl, Toolbar } from "@tomcoggia/ui";
-import { Frame, Grid3x3, Image, Layers2, ListOrdered, LocateFixed, Move, Palette, Pen, Save, Shapes, Signature, Slice, SlidersHorizontal, StickyNote, Wrench } from "lucide-react";
+import { Frame, Grid3x3, Image, Layers2, ListOrdered, LocateFixed, Move, Palette, Pen, Save, ScanSquare, Shapes, Signature, Slice, SlidersHorizontal, StickyNote, Wrench } from "lucide-react";
 import bar from "./PreviewToolbar.module.css";
 import { ToolbarIcons } from "./ToolbarIcons";
 
@@ -13,7 +13,7 @@ const PANELS = {
   // every button in the second (Tom, 2026-11-24). Plot keeps `artboard` alone, read-only.
   // Called Layout, the print word for how artwork is arranged inside a page: one idea rather than
   // two names joined by an "and". Artboard and Artwork are still the sections inside it.
-  layout: { label: "Layout", icon: <Frame />, what: "the Layout card: the drawing's own size and margins, and the artwork inside them" },
+  layout: { label: "Layout", icon: <ScanSquare />, what: "the Layout card: the drawing's own size and margins, and the artwork inside them" },
   paper: { label: "Paper", icon: <StickyNote />, what: "the Paper card: what the drawing is plotted on" },
   grid: { label: "Grid", icon: <Grid3x3 />, what: "the Grid card: what shapes snap to" },
   image: { label: "Image", icon: <Image />, what: "the image's card" },
