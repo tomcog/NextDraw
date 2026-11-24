@@ -11,7 +11,9 @@ const PANELS = {
   artwork: { label: "Artwork", icon: <Shapes />, what: "turning the artwork, fitting it inside the margins, and its scale" },
   // Studio's and Image's: one card for the two, since the margins are set in the first and read by
   // every button in the second (Tom, 2026-11-24). Plot keeps `artboard` alone, read-only.
-  artboardArtwork: { label: "Artboard & artwork", icon: <Frame />, what: "the Artboard & artwork card: the drawing's own size and margins, and the artwork inside them" },
+  // Called Layout, the print word for how artwork is arranged inside a page: one idea rather than
+  // two names joined by an "and". Artboard and Artwork are still the sections inside it.
+  layout: { label: "Layout", icon: <Frame />, what: "the Layout card: the drawing's own size and margins, and the artwork inside them" },
   paper: { label: "Paper", icon: <StickyNote />, what: "the Paper card: what the drawing is plotted on" },
   grid: { label: "Grid", icon: <Grid3x3 />, what: "the Grid card: what shapes snap to" },
   image: { label: "Image", icon: <Image />, what: "the image's card" },

@@ -187,6 +187,9 @@ export default function App() {
   // One card for the artboard and the artwork, as in Studio (Tom, 2026-11-24): the margins are set
   // in the first half and read by every button in the second. Open if either of the two it replaces
   // was.
+  // The card is called Layout since 2026-11-24; the names kept here and in its collapsibleKey are
+  // the old ones on purpose, because they're what the browser has already remembered - renaming
+  // them would quietly reopen the card for everyone it was closed for.
   const [artboardCard, setArtboardCard] = useState(() =>
     load<boolean>("photo-artboard-artwork-card")
     ?? ((load<boolean>("photo-artboard-card") ?? true) || (load<boolean>("photo-artwork-card") ?? true)));
@@ -953,7 +956,7 @@ export default function App() {
       {artboardCard && (
         <Card variant="flat" className={styles.controls}>
           <div className={`${styles.cardBody} ${controls.cardSections}`}>
-            <Section title="Artboard &amp; artwork" icon={panelIcon("artboardArtwork")} collapsibleKey="artboard-artwork">
+            <Section title="Layout" icon={panelIcon("layout")} collapsibleKey="artboard-artwork">
               {artboardSection}
               {artworkSection}
             </Section>
@@ -1139,7 +1142,7 @@ export default function App() {
             cards={[
               { key: "file", on: fileCard, toggle: () => setFileCard((on) => !on) },
               { key: "pen", on: penCard, toggle: () => setPenCard((on) => !on) },
-              { key: "artboardArtwork", on: artboardCard, toggle: () => setArtboardCard((on) => !on) },
+              { key: "layout", on: artboardCard, toggle: () => setArtboardCard((on) => !on) },
               { key: "image", on: infoCard, toggle: () => setInfoCard((on) => !on) },
             ]}
           />
