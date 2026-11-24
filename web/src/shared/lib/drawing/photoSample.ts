@@ -2170,3 +2170,72 @@ export function simplified(pts: number[][], tolerance: number): number[][] {
 
 // Every style but hatching, which is what no style means: one list for writing and reading, so
 // none is written that isn't read back, or the other way round.
+
+export function contour(v: Float32Array, gw: number, gh: number, level: number): number[][][] {
+  // A point on the edge between two grid points, where the level falls between them. Keyed by the
+  // edge, so the two cells that share an edge find the same point and the pieces join up.
+  const points = new Map<number, number[]>();
+  const pointOn = (x0: number, y0: number, x1: number, y1: number) => {
+    const key = y1 > y0 ? ((y0 * gw + x0) * 2 + 1) : (y0 * gw + x0) * 2;
+    let p = points.get(key);
+    if (!p) {
+      const a = v[y0 * gw + x0];
+      const b = v[y1 * gw + x1];
+      const t = b !== a ? (level - a) / (b - a) : 0.5;
+      p = [x0 + (x1 - x0) * t, y0 + (y1 - y0) * t, key];
+      points.set(key, p);
+    }
+    return p;
+  };
+  const next = new Map<number, number[]>(); // edge key -> the edge keys it joins
+  const link = (a: number[], b: number[]) => {
+    (next.get(a[2]) ?? next.set(a[2], []).get(a[2])!).push(b[2]);
+    (next.get(b[2]) ?? next.set(b[2], []).get(b[2])!).push(a[2]);
+  };
+  for (let y = 0; y < gh - 1; y++) {
+    for (let x = 0; x < gw - 1; x++) {
+      const tl = v[y * gw + x] > level ? 8 : 0;
+      const tr = v[y * gw + x + 1] > level ? 4 : 0;
+      const br = v[(y + 1) * gw + x + 1] > level ? 2 : 0;
+      const bl = v[(y + 1) * gw + x] > level ? 1 : 0;
+      const c = tl | tr | br | bl;
+      if (c === 0 || c === 15) continue;
+      const top = () => pointOn(x, y, x + 1, y);
+      const bottom = () => pointOn(x, y + 1, x + 1, y + 1);
+      const left = () => pointOn(x, y, x, y + 1);
+      const right = () => pointOn(x + 1, y, x + 1, y + 1);
+      switch (c) {
+        case 1: case 14: link(left(), bottom()); break;
+        case 2: case 13: link(bottom(), right()); break;
+        case 3: case 12: link(left(), right()); break;
+        case 4: case 11: link(top(), right()); break;
+        case 6: case 9: link(top(), bottom()); break;
+        case 7: case 8: link(left(), top()); break;
+        case 5: link(left(), top()); link(bottom(), right()); break;
+        case 10: link(top(), right()); link(left(), bottom()); break;
+      }
+    }
+  }
+  // Walk each chain from an end (an edge joined once), then what's left are closed loops.
+  const used = new Set<number>();
+  const runs: number[][][] = [];
+  const walk = (start: number) => {
+    const run: number[][] = [];
+    let at: number | undefined = start;
+    let from = -1;
+    while (at !== undefined && !used.has(at)) {
+      used.add(at);
+      const p = points.get(at)!;
+      run.push([p[0], p[1]]);
+      const onward: number | undefined = (next.get(at) ?? []).find((k) => k !== from && !used.has(k));
+      from = at;
+      at = onward;
+    }
+    // Back round to the start: close it.
+    if (run.length > 2 && (next.get(from) ?? []).includes(start)) run.push(run[0]);
+    if (run.length > 1) runs.push(run);
+  };
+  for (const [key, joins] of next) if (joins.length === 1 && !used.has(key)) walk(key);
+  for (const key of next.keys()) if (!used.has(key)) walk(key);
+  return runs;
+}
