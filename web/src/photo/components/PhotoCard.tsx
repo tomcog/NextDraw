@@ -355,18 +355,8 @@ export function PhotoCard({ shape, inksChanged, title, shapes, busy, targeted, l
                 <option value={PROFILES_OPTION}>Color profiles…</option>
               </InputSelect>
               {/* A profile decides its own ink amounts, so there is no black share to set: what it
-                has instead is how the image's colors are fitted to its inks. */}
-              {photo.profile ? (
-                <InputSelect
-                  size="md"
-                  label="Intent"
-                  value={String(photo.profileIntent ?? 0)}
-                  title="How the photo's colors are fitted to the inks: Perceptual keeps how they relate, Relative colorimetric keeps the ones the inks can make exact, Saturation keeps them vivid"
-                  onChange={(e) => actions.setProfile(photo.profile!, { ...rendering, intent: Number(e.target.value) })}
-                >
-                  {INTENTS.map((name, i) => <option key={name} value={i}>{name}</option>)}
-                </InputSelect>
-              ) : (
+                has instead is how its colors are fitted to those inks, which is set below. */}
+              {!photo.profile && (
                 /* How much of the colors' shared gray the black takes over, taken out of the rest: at
                   100% a gray or a black is black ink alone; at 0% the darks are the other inks laid
                   over each other, black only where they can't get dark enough. */
@@ -378,6 +368,20 @@ export function PhotoCard({ shape, inksChanged, title, shapes, busy, targeted, l
                 out. Nothing for a profile that doesn't name its colorants. */}
               {photo.profile && chosenProfile?.names?.length && (
                 <p className={styles.empty}>{`${inksSaid(chosenProfile.names, chosenProfile.inks)}: ${chosenProfile.names.join(", ")}`}</p>
+              )}
+              {/* How the image's colors are fitted to the profile's inks, on a line of its own:
+                the intents are named as print names them, and half a card is not room for
+                "Absolute colorimetric" - which this control wraps rather than cuts short. */}
+              {photo.profile && (
+                <InputSelect
+                  size="md"
+                  label="Intent"
+                  value={String(photo.profileIntent ?? 0)}
+                  title="How the photo's colors are fitted to the inks: Perceptual keeps how they relate, Relative colorimetric keeps the ones the inks can make exact, Saturation keeps them vivid"
+                  onChange={(e) => actions.setProfile(photo.profile!, { ...rendering, intent: Number(e.target.value) })}
+                >
+                  {INTENTS.map((name, i) => <option key={name} value={i}>{name}</option>)}
+                </InputSelect>
               )}
               {/* Only where it changes anything: Perceptual and Saturation bring the black down in
                 their own tables, Absolute keeps the paper's, and a profile that doesn't say where
