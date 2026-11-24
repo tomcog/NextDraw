@@ -47,7 +47,7 @@ import { PresetSection } from "./components/controls/PresetSection";
 import { PaperSection } from "../shared/components/controls/PaperSection";
 import { ArtboardSection } from "../shared/components/controls/ArtboardSection";
 import { DEFAULT_TRIM, TrimMarksSection } from "./components/controls/TrimMarksSection";
-import { SignatureSection } from "./components/controls/SignatureSection";
+import { BlocksSection, SignatureSection } from "./components/controls/SignatureSection";
 import { blocksStamp, signatureStamp } from "../shared/lib/drawing/plotStamps";
 import { SIGNATURE_FONT } from "../shared/lib/drawing/signature";
 import type { Page } from "../shared/lib/drawing/shapes";
@@ -456,12 +456,14 @@ export default function App() {
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [trimMarks, blocks, signature, signatureFont, layerViews, activePreset, paletteOfTool]);
-  // The Trim marks card: Plot's alone - the marks are added when the drawing is plotted.
-  const [trimCard, setTrimCard] = useState(() => load<boolean>("plot-trim-card") ?? false);
-  useEffect(() => save("plot-trim-card", trimCard), [trimCard]);
-  // And the Signature & blocks card, the same way.
-  const [signatureCard, setSignatureCard] = useState(() => load<boolean>("plot-signature-card") ?? false);
-  useEffect(() => save("plot-signature-card", signatureCard), [signatureCard]);
+  // The Plotter’s marks card: Plot's alone - the trim marks, the color blocks and the signature are
+  // all added when the drawing is plotted, and none of them is in the file. One card rather than two
+  // (Tom, 2026-11-24): they are put on together, they move with the artwork, and they are the three
+  // things that grow the box you position on the paper. Someone who had either of the old cards open
+  // gets the new one open.
+  const [marksCard, setMarksCard] = useState(() =>
+    load<boolean>("plot-marks-card") ?? (load<boolean>("plot-trim-card") || load<boolean>("plot-signature-card") || false));
+  useEffect(() => save("plot-marks-card", marksCard), [marksCard]);
   // What is set less often - where the drawing sits, how it's plotted, the pen and carriage by hand -
   // a card each, from a toolbar of their own at the foot of the others. Put away until wanted.
   const [positionCard, setPositionCard] = useState(() => load<boolean>(STORAGE.positionCard) ?? false);
@@ -1926,8 +1928,7 @@ export default function App() {
               { key: "paper", on: paperCard, toggle: () => setPaperCard((on) => !on) },
               { key: "pen", on: penCard, toggle: () => setPenCard((on) => !on) },
               { key: "queue", on: queueCard, toggle: () => setQueueCard((on) => !on) },
-              { key: "trim", on: trimCard, toggle: () => setTrimCard((on) => !on) },
-              { key: "signature", on: signatureCard, toggle: () => setSignatureCard((on) => !on) },
+              { key: "marks", on: marksCard, toggle: () => setMarksCard((on) => !on) },
             ]}
           />
           {/* Setup's way in, at the foot of the toolbars, as it was in Studio and Image. */}
@@ -2174,31 +2175,34 @@ export default function App() {
             </div>
           </Card>
           )}
-          {trimCard && (
+          {/* One card for everything Plot adds to the print, under its own heading, with a section
+            for each: the three are separate decisions, and each folds on its own (Tom, 2026-11-24). */}
+          {marksCard && (
           <Card variant="flat" className={styles.controls}>
             <div className={`${styles.cardBody} ${controls.cardSections}`}>
-              <TrimMarksSection
-                marks={trimMarks}
-                units={settings.units}
-                busy={busy}
-                refused={fileName ? undefined : "Open a drawing to plot it with trim marks."}
-                onChange={(marks) => setTrimMarks(marks && { ...DEFAULT_TRIM, ...marks, ink: marks.ink ?? darkestInk() })}
-              />
-            </div>
-          </Card>
-          )}
-          {signatureCard && (
-          <Card variant="flat" className={styles.controls}>
-            <div className={`${styles.cardBody} ${controls.cardSections}`}>
-              <SignatureSection
-                blocks={blocks}
-                signature={signature}
-                units={settings.units}
-                busy={busy}
-                refused={fileName ? undefined : "Open a drawing to sign it or give it color blocks."}
-                onBlocks={setBlocks}
-                onSignature={(next) => setSignature(next && { ...next, ink: next.ink ?? darkestInk() })}
-              />
+              <Section title="Plotter&rsquo;s marks" icon={panelIcon("marks")} collapsibleKey="plot-marks">
+                <TrimMarksSection
+                  marks={trimMarks}
+                  units={settings.units}
+                  busy={busy}
+                  refused={fileName ? undefined : "Open a drawing to plot it with trim marks."}
+                  onChange={(marks) => setTrimMarks(marks && { ...DEFAULT_TRIM, ...marks, ink: marks.ink ?? darkestInk() })}
+                />
+                <BlocksSection
+                  blocks={blocks}
+                  units={settings.units}
+                  busy={busy}
+                  refused={fileName ? undefined : "Open a drawing to give it color blocks."}
+                  onBlocks={setBlocks}
+                />
+                <SignatureSection
+                  signature={signature}
+                  units={settings.units}
+                  busy={busy}
+                  refused={fileName ? undefined : "Open a drawing to sign it."}
+                  onSignature={(next) => setSignature(next && { ...next, ink: next.ink ?? darkestInk() })}
+                />
+              </Section>
             </div>
           </Card>
           )}

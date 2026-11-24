@@ -1,9 +1,9 @@
 import { Segment, SegmentedControl, Toolbar } from "@tomcoggia/ui";
-import { Frame, Grid3x3, Image, Layers2, ListOrdered, Move, Pen, Save, Shapes, Signature, Slice, SlidersHorizontal, StickyNote, Wrench } from "lucide-react";
+import { Frame, Grid3x3, Image, Layers2, ListOrdered, LocateFixed, Move, Palette, Pen, Save, Shapes, Signature, Slice, SlidersHorizontal, StickyNote, Wrench } from "lucide-react";
 import bar from "./PreviewToolbar.module.css";
 import { ToolbarIcons } from "./ToolbarIcons";
 
-/** The rail's cards the toolbar shows and hides, in the order they stack. Artboard and Artwork are Studio's and Image's; Grid is Studio's; Image, and Layers and Adjustments (a toolbar of their own), Image's; Queue, Trim marks, Signature & blocks, and Plot position, Plot options and Utilities (a toolbar of their own), Plot's (Studio's Layers switch is with its tools). */
+/** The rail's cards the toolbar shows and hides, in the order they stack. Artboard and Artwork are Studio's and Image's; Grid is Studio's; Image, and Layers and Adjustments (a toolbar of their own), Image's; Queue, Plotter’s marks, and Plot position, Plot options and Utilities (a toolbar of their own), Plot's (Studio's Layers switch is with its tools). `trim`, `blocks` and `signature` are no longer rail buttons of their own - they head the three sections inside the Plotter’s marks card. */
 const PANELS = {
   file: { label: "File", icon: <Save />, what: "the File card" },
   pen: { label: "Pen", icon: <Pen />, what: "the Pen card: what the drawing is plotted with" },
@@ -19,8 +19,12 @@ const PANELS = {
   options: { label: "Plot options", icon: <SlidersHorizontal />, what: "the Plot options card: how the drawing is plotted" },
   utilities: { label: "Utilities", icon: <Wrench />, what: "the Utilities card: moving the pen and carriage by hand" },
   // Plot's alone, last: these are all drawn when the drawing is plotted, and kept in none of it.
-  trim: { label: "Trim marks", icon: <Slice />, what: "the Trim marks card: where the print is cut, round the artboard" },
-  signature: { label: "Signature & blocks", icon: <Signature />, what: "the Signature & blocks card: the signature and the color blocks Plot adds to the print" },
+  // One card, because they go on together and come off together, and because they are the three
+  // things that grow the box you position on the paper (Tom, 2026-11-24).
+  marks: { label: "Plotter’s marks", icon: <LocateFixed />, what: "the Plotter’s marks card: the trim marks, the color blocks and the signature Plot adds to the print" },
+  trim: { label: "Trim marks", icon: <Slice />, what: "the trim marks, where the print is cut, round the artboard" },
+  blocks: { label: "Color blocks", icon: <Palette />, what: "a block of each ink the print lays down, in the order they go down" },
+  signature: { label: "Signature", icon: <Signature />, what: "the initials and the year the print is made" },
 };
 
 export type Panel = keyof typeof PANELS;

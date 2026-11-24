@@ -6,16 +6,22 @@ import { panelIcon } from "../../../shared/components/PanelToolbar";
 import { DEFAULT_BLOCKS, DEFAULT_SIGNATURE } from "../../../shared/lib/drawing/plotStamps";
 import type { Anchor, ColorBlocks, SignatureMarks, Units } from "../../../shared/lib/types";
 
-interface Props {
-  /** The color blocks this print gets, or none. */
-  blocks: ColorBlocks | null;
-  /** The signature it gets, or none. */
-  signature: SignatureMarks | null;
+interface Shared {
   units: Units;
   busy: boolean;
-  /** Why neither can be set, if they can't: said instead of the controls. */
+  /** Why it can't be set, if it can't: said instead of the controls. */
   refused?: string;
+}
+
+interface BlocksProps extends Shared {
+  /** The color blocks this print gets, or none. */
+  blocks: ColorBlocks | null;
   onBlocks: (blocks: ColorBlocks | null) => void;
+}
+
+interface SignatureProps extends Shared {
+  /** The signature it gets, or none. */
+  signature: SignatureMarks | null;
   onSignature: (signature: SignatureMarks | null) => void;
 }
 
@@ -84,7 +90,7 @@ function Placed({ title, hint, on, anchors, units, busy, onChange }: {
   const from = anchors.x.from;
   return (
     <div className={styles.cardGroup}>
-      <Checkbox size="md" checked={on} label={title} title={hint} disabled={busy} onChange={(e) => onChange(e.target.checked ? anchors : null)} />
+      <Checkbox size="md" checked={on} label="On" aria-label={title} title={hint} disabled={busy} onChange={(e) => onChange(e.target.checked ? anchors : null)} />
       {on && (
         <>
           <AnchorRow label="Across" axis="x" anchor={anchors.x} units={units} busy={busy} onChange={(x) => onChange({ ...anchors, x })} />
@@ -113,16 +119,20 @@ function Placed({ title, hint, on, anchors, units, busy, onChange }: {
 }
 
 /**
- * The signature and the color blocks: what Plot adds to a print as the last step before plotting.
- * Plot's card alone - neither is part of the drawing. They are drawn when it is plotted, so the
- * blocks always say which inks actually went down, in the order they went, and the signature carries
- * the year the print was made. This card holds only where they go; the geometry is made in the page
+ * The color blocks and the signature: two of the three things Plot adds to a print as the last step
+ * before plotting, and a section each inside the Plotter's marks card (Tom, 2026-11-24). They were
+ * one section called "Signature & blocks"; they are separate decisions, placed separately, and each
+ * now folds on its own.
+ *
+ * Plot's alone - neither is part of the drawing. They are drawn when it is plotted, so the blocks
+ * always say which inks actually went down, in the order they went, and the signature carries the
+ * year the print was made. These sections hold only where they go; the geometry is made in the page
  * (plotStamps.ts) and they come out the same size on paper whatever size the artwork prints at.
  */
-export function SignatureSection({ blocks, signature, units, busy, refused, onBlocks, onSignature }: Props) {
+export function BlocksSection({ blocks, units, busy, refused, onBlocks }: BlocksProps) {
   return (
-    <Section title="Signature & blocks" icon={panelIcon("signature")} collapsibleKey="plot-signature">
-      {refused ? <p className={styles.hint}>{refused}</p> : <>
+    <Section title="Color blocks" icon={panelIcon("blocks")} collapsibleKey="plot-blocks">
+      {refused ? <p className={styles.hint}>{refused}</p> : (
         <Placed
           title="Color blocks"
           hint="A block of each ink this print lays down, in the order they go down: a record of what the print is made of"
@@ -132,6 +142,15 @@ export function SignatureSection({ blocks, signature, units, busy, refused, onBl
           busy={busy}
           onChange={(next) => onBlocks(next)}
         />
+      )}
+    </Section>
+  );
+}
+
+export function SignatureSection({ signature, units, busy, refused, onSignature }: SignatureProps) {
+  return (
+    <Section title="Signature" icon={panelIcon("signature")} collapsibleKey="plot-signature">
+      {refused ? <p className={styles.hint}>{refused}</p> : (
         <Placed
           title="Signature"
           hint="The initials and the year the print is made, in their own pen"
@@ -141,7 +160,7 @@ export function SignatureSection({ blocks, signature, units, busy, refused, onBl
           busy={busy}
           onChange={(next) => onSignature(next && { ...(signature ?? {}), ...next })}
         />
-      </>}
+      )}
     </Section>
   );
 }

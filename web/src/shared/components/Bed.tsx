@@ -373,11 +373,13 @@ export function Bed(props: Props) {
       <g className={styles.placed} data-drag="" data-dragging={Boolean(drag)} style={fp ? undefined : { display: "none" }}>
         {fp && <rect className={styles.dragTarget} x={fp.x * UNITS} y={fp.y * UNITS} width={fp.w * UNITS} height={fp.h * UNITS} />}
         <g ref={artRef} transform={artTransform} className={showPenUp ? undefined : "hide-pen-up"} style={plotPaths ? { display: "none" } : undefined} />
-        {/* The drawing's outline: its page - the artboard, plus whatever room the trim marks need -
-            rather than the box its lines happen to make (Tom, 2026-11-23). What matters here is
-            where the piece lands on the sheet, which is its artboard; the artwork inside it may
-            reach the edges or sit well clear of them. The same box you grab to move it. Red when
-            the lines go past the plotter's reach or off the paper, the marks included. */}
+        {/* Everything being plotted, in one box: the artboard, grown to hold the trim marks, the
+            colour blocks and the signature wherever they land (Tom, 2026-11-24). All of it has to
+            fit on the paper, so all of it is what you position - not the artboard alone, and not
+            the box the lines happen to make. The artwork inside may reach the edges or sit well
+            clear of them, and it never moves within the artboard: the box grows around it as those
+            extras are switched on. The same box you grab to move it, and it goes red when any of it
+            passes the plotter's reach or the paper's edge. */}
         {fp && (
           <rect
             className={styles.sheetEdge}
