@@ -294,6 +294,12 @@ export function Bed(props: Props) {
   const drawingBox: Box | null = fp
     ? [fp.ink.x0 * UNITS, fp.ink.y0 * UNITS, fp.ink.x1 * UNITS, fp.ink.y1 * UNITS]
     : null;
+  // And the piece's own size where it lands on the sheet, for the Artboard zoom: the page Plot
+  // places - the artboard with whatever room the trim marks need - which is the box outlined and
+  // dragged below. The canvas draws nothing for it, since that outline is already there.
+  const artboardBox: Box | null = fp
+    ? [fp.x * UNITS, fp.y * UNITS, (fp.x + fp.w) * UNITS, (fp.y + fp.h) * UNITS]
+    : null;
 
   const snap = (mm: number) => {
     const step = s.units === "in" ? 25.4 / 20 : 1; // 0.05 in or 1 mm
@@ -347,6 +353,7 @@ export function Bed(props: Props) {
       // drawing to put on it.
       settings={props.hasFile ? s : { ...s, paper_w: 0, paper_h: 0 }}
       drawingBox={drawingBox}
+      artboardBox={artboardBox}
       viewBoxOverride={drag?.viewBox}
       svgRef={svgRef}
       wrapClassName={styles.bedWrap}
@@ -366,17 +373,19 @@ export function Bed(props: Props) {
       <g className={styles.placed} data-drag="" data-dragging={Boolean(drag)} style={fp ? undefined : { display: "none" }}>
         {fp && <rect className={styles.dragTarget} x={fp.x * UNITS} y={fp.y * UNITS} width={fp.w * UNITS} height={fp.h * UNITS} />}
         <g ref={artRef} transform={artTransform} className={showPenUp ? undefined : "hide-pen-up"} style={plotPaths ? { display: "none" } : undefined} />
-        {/* The drawing's outline: the box its lines make, not its page - which is the artboard, plus
-            whatever room the trim marks need. Round the lines in red when they go past the plotter's
-            reach or off the paper, the marks included. */}
+        {/* The drawing's outline: its page - the artboard, plus whatever room the trim marks need -
+            rather than the box its lines happen to make (Tom, 2026-11-23). What matters here is
+            where the piece lands on the sheet, which is its artboard; the artwork inside it may
+            reach the edges or sit well clear of them. The same box you grab to move it. Red when
+            the lines go past the plotter's reach or off the paper, the marks included. */}
         {fp && (
           <rect
             className={styles.sheetEdge}
             data-over={!(props.fitsOnBed && props.fitsOnPaper)}
-            x={fp.ink.x0 * UNITS}
-            y={fp.ink.y0 * UNITS}
-            width={(fp.ink.x1 - fp.ink.x0) * UNITS}
-            height={(fp.ink.y1 - fp.ink.y0) * UNITS}
+            x={fp.x * UNITS}
+            y={fp.y * UNITS}
+            width={fp.w * UNITS}
+            height={fp.h * UNITS}
           />
         )}
       </g>

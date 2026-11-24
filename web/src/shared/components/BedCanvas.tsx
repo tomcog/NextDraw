@@ -43,6 +43,13 @@ export interface BedCanvasProps {
    * artboard of its own is just the paper, as it was before the two were told apart.
    */
   artboard?: { x?: number; y?: number; w: number; h: number } | null;
+  /**
+   * The artboard's box on the bed, in bed units, for a host that draws its own outline for it: Plot,
+   * where the artboard is the box you take hold of to place the piece, and is drawn with the rest of
+   * the drawing (Bed, 2026-11-23). It only says what the Artboard zoom frames; nothing is drawn from
+   * it, and `artboard` above is left out so the artboard isn't outlined twice.
+   */
+  artboardBox?: Box | null;
   /** Sits on the width dimension line, at its right end. */
   toolbar?: ReactNode;
   /** The same line, at its left end. */
@@ -250,12 +257,14 @@ export function BedCanvas(props: BedCanvasProps) {
   const travelBox: Box = [0, 0, W, H];
   // Where the artboard is drawn: on its own page it sits at the origin, since where it lands on a
   // sheet is Plot's business; on the bed it is placed from the paper's corner.
-  const artBox: Box | null = art
+  const artRect: Box | null = art
     ? onlyArt
       ? [0, 0, art.w * UNITS, art.h * UNITS]
       : [s.paper_x * MM + (art.x ?? 0) * UNITS, s.paper_y * MM + (art.y ?? 0) * UNITS,
          s.paper_x * MM + ((art.x ?? 0) + art.w) * UNITS, s.paper_y * MM + ((art.y ?? 0) + art.h) * UNITS]
     : null;
+  // What the Artboard zoom frames: the box drawn here, or the one a host that draws its own gives.
+  const artBox: Box | null = artRect ?? props.artboardBox ?? null;
   const paperBox: Box | null = hasPaper
     ? [s.paper_x * MM, s.paper_y * MM, (s.paper_x + s.paper_w) * MM, (s.paper_y + s.paper_h) * MM]
     : null;
@@ -281,14 +290,24 @@ export function BedCanvas(props: BedCanvasProps) {
   const base = fit(baseBox);
   // The canvas fills the room it has, whatever the zoom, so it holds its size and place and only what's
   // in it changes (Tom, 2026-10-10: a tall drawing zoomed to had shrunk the canvas and moved it; then,
-  // it should use the height as well as the width). What's framed is as large as the room allows; a
-  // frame narrower than the room grows to the right, a wider one downwards, so the dimension lines on
-  // the left and top stay beside what they measure. Until the room is measured, the plotter view's.
+  // it should use the height as well as the width). What's framed is as large as the room allows, and
+  // the room left over - the canvas being a different shape from what's in it - is halved between the
+  // two sides, so what's framed sits in the middle of the canvas (Tom, 2026-11-23). It used to go
+  // entirely on the right, or entirely below, which left the drawing against the top left corner with
+  // a band of empty canvas down one side. The margins fit leaves are untouched, so the dimension lines
+  // keep their room above and to the left. Until the room is measured, the plotter view's.
   const { vb } = fit(frame);
   const baseAspect = base.vb[2] / base.vb[3];
   const aspect = room.w > 0 && room.h > 0 ? room.w / room.h : baseAspect;
-  if (vb[2] / vb[3] < aspect) vb[2] = vb[3] * aspect;
-  else vb[3] = vb[2] / aspect;
+  if (vb[2] / vb[3] < aspect) {
+    const over = vb[3] * aspect - vb[2];
+    vb[0] -= over / 2;
+    vb[2] += over;
+  } else {
+    const over = vb[2] / aspect - vb[3];
+    vb[1] -= over / 2;
+    vb[3] += over;
+  }
   const viewBox = props.viewBoxOverride ?? vb.join(" ");
 
   // Where the dimension lines sit in the plotter view, carried into this view at the same screen spot.
@@ -421,8 +440,8 @@ export function BedCanvas(props: BedCanvasProps) {
           Drawn after the paper and before the drawing itself, since the drawing is a layer of its
           own above this group. On its own page there is nothing to tell apart - the ground's edge
           is the artboard, and nothing is drawn for it. */}
-        {!onlyArt && artBox && (
-          <rect className={styles.artboard} x={artBox[0]} y={artBox[1]} width={artBox[2] - artBox[0]} height={artBox[3] - artBox[1]} />
+        {!onlyArt && artRect && (
+          <rect className={styles.artboard} x={artRect[0]} y={artRect[1]} width={artRect[2] - artRect[0]} height={artRect[3] - artRect[1]} />
         )}
 
         </g>

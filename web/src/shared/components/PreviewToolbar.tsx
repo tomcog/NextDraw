@@ -149,6 +149,9 @@ export function ZoomControls({ zoom, onZoom, ground = "bed", canPaper = true, ca
       : [
           { key: "plotter", icon: <Grid3x3 />, title: "Zoom out to the plotter's full drawing area", label: "Plotter" },
           { key: "paper", icon: <StickyNote />, title: "Zoom to the paper", label: "Paper", disabled: !canPaper },
+          // The piece's own size where it lands on the sheet - what is being printed, rather than
+          // the sheet it is printed on or the box the lines happen to fill (Tom, 2026-11-23).
+          { key: "artboard", icon: <Frame />, title: "Zoom to the artboard: the piece's own size, where it sits on the paper", label: "Artboard", disabled: !canDrawing },
         ];
   // On the artboard's own page what you zoom to is the artwork, so it wears the Artwork card's own
   // glyph (Tom, 2026-11-23); on the bed it is still a drawing placed on a sheet.
