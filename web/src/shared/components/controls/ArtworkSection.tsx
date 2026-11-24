@@ -19,9 +19,11 @@ import type { Margins } from "../../lib/geometry";
  * margins - so there is no margin of its own here, and no Extra margin: a deeper foot is a bigger
  * number on the Artboard card. Plot keeps these in its Paper card, fitting to the sheet.
  */
-export function ArtworkSection({ artboard, margins, units, collapsibleKey, disabled, onTurn, onFit, onFill, onCut, onScale, onAlign }: {
+export function ArtworkSection({ artboard, size, margins, units, collapsibleKey, disabled, onTurn, onFit, onFill, onCut, onScale, onAlign }: {
   /** The artboard in mm, which the artwork is fitted inside. */
   artboard: { w: number; h: number };
+  /** How big what's drawn actually is, in mm, for the folded heading. Left out when nothing is. */
+  size?: { w: number; h: number };
   /** Its margins in mm: what Fit and Fill leave around the artwork. */
   margins: Margins;
   units: Units;
@@ -57,7 +59,16 @@ export function ArtworkSection({ artboard, margins, units, collapsibleKey, disab
   const roomLeft = artboard.w - margins.left - margins.right > 0 && artboard.h - margins.top - margins.bottom > 0;
   const said = `${fmtLen(margins.top, units, false)} / ${fmtLen(margins.right, units, false)} / ${fmtLen(margins.bottom, units, false)} / ${fmtLen(margins.left, units)} margins`;
   return (
-    <Section title="Artwork" icon={panelIcon("artwork")} collapsibleKey={collapsibleKey}>
+    <Section
+      title="Artwork"
+      icon={panelIcon("artwork")}
+      collapsibleKey={collapsibleKey}
+      actionWhenOpen
+      // Folded, the heading says how big the artwork is, under the artboard saying how big the page
+      // is: the two numbers the card exists to be compared, without opening it (Tom, 2026-11-24).
+      // Nothing drawn, nothing to say.
+      closedAction={size ? <span className={styles.toolInTitle}>{`${fmtLen(size.w, units, false)} × ${fmtLen(size.h, units)}`}</span> : undefined}
+    >
       {/* Turned a quarter on the artboard, which stays as it is; then Fit - as large as the artwork
         goes inside the margins. Artwork of another proportion than the live area fills it only one
         way; the alignment below says where it sits the other way. */}

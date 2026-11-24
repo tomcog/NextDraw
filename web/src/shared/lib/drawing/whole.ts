@@ -48,17 +48,18 @@ export function drawnBox(shapes: Shape[]): Box {
  * one case where cropping takes anything away, so it is what decides whether Crop artwork can be
  * pressed: without it the button was always there and silently did nothing (Tom, 2026-11-24).
  *
- * Read from the geometry rather than the shapes' stored boxes, so a turned shape that pokes out is
- * counted - erring the other way would disable the button when it was wanted. Margins in inches.
+ * Takes the drawn box rather than the shapes, so the caller walks the geometry once and uses it for
+ * this and for the size shown on the folded Artwork heading. drawnBox, not the shapes' stored boxes,
+ * so a turned shape that pokes out is counted - erring the other way would disable the button when
+ * it was wanted. Margins in inches.
  */
-export function drawnOutside(shapes: Shape[], artboard: Page, margins: Margins): boolean {
-  if (!shapes.length) return false;
+export function drawnOutside(box: Box, artboard: Page, margins: Margins): boolean {
+  if (!Number.isFinite(box.x0)) return false; // nothing drawn
   const live = {
     x0: margins.left, y0: margins.top,
     x1: artboard.w - margins.right, y1: artboard.h - margins.bottom,
   };
   if (!(live.x1 > live.x0 && live.y1 > live.y0)) return false; // no live area: nothing to crop to
-  const box = drawnBox(shapes);
   const SLACK = 1e-9; // a line exactly on the edge is inside, not outside
   return box.x0 < live.x0 - SLACK || box.y0 < live.y0 - SLACK
     || box.x1 > live.x1 + SLACK || box.y1 > live.y1 + SLACK;

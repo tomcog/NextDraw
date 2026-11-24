@@ -1786,15 +1786,20 @@ export default function App() {
   />
  );
 
- // Whether Crop artwork has anything to take away. Held against the shapes themselves, so the
- // geometry is walked when the drawing changes and not on every render.
- const artworkOutside = useMemo(() => drawnOutside(shapes, artboard, margins), [shapes, margins, artboard]);
+ // What's drawn, and how big: one walk of the geometry when the drawing changes rather than on
+ // every render, read by the folded Artwork heading and by whether Crop artwork has anything to do.
+ const artworkBox = useMemo(() => drawnBox(shapes), [shapes]);
+ const artworkSize = Number.isFinite(artworkBox.x0)
+  ? { w: artworkBox.x1 - artworkBox.x0, h: artworkBox.y1 - artworkBox.y0 }
+  : null;
+ const artworkOutside = drawnOutside(artworkBox, artboard, margins);
 
  // The Artwork card: the art itself - turned, fitted inside the artboard's margins, scaled. These
  // were the Paper card's "Drawing transform", and came away with it when the paper left this app.
  const artworkSection = (
   <ArtworkSection
    artboard={{ w: artboard.w * 25.4, h: artboard.h * 25.4 }}
+   size={artworkSize ? { w: artworkSize.w * 25.4, h: artworkSize.h * 25.4 } : undefined}
    margins={marginsTimes(margins, 25.4)}
    units={units}
    collapsibleKey="artwork"
