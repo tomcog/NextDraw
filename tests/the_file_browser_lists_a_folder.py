@@ -46,6 +46,17 @@ def main():
     (outside / "elsewhere.svg").write_text(PAGE)
 
     server.places.allowed_folders = lambda: [folder]
+    # /api/open makes a drawing THE drawing, so without this the test replaces whatever the person
+    # at this Mac has open - which is exactly what it did, once (Tom, 2026-11-24). Every path the
+    # open writes is moved into this test's own folder first.
+    jobs = Path(tempfile.mkdtemp())  # beside the browsed folder, not in it: this one gets listed
+    server.places.JOBS = jobs
+    for name, file in (("CURRENT_SVG", "current.svg"), ("CURRENT_MTIME", "current.mtime"),
+                       ("CURRENT_OPENED", "current.opened"), ("CURRENT_HASH", "current.hash"),
+                       ("CURRENT_PATH", "current.path"), ("CURRENT_STATE", "current.json"),
+                       ("RESUME_SVG", "resume.svg"), ("RESUME_META", "resume.json"),
+                       ("PLOT_PATHS", "plot-paths.svg"), ("PRINTED_FILE", "printed-layers.json")):
+        setattr(server.places, name, jobs / file)
     client = server.app.test_client()
 
     listing = client.get("/api/browse").get_json()
