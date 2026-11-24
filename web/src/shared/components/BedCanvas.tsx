@@ -291,11 +291,19 @@ export function BedCanvas(props: BedCanvasProps) {
   // The canvas fills the room it has, whatever the zoom, so it holds its size and place and only what's
   // in it changes (Tom, 2026-10-10: a tall drawing zoomed to had shrunk the canvas and moved it; then,
   // it should use the height as well as the width). What's framed is as large as the room allows, and
-  // the room left over - the canvas being a different shape from what's in it - is halved between the
-  // two sides, so what's framed sits in the middle of the canvas (Tom, 2026-11-23). It used to go
-  // entirely on the right, or entirely below, which left the drawing against the top left corner with
-  // a band of empty canvas down one side. The margins fit leaves are untouched, so the dimension lines
-  // keep their room above and to the left. Until the room is measured, the plotter view's.
+  // the room left over - the canvas being a different shape from what's in it - is dealt with
+  // differently on the two axes (Tom, 2026-11-24):
+  //
+  // ACROSS, it is halved, so what's framed sits in the middle. It used to go entirely on the right,
+  // which left the drawing against the left edge with a band of empty canvas down one side.
+  //
+  // DOWN, it all goes BELOW: the top of what's framed is always the top of the canvas. Halving it too
+  // floated a wide, shallow thing - the plotter bed in a tall window - down the canvas with a gap
+  // above it, and the top edge is the one that means something: it is where home is, and where the
+  // dimension line and the toolbar sit.
+  //
+  // The margins fit leaves are untouched, so the dimension lines keep their room above and to the
+  // left. Until the room is measured, the plotter view's.
   const { vb } = fit(frame);
   const baseAspect = base.vb[2] / base.vb[3];
   const aspect = room.w > 0 && room.h > 0 ? room.w / room.h : baseAspect;
@@ -304,9 +312,7 @@ export function BedCanvas(props: BedCanvasProps) {
     vb[0] -= over / 2;
     vb[2] += over;
   } else {
-    const over = vb[2] / aspect - vb[3];
-    vb[1] -= over / 2;
-    vb[3] += over;
+    vb[3] = vb[2] / aspect;
   }
   const viewBox = props.viewBoxOverride ?? vb.join(" ");
 
