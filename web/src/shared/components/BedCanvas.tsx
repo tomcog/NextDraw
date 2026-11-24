@@ -44,6 +44,17 @@ export interface BedCanvasProps {
    */
   artboard?: { x?: number; y?: number; w: number; h: number } | null;
   /**
+   * Guides over the artboard, drawn only while the work is being made: Studio and Image in Outline,
+   * never in Preview, where nothing should come between the eye and the ink (Tom, 2026-11-24).
+   *
+   * `trim` draws the artboard's own edge in red: that is where the print is cut, the same line Plot
+   * draws inside its plot outline. `artwork` is the box round what the drawing actually covers, in
+   * inches from the artboard's corner, in a different dash. The MARGIN is the band between the two -
+   * it is not a line of its own, because the margin is simply where the artwork stops and the
+   * artboard carries on.
+   */
+  guides?: { trim?: boolean; artwork?: { x0: number; y0: number; x1: number; y1: number } | null } | null;
+  /**
    * The artboard's box on the bed, in bed units, for a host that draws its own outline for it: Plot,
    * where the artboard is the box you take hold of to place the piece, and is drawn with the rest of
    * the drawing (Bed, 2026-11-23). It only says what the Artboard zoom frames; nothing is drawn from
@@ -243,6 +254,7 @@ export function BedCanvas(props: BedCanvasProps) {
     // measurement taken then left the label placed as if the bar weren't there.
   }, [Boolean(model), Boolean(props.toolbarLeft)]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  const guides = props.guides;
   // The artboard, when there is one worth drawing.
   const art = props.artboard && props.artboard.w > 0 && props.artboard.h > 0 ? props.artboard : null;
   // The artboard alone: no plotter needed, and none drawn.
@@ -449,6 +461,19 @@ export function BedCanvas(props: BedCanvasProps) {
         {!onlyArt && artRect && (
           <rect className={styles.artboard} x={artRect[0]} y={artRect[1]} width={artRect[2] - artRect[0]} height={artRect[3] - artRect[1]} />
         )}
+        {/* The guides, over the artboard and under the drawing: the live area the margins leave, and
+          the box round what the artwork covers. Outline only - the host decides, by passing them. */}
+        {guides?.trim && artBox && (
+          <rect className={styles.trimGuide} x={artBox[0]} y={artBox[1]} width={artBox[2] - artBox[0]} height={artBox[3] - artBox[1]} />
+        )}
+        {guides?.artwork && artBox && (() => {
+          const a = guides.artwork;
+          const w = (a.x1 - a.x0) * UNITS;
+          const h = (a.y1 - a.y0) * UNITS;
+          return w > 0 && h > 0 ? (
+            <rect className={styles.artworkGuide} x={artBox[0] + a.x0 * UNITS} y={artBox[1] + a.y0 * UNITS} width={w} height={h} />
+          ) : null;
+        })()}
 
         </g>
 

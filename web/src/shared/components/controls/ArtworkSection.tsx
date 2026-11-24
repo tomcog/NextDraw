@@ -19,7 +19,7 @@ import type { Margins } from "../../lib/geometry";
  * margins - so there is no margin of its own here, and no Extra margin: a deeper foot is a bigger
  * number on the Artboard card. Plot keeps these in its Paper card, fitting to the sheet.
  */
-export function ArtworkSection({ artboard, margins, units, collapsibleKey, disabled, onTurn, onFit, onFill, onScale, onAlign }: {
+export function ArtworkSection({ artboard, margins, units, collapsibleKey, disabled, onTurn, onFit, onFill, onCut, onScale, onAlign }: {
   /** The artboard in mm, which the artwork is fitted inside. */
   artboard: { w: number; h: number };
   /** Its margins in mm: what Fit and Fill leave around the artwork. */
@@ -33,6 +33,13 @@ export function ArtworkSection({ artboard, margins, units, collapsibleKey, disab
   onFit?: (marginsMm: Margins, align: FitAlignArg) => void;
   /** Covering the live area, what's over cropped - the alignment says which part stays. */
   onFill?: (marginsMm: Margins, align: FitAlignArg) => void;
+  /**
+   * Cut the lines that run outside the margins away, and keep what is left. Its own button since
+   * 2026-11-24: Fill used to scale AND cut in one press, so covering the artboard quietly turned a
+   * circle into a path, dropped a hatch fill's parameters, and deleted whatever hung over. Scaling
+   * is a thing you do all day; cutting is a thing you mean.
+   */
+  onCut?: (marginsMm: Margins) => void;
   /** Scale the artwork by this percent of the size it is now: 200 doubles it, 50 halves it. */
   onScale?: (percent: number) => void;
   /**
@@ -69,11 +76,23 @@ export function ArtworkSection({ artboard, margins, units, collapsibleKey, disab
         <Button
           size="sm"
           variant="secondary"
-          title={roomLeft ? `Fill: scale the artwork to cover the artboard inside the ${said}, cropping what's over - the alignment says which part stays` : "The margins leave no artboard to fill"}
+          title={roomLeft ? `Fill: scale the artwork to cover the artboard inside the ${said} - the alignment says which part sits in view. Nothing is cut; what hangs over shows as the green line outside the red one` : "The margins leave no artboard to fill"}
           disabled={disabled || !onFill || !roomLeft}
           onClick={() => onFill?.(margins, align)}
         >
           Fill
+        </Button>
+        {/* Destructive, and the only control here that is: a lasting change to the drawing rather
+          than a move or a scale. Secondary like the others - it is a normal thing to do when you
+          mean it - and the warning is in the words. */}
+        <Button
+          size="sm"
+          variant="secondary"
+          title={`Cut to artboard: delete the lines that run outside the ${said}. What crosses the edge is trimmed there and becomes a path, and a shape's hatch fill loses its spacing. Undo brings it back; a save does not.`}
+          disabled={disabled || !onCut || !roomLeft}
+          onClick={() => onCut?.(margins)}
+        >
+          Cut to artboard
         </Button>
       </div>
       {/* Scale by a percent of the size it is now - 200 doubles the artwork, 50 halves it, whatever

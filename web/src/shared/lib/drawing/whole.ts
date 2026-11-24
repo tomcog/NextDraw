@@ -156,6 +156,29 @@ export function reshapeDrawing(shapes: Shape[], k: number, about: Point, by: Poi
   });
 }
 
+/**
+ * Room round the artwork: the artboard that holds this box with these margins outside it, and the
+ * move that puts the box in its place (Tom, 2026-11-24). Everything in inches.
+ *
+ * This is the other way round from Fit. Fit keeps the artboard and makes the ARTWORK smaller until
+ * it sits inside the margins; this keeps the artwork at the size it is and makes the ARTBOARD bigger
+ * - which is what a margin usually means when a print is being planned: breathing room added round
+ * the piece, and somewhere for the trim marks, the colour blocks and the signature to live inside
+ * the cut. Asking for a margin by shrinking the work was the counter-intuitive half of it.
+ *
+ * One-shot. The artboard is set once, here, and the two are independent again afterwards: the
+ * artboard is the print's real size, and it must not quietly change because a shape was nudged. The
+ * margins the card then shows are the gap as it stands, which is honest when the gap is uneven.
+ */
+export function roomRound(box: Box, margins: Margins): { artboard: Page; by: Point } {
+  const w = box.x1 - box.x0;
+  const h = box.y1 - box.y0;
+  return {
+    artboard: { w: w + margins.left + margins.right, h: h + margins.top + margins.bottom },
+    by: { x: margins.left - box.x0, y: margins.top - box.y0 },
+  };
+}
+
 /** The middle of what the drawing puts on paper: what it is scaled about. */
 export function drawnMiddle(shapes: Shape[]): Point {
   const d = drawnBox(shapes);

@@ -6,6 +6,7 @@ import { DrawingToolSection } from "../shared/components/controls/DrawingToolSec
 import { FileSection } from "../shared/components/controls/FileSection";
 import { useUnits } from "../shared/lib/useUnits";
 import { ArtboardSection } from "../shared/components/controls/ArtboardSection";
+import { drawnBox, reshapeDrawing, roomRound } from "../shared/lib/drawing/whole";
 import { ArtworkSection } from "../shared/components/controls/ArtworkSection";
 import { Section } from "../shared/components/controls/Section";
 import { Hints } from "../shared/components/controls/Hints";
@@ -591,6 +592,19 @@ export default function App() {
       onMargins={(next) => {
         record();
         setMargins(marginsTimes(next, 1 / 25.4));
+      }}
+      // Room round the artwork: the artboard grows so the margins sit outside the picture, which
+      // keeps the size it is - the other way round from Fit (Tom, 2026-11-24). The box is what the
+      // drawing actually puts on paper, so a baked effect's lines count as artwork too.
+      onRoom={(marginsMm) => {
+        const box = drawnBox(shapes);
+        if (!(box.x1 > box.x0 && box.y1 > box.y0)) return;
+        const inches = marginsTimes(marginsMm, 1 / 25.4);
+        const { artboard: next, by } = roomRound(box, inches);
+        record();
+        setArtboard(next);
+        setMargins(inches);
+        if (Math.abs(by.x) > 1e-9 || Math.abs(by.y) > 1e-9) setShapes(reshapeDrawing(shapes, 1, { x: 0, y: 0 }, by));
       }}
     />
   );

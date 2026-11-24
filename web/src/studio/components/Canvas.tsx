@@ -20,6 +20,7 @@ import { InkGroup, InkLayer } from "../../shared/components/Ink";
 import { isVarnishLayer, VARNISH_LINE_MM } from "../../shared/lib/ink";
 import type { PreviewToolbarProps, View } from "../../shared/components/PreviewToolbar";
 import { DEFAULT_SETTINGS, UNITS } from "../../shared/lib/constants";
+import { drawnBox } from "../../shared/lib/drawing/whole";
 import type { PlotterModel } from "../../shared/lib/types";
 import { strokeAt, strokesInBox, strokesInLasso, strokesOf } from "../lib/strokePick";
 import styles from "./Canvas.module.css";
@@ -763,6 +764,9 @@ export function Canvas({ bar, artboard, paperColor, shapes, fills, layers, activ
       settings={settings}
       drawingBox={drawingBox}
       artboard={artboard}
+      // The guides go in Outline and nowhere else: in Preview the page shows what the pen will draw
+      // and nothing else, which is what it is for (Tom, 2026-11-24).
+      guides={view === "outline" ? { trim: true, artwork: drawnBox(shapes) } : null}
       // Studio draws the artboard alone: what the plotter can reach, and what sheet it ends up on,
       // are Plot's business and only matter at plot time.
       ground="artboard"

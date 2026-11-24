@@ -153,3 +153,30 @@
   vector-effect: non-scaling-stroke;
   pointer-events: none;
 }
+
+/* The guides, Outline only (BedCanvas `guides`): where the artwork is MEANT to stop, and where it
+   does. Two dashes rather than two colours, so they read apart on any ground and neither competes
+   with the artboard's own line. Cleared in Preview, where nothing comes between the eye and the
+   ink. On screen only, never plotted. */
+.trimGuide,
+.artworkGuide {
+  fill: none;
+  stroke-width: 1;
+  vector-effect: non-scaling-stroke;
+  pointer-events: none;
+}
+/* The trim line: the artboard's edge, where the print is cut - the same red dash Plot draws inside
+   its plot outline, so the two apps say the same thing (Tom, 2026-11-24). The margin is the band
+   between this and the artwork, which is why there is no separate line for it. */
+.trimGuide {
+  stroke: var(--ui-action);
+  stroke-dasharray: 4 3;
+}
+/* What the artwork actually covers: the same dash as the trim line, in green (Tom, 2026-11-24).
+   Same dash because they are the same kind of thing - both say where an edge is - and the colour is
+   what tells them apart: red is where the paper is cut, green is where the ink reaches, and the
+   margin is the space between them. The library has no green token, so the colour is set here. */
+.artworkGuide {
+  stroke: var(--nd-artwork-edge, #00c853);
+  stroke-dasharray: 4 3;
+}

@@ -273,7 +273,9 @@ export function ConvertStage({ photo, parts, box, artboard, paperColor, model, i
 
   const pane = (body: ReactNode | ((mark: number) => ReactNode), first: boolean) => (
     <figure className={styles.pane}>
-      <NextDrawCanvas bar={first ? bar : undefined} zoom={zoom} loupe={loupe} model={model} settings={settings} drawingBox={drawingBox} artboard={artboard} ground="artboard">
+      <NextDrawCanvas bar={first ? bar : undefined} zoom={zoom} loupe={loupe} model={model} settings={settings} drawingBox={drawingBox} artboard={artboard} ground="artboard"
+        // Outline only: in Preview the page shows the ink and nothing else (Tom, 2026-11-24).
+        guides={view === "outline" ? { trim: true, artwork: box } : null}>
         {/* Everything here is in the page's inches; the bed counts in UNITS per inch. */}
         {({ mark }) => <g transform={`scale(${UNITS})`}>{typeof body === "function" ? body(mark) : body}</g>}
       </NextDrawCanvas>

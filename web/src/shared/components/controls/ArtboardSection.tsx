@@ -46,7 +46,7 @@ const MARGIN_EDGES = [
   { edge: "right", label: "Right" },
 ] as const;
 
-export function ArtboardSection({ w, h, margins, units, color, collapsibleKey, disabled, onSize, onMargins, onColor }: {
+export function ArtboardSection({ w, h, margins, units, color, collapsibleKey, disabled, onSize, onMargins, onColor, onRoom }: {
   /** The artboard in mm, as it lies. */
   w: number;
   h: number;
@@ -70,6 +70,14 @@ export function ArtboardSection({ w, h, margins, units, color, collapsibleKey, d
   onSize?: (w: number, h: number) => void;
   onMargins?: (margins: Margins) => void;
   onColor?: (color: string) => void;
+  /**
+   * Make these margins real: the ARTBOARD grows so they sit round the artwork, which keeps the size
+   * it is (Tom, 2026-11-24). The other way round from Fit, which shrinks the artwork to sit inside
+   * them - and the way a margin is usually meant when a print is planned, since the marks and the
+   * signature have to land inside the cut. One-shot: afterwards the two are independent again, and
+   * the numbers above are the gap as it stands. Left out where the app doesn't offer it.
+   */
+  onRoom?: (margins: Margins) => void;
 }) {
   // Locked, the four margins are one number: setting any sets them all, and the lock evens them up
   // the moment it goes on (to the top's, the first of the four). Unlocked they stay as they are and
@@ -174,6 +182,17 @@ export function ArtboardSection({ w, h, margins, units, color, collapsibleKey, d
           />
         </span>
       </div>
+      {onRoom && (
+        <Button
+          size="sm"
+          variant="secondary"
+          disabled={noMargins}
+          title="Grow the artboard so these margins sit round the artwork. The artwork keeps the size it is; the artboard gets bigger, and the artwork moves onto the margin."
+          onClick={() => onRoom(margins)}
+        >
+          Add round the artwork
+        </Button>
+      )}
       </div>
       {/* The surface the artwork is made on: the colours out in the open, the one chosen ringed, and
         the palette at the end for any other (Figma 165:1052, 2026-11-23). It was a dot in the

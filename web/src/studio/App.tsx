@@ -61,7 +61,7 @@ import { shapeIcon } from "./components/panels/ToolPicker";
 import { addPointOnLongest, boxAround, boxOf, clampToPage, groupLabel, groupsOf, moveBy, newGroupId, newLayerId, newShapeId, pointsBox, resizeTo, scaleInto, shapeName, turnAround, withWholeGroups, type Layer, type Page, type Shape } from "../shared/lib/drawing/shapes";
 import { areaPicker, silhouetteOf } from "../shared/lib/drawing/silhouette";
 import { buildSvg, svgForMarks } from "../shared/lib/drawing/svg";
-import { alignOnPage, drawnMiddle, fitToPage, placeOnPaper, reshapeDrawing, runsOffPage } from "../shared/lib/drawing/whole";
+import { alignOnPage, drawnBox, drawnMiddle, fitToPage, placeOnPaper, reshapeDrawing, roomRound, runsOffPage } from "../shared/lib/drawing/whole";
 import { cropDrawing } from "../shared/lib/drawing/crop";
 import { isKnockoutLayer, withKnockout } from "../shared/lib/drawing/knockout";
 import { turnDrawingOnPaper } from "../shared/lib/drawing/turnPaper";
@@ -1069,6 +1069,25 @@ export default function App() {
  };
 
 
+ /**
+  * Room round the artwork: the artboard grown so the margins sit outside the drawing, which keeps
+  * the size it is (Tom, 2026-11-24). Fit does the opposite - it shrinks the artwork until it fits
+  * inside the margins - and that was the counter-intuitive half of asking for breathing room.
+  *
+  * One step for undo: the artboard, the margins and the move are one change, not three.
+  */
+ const roomRoundDrawing = (marginsMm: Margins) => {
+  const box = drawnBox(shapes);
+  if (!(box.x1 > box.x0 && box.y1 > box.y0)) return; // nothing drawn, or a single point
+  const inches = marginsTimes(marginsMm, 1 / 25.4);
+  const { artboard: next, by } = roomRound(box, inches);
+  record();
+  setArtboard(next);
+  setMargins(inches);
+  if (Math.abs(by.x) > 1e-9 || Math.abs(by.y) > 1e-9) setShapes(reshapeDrawing(shapes, 1, { x: 0, y: 0 }, by));
+  setMessage({ text: "", ok: true });
+ };
+
  /** Scale the artwork as large as the artboard allows inside its margins (mm, a side each), placed as `align` says. */
  const fitDrawing = (marginsMm: Margins, align: FitAlign) => {
   const fit = fitToPage(shapes, artboard, marginsTimes(marginsMm, 1 / 25.4), align);
@@ -1082,11 +1101,39 @@ export default function App() {
   reshape(1, { x: 0, y: 0 }, by);
  };
 
- /** Scale the artwork to cover the artboard inside the margins, placed as `align` says, and cut off the lines past them. */
+ /**
+  * Scale the artwork to cover the artboard inside the margins, placed as `align` says. It no longer
+  * cuts (Tom, 2026-11-24): Fill scaled AND cropped in one press, so covering the artboard quietly
+  * turned shapes into paths, dropped the hatch fills' parameters, and deleted whatever hung over.
+  * What hangs over is now plain to see - the green artwork line outside the red trim line - and
+  * cutting it is Cut to artboard, below, which is a thing you do on purpose.
+  */
  const fillDrawing = (marginsMm: Margins, align: FitAlign) => {
   const place = placeOnPaper(shapes, { x: 0, y: 0, w: artboard.w, h: artboard.h }, marginsTimes(marginsMm, 1 / 25.4), align, "fill");
   if (!place) return;
-  const cut = cropDrawing(reshapeDrawing(shapes, place.k, place.about, place.by), fills, place.box, fonts);
+  reshape(place.k, place.about, place.by);
+ };
+
+ /**
+  * Cut to artboard: the lines outside the margins deleted, what is left kept. The destructive half
+  * of what Fill used to be, on a button of its own.
+  *
+  * A shape that crosses the edge comes back as a path - the cut is exact, curves split on the curve
+  * (crop.ts) - and its hatch fill's lines come back as lines, without the fill that made them. A
+  * shape wholly outside is gone. Undo has it; a save does not.
+  */
+ const cutToArtboard = (marginsMm: Margins) => {
+  const inches = marginsTimes(marginsMm, 1 / 25.4);
+  const box = {
+    x0: inches.left,
+    y0: inches.top,
+    x1: artboard.w - inches.right,
+    y1: artboard.h - inches.bottom,
+  };
+  if (!(box.x1 > box.x0 && box.y1 > box.y0)) return;
+  const cut = cropDrawing(shapes, fills, box, fonts);
+  if (cut.shapes.length === shapes.length && cut.fills.length === fills.length
+    && cut.shapes.every((s, i) => s === shapes[i])) return; // nothing was outside
   record();
   setShapes(cut.shapes);
   setFills(cut.fills);
@@ -1725,6 +1772,7 @@ export default function App() {
     record();
     setMargins(marginsTimes(next, 1 / 25.4));
    }}
+   onRoom={roomRoundDrawing}
   />
  );
 
@@ -1739,6 +1787,7 @@ export default function App() {
    onTurn={(dir) => void turnAll(dir)}
    onFit={shapes.length ? fitDrawing : undefined}
    onFill={shapes.length ? fillDrawing : undefined}
+   onCut={shapes.length ? cutToArtboard : undefined}
    onScale={shapes.length ? scaleDrawing : undefined}
    onAlign={shapes.length ? alignDrawing : undefined}
   />
