@@ -343,13 +343,14 @@
 
 /* A custom paper's width and height, side by side, sharing the card's width. Each may shrink below
    a number box's natural width (about 134px), which on its own pushed the pair out of the card. */
-.paperCustom {
+/* A pair of fields side by side: a custom size's width and height, or the artwork's. */
+.twoFields {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   gap: 0.5rem;
 }
 
-.paperCustom > * { min-width: 0; }
+.twoFields > * { min-width: 0; }
 
 /* The Paper card's drawing transform: the turn buttons, a narrow margin and Fit, on one line. The
    buttons sit level with the field's box, its label hanging below it. */

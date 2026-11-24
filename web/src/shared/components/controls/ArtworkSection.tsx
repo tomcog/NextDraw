@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Button, ButtonRound } from "@tomcoggia/ui";
 import { RotateCcwSquare, RotateCwSquare } from "lucide-react";
 import styles from "./controls.module.css";
+import { LengthField } from "./LengthField";
 import { NumberField } from "./NumberField";
 import { Section } from "./Section";
 import { AlignPicker, useFitAlign } from "./FitControls";
@@ -110,6 +111,31 @@ export function ArtworkSection({ artboard, size, margins, units, collapsibleKey,
           Crop artwork
         </Button>
       </div>
+      {/* How big the artwork measures now, and typing over either number resizes the whole drawing
+        to match (Tom, 2026-11-24). Always proportional - the other number follows - since a drawing
+        stretched on one axis isn't the drawing any more; and about its middle, as Scale by is, so
+        it grows where it stands. A drawing with no width at all - a single upright line - can only
+        be sized by its height, and the other field is off. */}
+      {size && (
+        <div className={styles.twoFields}>
+          <LengthField
+            label="Width"
+            mm={size.w}
+            units={units}
+            min={1}
+            disabled={disabled || !onScale || !(size.w > 0)}
+            onChange={(mm) => onScale?.((mm / size.w) * 100)}
+          />
+          <LengthField
+            label="Height"
+            mm={size.h}
+            units={units}
+            min={1}
+            disabled={disabled || !onScale || !(size.h > 0)}
+            onChange={(mm) => onScale?.((mm / size.h) * 100)}
+          />
+        </div>
+      )}
       {/* Scale by a percent of the size it is now - 200 doubles the artwork, 50 halves it, whatever
         it measured before - and it happens when Apply is pressed, not as the number is typed. Then
         where Fit and Fill put the artwork: across, then down. */}

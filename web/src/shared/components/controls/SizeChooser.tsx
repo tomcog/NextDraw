@@ -94,7 +94,7 @@ export function SizeChooser({ w, h, sizeId, units, what, canTurn = true, disable
       </div>
 
       {custom && (
-        <div className={styles.paperCustom}>
+        <div className={styles.twoFields}>
           <LengthField label="Width" mm={w} units={units} min={1} disabled={disabled} onChange={(mm) => onDimensions(mm, h)} />
           <LengthField label="Height" mm={h} units={units} min={1} disabled={disabled} onChange={(mm) => onDimensions(w, mm)} />
         </div>
