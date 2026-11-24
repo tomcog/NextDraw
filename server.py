@@ -61,9 +61,13 @@ from importers import (SAME_PAGE_IN, CMYK_CHANNELS, COMBINED_ATTR, FLAT_IMAGE_ED
 # What a request is allowed to say - the numbers and flags read out of it - is in cleaning.py.
 from cleaning import (BOOL_SETTINGS, FLOAT_SETTINGS, NUMERIC_SETTINGS, PRESET_NUMERIC, clean_hatch, clean_layers, clean_plot, clean_preset_settings, clean_rotation, clean_scale, clean_skip_tiny, clean_values)
 
-# Where everything lives on this Mac - the working folder, the open drawing, the queue, the
+# Where everything lives on this Mac - the working folder, the open drawing, the state.queue, the
 # presets, the folders drawings may be opened from - is in places.py.
 from places import (BUILT_IN_FOLDERS, BUNDLED_PRESETS, CURRENT_HASH, CURRENT_MTIME, CURRENT_OPENED, CURRENT_PATH, CURRENT_STATE, CURRENT_SVG, DRAWINGS_FOLDER, FOLDERS_FILE, HOST, ICLOUD_DRAWINGS, ICLOUD_DRIVE, ICLOUD_FOLDERS, JOBS, LOCAL_QUEUE_FILE, OLD_JOBS, PLOT_HISTORY, PLOT_PATHS, PORT, PRESETS_FILE, PRINTED_FILE, QUEUE_FILE, RESUME_META, RESUME_SVG, ROOT, allowed_folders, folder_names, move_in_old_jobs, saved_folders, write_saved_folders)
+
+# The live state every module shares - what was stopped, what the pages were told, the queue as last
+# read. Fields rather than globals, because a rebound global does not survive being split up.
+from state import state
 
 
 
@@ -126,10 +130,6 @@ def write_printed():
 
 printed_layers = read_printed()
 
-# Whether the last plot ended by being stopped. A stop leaves the motors on and the step count
-# true, so going home from there is a straight walk back - not the homing sweep, which exists for a
-# position that can't be trusted (see find_home_first). Cleared by any plot that isn't stopped.
-last_plot_stopped = False
 
 
 # The settings every open Plot page shows - this Mac's screen and any other device's - so whichever
@@ -147,11 +147,8 @@ def read_plot_settings():
     return {"settings": saved.get("settings"), "preset": saved.get("preset"), "version": saved.get("version")}
 
 
-shared_settings = read_plot_settings()
+state.shared_settings = read_plot_settings()
 
-# Changes each time a page saves its choices for the drawing (placement, scale, layers...), so the
-# other open pages know to take them up. In memory: a restart has every page load the drawing afresh.
-drawing_saved = None
 
 
 def forget_printed():
@@ -174,11 +171,11 @@ def mark_printed(layer_ids):
         done = set(printed_layers)
     try:
         queue_mark_done_if_printed(root, done)
-    except Exception:  # noqa: BLE001 - nor a queue mark
+    except Exception:  # noqa: BLE001 - nor a state.queue mark
         pass
 
 
-# The queue: drawings waiting their turn on the plotter, in the order they're to be plotted. One queue
+# The state.queue: drawings waiting their turn on the plotter, in the order they're to be plotted. One state.queue
 # for every Mac and plotter: kept in iCloud Drive beside the presets, so a drawing queued on one Mac is
 # there on the other, and one plotted to the end on either is marked done on both. A Mac without
 # iCloud Drive keeps its own beside the jobs. Only the list - each drawing's own choices stay in the
@@ -214,7 +211,7 @@ def queue_file_stamp():
 
 
 def read_queue_file(path):
-    """The drawings a queue file lists, with this Mac's paths, and its version. None if it can't be read
+    """The drawings a state.queue file lists, with this Mac's paths, and its version. None if it can't be read
     (not there, or iCloud hasn't brought it down yet)."""
     try:
         saved = json.loads(path.read_text())
@@ -229,7 +226,7 @@ def read_queue_file(path):
 
 
 def first_queue():
-    """The queue at start: the shared one, or - the first time it's kept in iCloud Drive - this Mac's own
+    """The state.queue at start: the shared one, or - the first time it's kept in iCloud Drive - this Mac's own
     from before, which then becomes the shared one."""
     shared = read_queue_file(QUEUE_FILE)
     if shared is not None or QUEUE_FILE == LOCAL_QUEUE_FILE:
@@ -240,8 +237,6 @@ def first_queue():
     return {"items": [], "version": None}
 
 
-queue = None  # read on first use, by sync_queue: what it's built with comes further down
-queue_stamp = None  # the queue file as last read or written here, to notice when the other Mac changes it
 
 
 def queue_duplicates():
@@ -253,20 +248,19 @@ def queue_duplicates():
 
 
 def sync_queue():
-    """Catch up with the queue file, called holding queue_lock. Re-reads it when the other Mac has
+    """Catch up with the state.queue file, called holding queue_lock. Re-reads it when the other Mac has
     changed it, and folds in any copies iCloud made of it: a drawing either one lists is kept (in the
     file's order, the copy's extras after), and done if either says so. Better a drawing back in the
-    queue than one lost."""
-    global queue, queue_stamp
-    if queue is None:
-        queue = first_queue()
+    state.queue than one lost."""
+    if state.queue is None:
+        state.queue = first_queue()
     dupes = queue_duplicates()
     stamp = queue_file_stamp()
-    if stamp == queue_stamp and not dupes and stamp is not None:
+    if stamp == state.queue_stamp and not dupes and stamp is not None:
         return
     shared = read_queue_file(QUEUE_FILE) if stamp is not None else None
     if shared is None:
-        shared = queue  # not readable just now: keep what's held, and write it back if there's no file
+        shared = state.queue  # not readable just now: keep what's held, and write it back if there's no file
     items = [dict(i) for i in shared["items"]]
     for dupe in dupes:
         other = read_queue_file(dupe)
@@ -281,10 +275,10 @@ def sync_queue():
                 items.append(dict(i))
                 by_path[i["path"]] = items[-1]
     if dupes or (stamp is None and items):
-        write_queue(items)  # the merge, or a queue the file doesn't have yet
+        write_queue(items)  # the merge, or a state.queue the file doesn't have yet
     else:
-        queue = {"items": items, "version": shared.get("version")}
-        queue_stamp = stamp
+        state.queue = {"items": items, "version": shared.get("version")}
+        state.queue_stamp = stamp
     for dupe in dupes:
         try:
             dupe.unlink()  # folded in above
@@ -294,17 +288,16 @@ def sync_queue():
 
 def write_queue(items):
     """Called holding queue_lock."""
-    global queue, queue_stamp
-    queue = {"items": items, "version": f"{time.time_ns():x}"}
+    state.queue = {"items": items, "version": f"{time.time_ns():x}"}
     try:
         QUEUE_FILE.parent.mkdir(parents=True, exist_ok=True)
         kept = [{**i, "path": queue_path_to_file(i["path"])} for i in items]
         tmp = QUEUE_FILE.with_name(".queue.json.tmp")
-        tmp.write_text(json.dumps({"items": kept, "version": queue["version"]}))
+        tmp.write_text(json.dumps({"items": kept, "version": state.queue["version"]}))
         os.replace(tmp, QUEUE_FILE)
-        queue_stamp = queue_file_stamp()
+        state.queue_stamp = queue_file_stamp()
     except OSError:
-        pass  # the queue still holds until the app restarts
+        pass  # the state.queue still holds until the app restarts
 
 
 def queue_entry(path, item_id, done):
@@ -313,7 +306,7 @@ def queue_entry(path, item_id, done):
 
 
 def queue_mark_done_if_printed(root, printed):
-    """The open drawing, if it's in the queue, is done once every layer Plot would draw is printed:
+    """The open drawing, if it's in the state.queue, is done once every layer Plot would draw is printed:
     not skipped (%), not hidden in the file, not held back in Plot's own block."""
     if not CURRENT_PATH.exists():
         return
@@ -325,7 +318,7 @@ def queue_mark_done_if_printed(root, printed):
         return
     with queue_lock:
         sync_queue()
-        items = queue["items"]
+        items = state.queue["items"]
         if any(queue_is_open(i, current) and not i.get("done") for i in items):
             write_queue([{**i, "done": True} if queue_is_open(i, current) else i for i in items])
 
@@ -1372,9 +1365,7 @@ def run_plot(settings, placement, resume=None):
         threading.Thread(target=relay_stop, args=(nd,), daemon=True).start()
         output = nd.plot_run(output=True)
         code = abs(nd.errors.code or 0)
-
-        global last_plot_stopped
-        last_plot_stopped = code in (102, 103)
+        state.last_plot_stopped = code in (102, 103)
         resumable = 0
         if code in (102, 103):
             resumable = save_resume(output, settings, placement, job.total_mm, job.speed_pct)
@@ -1569,7 +1560,7 @@ def run_manual(command, settings, distance_mm, axis):
             # this app homed before the plot, so the count is good, and a sweep across the whole
             # width is a long, slow way to get back to where a walk would go.
             # A walk still only homes when the position isn't trusted yet.
-            straight_back = command == "home" and last_plot_stopped and carriage["verified"]
+            straight_back = command == "home" and state.last_plot_stopped and carriage["verified"]
             if not code:
                 code = find_home_first(settings, log, force=(command == "home" and not straight_back))
             if not code and straight_back:
@@ -1889,15 +1880,15 @@ def status():
     name_file = JOBS / "current.name"
     snap["file"] = name_file.read_text() if CURRENT_SVG.exists() and name_file.exists() else None
     snap["file_opened"] = opened_token() if snap["file"] else None
-    state = current_state() if snap["file"] else {}
-    snap["file_edited"] = state.get("edited")
-    snap["file_dirty"] = bool(state.get("dirty"))
-    snap["drawing_saved"] = drawing_saved if snap["file"] else None
+    drawing_state = current_state() if snap["file"] else {}
+    snap["file_edited"] = drawing_state.get("edited")
+    snap["file_dirty"] = bool(drawing_state.get("dirty"))
+    snap["drawing_saved"] = state.drawing_saved if snap["file"] else None
     with plot_settings_lock:
-        snap["settings_version"] = shared_settings["version"]
+        snap["settings_version"] = state.shared_settings["version"]
     with queue_lock:
         sync_queue()
-        snap["queue_version"] = queue["version"]
+        snap["queue_version"] = state.queue["version"]
     with printed_lock:
         snap["printed_layers"] = sorted(printed_layers)
     snap["file_path"] = None
@@ -2441,13 +2432,12 @@ def save_drawing():
     problem = commit_drawing(tree, disk_path)
     if problem:
         return problem
-    global drawing_saved
-    drawing_saved = f"{time.time_ns():x}"
+    state.drawing_saved = f"{time.time_ns():x}"
     # A new paper is a change to the drawing in Studio and Image too, which show it as their page: a
     # new edit, so they pick it up.
     if paper_before is not None and paper_choice(read_plot(tree.getroot()) or {}) != paper_before:
         write_current_state({k: v for k, v in current_state().items() if k != "edited"})
-    return jsonify(saved_to=display_path(disk_path.parent) if disk_path else None, saved=drawing_saved)
+    return jsonify(saved_to=display_path(disk_path.parent) if disk_path else None, saved=state.drawing_saved)
 
 
 def paper_choice(plot):
@@ -2459,7 +2449,7 @@ def paper_choice(plot):
 @app.get("/api/plot-settings")
 def get_plot_settings():
     with plot_settings_lock:
-        return jsonify(shared_settings)
+        return jsonify(state.shared_settings)
 
 
 @app.put("/api/plot-settings")
@@ -2469,12 +2459,11 @@ def put_plot_settings():
     there only when the tool was. A whole set of settings from a page that had fallen behind would
     put its old values back over the others' - which is how Path order kept going back to joining
     paths - so the old form, `settings`, is taken only when the server has none yet."""
-    global shared_settings
     body = request.json or {}
     changes = body.get("changes")
     if changes is None and isinstance(body.get("settings"), dict):
-        if shared_settings["settings"] is not None:
-            return jsonify(version=shared_settings["version"])  # a page from before this change: ignored
+        if state.shared_settings["settings"] is not None:
+            return jsonify(version=state.shared_settings["version"])  # a page from before this change: ignored
         changes = body["settings"]
     if not isinstance(changes, dict) or not all(
             isinstance(k, str) and (v is None or isinstance(v, (str, int, float, bool))) for k, v in changes.items()):
@@ -2482,38 +2471,38 @@ def put_plot_settings():
     if "preset" in body and body["preset"] is not None and not isinstance(body["preset"], str):
         return jsonify(error="The tool must be named."), 400
     with plot_settings_lock:
-        settings = {**(shared_settings["settings"] or {}), **changes}
-        preset = body["preset"] if "preset" in body else shared_settings["preset"]
-        if settings == shared_settings["settings"] and preset == shared_settings["preset"]:
-            return jsonify(version=shared_settings["version"])  # nothing new: the other pages are already showing it
-        shared_settings = {"settings": settings, "preset": preset, "version": f"{time.time_ns():x}"}
+        settings = {**(state.shared_settings["settings"] or {}), **changes}
+        preset = body["preset"] if "preset" in body else state.shared_settings["preset"]
+        if settings == state.shared_settings["settings"] and preset == state.shared_settings["preset"]:
+            return jsonify(version=state.shared_settings["version"])  # nothing new: the other pages are already showing it
+        state.shared_settings = {"settings": settings, "preset": preset, "version": f"{time.time_ns():x}"}
         tmp = PLOT_SETTINGS.with_suffix(".tmp")
-        tmp.write_text(json.dumps(shared_settings))
+        tmp.write_text(json.dumps(state.shared_settings))
         os.replace(tmp, PLOT_SETTINGS)
-        return jsonify(version=shared_settings["version"])
+        return jsonify(version=state.shared_settings["version"])
 
 
-@app.get("/api/queue")
+@app.get("/api/state.queue")
 def get_queue():
     with queue_lock:
         sync_queue()
-        items = [{**i, "missing": not Path(i["path"]).is_file()} for i in queue["items"]]
-        return jsonify(items=items, version=queue["version"])
+        items = [{**i, "missing": not Path(i["path"]).is_file()} for i in state.queue["items"]]
+        return jsonify(items=items, version=state.queue["version"])
 
 
-@app.put("/api/queue")
+@app.put("/api/state.queue")
 def put_queue():
-    """The whole queue as a page now has it - added to, reordered, an entry removed or ticked. Each
+    """The whole state.queue as a page now has it - added to, reordered, an entry removed or ticked. Each
     entry is a path and whether it's done; anything outside the folders drawings open from, or not an
     SVG or Illustrator file, is refused. A path listed twice is kept once, where it first comes."""
     body = request.json or {}
     raw = body.get("items")
     if not isinstance(raw, list):
-        return jsonify(error="The queue must be a list of drawings."), 400
+        return jsonify(error="The state.queue must be a list of drawings."), 400
     items, seen = [], set()
     for entry in raw:
         if not isinstance(entry, dict):
-            return jsonify(error="Each drawing in the queue needs its location."), 400
+            return jsonify(error="Each drawing in the state.queue needs its location."), 400
         path = allowed_path(entry.get("path", ""))
         if path is None or path.suffix.lower() not in DRAWING_SUFFIXES:
             return jsonify(error=f"{Path(str(entry.get('path', ''))).name or 'That file'} isn't a drawing the app can open."), 400
@@ -2753,7 +2742,7 @@ def current_paper():
         except Exception:  # noqa: BLE001 - an unreadable drawing has no paper to keep
             plot, paper = {}, {}
     if not (paper.get("paper_w") and paper.get("paper_h")):
-        settings = shared_settings.get("settings") or {}
+        settings = state.shared_settings.get("settings") or {}
         paper = {k: settings[k] for k in PAPER_KEYS if settings.get(k) is not None}
     if not (paper.get("paper_w") and paper.get("paper_h")):
         return None
@@ -3020,14 +3009,14 @@ def current_drawing():
         return {"empty": True}
     name_file = JOBS / "current.name"
     disk_path = Path(CURRENT_PATH.read_text()) if CURRENT_PATH.exists() else None
-    state = current_state()
+    drawing_state = current_state()
     return {
         "name": name_file.read_text() if name_file.exists() else "Untitled.svg",
         "path": str(disk_path) if disk_path else None,
         "folder": display_path(disk_path.parent) if disk_path else None,
         "svg": CURRENT_SVG.read_text(encoding="utf-8", errors="replace"),
         "opened": opened_token(),
-        **state,
+        **drawing_state,
     }
 
 
@@ -3082,12 +3071,12 @@ def put_current():
             return jsonify(error="Another drawing was opened since this one.", conflict=True), 409
         write_current_svg(carry_plot_block(svg, parse_svg(CURRENT_SVG).getroot()))
     (JOBS / "current.name").write_text(name)
-    state = write_current_state({
+    drawing_state = write_current_state({
         "dirty": bool(body.get("dirty", True)),
         "save_to": str(save_to) if save_to and save_to.is_dir() else None,
         "foreign": foreign,
     })
-    return jsonify(opened=opened_token(), edited=state["edited"], name=name)
+    return jsonify(opened=opened_token(), edited=drawing_state["edited"], name=name)
 
 
 # What isn't drawn: left where it is when the drawing is moved, scaled or turned as a whole.
@@ -3181,9 +3170,9 @@ def reshape_current():
                 max(p[0] for p in corners), max(p[1] for p in corners), new_w, new_h)
     except Exception as exc:  # noqa: BLE001
         return jsonify(error=f"Couldn't change the drawing: {exc}"), 400
-    state = current_state()
-    state = write_current_state({"dirty": True, "save_to": state["save_to"], "foreign": state["foreign"]})
-    return jsonify(edited=state["edited"], scaled=abs(a * d - b * c) ** 0.5, baked="bake" in body, turned_paper=turns_paper)
+    drawing_state = current_state()
+    drawing_state = write_current_state({"dirty": True, "save_to": drawing_state["save_to"], "foreign": drawing_state["foreign"]})
+    return jsonify(edited=drawing_state["edited"], scaled=abs(a * d - b * c) ** 0.5, baked="bake" in body, turned_paper=turns_paper)
 
 
 def set_stroke(node, color, by_class):
@@ -3250,9 +3239,9 @@ def ink_current_layer():
         write_current_svg(etree.tostring(root, encoding="unicode"))
     except Exception as exc:  # noqa: BLE001
         return jsonify(error=f"Couldn't change the layer: {exc}"), 400
-    state = current_state()
-    state = write_current_state({"dirty": True, "save_to": state["save_to"], "foreign": state["foreign"]})
-    return jsonify(edited=state["edited"])
+    drawing_state = current_state()
+    drawing_state = write_current_state({"dirty": True, "save_to": drawing_state["save_to"], "foreign": drawing_state["foreign"]})
+    return jsonify(edited=drawing_state["edited"])
 
 
 @app.delete("/api/current")

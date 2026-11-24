@@ -60,7 +60,7 @@ def main():
                        ("RESUME_SVG", "resume.svg"), ("RESUME_META", "resume.json"),
                        ("PLOT_PATHS", "plot-paths.svg"), ("PRINTED_FILE", "printed-layers.json")):
         setattr(server, name, jobs / file)
-    server.shared_settings = {"settings": None, "preset": None, "version": None}
+    server.state.shared_settings = {"settings": None, "preset": None, "version": None}
     client = server.app.test_client()
 
     letter = {"paper_size": "letter", "paper_w": 279.4, "paper_h": 215.9, "paper_x": 5, "paper_y": 7, "paper_color": "#f0e0d0"}
