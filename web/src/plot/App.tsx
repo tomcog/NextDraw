@@ -439,8 +439,6 @@ export default function App() {
   useEffect(() => save(STORAGE.fileCard, fileCard), [fileCard]);
   const [artboardCard, setArtboardCard] = useState(() => load<boolean>(STORAGE.artboardCard) ?? true);
   useEffect(() => save(STORAGE.artboardCard, artboardCard), [artboardCard]);
-  const [paperCard, setPaperCard] = useState(() => load<boolean>(STORAGE.paperCard) ?? true);
-  useEffect(() => save(STORAGE.paperCard, paperCard), [paperCard]);
   const [penCard, setPenCard] = useState(() => load<boolean>(STORAGE.penCard) ?? true);
   useEffect(() => save(STORAGE.penCard, penCard), [penCard]);
   const [queueCard, setQueueCard] = useState(() => load<boolean>(STORAGE.queueCard) ?? false);
@@ -1991,7 +1989,6 @@ export default function App() {
             cards={[
               { key: "file", on: fileCard, toggle: () => setFileCard((on) => !on) },
               { key: "layout", on: artboardCard, toggle: () => setArtboardCard((on) => !on), disabled: !sizes, why: "open a drawing first" },
-              { key: "paper", on: paperCard, toggle: () => setPaperCard((on) => !on) },
               { key: "pen", on: penCard, toggle: () => setPenCard((on) => !on) },
               { key: "queue", on: queueCard, toggle: () => setQueueCard((on) => !on) },
               { key: "marks", on: marksCard, toggle: () => setMarksCard((on) => !on) },
@@ -2159,7 +2156,7 @@ export default function App() {
               colour lives here too, in all three apps - it is the ground the art is made on, not a
               fact about the sheet (2026-11-23). Changing the size here does not scale the artwork:
               Plot never scales. */}
-          {fileName && artboardCard && (
+          {(fileName || setupOpen) && artboardCard && (
           <Card variant="flat" className={styles.controls}>
             <div className={`${styles.cardBody} ${controls.cardSections}`}>
               <Section title="Layout" icon={panelIcon("layout")} collapsibleKey="plot-layout">
@@ -2168,8 +2165,8 @@ export default function App() {
                   couldn't press - which looked broken and told you nothing Plot acts on: the
                   margins drive nothing here, and the marks grow the page round the artboard rather
                   than sitting in them. The size is the one fact that matters at the machine, since
-                  it is what has to fit the sheet, and the colour has gone to the Paper card, where
-                  "which sheet do I load" belongs (Tom, 2026-11-24). */}
+                  it is what has to fit the sheet. The colour is stated too, under the sheet it
+                  describes, because there it answers "which sheet do I load" (Tom, 2026-11-24). */}
                 {sizes && (
                 <p className={controls.stated}>
                   Artboard
@@ -2178,31 +2175,11 @@ export default function App() {
                   </span>
                 </p>
                 )}
-                {/* Where that artboard lands on the sheet, and which way round - straight into the
-                  card, under no heading of its own. Layout is the same question in all three apps -
-                  how big the piece is, where it sits, which way it lies, none of it touching the
-                  artwork - and in Plot this is the whole of it, so a "Position" heading over one
-                  line of fact named a section that was the card (Tom, 2026-11-24). It was a card of
-                  its own before that, "Plot position", in the rail's lower group beside the
-                  plotter's own controls, away from the two cards it is entirely about. */}
-                <PositionSection
-                  placement={placement}
-                  minPlacement={minPlace}
-                  units={settings.units}
-                  disabled={plotting}
-                  onChange={(p) => setPlacement(p)}
-                  onTurn={fileName ? turnArtboard : null}
-                />
-              </Section>
-            </div>
-          </Card>
-          )}
-          {/* The same Paper and Pen cards as Studio's; the units, and the plotting-only rows of the
-              pen card, are Plot's alone. */}
-          {/* Out with no drawing open too while Setup is, to choose what a sheet is made on and with. */}
-          {(fileName || setupOpen) && paperCard && (
-          <Card variant="flat" className={styles.controls}>
-            <div className={`${styles.cardBody} ${controls.cardSections}`}>
+                {/* The sheet it goes on. It was a card of its own until 2026-11-24, which left the
+                  three numbers you think about together - the piece, the sheet, where one sits on
+                  the other - split across two cards, and the card it left behind was a dropdown and
+                  a line of text. Shown without a drawing too: Setup makes a calibration sheet, and
+                  the sheet is the piece then (Tom, 2026-11-24). */}
                 <PaperSection
                   color={settings.paper_color}
                   w={settings.paper_w}
@@ -2215,9 +2192,29 @@ export default function App() {
                   // Turned or typed, the paper is named by its size: Custom, unless it is one of the list's.
                   onDimensions={(paper_w, paper_h) => updateSettings({ paper_size: "custom", paper_w, paper_h })}
                 />
+                {/* Where that artboard lands on the sheet, and which way round - straight into the
+                  card, under no heading of its own. Layout is the same question in all three apps -
+                  how big the piece is, where it sits, which way it lies, none of it touching the
+                  artwork - and in Plot this is the whole of it, so a "Position" heading over one
+                  line of fact named a section that was the card (Tom, 2026-11-24). It was a card of
+                  its own before that, "Plot position", in the rail's lower group beside the
+                  plotter's own controls, away from the two cards it is entirely about. */}
+                {fileName && (
+                <PositionSection
+                  placement={placement}
+                  minPlacement={minPlace}
+                  units={settings.units}
+                  disabled={plotting}
+                  onChange={(p) => setPlacement(p)}
+                  onTurn={turnArtboard}
+                />
+                )}
+              </Section>
             </div>
           </Card>
           )}
+          {/* The same Pen card as Studio's; the units, and its plotting-only rows, are Plot's alone.
+              Out with no drawing open too while Setup is, to choose what a sheet is drawn with. */}
           {(fileName || setupOpen) && penCard && (
           <Card variant="flat" className={styles.controls}>
             <div className={`${styles.cardBody} ${controls.cardSections}`}>

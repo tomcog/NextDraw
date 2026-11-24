@@ -4,7 +4,7 @@ The record of what was decided in discussion on 2026-11-23, and why, so that bui
 those conclusions instead of re-deriving them. **Decided** is settled; **Open** is a leaning with a
 question still attached.
 
-Revised on 2026-11-24, once the cards were built and looked at; the two revisions are marked below.
+Revised on 2026-11-24, once the cards were built and looked at; the three revisions are marked below.
 What the rule allows Plot to touch has not moved; where the controls live, and how much of a fact is
 worth showing, has.
 
@@ -57,6 +57,10 @@ piece.
 **The paper is always long edge along the plotter's X.** Assumed, not offered — the Paper card's
 which-way-it-lies switch goes, and the paper becomes just a size.
 
+> **Revised 2026-11-24 — and the card with it.** Being just a size is what finished it: the sheet
+> is what the piece sits on, so it belongs with the piece's own size and where it lands. It is a
+> section inside Layout now, between them.
+
 **Turning the artboard is Plot's, and it is placement only.** Nothing is written to the file.
 
 - By hand, whenever you like, even when the piece would fit either way.
@@ -107,9 +111,15 @@ Plot's rail, after 2026-11-24:
     —
     options · utilities
 
-- **Layout** — the artboard's size on a line, then the quarter turns and one pair of Across and
-  Down: the artboard's corner from the plotter's home. Nothing else.
-- **Paper** — the sheet's size, and which colour of it to load.
+- **Layout** — the whole of where the print lands, in the order you think it through: the
+  artboard's size stated, the sheet's size and colour, then the quarter turns and one pair of
+  Across and Down, the artboard's corner from the plotter's home. Nothing else.
+- The **Paper card is gone** (2026-11-24). The sheet is what the piece sits on, so leaving it in a
+  card of its own split the three numbers you reason about together - the piece, the sheet, where
+  one sits on the other - and left behind a card that was a dropdown and a line of text. Layout is
+  out while Setup is open and no drawing is, for the same reason Paper was: a calibration sheet
+  needs a size, and the sheet is the piece then. The artboard line and the placing are each absent
+  without a drawing, so the card is the paper alone.
 - The lower group is the plotter's own again.
 
 ## What this leaves to build
