@@ -85,7 +85,8 @@
 .fillRow {
   display: flex;
   flex-wrap: wrap;
-  align-items: flex-end;
+  /* On the baseline, so controls of the same size line their values up - see Image's own .fillRow. */
+  align-items: baseline;
   gap: 0.5rem;
 }
 
