@@ -308,3 +308,41 @@ def hoist_styles(layer):
             el.attrib.pop("style", None)
 
 NON_DRAWING_TAGS = {SVG_NS + t for t in ("defs", "style", "metadata", "title", "desc")}
+
+LENGTH = re.compile(r"^\s*([0-9]*\.?[0-9]+(?:e[-+]?\d+)?)\s*([a-z]*)\s*$", re.I)
+
+def page_frame(root):
+    """
+    Where a document's own units land on its page, in inches - on each axis, inch = s * (unit - min)
+    + offset - and the page's size. The page is sized the way the NextDraw software sizes it
+    (normalize_size, which this applies), so Illustrator's points stay points. None when nothing in
+    the file gives it a size.
+    """
+    normalize_size(root)
+
+    def inches(value):
+        m = LENGTH.match(value or "")
+        unit = m.group(2).lower() if m else None
+        return float(m.group(1)) * PX_PER_UNIT[unit] / 96.0 if m and unit in PX_PER_UNIT else None
+
+    w, h = inches(root.get("width")), inches(root.get("height"))
+    if not w or not h:
+        return None
+    vb = root.get("viewBox")
+    try:
+        vb = [float(v) for v in re.split(r"[\s,]+", vb.strip())] if vb else [0.0, 0.0, w * 96, h * 96]
+    except ValueError:
+        return None
+    if len(vb) != 4 or vb[2] <= 0 or vb[3] <= 0:
+        return None
+    sx, sy = w / vb[2], h / vb[3]
+    ox = oy = 0.0
+    fit = (root.get("preserveAspectRatio") or "xMidYMid meet").split()
+    if fit[0] != "none":
+        # A viewBox of another shape than its page is fitted into it, as a browser would.
+        s = max(sx, sy) if "slice" in fit else min(sx, sy)
+        ax = 0.0 if "xMin" in fit[0] else 1.0 if "xMax" in fit[0] else 0.5
+        ay = 0.0 if "YMin" in fit[0] else 1.0 if "YMax" in fit[0] else 0.5
+        ox, oy = (w - s * vb[2]) * ax, (h - s * vb[3]) * ay
+        sx = sy = s
+    return {"w": w, "h": h, "sx": sx, "sy": sy, "ox": ox, "oy": oy, "x": vb[0], "y": vb[1]}
