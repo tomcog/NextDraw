@@ -136,15 +136,19 @@
 /* Same columns in every group, so all the fields line up at one width. */
 /* Shared out across the card's width: the two fields take what the round buttons leave, and in a
    narrow card the buttons go under them rather than squeezing them. */
+/* The buttons sit level with the fields' boxes, their labels hanging below - as the Paper card's
+   transform row does it, now that these fields are labelled under the box (Tom, 2026-11-24). */
 .offsetRow {
   display: flex;
   flex-wrap: wrap;
   gap: 0.5rem 0.75rem;
-  align-items: center;
+  align-items: flex-start;
 }
 
+/* Plot's Layout row: the turn buttons keep their size and the two fields share what is left of a
+   220px card (Tom, 2026-11-24). 6rem apiece used to fit because the row held one field. */
 .offsetRow > :not(.offsetButtons) {
-  flex: 1 1 6rem;
+  flex: 1 1 4rem;
   min-width: 0;
 }
 

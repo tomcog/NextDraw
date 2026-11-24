@@ -20,8 +20,8 @@ interface Props {
  * Plot's Layout: where the artboard starts, measured from the plotter's home corner, and which way
  * round it lies. One thing, and nothing else (Tom, 2026-11-24).
  *
- * It had a margin, a nine-way align picker, a second pair of numbers for where the sheet sits on the
- * bed, and a button that put the artboard back at 0, 0. The align picker was a quick way to compute
+ * One row: the turns, then the two numbers. It had a margin, a nine-way align picker, a second pair
+ * of numbers for where the sheet sits on the bed, a reset button, and a heading over all of it. The align picker was a quick way to compute
  * these two numbers and the margin existed only to feed it; the reset was a third way to type what
  * two fields already take. All gone: the numbers are typed, or the artboard dragged in the preview.
  * The turns stay as the override for a piece that wants to lie the other way.
@@ -32,22 +32,20 @@ interface Props {
 export function PositionSection({ placement, minPlacement, units, disabled, onChange, onTurn }: Props) {
   return (
     <div className={styles.position}>
-      {/* The turn is the artboard's alone: the paper always lies with its long edge across the
-        plotter, so there is nothing to turn but the piece on it. */}
-      <div className={styles.transformRow}>
-        <ButtonRound size="sm" icon={<RotateCcwSquare />} aria-label="Turn the artboard left" title="Turn the artboard a quarter turn left on the sheet. The drawing itself is not changed." disabled={disabled || !onTurn} onClick={() => onTurn?.(-1)} />
-        <ButtonRound size="sm" icon={<RotateCwSquare />} aria-label="Turn the artboard right" title="Turn the artboard a quarter turn right on the sheet. The drawing itself is not changed." disabled={disabled || !onTurn} onClick={() => onTurn?.(1)} />
-      </div>
-      {/* No heading over them: the card is called Layout, it holds one pair of numbers, and the
-        words in the fields say which is which. What the heading also said - that these are measured
-        from the plotter's home, and that the artboard can be dragged in the preview instead - is
-        kept as each field's name, which is what a screen reader reads and what nobody sighted
-        needed told twice (Tom, 2026-11-24). */}
-      <div className={styles.offsetGroup}>
-        <div className={styles.offsetRow}>
-          <LengthField label="Across, from the plotter’s home" suffix="across" mm={placement.x} units={units} min={minPlacement.x} disabled={disabled} onChange={(v) => onChange({ x: v, y: placement.y })} />
-          <LengthField label="Down, from the plotter’s home" suffix="down" mm={placement.y} units={units} min={minPlacement.y} disabled={disabled} onChange={(v) => onChange({ x: placement.x, y: v })} />
+      {/* All of it on one line: the two turns, then across and down. The turn is the artboard's
+        alone - the paper always lies with its long edge across the plotter, so there is nothing to
+        turn but the piece on it. The buttons go in the round-button wrapper so they keep their size
+        while the two fields share what's left (Tom, 2026-11-24). */}
+      <div className={styles.offsetRow}>
+        <div className={styles.offsetButtons}>
+          <ButtonRound size="sm" icon={<RotateCcwSquare />} aria-label="Turn the artboard left" title="Turn the artboard a quarter turn left on the sheet. The drawing itself is not changed." disabled={disabled || !onTurn} onClick={() => onTurn?.(-1)} />
+          <ButtonRound size="sm" icon={<RotateCwSquare />} aria-label="Turn the artboard right" title="Turn the artboard a quarter turn right on the sheet. The drawing itself is not changed." disabled={disabled || !onTurn} onClick={() => onTurn?.(1)} />
         </div>
+        {/* Labelled under the box rather than with a word inside it: the suffix takes 4rem of the
+          field's width, and three things don't fit across a 220px card that way - "down" wrapped to
+          a line of its own. */}
+        <LengthField label="Across" mm={placement.x} units={units} min={minPlacement.x} disabled={disabled} onChange={(v) => onChange({ x: v, y: placement.y })} />
+        <LengthField label="Down" mm={placement.y} units={units} min={minPlacement.y} disabled={disabled} onChange={(v) => onChange({ x: placement.x, y: v })} />
       </div>
     </div>
   );
