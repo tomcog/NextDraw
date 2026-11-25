@@ -778,3 +778,12 @@
   composes: toolInTitle;
 }
 
+/* A stated fact with its own controls at the end of the line: Plot's artboard size, and the turns
+   that turn it (Tom, 2026-11-24). */
+.statedRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+

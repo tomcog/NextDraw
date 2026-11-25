@@ -43,7 +43,7 @@ import { PlotSummary } from "./components/PlotSummary";
 import { PlotProgress } from "./components/PlotProgress";
 import { FileSection } from "../shared/components/controls/FileSection";
 import { LayersSection } from "./components/controls/LayersSection";
-import { PositionSection } from "./components/controls/PositionSection";
+import { PositionSection, TurnButtons } from "./components/controls/PositionSection";
 import { PresetSection } from "./components/controls/PresetSection";
 import { PaperSection } from "../shared/components/controls/PaperSection";
 import { DEFAULT_TRIM, TrimMarksSection } from "./components/controls/TrimMarksSection";
@@ -2167,12 +2167,16 @@ export default function App() {
                   than sitting in them. The size is the one fact that matters at the machine, since
                   it is what has to fit the sheet (Tom, 2026-11-24). */}
                 {sizes && (
-                <p className={controls.stated}>
-                  Artboard
-                  <span className={controls.statedValue}>
-                    {`${fmtLen(sizes.artboard.w * 25.4, settings.units, false)} × ${fmtLen(sizes.artboard.h * 25.4, settings.units)}`}
-                  </span>
-                </p>
+                <div className={controls.statedRow}>
+                  <p className={controls.stated}>
+                    Artboard
+                    <span className={controls.statedValue}>
+                      {`${fmtLen(sizes.artboard.w * 25.4, settings.units, false)} × ${fmtLen(sizes.artboard.h * 25.4, settings.units)}`}
+                    </span>
+                  </p>
+                  {/* Beside the size they turn, rather than down with the numbers. */}
+                  {fileName && <TurnButtons disabled={plotting} onTurn={turnArtboard} />}
+                </div>
                 )}
                 {/* The sheet it goes on. It was a card of its own until 2026-11-24, which left the
                   three numbers you think about together - the piece, the sheet, where one sits on
@@ -2203,7 +2207,6 @@ export default function App() {
                   units={settings.units}
                   disabled={plotting}
                   onChange={(p) => setPlacement(p)}
-                  onTurn={turnArtboard}
                 />
                 )}
               </Section>
