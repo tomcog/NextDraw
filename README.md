@@ -83,6 +83,17 @@ flag:
 .venv/bin/python server.py
 ```
 
+The app answers at 5055, and everything else assumes that: the bookmark, the other devices on the
+network, the dev server's proxy, the tests. `NEXTDRAW_PORT` moves it, for a second copy running
+beside the real one:
+
+```bash
+NEXTDRAW_PORT=5056 .venv/bin/python server.py
+```
+
+It moves the address and nothing else. Both copies still use this Mac's one jobs folder, so they
+share the open drawing, and both talk to the one plotter.
+
 ## Set up from scratch
 
 ```bash

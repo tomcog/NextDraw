@@ -24,6 +24,7 @@ stopped plot waiting to resume, and changes in Studio or Image not saved yet are
 """
 
 import json
+import os
 import re
 import sys
 import time
@@ -31,7 +32,7 @@ import urllib.error
 import urllib.request
 from pathlib import Path
 
-BASE = "http://localhost:5055"
+BASE = f"http://localhost:{os.environ.get('NEXTDRAW_PORT', '5055')}"
 HERE = Path(__file__).resolve().parent
 
 

@@ -12,7 +12,19 @@ import shutil
 import tempfile
 from pathlib import Path
 
-HOST, PORT = "127.0.0.1", 5055
+
+# The address is fixed so that every app, Mac, bookmark and phone can assume it: Plot at 5055, with
+# nothing to remember and nothing to pass on. NEXTDRAW_PORT moves it, which is for a second copy
+# running beside the real one. It moves the address and nothing else: both copies still read this
+# Mac's jobs folder below and talk to the one plotter, so a second copy is for looking at, not for
+# plotting from. A value that isn't a port number is ignored, because a typo in the environment
+# shouldn't be the thing that stops the app from starting.
+def _port():
+    asked = os.environ.get("NEXTDRAW_PORT", "").strip()
+    return int(asked) if asked.isdigit() and 0 < int(asked) < 65536 else 5055
+
+
+HOST, PORT = "127.0.0.1", _port()
 ROOT = Path(__file__).parent
 # This Mac's own working state - the open drawing, a plot to resume, the settings every page shows.
 # Kept out of the app folder, which is in iCloud Drive: two Macs sharing one copy each took up the

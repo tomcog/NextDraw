@@ -10,6 +10,11 @@ import { resolve } from "node:path";
 // In dev, the pages answer at the same addresses Flask gives them: Plot at the bare origin, Studio at
 // /studio and Photo at /photo. Two sets of addresses - Studio at the root here, Plot at the root there - meant a link
 // between the apps could land in the wrong one. The pages themselves live under /static/ in both.
+
+// Where Flask is answering: 5055, unless NEXTDRAW_PORT moved it (places.py reads the same name), so
+// that `npm run dev` can be pointed at a second copy running beside the real one.
+const flask = `http://127.0.0.1:${process.env.NEXTDRAW_PORT || 5055}`;
+
 const sameAddressesAsFlask = () => ({
   name: "same-addresses-as-flask",
   configureServer(server: { middlewares: { use: (fn: (req: { url?: string }, res: unknown, next: () => void) => void) => void } }) {
@@ -46,9 +51,9 @@ export default defineConfig({
     // /fonts and /tips too: the single-stroke fonts and the drawings of each tool's tip are served
     // by Flask from the repository's fonts/ and tips/ folders.
     proxy: {
-      "/api": "http://127.0.0.1:5055",
-      "/fonts": "http://127.0.0.1:5055",
-      "/tips": "http://127.0.0.1:5055",
+      "/api": flask,
+      "/fonts": flask,
+      "/tips": flask,
     },
   },
 });
