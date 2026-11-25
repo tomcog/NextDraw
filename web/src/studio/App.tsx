@@ -2284,8 +2284,11 @@ export default function App() {
      </Card>
      )}
      {/* The layer being drawn on, a card of its own under the layers: turned, and its paths. Out and
-       away with the Layers card, from its switch. */}
-     {layersCard && targetLayers.length > 0 && (
+       away with the Layers card, from its switch. Only while there is something on it: ShapeList
+       draws nothing for an empty layer, and the card round it was left as a 12px strip of its own
+       padding - on every new drawing, since a new drawing has a layer targeted and nothing on it
+       (Tom, 2026-11-24). `onActive` is the very list the card hands down, so the two can't drift. */}
+     {layersCard && targetLayers.length > 0 && onActive.length > 0 && (
      <Card variant="flat" className={styles.controls}>
       <div className={`${styles.cardBody} ${controls.cardSections}`}>
         <ShapeList
