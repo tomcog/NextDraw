@@ -311,6 +311,14 @@ export function Bed(props: Props) {
   const artboardBox: Box | null = fp
     ? [fp.x * UNITS, fp.y * UNITS, (fp.x + fp.w) * UNITS, (fp.y + fp.h) * UNITS]
     : null;
+  // With nothing added outside the artboard - no trim marks, and no block or signature that lands
+  // beyond it - the plot area IS the artboard, and the two outlines sit on each other. One line does
+  // for both then, and it is the green one: what the line is there to say is how much paper the plot
+  // needs, and that is the same question whether or not there are marks (Tom, 2026-11-25).
+  const sameBox = 0.001; // inches: a rounding difference, not a real one
+  const plotIsArtboard = Boolean(fp && props.artboard
+    && Math.abs(fp.pad.x) < sameBox && Math.abs(fp.pad.y) < sameBox
+    && Math.abs(fp.w - props.artboard.w) < sameBox && Math.abs(fp.h - props.artboard.h) < sameBox);
 
   const snap = (mm: number) => {
     const step = s.units === "in" ? 25.4 / 20 : 1; // 0.05 in or 1 mm
@@ -402,8 +410,9 @@ export function Bed(props: Props) {
         )}
         {/* The trim line: the artboard itself, which is what is left when the print is cut at the
           marks. It sits inside the plot outline by whatever the marks, the blocks and the signature
-          reach - `pad` is that distance before the artboard's corner. Red, and in Outline only. */}
-        {fp && props.outline && props.artboard && props.artboard.w > 0 && props.artboard.h > 0 && (
+          reach - `pad` is that distance before the artboard's corner. Light pink, in Outline only,
+          and only where it is a different box from the plot area (plotIsArtboard). */}
+        {fp && props.outline && props.artboard && props.artboard.w > 0 && props.artboard.h > 0 && !plotIsArtboard && (
           <rect
             className={styles.trimEdge}
             x={(fp.x + fp.pad.x) * UNITS}

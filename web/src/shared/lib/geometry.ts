@@ -70,13 +70,15 @@ export function fitsOnPaper(fp: Footprint | null, s: Settings) {
   return x0 >= px - tol && y0 >= py - tol && x1 <= px + pw + tol && y1 <= py + ph + tol;
 }
 
-// Smallest start position, in mm: the drawing's page may start before home by as much empty margin
-// as there is above and left of its lines.
+// Smallest start position, in mm: the plot comes up to the plotter's home corner and no further.
 export function minPlacement(fp: Footprint | null) {
   if (!fp) return { x: 0, y: 0 };
-  // In the placement's own terms, so that room counts: an artboard with marks can go no closer to
-  // home than their reach, less whatever empty margin the page has beyond them.
-  return { x: (fp.pad.x - (fp.ink.x0 - fp.x)) * 25.4, y: (fp.pad.y - (fp.ink.y0 - fp.y)) * 25.4 };
+  // The PLOT area is what stops at home - the whole box that goes on the paper, trim marks and all -
+  // so pushed that way the drawing snaps to the origin with its green outline on it (Tom,
+  // 2026-11-25). It was the LINES that stopped there, which let a page with an empty margin, or an
+  // artboard with marks round it, start before home and plot the first of them off the sheet.
+  // In the placement's own terms, which are the artboard's corner: the marks' reach before it.
+  return { x: fp.pad.x * 25.4, y: fp.pad.y * 25.4 };
 }
 
 
