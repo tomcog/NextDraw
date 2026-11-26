@@ -10,6 +10,7 @@ import type { View } from "../../shared/components/PreviewToolbar";
 import { DEFAULT_SETTINGS, UNITS } from "../../shared/lib/constants";
 import { channelAdjusted, flattenedPicture, photoMarks, photoOrigin, pictureOf, type Photo } from "../../shared/lib/drawing/photo";
 import type { Page } from "../../shared/lib/drawing/shapes";
+import type { Margins } from "../../shared/lib/geometry";
 import { vignetteKey, vignetteOn, vignetteStrength, type Vignette } from "../../shared/lib/drawing/vignette";
 import { usePhotoRead } from "../../shared/lib/drawing/usePhotoRead";
 import type { PlotterModel } from "../../shared/lib/types";
@@ -81,6 +82,8 @@ interface Props {
   box: { x0: number; y0: number; x1: number; y1: number };
   /** The artboard: the drawing's own size, which is the artboard the picture sits on (2026-11-23). */
   artboard: Page;
+  /** Its margins in inches, a side each: the live area, drawn as a guide in Outline (2026-11-25). */
+  margins: Margins;
   paperColor: string;
   model: PlotterModel | undefined;
   ink: Ink;
@@ -119,7 +122,7 @@ type Part = [number, number, number, number];
  * zooms and the loupe that Studio and Plot show a drawing on. Photo's own views go first in the bar, before
  * the shared ones; side by side, a second canvas follows the first's zoom.
  */
-export function ConvertStage({ photo, parts, box, artboard, paperColor, model, ink, view, onView, show, onShow, zoom, onZoom, loupe, onLoupe, cropping, others = [], onMove, knockout }: Props) {
+export function ConvertStage({ photo, parts, box, artboard, margins, paperColor, model, ink, view, onView, show, onShow, zoom, onZoom, loupe, onLoupe, cropping, others = [], onMove, knockout }: Props) {
   const read = usePhotoRead(photo.src);
   const w = box.x1 - box.x0;
   const h = box.y1 - box.y0;
@@ -280,7 +283,7 @@ export function ConvertStage({ photo, parts, box, artboard, paperColor, model, i
     <figure className={styles.pane}>
       <NextDrawCanvas bar={first ? bar : undefined} zoom={zoom} loupe={loupe} model={model} settings={settings} drawingBox={drawingBox} artboard={artboard} ground="artboard"
         // Outline only: in Preview the page shows the ink and nothing else (Tom, 2026-11-24).
-        guides={view === "outline" ? { trim: true, artwork: box } : null}>
+        guides={view === "outline" ? { margin: margins, artwork: box } : null}>
         {/* Everything here is in the page's inches; the bed counts in UNITS per inch. */}
         {({ mark }) => <g transform={`scale(${UNITS})`}>{typeof body === "function" ? body(mark) : body}</g>}
       </NextDrawCanvas>

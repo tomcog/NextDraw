@@ -47,12 +47,13 @@
   vector-effect: non-scaling-stroke;
 }
 
-/* The plotter's reach, dashed over paper bigger than it (BedCanvas): on screen only, never drawn. */
+/* The plotter's reach, dashed over paper bigger than it (BedCanvas): on screen only, never drawn.
+   The same dash as every other line on the bed, since 2026-11-25: colour tells them apart. */
 .reach {
   fill: none;
   stroke: var(--ui-text-muted);
   stroke-width: 1;
-  stroke-dasharray: 6 4;
+  stroke-dasharray: 4 3;
   vector-effect: non-scaling-stroke;
   pointer-events: none;
 }
@@ -158,24 +159,24 @@
    does. Two dashes rather than two colours, so they read apart on any ground and neither competes
    with the artboard's own line. Cleared in Preview, where nothing comes between the eye and the
    ink. On screen only, never plotted. */
-.trimGuide,
+.marginGuide,
 .artworkGuide {
   fill: none;
   stroke-width: 1;
   vector-effect: non-scaling-stroke;
   pointer-events: none;
 }
-/* The trim line: the artboard's edge, where the print is cut - the same red dash Plot draws inside
-   its plot outline, so the two apps say the same thing (Tom, 2026-11-24). The margin is the band
-   between this and the artwork, which is why there is no separate line for it. */
-.trimGuide {
-  stroke: var(--ui-action);
+/* The live area the margins leave: where the artwork is meant to stop, and the line a number is
+   typed for. A light aqua (Tom, 2026-11-25), which tells it from the green of what the ink covers
+   and from the greys the bed itself is drawn in. Every line on the bed wears one dash - 4 on, 3 off
+   - so colour is the only thing between them. The library has no aqua token, so it is set here. */
+.marginGuide {
+  stroke: var(--nd-margin-edge, #4dd0e1);
   stroke-dasharray: 4 3;
 }
-/* What the artwork actually covers: the same dash as the trim line, in green (Tom, 2026-11-24).
-   Same dash because they are the same kind of thing - both say where an edge is - and the colour is
-   what tells them apart: red is where the paper is cut, green is where the ink reaches, and the
-   margin is the space between them. The library has no green token, so the colour is set here. */
+/* What the artwork actually covers, in green (Tom, 2026-11-24): where the ink reaches, as against
+   the aqua margin line it is meant to stay inside. The library has no green token, so the colour is
+   set here. */
 .artworkGuide {
   stroke: var(--nd-artwork-edge, #00c853);
   stroke-dasharray: 4 3;

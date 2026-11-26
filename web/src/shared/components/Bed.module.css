@@ -10,12 +10,13 @@
 .dragTarget { fill: transparent; pointer-events: all; }
 
 /* The plot outline: everything that goes on the paper - the artboard grown to hold the trim marks,
-   the colour blocks and the signature. A bright blue of its own rather than --nd-ink, which is the
-   colour a blue PEN draws in: this is a rule about the print, not a line in it (Tom, 2026-11-24).
-   Outline only, like the trim line it sits outside. */
+   the colour blocks and the signature. A light spring green of its own (Tom, 2026-11-25) rather than
+   --nd-ink, which is the colour a PEN draws in: this is a rule about the print, not a line in it.
+   Outline only, like the trim line it sits outside. Every line on the bed shares one dash - 4 on, 3
+   off, a hairline - so that the colour is the only thing telling them apart. */
 .sheetEdge {
   fill: none;
-  stroke: var(--nd-plot-edge, #0a84ff);
+  stroke: var(--nd-plot-edge, #7fffbf);
   stroke-width: 1;
   stroke-dasharray: 4 3;
   vector-effect: non-scaling-stroke;
@@ -70,12 +71,23 @@
 }
 
 /* The trim line: the artboard, what is left after the print is cut at the marks (Tom, 2026-11-24).
-   Red, against the plot outline's blue, and drawn in Outline only - in Preview nothing comes between
-   the eye and the ink. The two are different questions: the blue is what has to fit on the paper,
-   the red is what you end up holding. */
+   Light pink against the plot outline's green (Tom, 2026-11-25), and drawn in Outline only - in
+   Preview nothing comes between the eye and the ink. The two are different questions: the green is
+   what has to fit on the paper, the pink is what you end up holding. */
 .trimEdge {
   fill: none;
-  stroke: var(--ui-action);
+  stroke: var(--nd-trim-edge, #ffb6c1);
+  stroke-width: 1;
+  stroke-dasharray: 4 3;
+  vector-effect: non-scaling-stroke;
+  pointer-events: none;
+}
+
+/* The margin inside the trim line: the live area the drawing was laid out in, in the aqua Studio and
+   Image use for it, and in Outline only (Tom, 2026-11-25). Plot shows it, never sets it. */
+.marginEdge {
+  fill: none;
+  stroke: var(--nd-margin-edge, #4dd0e1);
   stroke-width: 1;
   stroke-dasharray: 4 3;
   vector-effect: non-scaling-stroke;

@@ -337,6 +337,28 @@ PLOT_TAG = "{%s}plot" % PLOT_NS
 LEGACY_PLOT_TAG = "{%s}studio" % PLOT_NS
 DESIGN_TAG = "{%s}design" % PLOT_NS
 
+def design_margins(root):
+    """The margins Studio laid the drawing out inside, in inches a side, from its design block: the
+    live area the print is composed in, and what Plot places its blocks and signature against unless
+    they are told otherwise (Tom, 2026-11-25). Zeros for a drawing that carries none."""
+    none = {"top": 0.0, "right": 0.0, "bottom": 0.0, "left": 0.0}
+    for node in root.iter(DESIGN_TAG):
+        try:
+            data = json.loads(node.text or "{}")
+        except ValueError:
+            return none
+        kept = data.get("margins") if isinstance(data, dict) else None
+        if not isinstance(kept, dict):
+            return none
+        out = {}
+        for side in none:
+            try:
+                out[side] = max(0.0, float(kept.get(side, 0)))
+            except (TypeError, ValueError):
+                out[side] = 0.0
+        return out
+    return none
+
 def studio_fills(root):
     """Studio's fills by id, from its design block; empty for a drawing Studio didn't make."""
     for node in root.iter(DESIGN_TAG):

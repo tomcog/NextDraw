@@ -1,4 +1,4 @@
-import { Checkbox, InputSelect, Segment, SegmentedControl } from "@tomcoggia/ui";
+import { Checkbox, InputSelect } from "@tomcoggia/ui";
 import styles from "../../../shared/components/controls/controls.module.css";
 import { Section } from "../../../shared/components/controls/Section";
 import { LengthField } from "../../../shared/components/controls/LengthField";
@@ -25,28 +25,32 @@ interface SignatureProps extends Shared {
   onSignature: (signature: SignatureMarks | null) => void;
 }
 
-/** What each axis offers, in the words the design note reads them in. */
+/**
+ * What each axis offers, named by the margin it is measured from (Tom, 2026-11-25). Two each, where
+ * there were four: across, a mark lines up with the left margin or the right one, always inside the
+ * live area, since a block hanging off the side of a print is not a thing anyone wants; down, it
+ * sits above the bottom margin or below it, and never against the top - nothing Plot adds belongs at
+ * the head of a print. The other six were settings to get wrong.
+ */
 const PLACES = {
   x: [
-    { side: "inside", edge: "left", label: "Inside the left edge" },
-    { side: "outside", edge: "left", label: "Outside the left edge" },
-    { side: "inside", edge: "right", label: "Inside the right edge" },
-    { side: "outside", edge: "right", label: "Outside the right edge" },
+    { side: "inside", edge: "left", label: "From left" },
+    { side: "inside", edge: "right", label: "From right" },
   ],
+  // Below and above, with nothing after them: the margin they are measured from is the only one
+  // there is, and the field beside them already says how far (Tom, 2026-11-25).
   y: [
-    { side: "inside", edge: "top", label: "Inside the top edge" },
-    { side: "outside", edge: "top", label: "Outside the top edge" },
-    { side: "inside", edge: "bottom", label: "Inside the bottom edge" },
-    { side: "outside", edge: "bottom", label: "Outside the bottom edge" },
+    { side: "outside", edge: "bottom", label: "Below" },
+    { side: "inside", edge: "bottom", label: "Above" },
   ],
 } as const;
 
 const keyOf = (a: Anchor) => `${a.side}-${a.edge}`;
 
 /**
- * Where one of them sits on one axis: how far, and from which edge of what. The distance is measured
- * to the two nearest edges, so half an inch outside the bottom is half an inch of gap - which is why
- * it is always a positive length with the direction in words, never a sign.
+ * Where one of them sits on one axis: how far, and from which margin. The distance is measured to
+ * the two nearest edges, so half an inch below the bottom margin is half an inch of gap - which is
+ * why it is always a positive length with the direction in words, never a sign.
  */
 function AnchorRow({ label, axis, anchor, units, busy, onChange }: {
   label: string;
@@ -61,11 +65,11 @@ function AnchorRow({ label, axis, anchor, units, busy, onChange }: {
       <LengthField label={label} mm={anchor.mm} units={units} min={0} disabled={busy} onChange={(mm) => onChange({ ...anchor, mm })} />
       <InputSelect
         size="md"
-        label={`${label}: which edge`}
+        label={`${label}: which margin`}
         hideLabel
         value={keyOf(anchor)}
         disabled={busy}
-        title="Which edge it is measured from, and whether it sits inside that edge or outside it"
+        title="Which margin it is measured from"
         onChange={(e) => {
           const place = PLACES[axis].find((p) => `${p.side}-${p.edge}` === e.target.value);
           if (place) onChange({ ...anchor, side: place.side, edge: place.edge });
@@ -77,7 +81,12 @@ function AnchorRow({ label, axis, anchor, units, busy, onChange }: {
   );
 }
 
-/** One of them: on or off, where it sits on each axis, and what it is measured against. */
+/**
+ * One of them: on or off, and where it sits on each axis. What it is measured against was a choice
+ * of three - the artwork, the artboard, the margins - until 2026-11-25: the margins are the guides
+ * the print was composed to, so everything Plot adds belongs to them, and the other two were a
+ * setting to get wrong (Tom). A drawing that stored one of them is read as margins.
+ */
 function Placed({ title, hint, on, anchors, units, busy, onChange }: {
   title: string;
   hint: string;
@@ -87,7 +96,6 @@ function Placed({ title, hint, on, anchors, units, busy, onChange }: {
   busy: boolean;
   onChange: (anchors: { x: Anchor; y: Anchor } | null) => void;
 }) {
-  const from = anchors.x.from;
   return (
     <div className={styles.cardGroup}>
       <Checkbox size="md" checked={on} label="On" aria-label={title} title={hint} disabled={busy} onChange={(e) => onChange(e.target.checked ? anchors : null)} />
@@ -95,23 +103,6 @@ function Placed({ title, hint, on, anchors, units, busy, onChange }: {
         <>
           <AnchorRow label="Across" axis="x" anchor={anchors.x} units={units} busy={busy} onChange={(x) => onChange({ ...anchors, x })} />
           <AnchorRow label="Down" axis="y" anchor={anchors.y} units={units} busy={busy} onChange={(y) => onChange({ ...anchors, y })} />
-          <SegmentedControl size="sm" variant="dark" aria-label={`${title}: measured from`}>
-            {([
-              { value: "artwork" as const, label: "Artwork", hint: "Placed against the lines themselves, wherever they reach" },
-              { value: "artboard" as const, label: "Artboard", hint: "Placed against the artboard, wherever the lines reach" },
-            ]).map(({ value, label, hint: why }) => (
-              <Segment
-                key={value}
-                selected={from === value}
-                aria-label={label}
-                title={why}
-                disabled={busy}
-                onClick={() => onChange({ x: { ...anchors.x, from: value }, y: { ...anchors.y, from: value } })}
-              >
-                {label}
-              </Segment>
-            ))}
-          </SegmentedControl>
         </>
       )}
     </div>

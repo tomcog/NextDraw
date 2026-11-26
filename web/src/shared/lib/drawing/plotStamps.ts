@@ -16,17 +16,37 @@ import { drawnNodes } from "./shapes";
 import type { StrokeFont } from "./font";
 import type { Anchor, BlocksStamp, PenColor, SignatureStamp } from "../types";
 
-/** Where the blocks go unless it's changed: under the artwork, lined up with its left edge. */
+/**
+ * Where the blocks go unless it's changed: in the bottom margin, lined up with the live area's left
+ * edge. The MARGINS, not the artboard and not the artwork (Tom, 2026-11-25): they are the guides the
+ * print was composed against, so a signature set against them sits where the eye expects it whatever
+ * the lines happen to reach - and inside the cut, which the artboard's own edge is not. A drawing
+ * with no margins falls back to the artboard, since then they are the same box.
+ */
 export const DEFAULT_BLOCKS: { x: Anchor; y: Anchor } = {
-  x: { mm: 0, edge: "left", side: "inside", from: "artwork" },
-  y: { mm: 12.7, edge: "bottom", side: "outside", from: "artwork" },
+  x: { mm: 0, edge: "left", side: "inside", from: "margins" },
+  y: { mm: 12.7, edge: "bottom", side: "outside", from: "margins" },
 };
 
-/** And the signature: under the artwork, lined up with its right edge. */
+/** And the signature: the same, lined up with the live area's right edge. */
 export const DEFAULT_SIGNATURE: { x: Anchor; y: Anchor } = {
-  x: { mm: 0, edge: "right", side: "inside", from: "artwork" },
-  y: { mm: 12.7, edge: "bottom", side: "outside", from: "artwork" },
+  x: { mm: 0, edge: "right", side: "inside", from: "margins" },
+  y: { mm: 12.7, edge: "bottom", side: "outside", from: "margins" },
 };
+
+/**
+ * The same marks as the card can say them, since 2026-11-25: measured from the margins, lined up
+ * with the left or right margin across, and above or below the BOTTOM margin down. A drawing saved
+ * before that may carry the artwork or the artboard, a mark hanging off the side, or one against the
+ * top; it comes in at the nearest place that is still offered rather than sitting somewhere no field
+ * can describe. Only what is out of range moves: everything else is left exactly as it was.
+ */
+export const againstMargins = <T extends { x: Anchor; y: Anchor }>(marks: T | null | undefined): T | null =>
+  marks ? {
+    ...marks,
+    x: { ...marks.x, from: "margins", side: "inside" },
+    y: { ...marks.y, from: "margins", edge: "bottom" },
+  } : null;
 
 /** The signature at its own size, its top-left at 0,0: the initials and the year, as paths. */
 export function signatureStamp(year: number, font: StrokeFont): SignatureStamp {

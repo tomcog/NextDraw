@@ -12,6 +12,18 @@ export function fmtLen(mmValue: number, units: Units, withUnit = true) {
 
 export const fmtIn = (inches: number) => `${inches.toFixed(2).replace(/\.?0+$/, "")} in`;
 
+/**
+ * The four margins said in a line, in mm as fmtLen takes them: one number while they are all the
+ * same, else all four in the order a page's margins are always given - top, right, bottom, left.
+ * For a card that states the margins rather than offering them (Plot, 2026-11-25).
+ */
+export function marginsSaid(m: { top: number; right: number; bottom: number; left: number }, units: Units) {
+  const sides = [m.top, m.right, m.bottom, m.left];
+  return sides.every((v) => v === m.top)
+    ? fmtLen(m.top, units)
+    : `${sides.map((v) => fmtLen(v, units, false)).join(" ")} ${units}`;
+}
+
 export function fmtDuration(seconds: number) {
   const s = Math.max(0, Math.round(seconds || 0));
   if (s < 60) return `${s}s`;

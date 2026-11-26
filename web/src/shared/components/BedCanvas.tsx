@@ -47,13 +47,17 @@ export interface BedCanvasProps {
    * Guides over the artboard, drawn only while the work is being made: Studio and Image in Outline,
    * never in Preview, where nothing should come between the eye and the ink (Tom, 2026-11-24).
    *
-   * `trim` draws the artboard's own edge in red: that is where the print is cut, the same line Plot
-   * draws inside its plot outline. `artwork` is the box round what the drawing actually covers, in
-   * inches from the artboard's corner, in a different dash. The MARGIN is the band between the two -
-   * it is not a line of its own, because the margin is simply where the artwork stops and the
-   * artboard carries on.
+   * `artwork` is the box round what the drawing actually covers, in inches from the artboard's
+   * corner. `margin` is the live area the four margins leave, in inches a side: the line the artwork
+   * is meant to stay inside, and the one a number is typed for. There was a third - the artboard's
+   * own edge, in red - until 2026-11-25: in Studio and Image the artboard is the largest thing on
+   * screen, so its edge is the edge of the page and a line round it said nothing twice. Nothing is
+   * drawn for a margin of nought, which would land on that edge.
    */
-  guides?: { trim?: boolean; artwork?: { x0: number; y0: number; x1: number; y1: number } | null } | null;
+  guides?: {
+    artwork?: { x0: number; y0: number; x1: number; y1: number } | null;
+    margin?: { top: number; right: number; bottom: number; left: number } | null;
+  } | null;
   /**
    * The artboard's box on the bed, in bed units, for a host that draws its own outline for it: Plot,
    * where the artboard is the box you take hold of to place the piece, and is drawn with the rest of
@@ -471,10 +475,17 @@ export function BedCanvas(props: BedCanvasProps) {
           <rect className={styles.artboard} x={artRect[0]} y={artRect[1]} width={artRect[2] - artRect[0]} height={artRect[3] - artRect[1]} />
         )}
         {/* The guides, over the artboard and under the drawing: the live area the margins leave, and
-          the box round what the artwork covers. Outline only - the host decides, by passing them. */}
-        {guides?.trim && artBox && (
-          <rect className={styles.trimGuide} x={artBox[0]} y={artBox[1]} width={artBox[2] - artBox[0]} height={artBox[3] - artBox[1]} />
-        )}
+          the box round what the artwork covers. Outline only - the host decides, by passing them.
+          The artboard's own edge had one too until 2026-11-25; it is the page's edge here. */}
+        {guides?.margin && artBox && (() => {
+          const m = guides.margin;
+          if (!(m.top || m.right || m.bottom || m.left)) return null; // no margin: the trim line says it
+          const w = (artBox[2] - artBox[0]) - (m.left + m.right) * UNITS;
+          const h = (artBox[3] - artBox[1]) - (m.top + m.bottom) * UNITS;
+          return w > 0 && h > 0 ? (
+            <rect className={styles.marginGuide} x={artBox[0] + m.left * UNITS} y={artBox[1] + m.top * UNITS} width={w} height={h} />
+          ) : null;
+        })()}
         {guides?.artwork && artBox && (() => {
           const a = guides.artwork;
           const w = (a.x1 - a.x0) * UNITS;

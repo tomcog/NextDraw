@@ -12,6 +12,7 @@ import { curveStrokes, pointsAttr, DEFAULT_CURVE, type CurveKind } from "../../s
 import { placementAttr, placements } from "../../shared/lib/drawing/repeat";
 import { textRuns, type StrokeFont } from "../../shared/lib/drawing/text";
 import type { Layer } from "../../shared/lib/drawing/shapes";
+import type { Margins } from "../../shared/lib/geometry";
 import { type BedCanvasHandle, type Box } from "../../shared/components/BedCanvas";
 import { NextDrawCanvas } from "../../shared/components/NextDrawCanvas";
 import { KnockoutMask, KnockoutShapes } from "../../shared/components/Knockout";
@@ -55,6 +56,8 @@ interface Props {
   bar: PreviewToolbarProps;
   /** The artboard: the drawing's own size, which is the artboard it sits on (2026-11-23). */
   artboard: Page;
+  /** Its margins in inches, a side each: the live area, drawn as a guide in Outline (2026-11-25). */
+  margins: Margins;
   /** The paper's colour, as Plot draws it: the artboard is this colour and the inks blend with it. */
   paperColor: string;
   shapes: Shape[];
@@ -356,7 +359,7 @@ const LayerMarks = memo(function LayerMarks({ shapes, fills, fonts }: { shapes: 
 // The artboard at true proportions, with a one-inch grid. It keeps the page's own proportions and is
 // sized to them (--canvas-aspect), so the drawing gets as large as the space allows - the same way
 // Plot's preview fills its column.
-export function Canvas({ bar, artboard, paperColor, shapes, fills, layers, activeLayer, targetLayers, model, toolbar, fonts, font, snap, penWidthMm, inkOpacity, inkBuilds, inkOpaque = false, inkBuild, view, tool, selected, onSelect, onAdd, onUpdate, onUpdateMany, onEditStart, onPick, strokePick, onStrokePick }: Props) {
+export function Canvas({ bar, artboard, margins, paperColor, shapes, fills, layers, activeLayer, targetLayers, model, toolbar, fonts, font, snap, penWidthMm, inkOpacity, inkBuilds, inkOpaque = false, inkBuild, view, tool, selected, onSelect, onAdd, onUpdate, onUpdateMany, onEditStart, onPick, strokePick, onStrokePick }: Props) {
   const bed = useRef<BedCanvasHandle>(null);
   const [drag, setDrag] = useState<Drag | null>(null);
   const pointer = useRef<number | null>(null);
@@ -766,7 +769,7 @@ export function Canvas({ bar, artboard, paperColor, shapes, fills, layers, activ
       artboard={artboard}
       // The guides go in Outline and nowhere else: in Preview the page shows what the pen will draw
       // and nothing else, which is what it is for (Tom, 2026-11-24).
-      guides={view === "outline" ? { trim: true, artwork: drawnBox(shapes) } : null}
+      guides={view === "outline" ? { margin: margins, artwork: drawnBox(shapes) } : null}
       // Studio draws the artboard alone: what the plotter can reach, and what sheet it ends up on,
       // are Plot's business and only matter at plot time.
       ground="artboard"

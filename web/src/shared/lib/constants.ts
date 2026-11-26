@@ -80,7 +80,9 @@ export const PRESET_FIELD_NAMES: Record<(typeof PRESET_FIELDS)[number], string> 
  * an hour on kraft came up beige, which is nobody's starting point.
  */
 export const NEW_ARTBOARD = { w: 12, h: 12 };
-export const NEW_MARGIN_IN = 1;
+// No margin to begin with: a margin is set when one is wanted, and until then the artwork has
+// the whole artboard to sit in (Tom, 2026-11-25).
+export const NEW_MARGIN_IN = 0;
 export const NEW_PAPER_COLOR = "#ffffff";
 
 // Width × height in mm, portrait. Shown landscape by default to suit the plotter.

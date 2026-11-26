@@ -14,7 +14,7 @@ from lxml import etree
 from nextdraw import NextDraw
 from pathlib import Path
 from svgpaths import mm
-from svgtree import DESIGN_TAG, INKSCAPE_NS, NON_DRAWING_TAGS, SVG_NS, has_art, layer_groups, layer_hidden, page_mm_and_units
+from svgtree import DESIGN_TAG, INKSCAPE_NS, NON_DRAWING_TAGS, SVG_NS, design_margins, has_art, layer_groups, layer_hidden, page_mm_and_units
 import json
 import re
 
@@ -168,15 +168,17 @@ def clean_trim(raw):
 
 def clean_anchor(raw, axis):
     """Where one of Plot's additions sits on an axis: so far many mm inside or outside the named edge
-    of the artwork or the artboard, as the Signature card reads it out."""
+    of the margins, the artboard or the artwork, as the Signature card reads it out."""
     edges = ("left", "right") if axis == "x" else ("top", "bottom")
-    out = {"mm": 0.0, "edge": edges[0], "side": "inside", "from": "artwork"}
+    # The margins unless the page says otherwise, as in plotStamps.ts: they are the guides the print
+    # was composed against, so what Plot adds belongs to them (Tom, 2026-11-25).
+    out = {"mm": 0.0, "edge": edges[0], "side": "inside", "from": "margins"}
     if isinstance(raw, dict):
         try:
             out["mm"] = max(0.0, min(2000.0, float(raw.get("mm", 0))))
         except (TypeError, ValueError):
             pass
-        for key, allowed in (("edge", edges), ("side", ("inside", "outside")), ("from", ("artwork", "artboard"))):
+        for key, allowed in (("edge", edges), ("side", ("inside", "outside")), ("from", ("artwork", "artboard", "margins"))):
             if raw.get(key) in allowed:
                 out[key] = raw[key]
     return out
@@ -298,14 +300,25 @@ def add_plot_extras(root, extras):
     art = extras.get("art")
     art_x = (vx + art[0] * per_in_x, vx + art[2] * per_in_x) if art else board_x
     art_y = (vy + art[1] * per_in_y, vy + art[3] * per_in_y) if art else board_y
+    # The live area: the artboard less the margins the drawing was laid out inside. It is read from
+    # the drawing itself rather than sent with the request, because it is the drawing's own (the
+    # design block, written by Studio). Margins that leave no room fall back to the artboard.
+    gap = design_margins(root)
+    live_x = (board_x[0] + gap["left"] * per_in_x, board_x[1] - gap["right"] * per_in_x)
+    live_y = (board_y[0] + gap["top"] * per_in_y, board_y[1] - gap["bottom"] * per_in_y)
+    if not (live_x[1] > live_x[0] and live_y[1] > live_y[0]):
+        live_x, live_y = board_x, board_y
     boxes = [(vx, vy, vx + vw, vy + vh)]  # the page itself, and then whatever lands outside it
 
     def place(setting):
         """Where a stamp's top-left goes, in the page's units; its box is kept for the page's growth."""
         w, h = setting["w"] * stamp_x, setting["h"] * stamp_y
-        x = anchor_at(setting["x"], w, art_x if setting["x"]["from"] == "artwork" else board_x,
+        def against(axis, art, board, live):
+            source = setting[axis]["from"]
+            return art if source == "artwork" else live if source == "margins" else board
+        x = anchor_at(setting["x"], w, against("x", art_x, board_x, live_x),
                       setting["x"]["mm"] / 25.4 * stamp_x)
-        y = anchor_at(setting["y"], h, art_y if setting["y"]["from"] == "artwork" else board_y,
+        y = anchor_at(setting["y"], h, against("y", art_y, board_y, live_y),
                       setting["y"]["mm"] / 25.4 * stamp_y)
         boxes.append((x, y, x + w, y + h))
         return f"translate({x:g} {y:g}) scale({stamp_x:g} {stamp_y:g})"

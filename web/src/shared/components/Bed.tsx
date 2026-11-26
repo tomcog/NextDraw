@@ -26,9 +26,15 @@ interface Props {
   hairlines?: boolean; // every path as a thin line, ignoring the pen's width: the Layers card's layer by layer
   /**
    * The artboard's own size in inches, as it lies on the sheet (turned with the piece): what is left
-   * after the print is trimmed, drawn in red inside the plot outline (Tom, 2026-11-24).
+   * after the print is trimmed, drawn in light pink inside the plot outline (Tom, 2026-11-24).
    */
   artboard?: { w: number; h: number } | null;
+  /**
+   * The artboard's margins in inches, as they lie after the turn: the live area the artwork was laid
+   * out inside, drawn in Outline so what Plot adds can be seen against it (Tom, 2026-11-25). Plot
+   * cannot change them - they belong to the drawing - it only says where they are.
+   */
+  margins?: { top: number; right: number; bottom: number; left: number } | null;
   /** Outline: the two guides are drawn. Preview shows the ink alone, as in Studio and Image. */
   outline?: boolean;
   hasFile: boolean;
@@ -406,6 +412,24 @@ export function Bed(props: Props) {
             height={props.artboard.h * UNITS}
           />
         )}
+        {/* The margin inside it: the same aqua line Studio and Image draw, so a drawing says the
+          same thing in all three. Nothing where there is no margin - it would sit on the trim
+          line - and nothing when the margins leave no room (Tom, 2026-11-25). */}
+        {fp && props.outline && props.artboard && props.margins && (() => {
+          const m = props.margins;
+          if (!(m.top || m.right || m.bottom || m.left)) return null;
+          const w = (props.artboard.w - m.left - m.right) * UNITS;
+          const h = (props.artboard.h - m.top - m.bottom) * UNITS;
+          return w > 0 && h > 0 ? (
+            <rect
+              className={styles.marginEdge}
+              x={(fp.x + fp.pad.x + m.left) * UNITS}
+              y={(fp.y + fp.pad.y + m.top) * UNITS}
+              width={w}
+              height={h}
+            />
+          ) : null;
+        })()}
       </g>
 
       <g

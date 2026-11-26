@@ -1,5 +1,5 @@
 import { Segment, SegmentedControl, Spinner, Toolbar } from "@tomcoggia/ui";
-import { Eye, EyeDashed, Frame, Grid3x3, ImageIcon, Redo2, Route, Search, Settings, StickyNote, Undo2 } from "lucide-react";
+import { Eye, EyeDashed, Frame, Grid3x3, Redo2, Route, Search, Settings, StickyNote, Undo2 } from "lucide-react";
 import type { ReactNode } from "react";
 import type { Zoom } from "./Bed";
 import styles from "./PreviewToolbar.module.css";
@@ -145,7 +145,12 @@ function ZoomControls({ zoom, onZoom, ground = "bed", canPaper = true, canDrawin
 }) {
   const zooms: { key: Zoom; icon: ReactNode; title: string; label: string; disabled?: boolean }[] =
     ground === "artboard"
-      ? [{ key: "artboard", icon: <Frame />, title: "Zoom out to the whole artboard", label: "Artboard" }]
+      ? [
+          { key: "artboard", icon: <Frame />, title: "Zoom out to the whole artboard", label: "Artboard" },
+          // On the artboard's own page what you zoom to is the artwork, so it wears the Artwork
+          // card's own glyph (Tom, 2026-11-23).
+          { key: "drawing", icon: panelIcon("artwork"), title: "Zoom to the artwork", label: "Artwork", disabled: !canDrawing },
+        ]
       : [
           { key: "plotter", icon: <Grid3x3 />, title: "Zoom out to the plotter's full drawing area", label: "Plotter" },
           { key: "paper", icon: <StickyNote />, title: "Zoom to the paper", label: "Paper", disabled: !canPaper },
@@ -153,15 +158,6 @@ function ZoomControls({ zoom, onZoom, ground = "bed", canPaper = true, canDrawin
           // the sheet it is printed on or the box the lines happen to fill (Tom, 2026-11-23).
           { key: "artboard", icon: <Frame />, title: "Zoom to the artboard: the piece's own size, where it sits on the paper", label: "Artboard", disabled: !canDrawing },
         ];
-  // On the artboard's own page what you zoom to is the artwork, so it wears the Artwork card's own
-  // glyph (Tom, 2026-11-23); on the bed it is still a drawing placed on a sheet.
-  zooms.push({
-    key: "drawing",
-    icon: ground === "artboard" ? panelIcon("artwork") : <ImageIcon />,
-    title: "Zoom to the drawing",
-    label: "Drawing",
-    disabled: !canDrawing,
-  });
   return (
     <>
       <SegmentedControl size="sm" variant="dark" aria-label="Zoom the preview">

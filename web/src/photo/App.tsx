@@ -7,7 +7,6 @@ import { FileSection } from "../shared/components/controls/FileSection";
 import { useUnits } from "../shared/lib/useUnits";
 import { ArtboardSection } from "../shared/components/controls/ArtboardSection";
 import { NextDrawCanvas } from "../shared/components/NextDrawCanvas";
-import { drawnBox, reshapeDrawing, roomRound } from "../shared/lib/drawing/whole";
 import { ArtworkSection } from "../shared/components/controls/ArtworkSection";
 import { Section } from "../shared/components/controls/Section";
 import { Hints } from "../shared/components/controls/Hints";
@@ -605,19 +604,6 @@ export default function App() {
         record();
         setMargins(marginsTimes(next, 1 / 25.4));
       }}
-      // Room round the artwork: the artboard grows so the margins sit outside the picture, which
-      // keeps the size it is - the other way round from Fit (Tom, 2026-11-24). The box is what the
-      // drawing actually puts on paper, so a baked effect's lines count as artwork too.
-      onRoom={(marginsMm) => {
-        const box = drawnBox(shapes);
-        if (!(box.x1 > box.x0 && box.y1 > box.y0)) return;
-        const inches = marginsTimes(marginsMm, 1 / 25.4);
-        const { artboard: next, by } = roomRound(box, inches);
-        record();
-        setArtboard(next);
-        setMargins(inches);
-        if (Math.abs(by.x) > 1e-9 || Math.abs(by.y) > 1e-9) setShapes(reshapeDrawing(shapes, 1, { x: 0, y: 0 }, by));
-      }}
     />
   );
 
@@ -1167,6 +1153,7 @@ export default function App() {
         <section className={styles.stage} aria-label="Image conversion" data-dragging-file={draggingFile || undefined}>
           {chosen?.photo && convertBox ? (
             <ConvertStage
+              margins={margins}
               photo={chosen.photo}
               artboard={artboard}
               box={convertBox}
@@ -1218,7 +1205,7 @@ export default function App() {
               artboard={artboard}
               ground="artboard"
               zoom="artboard"
-              guides={{ trim: true }}
+              guides={{ margin: margins }}
               overlay={
                 <button type="button" className={styles.stageEmpty} onClick={() => photoInput.current?.click()}>
                   Open an image to start

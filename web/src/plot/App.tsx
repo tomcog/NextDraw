@@ -4,9 +4,9 @@ import styles from "./App.module.css";
 import { isSvgFile, useFileDrop } from "../shared/lib/useFileDrop";
 import { api, postJSON } from "../shared/lib/api";
 import { barrelOffsetMm, BUSY_STATES, DEFAULT_SETTINGS, IDRAW_MODEL, NONE_PEN, PAPER_SIZES, penWidthOf, PLOTTING_STATES, PRESET_FIELD_NAMES, PRESET_FIELDS, STEPS, STORAGE } from "../shared/lib/constants";
-import { cleanNote, fmtLen, listOf } from "../shared/lib/format";
+import { cleanNote, fmtLen, listOf, marginsSaid } from "../shared/lib/format";
 import { lightness } from "../shared/lib/color";
-import { fitsOnBed, fitsOnPaper, footprint, minPlacement, turnedFootprint, type Margins } from "../shared/lib/geometry";
+import { fitsOnBed, fitsOnPaper, footprint, marginsTimes, marginsTurned, minPlacement, turnedFootprint, type Margins } from "../shared/lib/geometry";
 import { parsePlotPaths, type PlotPaths } from "../shared/lib/progressPaths";
 import { parsePreview, type Preview } from "../shared/lib/preview";
 import { load, save } from "../shared/lib/storage";
@@ -48,7 +48,7 @@ import { PresetSection } from "./components/controls/PresetSection";
 import { PaperSection } from "../shared/components/controls/PaperSection";
 import { DEFAULT_TRIM, TrimMarksSection } from "./components/controls/TrimMarksSection";
 import { BlocksSection, SignatureSection } from "./components/controls/SignatureSection";
-import { blocksStamp, signatureStamp } from "../shared/lib/drawing/plotStamps";
+import { againstMargins, blocksStamp, signatureStamp } from "../shared/lib/drawing/plotStamps";
 import { SIGNATURE_FONT } from "../shared/lib/drawing/signature";
 import type { Page } from "../shared/lib/drawing/shapes";
 import { PanelToolbar, panelIcon } from "../shared/components/PanelToolbar";
@@ -487,7 +487,11 @@ export default function App() {
   useEffect(() => save(STORAGE.optionsCard, optionsCard), [optionsCard]);
   const [utilitiesCard, setUtilitiesCard] = useState(() => load<boolean>(STORAGE.utilitiesCard) ?? false);
   useEffect(() => save(STORAGE.utilitiesCard, utilitiesCard), [utilitiesCard]);
-  const [zoomChoice, setZoomChoice] = useState<Zoom>(() => load<Zoom>(STORAGE.zoom) ?? "plotter");
+  // "drawing" was a zoom here until 2026-11-25; a Mac that had it last lands on the artboard.
+  const [zoomChoice, setZoomChoice] = useState<Zoom>(() => {
+    const kept = load<Zoom>(STORAGE.zoom);
+    return kept === "drawing" ? "artboard" : kept ?? "plotter";
+  });
   // The loupe over the preview, for a close look at the lines. Put away each time the page opens.
   const [loupe, setLoupe] = useState(false);
   useEffect(() => save(STORAGE.zoom, zoomChoice), [zoomChoice]);
@@ -744,8 +748,9 @@ export default function App() {
     setSkipTiny(plot?.skip_tiny ?? null);
     // Trim marks are the same on every print now, so a drawing saved with other numbers takes these.
     setTrimMarks(plot?.trim ? { ...plot.trim, ...DEFAULT_TRIM } : null);
-    setBlocks(plot?.blocks ?? null);
-    setSignature(plot?.signature ?? null);
+    // Read against the margins, whatever the drawing stored: that is the one reference now.
+    setBlocks(againstMargins(plot?.blocks));
+    setSignature(againstMargins(plot?.signature));
     // The drawing tool is deliberately NOT taken from the file. It stands for the pen actually in the
     // holder, and a file can arrive at any moment - saved from Studio, synced from odin - which would
     // otherwise swap the chosen pen, and its pen positions and speeds with it, in the middle of
@@ -1988,8 +1993,8 @@ export default function App() {
           <PanelToolbar
             cards={[
               { key: "file", on: fileCard, toggle: () => setFileCard((on) => !on) },
-              { key: "layout", on: artboardCard, toggle: () => setArtboardCard((on) => !on), disabled: !sizes, why: "open a drawing first" },
               { key: "pen", on: penCard, toggle: () => setPenCard((on) => !on) },
+              { key: "layout", on: artboardCard, toggle: () => setArtboardCard((on) => !on), disabled: !sizes, why: "open a drawing first" },
               { key: "queue", on: queueCard, toggle: () => setQueueCard((on) => !on) },
               { key: "marks", on: marksCard, toggle: () => setMarksCard((on) => !on) },
             ]}
@@ -2036,6 +2041,8 @@ export default function App() {
               hasFile={Boolean(fileName)}
               // The trim line's size, turned with the piece: what is left when the print is cut.
               artboard={sizes ? (rotation % 180 ? { w: sizes.artboard.h, h: sizes.artboard.w } : sizes.artboard) : null}
+              // The drawing's margins, turned with it: shown here, set in Studio.
+              margins={sizes ? marginsTurned(sizes.margins, rotation) : null}
               outline={view === "outline"}
               draggingFile={draggingFile}
               canDrag={!busy}
@@ -2151,6 +2158,33 @@ export default function App() {
             </div>
           </Card>
           )}
+          {/* The same Pen card as Studio's; the units, and its plotting-only rows, are Plot's alone.
+              Out with no drawing open too while Setup is, to choose what a sheet is drawn with. */}
+          {(fileName || setupOpen) && penCard && (
+          <Card variant="flat" className={styles.controls}>
+            <div className={`${styles.cardBody} ${controls.cardSections}`}>
+                <PresetSection
+                  label={toolLabel}
+                  presets={presets}
+                  active={active}
+                  tiltOn={tiltOn}
+                  onTilt={(name, on) => setTiltChoice((c) => ({ ...c, [name]: on }))}
+                  dragOn={dragOn}
+                  onDrag={(name, on) => setDragChoice((c) => ({ ...c, [name]: on }))}
+                  paletteOpen={paletteOpen}
+                  hudOpen={hudOpen}
+                  onHud={() => setHudOpen((open) => !open)}
+                  onPalette={() => setPaletteOpen((open) => !open)}
+                  onInk={setInk}
+                  changed={presetChanged}
+                  disabled={plotting}
+                  onApply={applyPreset}
+                  onSave={savePresetAsked}
+                  onDelete={askToDeletePreset}
+                />
+            </div>
+          </Card>
+          )}
           {/* The Artboard card, as Studio and Image show it: the drawing's own size and the margins
               the artwork sits inside, read from the drawing and written back into it. The surface's
               colour lives here too, in all three apps - it is the ground the art is made on, not a
@@ -2176,6 +2210,18 @@ export default function App() {
                   </p>
                   {/* Beside the size they turn, rather than down with the numbers. */}
                   {fileName && <TurnButtons disabled={plotting} onTurn={turnArtboard} />}
+                </div>
+                )}
+                {/* The margins the piece was laid out with. Said, not offered: they belong to the
+                  drawing and are set in Studio, but what Plot adds lands against them, so they have
+                  to be visible here (Tom, 2026-11-25). Four different numbers are said top, right,
+                  bottom, left, the way a page's margins are always listed. */}
+                {sizes && (
+                <div className={controls.statedRow}>
+                  <p className={controls.stated}>
+                    Margins
+                    <span className={controls.statedValue}>{marginsSaid(marginsTimes(marginsTurned(sizes.margins, rotation), 25.4), settings.units)}</span>
+                  </p>
                 </div>
                 )}
                 {/* The sheet it goes on. It was a card of its own until 2026-11-24, which left the
@@ -2204,39 +2250,14 @@ export default function App() {
                 <PositionSection
                   placement={placement}
                   minPlacement={minPlace}
+                  // What the marks reach before the artboard: the fields say where the plot starts.
+                  pad={padMm}
                   units={settings.units}
                   disabled={plotting}
                   onChange={(p) => setPlacement(p)}
                 />
                 )}
               </Section>
-            </div>
-          </Card>
-          )}
-          {/* The same Pen card as Studio's; the units, and its plotting-only rows, are Plot's alone.
-              Out with no drawing open too while Setup is, to choose what a sheet is drawn with. */}
-          {(fileName || setupOpen) && penCard && (
-          <Card variant="flat" className={styles.controls}>
-            <div className={`${styles.cardBody} ${controls.cardSections}`}>
-                <PresetSection
-                  label={toolLabel}
-                  presets={presets}
-                  active={active}
-                  tiltOn={tiltOn}
-                  onTilt={(name, on) => setTiltChoice((c) => ({ ...c, [name]: on }))}
-                  dragOn={dragOn}
-                  onDrag={(name, on) => setDragChoice((c) => ({ ...c, [name]: on }))}
-                  paletteOpen={paletteOpen}
-                  hudOpen={hudOpen}
-                  onHud={() => setHudOpen((open) => !open)}
-                  onPalette={() => setPaletteOpen((open) => !open)}
-                  onInk={setInk}
-                  changed={presetChanged}
-                  disabled={plotting}
-                  onApply={applyPreset}
-                  onSave={savePresetAsked}
-                  onDelete={askToDeletePreset}
-                />
             </div>
           </Card>
           )}

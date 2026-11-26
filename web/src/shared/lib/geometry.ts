@@ -124,5 +124,18 @@ export function extraMarginSide(align: FitAlign, landscape: boolean): MarginSide
 }
 /** The same margin on every side. */
 export const marginsAll = (m: number): Margins => ({ top: m, right: m, bottom: m, left: m });
+/**
+ * The margins as they lie after the piece is turned clockwise by quarter turns: a quarter turn takes
+ * the left margin to the top. Plot turns the artboard rather than the drawing, so what it shows has
+ * to turn with it (Tom, 2026-11-25).
+ */
+export const marginsTurned = (m: Margins, deg: number): Margins => {
+  const t = ((deg % 360) + 360) % 360;
+  if (t === 90) return { top: m.left, right: m.top, bottom: m.right, left: m.bottom };
+  if (t === 180) return { top: m.bottom, right: m.left, bottom: m.top, left: m.right };
+  if (t === 270) return { top: m.right, right: m.bottom, bottom: m.left, left: m.top };
+  return m;
+};
+
 /** Every side's margin times k: millimetres to inches, say. */
 export const marginsTimes = (m: Margins, k: number): Margins => ({ top: m.top * k, right: m.right * k, bottom: m.bottom * k, left: m.left * k });

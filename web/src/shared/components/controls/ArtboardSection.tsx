@@ -20,22 +20,28 @@ import styles from "./controls.module.css";
  * millimetres, as the Paper card is, and shown in whichever units are chosen.
  *
  * The margins are four, not one with an extra on a side: a deeper foot - the usual print convention,
- * and where the colour blocks and the signature sit - is just a bigger number for the bottom. They
- * are set around a sheet rather than listed: top and bottom inside it, left and right beside it, so
- * which number is which needs no reading and the unit is said once, in the heading. The sheet is a
- * picture, not a preview: it keeps its size whatever the artboard measures.
+ * and where the colour blocks and the signature sit - is just a bigger number for the bottom. Each
+ * field takes the place of the edge it insets - top and bottom above and below, left and right
+ * beside - so which number is which needs no reading, and the unit is said once, in the heading.
+ * Held the same, which is how they start, the other three go and the left field stands for all four,
+ * in the place it already had. The fields stand on the card itself: the sheet they used to be set on
+ * was a picture of a page, and a picture that isn't a preview earns little (Tom, 2026-11-25).
  */
 /**
  * The usual margins, each setting all four at once: the inches of the design, and round millimetres
- * for the same in mm. Named by the number alone - the heading above them says the unit.
+ * for the same in mm. Named by the number alone - the heading above them says the unit. None at all
+ * leads them (Tom, 2026-11-25), which is where a new drawing starts and the quickest way back to it;
+ * it is written 0 rather than 0.0, being the one of them that is not a measurement.
  */
 const MARGIN_PRESETS: Record<Units, { label: string; mm: number }[]> = {
-  in: [0.5, 1, 1.5, 2].map((v) => ({ label: v.toFixed(1), mm: v * 25.4 })),
-  mm: [10, 20, 30, 40].map((v) => ({ label: String(v), mm: v })),
+  in: [0, 0.5, 1, 1.5, 2].map((v) => ({ label: v ? v.toFixed(1) : "0", mm: v * 25.4 })),
+  mm: [0, 10, 20, 30, 40].map((v) => ({ label: String(v), mm: v })),
 };
 
 /** Whether the four margins are held the same, kept between visits: a way of working, not a fact
- *  about the drawing, so it stays here rather than going into the file. */
+ *  about the drawing, so it stays here rather than going into the file. On unless it was turned off:
+ *  one number for all four is how a margin is usually set, and four fields are the exception (Tom,
+ *  2026-11-25). */
 const LOCK_KEY = "nextdraw.marginsLocked";
 
 /** The four margins, each at the edge of the sheet it insets - which is what says which it is. */
@@ -46,7 +52,7 @@ const MARGIN_EDGES = [
   { edge: "right", label: "Right" },
 ] as const;
 
-export function ArtboardSection({ w, h, margins, units, color, collapsibleKey, disabled, onSize, onMargins, onColor, onRoom }: {
+export function ArtboardSection({ w, h, margins, units, color, collapsibleKey, disabled, onSize, onMargins, onColor }: {
   /** The artboard in mm, as it lies. */
   w: number;
   h: number;
@@ -70,20 +76,12 @@ export function ArtboardSection({ w, h, margins, units, color, collapsibleKey, d
   onSize?: (w: number, h: number) => void;
   onMargins?: (margins: Margins) => void;
   onColor?: (color: string) => void;
-  /**
-   * Make these margins real: the ARTBOARD grows so they sit round the artwork, which keeps the size
-   * it is (Tom, 2026-11-24). The other way round from Fit, which shrinks the artwork to sit inside
-   * them - and the way a margin is usually meant when a print is planned, since the marks and the
-   * signature have to land inside the cut. One-shot: afterwards the two are independent again, and
-   * the numbers above are the gap as it stands. Left out where the app doesn't offer it.
-   */
-  onRoom?: (margins: Margins) => void;
 }) {
   // Locked, the four margins are one number: setting any sets them all, and the lock evens them up
   // the moment it goes on (to the top's, the first of the four). Unlocked they stay as they are and
   // each is set on its own again.
   const [locked, setLocked] = useState(() => {
-    try { return localStorage.getItem(LOCK_KEY) === "true"; } catch { return false; }
+    try { return localStorage.getItem(LOCK_KEY) !== "false"; } catch { return true; }
   });
   const lock = (on: boolean) => {
     setLocked(on);
@@ -118,55 +116,27 @@ export function ArtboardSection({ w, h, margins, units, color, collapsibleKey, d
         each field sits on the edge it insets, which is label enough (Figma 165:1111). */}
       <div className={styles.cardGroup}>
       <p className={styles.subheading}>{`Margins (${units === "in" ? "inches" : "mm"})`}</p>
+      {/* The usual margins, each setting all four at once (Figma 181:2599). Across the top of the
+        fields rather than down beside them (Tom, 2026-11-25): a line of numbers to choose from is
+        read along a row, and the fields below keep the width to themselves. */}
+      <div className={styles.marginPresets}>
+        {MARGIN_PRESETS[units].map(({ label, mm }) => (
+          <Button
+            key={label}
+            size="sm"
+            variant="tertiary"
+            disabled={noMargins}
+            title={mm ? `Every margin ${label} ${units}` : "No margin at all"}
+            onClick={() => onMargins?.(marginsAll(mm))}
+          >
+            {label}
+          </Button>
+        ))}
+      </div>
       <div className={styles.marginsRow}>
-        {/* The usual margins down the left, each setting all four at once (Figma 181:2599). */}
-        <div className={styles.marginPresets}>
-          {MARGIN_PRESETS[units].map(({ label, mm }) => (
-            <Button
-              key={label}
-              size="sm"
-              variant="tertiary"
-              disabled={noMargins}
-              title={`Every margin ${label} ${units}`}
-              onClick={() => onMargins?.(marginsAll(mm))}
-            >
-              {label}
-            </Button>
-          ))}
-        </div>
-        <div className={styles.marginsAround}>
-          {/* Held the same, the four are one number, so the sheet carries one field in the middle
-            rather than four saying the same thing. Unlocked, each is back at its own edge. */}
-          {asOne ? (
-            <div className={styles.marginAt} data-edge="all">
-              <LengthField
-                label="Margins"
-                mm={margins.top}
-                units={units}
-                min={0}
-                disabled={noMargins}
-                unitInLabel={false}
-                hideLabel
-                onChange={side("top")}
-              />
-            </div>
-          ) : MARGIN_EDGES.map(({ edge, label }) => (
-            <div key={edge} className={styles.marginAt} data-edge={edge}>
-              <LengthField
-                label={label}
-                mm={margins[edge]}
-                units={units}
-                min={0}
-                disabled={noMargins}
-                unitInLabel={false}
-                hideLabel
-                onChange={side(edge)}
-              />
-            </div>
-          ))}
-        </div>
-        {/* The four held the same, beside them as the design has it: the glyph alone while each is
-            its own, the action disc with a white glyph while it holds (Figma 182:2676/182:2681). */}
+        {/* The four held the same, at the head of the row (Tom, 2026-11-25): the glyph alone while
+            each is its own, the action disc with a white glyph while it holds (Figma
+            182:2676/182:2681). */}
         <span className={styles.marginLock}>
           <ButtonRound
             size="sm"
@@ -181,18 +151,27 @@ export function ArtboardSection({ w, h, margins, units, color, collapsibleKey, d
             onClick={() => lock(!locked)}
           />
         </span>
+        <div className={styles.marginsAround}>
+          {/* Held the same, the four are one number, so three of the fields go and the left one is
+            left standing for all of them. It stays where it was, so nothing on the card moves as the
+            lock goes on and off (Tom, 2026-11-25). Unlocked, the other three are back at their own
+            edges. */}
+          {(asOne ? MARGIN_EDGES.filter(({ edge }) => edge === "left") : MARGIN_EDGES).map(({ edge, label }) => (
+            <div key={edge} className={styles.marginAt} data-edge={edge}>
+              <LengthField
+                label={asOne ? "Margins" : label}
+                mm={margins[edge]}
+                units={units}
+                min={0}
+                disabled={noMargins}
+                unitInLabel={false}
+                hideLabel
+                onChange={side(edge)}
+              />
+            </div>
+          ))}
+        </div>
       </div>
-      {onRoom && (
-        <Button
-          size="sm"
-          variant="secondary"
-          disabled={noMargins}
-          title="Grow the artboard so these margins sit round the artwork. The artwork keeps the size it is; the artboard gets bigger, and the artwork moves onto the margin."
-          onClick={() => onRoom(margins)}
-        >
-          Add round the artwork
-        </Button>
-      )}
       </div>
       {/* The surface the artwork is made on: the colours out in the open, the one chosen ringed, and
         the palette at the end for any other (Figma 165:1052, 2026-11-23). It was a dot in the

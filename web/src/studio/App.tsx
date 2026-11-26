@@ -61,7 +61,7 @@ import { shapeIcon } from "./components/panels/ToolPicker";
 import { addPointOnLongest, boxAround, boxOf, clampToPage, groupLabel, groupsOf, moveBy, newGroupId, newLayerId, newShapeId, pointsBox, resizeTo, scaleInto, shapeName, turnAround, withWholeGroups, type Layer, type Page, type Shape } from "../shared/lib/drawing/shapes";
 import { areaPicker, silhouetteOf } from "../shared/lib/drawing/silhouette";
 import { buildSvg, svgForMarks } from "../shared/lib/drawing/svg";
-import { alignOnPage, drawnBox, drawnMiddle, drawnOutside, fitToPage, placeOnPaper, reshapeDrawing, roomRound, runsOffPage } from "../shared/lib/drawing/whole";
+import { alignOnPage, drawnBox, drawnMiddle, drawnOutside, fitToPage, placeOnPaper, reshapeDrawing, runsOffPage } from "../shared/lib/drawing/whole";
 import { cropDrawing } from "../shared/lib/drawing/crop";
 import { isKnockoutLayer, withKnockout } from "../shared/lib/drawing/knockout";
 import { turnDrawingOnPaper } from "../shared/lib/drawing/turnPaper";
@@ -1086,18 +1086,6 @@ export default function App() {
   *
   * One step for undo: the artboard, the margins and the move are one change, not three.
   */
- const roomRoundDrawing = (marginsMm: Margins) => {
-  const box = drawnBox(shapes);
-  if (!(box.x1 > box.x0 && box.y1 > box.y0)) return; // nothing drawn, or a single point
-  const inches = marginsTimes(marginsMm, 1 / 25.4);
-  const { artboard: next, by } = roomRound(box, inches);
-  record();
-  setArtboard(next);
-  setMargins(inches);
-  if (Math.abs(by.x) > 1e-9 || Math.abs(by.y) > 1e-9) setShapes(reshapeDrawing(shapes, 1, { x: 0, y: 0 }, by));
-  setMessage({ text: "", ok: true });
- };
-
  /** Scale the artwork as large as the artboard allows inside its margins (mm, a side each), placed as `align` says. */
  const fitDrawing = (marginsMm: Margins, align: FitAlign) => {
   const fit = fitToPage(shapes, artboard, marginsTimes(marginsMm, 1 / 25.4), align);
@@ -1782,7 +1770,6 @@ export default function App() {
     record();
     setMargins(marginsTimes(next, 1 / 25.4));
    }}
-   onRoom={roomRoundDrawing}
   />
  );
 
@@ -2121,8 +2108,8 @@ export default function App() {
      <PanelToolbar
       cards={[
        { key: "file", on: fileCard, toggle: () => setFileCard((on) => !on) },
-       { key: "layout", on: artboardCard, toggle: () => setArtboardCard((on) => !on) },
        { key: "pen", on: penCard, toggle: () => setPenCard((on) => !on) },
+       { key: "layout", on: artboardCard, toggle: () => setArtboardCard((on) => !on) },
       ]}
      />
      <ToolPicker
@@ -2152,6 +2139,7 @@ export default function App() {
     </div>
     <section className={styles.stage} aria-label="Drawing page" data-dragging-file={draggingFile || undefined}>
      <Canvas
+      margins={margins}
       artboard={artboard}
       paperColor={paperColor}
       shapes={canvasShapes}
@@ -2216,6 +2204,14 @@ export default function App() {
      </Card>
      )}
 
+     {/* What the drawing is drawn with: a card of its own, shown or hidden from the toolbar. */}
+     {penCard && (
+     <Card variant="flat" className={styles.controls}>
+      <div className={`${styles.cardBody} ${controls.cardSections}`}>
+       <DrawingToolSection tools={presets} value={toolName} onPick={pickTool} collapsibleKey="pen" disabled={busy} />
+      </div>
+     </Card>
+     )}
      {/* The page and what sits on it, one card: the margins above the buttons that use them, and
        the grid the drawing is laid out against at the end of it. Layout leads (Tom, 2026-11-24):
        how big the piece is comes before what it is drawn with. */}
@@ -2227,14 +2223,6 @@ export default function App() {
         {artworkSection}
         <GridSection snapping={snapping} onSnapping={setSnapping} step={snapStep} onStep={setSnapStep} />
        </Section>
-      </div>
-     </Card>
-     )}
-     {/* What the drawing is drawn with: a card of its own, shown or hidden from the toolbar. */}
-     {penCard && (
-     <Card variant="flat" className={styles.controls}>
-      <div className={`${styles.cardBody} ${controls.cardSections}`}>
-       <DrawingToolSection tools={presets} value={toolName} onPick={pickTool} collapsibleKey="pen" disabled={busy} />
       </div>
      </Card>
      )}

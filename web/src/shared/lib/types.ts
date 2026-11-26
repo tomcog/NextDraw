@@ -193,7 +193,7 @@ export interface Anchor {
   mm: number;
   edge: "left" | "right" | "top" | "bottom";
   side: "inside" | "outside";
-  from: "artwork" | "artboard";
+  from: "artwork" | "artboard" | "margins";
 }
 
 /** The signature Plot adds: where it goes, and the pen it goes down in. */

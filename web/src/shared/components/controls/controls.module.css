@@ -263,9 +263,9 @@
   gap: 0.25rem;
 }
 
-/* The margins, in three: the usual ones down the left, each setting all four at once; the sheet
-   they are set on; and the lock that holds them the same (Figma 181:2598, 2026-11-23). The sheet
-   takes what the other two leave, and they are as tall as it is - the lock level with its middle. */
+/* The lock that holds the four the same, and the fields (Figma 181:2598, 2026-11-23). The lock
+   leads the row, level with the fields' middle, and the fields take what it leaves. The usual
+   margins are a row of their own above this one. */
 .marginsRow {
   display: flex;
   align-items: stretch;
@@ -274,19 +274,17 @@
 
 .marginsRow > .marginsAround { flex: 1 1 auto; }
 
-/* The four buttons spread over the sheet's height, each only as wide as its number needs. */
+/* The four buttons in a row above the fields, each only as wide as its number needs. */
 .marginPresets {
   display: flex;
-  flex: none;
-  flex-direction: column;
-  justify-content: space-between;
-  gap: 0.125rem;
+  flex-direction: row;
+  gap: 0.25rem;
 }
 
-/* Narrower than a button of words: these are numbers, and the room is the sheet's. */
+/* Narrower than a button of words: these are numbers, and the room below them is the fields'. */
 .marginPresets button {
   --ui-button-padding-x: 0;
-  min-width: 1.75rem;
+  min-width: 2rem;
   padding-inline: 0.125rem;
 }
 
@@ -296,36 +294,39 @@
   align-items: center;
 }
 
-/* The artboard's margins, set ON a sheet rather than listed: the sheet is the card's full width,
-   and each field sits at the edge it insets - left on the left, top at the top - which says which
-   it is better than a label would, so they carry none (Figma 165:1111, 2026-11-23). The sheet is a
-   picture, not a preview: it keeps its size whatever the artboard measures. */
+/* The artboard's margins, each field at the edge it insets - left on the left, top at the top -
+   which says which it is better than a label would, so they carry none (Figma 165:1111,
+   2026-11-23). They stood on a white sheet until 2026-11-25: a picture of a page that was no
+   preview of anything, and the fields read as well standing on the card itself. */
 .marginsAround {
   position: relative;
   box-sizing: border-box;
   width: 100%;
-  min-height: 96px;
-  border-radius: 4px;
-  background: var(--ui-white);
-  box-shadow: var(--ui-shadow-float-1);
+  min-height: 78px;
 }
 
 /* Each field on the edge it belongs to, as wide as a number needs, the number centred in it: with
    nothing drawn between the four, each number sits on the middle of the edge it insets. */
 .marginAt {
   position: absolute;
-  width: 24px;
+  width: 32px;
 }
 
 .marginAt input { text-align: center; }
 
 .marginAt[data-edge="left"] { left: 4px; top: 50%; transform: translateY(-50%); }
 .marginAt[data-edge="right"] { right: 4px; top: 50%; transform: translateY(-50%); }
+/* Top and bottom close enough together to read as one group, and close to the preset row above
+   them: 4 clear at each end of the block, 22 between the two fields (Tom, 2026-11-25). */
 .marginAt[data-edge="top"] { top: 4px; left: 50%; transform: translateX(-50%); }
 .marginAt[data-edge="bottom"] { bottom: 4px; left: 50%; transform: translateX(-50%); }
-/* The one field the four become while they are held the same: the middle of the sheet, where there
-   is room for a longer number than an edge field holds. */
-.marginAt[data-edge="all"] { top: 50%; left: 50%; width: 48px; transform: translate(-50%, -50%); }
+
+/* A group under the size chooser needs room of its own: a heading six pixels under the chooser's
+   underline reads as part of the field above it rather than as the name of what follows (Tom,
+   2026-11-25). The groups after it are spaced by the card itself. */
+.sizeRow + .cardGroup {
+  margin-top: 0.75rem;
+}
 
 /* The size chooser, in the Paper card and the Artboard card alike: the list of sizes taking what
    the way-it-lies control leaves, which sits level with the menu while its label hangs below. */
